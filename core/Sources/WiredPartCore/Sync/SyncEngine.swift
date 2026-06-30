@@ -228,9 +228,10 @@ public actor SyncEngine {
             guard let ackHTTPResponse = ackResponse as? HTTPURLResponse,
                   (200..<300).contains(ackHTTPResponse.statusCode) else {
                 let statusCode = (ackResponse as? HTTPURLResponse)?.statusCode ?? 0
+                let pendingCount = (try? ChangeTracker.getPendingChangeCount(db: db)) ?? pendingChanges.count
                 updateState(
                     status: .error,
-                    pendingCount: pendingChanges.count,
+                    pendingCount: pendingCount,
                     error: "Ack failed: \(statusCode)",
                     consecutiveFailures: state.consecutiveFailures + 1
                 )

@@ -1,6 +1,5 @@
 import Testing
 import Foundation
-import Network
 @testable import WiredPartCore
 
 @Suite("PeerManager Tests")
@@ -413,78 +412,5 @@ struct PeerManagerTests {
 extension PeerManager {
     func testEnrichChanges(_ entries: [ChangeLogEntry]) throws -> [IncomingChange] {
         try enrichChangesWithData(entries)
-    }
-}
-
-private final class HTTPStubServer: @unchecked Sendable {
-    private let listener: NWListener
-    private let statusCode: Int
-    private let body: String
-    private let queue = DispatchQueue(label: "com.wiredpart.tests.httpstub")
-
-    init(statusCode: Int, body: String) throws {
-        self.listener = try NWListener(using: .tcp, on: .any)
-        self.statusCode = statusCode
-        self.body = body
-    }
-
-    func start() async throws -> UInt16 {
-        try await withCheckedThrowingContinuation { continuation in
-            let continuationBox = OneShotContinuationBox(continuation)
-
-            listener.stateUpdateHandler = { [listener] state in
-                switch state {
-                case .ready:
-                    if let port = listener.port {
-                        continuationBox.resume(.success(port.rawValue))
-                    } else {
-                        continuationBox.resume(.failure(URLError(.badServerResponse)))
-                    }
-                case .failed(let error):
-                    continuationBox.resume(.failure(error))
-                default:
-                    break
-                }
-            }
-            listener.newConnectionHandler = { [body, statusCode, queue] connection in
-                connection.start(queue: queue)
-                connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { _, _, _, _ in
-                    let statusText = statusCode == 200 ? "OK" : "Error"
-                    let response = """
-                    HTTP/1.1 \(statusCode) \(statusText)\r
-                    Content-Type: application/json\r
-                    Content-Length: \(body.utf8.count)\r
-                    Connection: close\r
-                    \r
-                    \(body)
-                    """
-                    connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in
-                        connection.cancel()
-                    })
-                }
-            }
-            listener.start(queue: queue)
-        }
-    }
-
-    func stop() {
-        listener.cancel()
-    }
-}
-
-private final class OneShotContinuationBox: @unchecked Sendable {
-    private var continuation: CheckedContinuation<UInt16, Error>?
-    private let lock = NSLock()
-
-    init(_ continuation: CheckedContinuation<UInt16, Error>) {
-        self.continuation = continuation
-    }
-
-    func resume(_ result: Result<UInt16, Error>) {
-        lock.lock()
-        let continuation = self.continuation
-        self.continuation = nil
-        lock.unlock()
-        continuation?.resume(with: result)
     }
 }

@@ -1,6 +1,5 @@
 import Testing
 import Foundation
-import Network
 @testable import WiredPartCore
 
 @Suite("SyncEngine Tests")
@@ -154,20 +153,20 @@ struct SyncEngineTests {
         )
         #expect(try ChangeTracker.getPendingChangeCount(db: db) == 1)
 
-        let server = try SyncEngineHTTPStubServer { request in
+        let server = try HTTPStubServer { request in
             switch request.path {
             case "/api/sync/push":
-                return SyncEngineHTTPStubResponse(
+                return HTTPStubResponse(
                     statusCode: 200,
                     body: #"{"data":{"sync_batch_id":"batch-ack-fails","shop_changes":[]}}"#
                 )
             case "/api/sync/ack":
-                return SyncEngineHTTPStubResponse(
+                return HTTPStubResponse(
                     statusCode: 500,
                     body: #"{"error":"ack failed"}"#
                 )
             default:
-                return SyncEngineHTTPStubResponse(statusCode: 404, body: #"{"error":"not found"}"#)
+                return HTTPStubResponse(statusCode: 404, body: #"{"error":"not found"}"#)
             }
         }
         let port = try await server.start()
@@ -203,18 +202,18 @@ struct SyncEngineTests {
             deviceId: "dev-001"
         )
 
-        let server = try SyncEngineHTTPStubServer { request in
+        let server = try HTTPStubServer { request in
             switch request.path {
             case "/api/sync/push":
-                return SyncEngineHTTPStubResponse(
+                return HTTPStubResponse(
                     statusCode: 200,
                     body: #"{"data":{"shop_changes":[]}}"#
                 )
             case "/api/sync/ack":
                 ackCallCount.withLock { $0 += 1 }
-                return SyncEngineHTTPStubResponse(statusCode: 200, body: #"{"ok":true}"#)
+                return HTTPStubResponse(statusCode: 200, body: #"{"ok":true}"#)
             default:
-                return SyncEngineHTTPStubResponse(statusCode: 404, body: #"{"error":"not found"}"#)
+                return HTTPStubResponse(statusCode: 404, body: #"{"error":"not found"}"#)
             }
         }
         let port = try await server.start()
@@ -246,116 +245,6 @@ private final class Mutex<T>: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return body(&value)
-    }
-}
-
-private struct SyncEngineHTTPStubRequest: Sendable {
-    let path: String
-}
-
-private struct SyncEngineHTTPStubResponse: Sendable {
-    let statusCode: Int
-    let body: String
-}
-
-private final class SyncEngineHTTPStubServer: @unchecked Sendable {
-    private let listener: NWListener
-    private let handler: @Sendable (SyncEngineHTTPStubRequest) -> SyncEngineHTTPStubResponse
-    private let queue = DispatchQueue(label: "com.wiredpart.tests.syncengine.httpstub")
-
-    init(handler: @escaping @Sendable (SyncEngineHTTPStubRequest) -> SyncEngineHTTPStubResponse) throws {
-        self.listener = try NWListener(using: .tcp, on: .any)
-        self.handler = handler
-    }
-
-    func start() async throws -> UInt16 {
-        try await withCheckedThrowingContinuation { continuation in
-            let continuationBox = SyncEngineOneShotContinuationBox(continuation)
-
-            listener.stateUpdateHandler = { [listener] state in
-                switch state {
-                case .ready:
-                    if let port = listener.port {
-                        continuationBox.resume(.success(port.rawValue))
-                    } else {
-                        continuationBox.resume(.failure(URLError(.badServerResponse)))
-                    }
-                case .failed(let error):
-                    continuationBox.resume(.failure(error))
-                default:
-                    break
-                }
-            }
-            listener.newConnectionHandler = { [handler, queue] connection in
-                connection.start(queue: queue)
-
-                @Sendable func sendResponse(for requestData: Data) {
-                    let rawRequest = String(data: requestData, encoding: .utf8) ?? ""
-                    let requestLine = rawRequest.components(separatedBy: "\r\n").first ?? ""
-                    let path = requestLine.split(separator: " ").dropFirst().first.map(String.init) ?? "/"
-                    let stubResponse = handler(SyncEngineHTTPStubRequest(path: path))
-                    let statusText = (200..<300).contains(stubResponse.statusCode) ? "OK" : "Error"
-                    let response = """
-                    HTTP/1.1 \(stubResponse.statusCode) \(statusText)\r
-                    Content-Type: application/json\r
-                    Content-Length: \(stubResponse.body.utf8.count)\r
-                    Connection: close\r
-                    \r
-                    \(stubResponse.body)
-                    """
-                    connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in
-                        connection.cancel()
-                    })
-                }
-
-                @Sendable func receive(_ buffered: Data) {
-                    connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { data, _, isComplete, _ in
-                        var requestData = buffered
-                        if let data {
-                            requestData.append(data)
-                        }
-
-                        guard requestData.containsCRLF || isComplete else {
-                            receive(requestData)
-                            return
-                        }
-
-                        sendResponse(for: requestData)
-                    }
-                }
-
-                receive(Data())
-            }
-            listener.start(queue: queue)
-        }
-    }
-
-    func stop() {
-        listener.cancel()
-    }
-}
-
-private final class SyncEngineOneShotContinuationBox: @unchecked Sendable {
-    private var continuation: CheckedContinuation<UInt16, Error>?
-    private let lock = NSLock()
-
-    init(_ continuation: CheckedContinuation<UInt16, Error>) {
-        self.continuation = continuation
-    }
-
-    func resume(_ result: Result<UInt16, Error>) {
-        lock.lock()
-        let continuation = self.continuation
-        self.continuation = nil
-        lock.unlock()
-        continuation?.resume(with: result)
-    }
-}
-
-private extension Data {
-    var containsCRLF: Bool {
-        guard count >= 2 else { return false }
-        return zip(self, dropFirst()).contains { $0 == 13 && $1 == 10 }
     }
 }
 
