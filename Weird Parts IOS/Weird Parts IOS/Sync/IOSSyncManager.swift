@@ -309,6 +309,9 @@ final class IOSSyncManager {
             multipeerManager = nil
             multipeerDiscoveryMode = nil
             removeMultipeerDiscoveredPeers()
+            if let pm = peerManager {
+                Task { await pm.stopPeerSync() }
+            }
         }
 
         let companyId: String
@@ -326,6 +329,9 @@ final class IOSSyncManager {
 
         isScanning = true
         errorMessage = nil
+        if syncStatus == .error {
+            syncStatus = .idle
+        }
 
         // Start multipeer if BT is enabled
         let bluetoothDiscoveryEnabled = UserDefaults.standard.bool(forKey: "bluetooth_sync_enabled")

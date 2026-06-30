@@ -424,7 +424,7 @@ struct Weird_Parts_IOSTests {
 
         #expect(manager.isScanning)
         #expect(manager.errorMessage == nil)
-        #expect(manager.syncStatus != .error)
+        #expect(manager.syncStatus == .idle)
     }
 
     @MainActor
@@ -447,6 +447,7 @@ struct Weird_Parts_IOSTests {
         #expect(source.contains("allowAnyCompanyPeerDiscovery: mode == .onboardingJoin"))
         #expect(source.contains("advertiseSelf: mode == .existingCompanySync"))
         #expect(source.contains("if mode == .existingCompanySync"))
+        #expect(source.contains("Task { await pm.stopPeerSync() }"))
         #expect(source.contains("if bluetoothDiscoveryEnabled && mode == .onboardingJoin"))
         #expect(source.contains("startMultipeer: bluetoothDiscoveryEnabled && mode == .existingCompanySync"))
         #expect(source.contains("startSyncServer: mode == .existingCompanySync"))

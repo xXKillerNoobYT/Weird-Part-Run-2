@@ -22,6 +22,41 @@ struct PeerManagerTests {
         #expect(state.syncingWith == nil)
     }
 
+    @Test("Discovery-only peer sync starts browsing without a sync server")
+    func testDiscoveryOnlyPeerSyncState() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+
+        try await pm.startPeerSync(
+            deviceId: "dev-001",
+            deviceName: "Test Device",
+            companyId: "onboarding-test",
+            allowAnyCompanyPeerDiscovery: true,
+            startMultipeer: false,
+            startSyncServer: false
+        )
+
+        let state = await pm.getState()
+        #expect(state.running)
+        #expect(state.syncPort == 0)
+
+        let peer = DiscoveredPeer(
+            deviceId: "peer-001",
+            deviceName: "Peer Device",
+            companyId: "company-abc",
+            host: "127.0.0.1",
+            port: 12345
+        )
+        let result = await pm.syncWithPeer(peer)
+        #expect(result.success == false)
+        #expect(result.error == "Sync server not running")
+
+        await pm.stopPeerSync()
+        let stoppedState = await pm.getState()
+        #expect(!stoppedState.running)
+        #expect(stoppedState.syncPort == 0)
+    }
+
     @Test("isOfficePeer detects office-like names")
     func testIsOfficePeer() {
         let office = DiscoveredPeer(
