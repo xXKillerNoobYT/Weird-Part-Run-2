@@ -729,6 +729,48 @@ struct Weird_Parts_IOSTests {
         #expect(source.contains("loadError = userFriendlyError(error, context: \"create supplier channel\")"))
     }
 
+    @Test func manualBackupSidecarCopyFailureIsReportedAndCleanedUp() throws {
+        let tempRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("IOSBackupFileCopierTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let sourceURL = tempRoot.appendingPathComponent("wiredpart.sqlite")
+        let sourceWALURL = URL(fileURLWithPath: sourceURL.path + "-wal")
+        let destinationURL = tempRoot.appendingPathComponent("wiredpart-backup.sqlite")
+        let destinationWALURL = URL(fileURLWithPath: destinationURL.path + "-wal")
+
+        try Data("main database".utf8).write(to: sourceURL)
+        try Data("wal sidecar".utf8).write(to: sourceWALURL)
+        try Data("pre-existing destination blocks copy".utf8).write(to: destinationWALURL)
+
+        do {
+            try IOSBackupFileCopier.copySQLiteSnapshot(from: sourceURL, to: destinationURL)
+            Issue.record("Expected WAL copy failure to propagate instead of reporting backup success")
+        } catch {
+            #expect(!FileManager.default.fileExists(atPath: destinationURL.path), "Failed sidecar backups must remove the partial main database copy")
+            #expect(FileManager.default.fileExists(atPath: destinationWALURL.path), "Existing destination files unrelated to this attempt should not be removed")
+        }
+    }
+
+    @Test func manualBackupSidecarCopiesAreNotSwallowedBeforeSuccessState() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let backupsPageURL = repoRoot
+            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSBackupsPage.swift")
+        let source = try String(contentsOf: backupsPageURL, encoding: .utf8)
+
+        #expect(!source.contains("try? FileManager.default.copyItem"), "Manual backup WAL/SHM copy failures must not be swallowed")
+        #expect(!source.contains("try? FileManager.default.removeItem"), "Failed manual backups must not swallow cleanup failures")
+        #expect(source.contains("try IOSBackupFileCopier.copySQLiteSnapshot"), "Manual backup creation should use the throwing SQLite snapshot copier")
+        #expect(source.contains("createdURLs.reversed()"), "Partial backup cleanup should remove sidecars before the main database")
+        let snapshotCall = try #require(source.range(of: "try IOSBackupFileCopier.copySQLiteSnapshot"))
+        let successState = try #require(source.range(of: "backupSuccess = true"))
+        #expect(snapshotCall.lowerBound < successState.lowerBound, "Success state must only be set after all database sidecars are copied")
+    }
+
     @MainActor
     @Test func shortTermPipelineCallbackFailurePreservesSheetAndFormatsActionError() {
         var reloadCount = 0
