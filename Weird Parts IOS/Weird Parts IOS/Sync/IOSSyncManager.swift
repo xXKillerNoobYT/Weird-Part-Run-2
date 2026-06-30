@@ -318,6 +318,7 @@ final class IOSSyncManager {
         }
 
         isScanning = true
+        errorMessage = nil
 
         // Start multipeer if BT is enabled
         let bluetoothDiscoveryEnabled = UserDefaults.standard.bool(forKey: "bluetooth_sync_enabled")
@@ -335,7 +336,8 @@ final class IOSSyncManager {
                     deviceName: deviceName,
                     companyId: companyId,
                     allowAnyCompanyPeerDiscovery: mode == .onboardingJoin,
-                    autoInvitePeers: mode == .existingCompanySync
+                    autoInvitePeers: mode == .existingCompanySync,
+                    advertiseSelf: mode == .existingCompanySync
                 )
                 multipeerDiscoveryMode = mode
                 multipeerManager?.onPeersChanged = { [weak self] peers in

@@ -417,6 +417,9 @@ struct Weird_Parts_IOSTests {
         defer { manager.stopPeerDiscovery() }
         manager.setBluetoothEnabled(true, startDiscovery: false)
 
+        manager.startPeerDiscovery()
+        #expect(manager.errorMessage == "Peer discovery unavailable: Company ID is not configured. Open Settings and verify the company profile before starting peer discovery.")
+
         manager.startOnboardingPeerDiscovery()
 
         #expect(manager.isScanning)
@@ -426,16 +429,23 @@ struct Weird_Parts_IOSTests {
 
     @MainActor
     @Test func onboardingPeerDiscoveryKeepsLanAddressForPairing() throws {
-        let source = try String(
-            contentsOfFile: "Weird Parts IOS/Weird Parts IOS/Sync/IOSSyncManager.swift",
-            encoding: .utf8
-        )
-        let pairingSource = try String(
-            contentsOfFile: "Weird Parts IOS/Weird Parts IOS/Auth/DevicePairingView.swift",
-            encoding: .utf8
-        )
+        let testFileURL = URL(fileURLWithPath: "\(#filePath)")
+        let projectRoot = testFileURL
+            .deletingLastPathComponent() // Weird Parts IOSTests
+            .deletingLastPathComponent() // Weird Parts IOS
+        let sourceURL = projectRoot
+            .appendingPathComponent("Weird Parts IOS")
+            .appendingPathComponent("Sync")
+            .appendingPathComponent("IOSSyncManager.swift")
+        let pairingSourceURL = projectRoot
+            .appendingPathComponent("Weird Parts IOS")
+            .appendingPathComponent("Auth")
+            .appendingPathComponent("DevicePairingView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let pairingSource = try String(contentsOf: pairingSourceURL, encoding: .utf8)
 
         #expect(source.contains("allowAnyCompanyPeerDiscovery: mode == .onboardingJoin"))
+        #expect(source.contains("advertiseSelf: mode == .existingCompanySync"))
         #expect(source.contains("startMultipeer: bluetoothDiscoveryEnabled && mode == .existingCompanySync"))
         #expect(source.contains("startSyncServer: mode == .existingCompanySync"))
         #expect(source.contains("if await pm.getState().running"))

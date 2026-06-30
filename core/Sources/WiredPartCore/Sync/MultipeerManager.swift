@@ -79,6 +79,7 @@ public final class MultipeerManager: NSObject, @unchecked Sendable {
     private let companyId: String
     private let allowAnyCompanyPeerDiscovery: Bool
     private let autoInvitePeers: Bool
+    private let advertiseSelf: Bool
 
     /// All mutable state below is GUARDED BY syncQueue — do not access without it.
     private let syncQueue = DispatchQueue(label: "com.wiredpart.multipeer.sync", qos: .utility)
@@ -101,13 +102,15 @@ public final class MultipeerManager: NSObject, @unchecked Sendable {
         deviceName: String,
         companyId: String,
         allowAnyCompanyPeerDiscovery: Bool = false,
-        autoInvitePeers: Bool = true
+        autoInvitePeers: Bool = true,
+        advertiseSelf: Bool = true
     ) {
         self.deviceId = deviceId
         self.deviceName = deviceName
         self.companyId = companyId
         self.allowAnyCompanyPeerDiscovery = allowAnyCompanyPeerDiscovery
         self.autoInvitePeers = autoInvitePeers
+        self.advertiseSelf = advertiseSelf
         super.init()
 
         // MCPeerID display name must be 1-63 chars
@@ -126,7 +129,9 @@ public final class MultipeerManager: NSObject, @unchecked Sendable {
         syncQueue.async { [weak self] in
             guard let self, !self.isRunning else { return }
             self.isRunning = true
-            self.startAdvertising()
+            if self.advertiseSelf {
+                self.startAdvertising()
+            }
             self.startBrowsing()
         }
     }

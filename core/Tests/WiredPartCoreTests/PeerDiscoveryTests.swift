@@ -87,7 +87,6 @@ struct PeerDiscoveryTests {
         )
 
         discovery.start()
-        Thread.sleep(forTimeInterval: 0.1)
 
         #expect(discovery.debugIsAdvertising() == false)
 
