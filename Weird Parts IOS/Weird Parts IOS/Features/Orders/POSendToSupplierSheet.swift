@@ -669,15 +669,13 @@ struct POSendToSupplierSheet: View {
 
         Task {
             do {
-                for poId in includedPOs {
-                    try svc.markPOSentToSupplier(
-                        id: poId,
-                        sentByUserId: userId,
-                        confirmationNumber: confNum,
-                        emailRequestType: reqType,
-                        sendGroupId: groupId
-                    )
-                }
+                try svc.markPOsSentToSupplier(
+                    ids: includedPOs,
+                    sentByUserId: userId,
+                    confirmationNumber: confNum,
+                    emailRequestType: reqType,
+                    sendGroupId: groupId
+                )
                 await MainActor.run {
                     isSaving = false
                     dismiss()
