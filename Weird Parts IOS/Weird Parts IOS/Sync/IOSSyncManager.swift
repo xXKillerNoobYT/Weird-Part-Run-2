@@ -309,9 +309,6 @@ final class IOSSyncManager {
             multipeerManager = nil
             multipeerDiscoveryMode = nil
             removeMultipeerDiscoveredPeers()
-            if let pm = peerManager {
-                Task { await pm.stopPeerSync() }
-            }
         }
 
         let companyId: String
@@ -320,6 +317,9 @@ final class IOSSyncManager {
             do {
                 companyId = try peerDiscoveryCompanyId()
             } catch {
+                if let pm = peerManager {
+                    Task { await pm.stopPeerSync() }
+                }
                 handlePeerDiscoveryCompanyIdFailure(error)
                 return
             }
@@ -559,7 +559,7 @@ final class IOSSyncManager {
     }
 
     private func isMultipeerDiscoveredPeer(_ peer: PeerInfo) -> Bool {
-        peer.state == "multipeer" || peer.state == "connected"
+        peer.state == "multipeer" || (peer.state == "connected" && peer.address == nil)
     }
 
     private func refreshPendingCount() {
