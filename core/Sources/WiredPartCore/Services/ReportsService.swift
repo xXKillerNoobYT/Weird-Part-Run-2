@@ -1098,7 +1098,7 @@ public final class ReportsService: Sendable {
                            COUNT(ac.id) AS count_count,
                            SUM(CASE WHEN ac.variance != 0 THEN 1 ELSE 0 END) AS discrepancy_count,
                            COALESCE(SUM(ac.variance), 0) AS total_variance,
-                           COALESCE(SUM(ac.variance_dollars), 0) AS total_variance_dollars,
+                           COALESCE(SUM(ABS(ac.variance_dollars)), 0) AS total_variance_dollars,
                            MAX(ac.counted_at) AS last_counted_at
                     FROM audit_counts ac
                     JOIN audit_sessions_v2 aus ON aus.id = ac.session_id AND aus.deleted_at IS NULL

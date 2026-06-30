@@ -1186,7 +1186,7 @@ struct ReportsServiceTests {
         #expect(rows.first?.countCount == 2)
         #expect(rows.first?.discrepancyCount == 1)
         #expect(rows.first?.totalVariance == -2)
-        #expect(abs((rows.first?.totalVarianceDollars ?? 0) - -24.0) < 0.01)
+        #expect(abs((rows.first?.totalVarianceDollars ?? 0) - 24.0) < 0.01)
         #expect(rows.first?.sourceSummary == "2 audit counts, 1 discrepancy")
     }
 

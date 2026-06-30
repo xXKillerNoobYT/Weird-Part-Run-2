@@ -293,6 +293,47 @@ struct PartsServiceCoverageTests {
         #expect(value == "55")
     }
 
+    @Test("updateCompanyCostSetting rejects negative default markup")
+    func testUpdateCompanyCostSettingRejectsNegativeDefaultMarkup() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        #expect(throws: (any Error).self) {
+            try env.parts.updateCompanyCostSetting(key: "default_markup_percent", value: "-10", updatedBy: env.adminUserId)
+        }
+
+        #expect(throws: (any Error).self) {
+            try env.parts.updateCompanyCostSetting(key: "default_markup_percent", value: "nan", updatedBy: env.adminUserId)
+        }
+
+        try env.parts.updateCompanyCostSetting(key: "default_markup_percent", value: " 35 ", updatedBy: env.adminUserId)
+        #expect(try env.parts.getCompanyCostSetting(key: "default_markup_percent") == " 35 ")
+    }
+
+    @Test("resolvePartPricing clamps corrupt negative company default markup")
+    func testResolvePartPricingClampsNegativeDefaultMarkup() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "DefaultMarkupClampCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Default Markup Clamp Part", categoryId: catId)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET weighted_avg_cost = 100 WHERE id = ?", arguments: [partId])
+            try db.execute(sql: """
+                INSERT INTO company_cost_settings (setting_key, setting_value, updated_at)
+                VALUES ('default_markup_percent', ' -25 ', datetime('now'))
+                ON CONFLICT(setting_key) DO UPDATE SET
+                    setting_value = excluded.setting_value,
+                    updated_at = datetime('now')
+                """)
+        }
+
+        let pricing = try env.parts.resolvePartPricing(partId: partId)
+
+        #expect(pricing.tierLevel == "Default")
+        #expect(pricing.effectiveMarkup == 0)
+        #expect(pricing.sellPrice == pricing.weightedAvgCost)
+        #expect(pricing.sellPrice >= 100)
+    }
+
     @Test("updateCompanyCostSetting is idempotent — upserts on repeated calls")
     func testUpdateCompanyCostSettingUpsert() throws {
         let env = try E2ETestHelpers.setUp()
