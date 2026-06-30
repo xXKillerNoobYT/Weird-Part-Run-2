@@ -425,6 +425,24 @@ struct Weird_Parts_IOSTests {
     }
 
     @MainActor
+    @Test func onboardingPeerDiscoveryKeepsLanAddressForPairing() throws {
+        let source = try String(
+            contentsOfFile: "Weird Parts IOS/Weird Parts IOS/Sync/IOSSyncManager.swift",
+            encoding: .utf8
+        )
+        let pairingSource = try String(
+            contentsOfFile: "Weird Parts IOS/Weird Parts IOS/Auth/DevicePairingView.swift",
+            encoding: .utf8
+        )
+
+        #expect(source.contains("allowAnyCompanyPeerDiscovery: mode == .onboardingJoin"))
+        #expect(source.contains("startMultipeer: mode == .existingCompanySync"))
+        #expect(source.contains("address: peer.host.isEmpty || peer.port == 0 ? nil : \"\\(peer.host):\\(peer.port)\""))
+        #expect(pairingSource.contains("guard let address = peer.address else"))
+        #expect(pairingSource.contains("shop.address"))
+    }
+
+    @MainActor
     @Test func officeNavigationUsesOfficeOnlyGateAndFinancialRedactionGate() async throws {
         let leadPermissions = ["view_jobs", "manage_jobs", "view_orders"]
         let officePermissions = ["approve_orders", "show_dollar_values", "manage_jobs"]

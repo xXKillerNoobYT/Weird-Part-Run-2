@@ -57,6 +57,7 @@ final class IOSSyncManager {
         let name: String
         let state: String
         let discoveredAt: String
+        let address: String?
     }
 
     enum PeerDiscoveryMode: Equatable {
@@ -346,18 +347,24 @@ final class IOSSyncManager {
             multipeerManager?.start()
         }
 
-        // Also start LAN peer discovery if we have a peer manager and a stored
-        // company ID. Join/onboarding discovery only browses Multipeer peers;
-        // the selected shop response verifies and persists the company identity.
-        if mode == .existingCompanySync, let pm = peerManager {
+        // Also start LAN peer discovery when available. Existing sync discovery
+        // stays company-scoped. Join/onboarding discovery relaxes LAN browsing
+        // so a fresh device can discover a shop HTTP address before the pairing
+        // response verifies and persists the real company ID.
+        if let pm = peerManager {
             Task {
                 let deviceId = DeviceIdentity.current
                 let deviceName = UIDevice.current.name
                 do {
+                    if mode == .onboardingJoin {
+                        await pm.stopPeerSync()
+                    }
                     try await pm.startPeerSync(
                         deviceId: deviceId,
                         deviceName: deviceName,
-                        companyId: companyId
+                        companyId: companyId,
+                        allowAnyCompanyPeerDiscovery: mode == .onboardingJoin,
+                        startMultipeer: mode == .existingCompanySync
                     )
                 } catch {
                     handleLanPeerDiscoveryStartupFailure(
@@ -503,7 +510,8 @@ final class IOSSyncManager {
                 id: peer.deviceId,
                 name: peer.deviceName,
                 state: peer.transport,
-                discoveredAt: peer.discoveredAt
+                discoveredAt: peer.discoveredAt,
+                address: peer.host.isEmpty || peer.port == 0 ? nil : "\(peer.host):\(peer.port)"
             )
         }
 
@@ -519,7 +527,8 @@ final class IOSSyncManager {
                 id: peer.deviceId,
                 name: peer.deviceName,
                 state: peer.state.rawValue == "connected" ? "connected" : "multipeer",
-                discoveredAt: peer.discoveredAt
+                discoveredAt: peer.discoveredAt,
+                address: nil
             )
         }
 

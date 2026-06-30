@@ -113,13 +113,23 @@ struct DevicePairingView: View {
             // Show discovered peers as potential shops
             ForEach(syncManager.discoveredPeers) { peer in
                 Button {
-                    discoveredShop = DiscoveredShop(id: peer.id, name: peer.name, address: peer.id)
+                    guard let address = peer.address else {
+                        errorMessage = "This device was found over Bluetooth only. Keep both devices on the same Wi-Fi network or enter the shop address manually."
+                        return
+                    }
+                    errorMessage = nil
+                    discoveredShop = DiscoveredShop(id: peer.id, name: peer.name, address: address)
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "desktopcomputer")
                             .foregroundStyle(.green)
                         Text(peer.name)
                             .fontWeight(.medium)
+                        if peer.address == nil {
+                            Text("Needs Wi-Fi address")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                         Spacer()
                         Image(systemName: "chevron.right")
                             .font(.caption)

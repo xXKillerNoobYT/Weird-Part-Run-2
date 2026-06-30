@@ -139,7 +139,9 @@ public actor PeerManager {
     public func startPeerSync(
         deviceId: String,
         deviceName: String,
-        companyId: String
+        companyId: String,
+        allowAnyCompanyPeerDiscovery: Bool = false,
+        startMultipeer: Bool = true
     ) async throws {
         guard !state.running else { return }
 
@@ -171,7 +173,8 @@ public actor PeerManager {
             deviceId: deviceId,
             companyId: companyId,
             deviceName: deviceName,
-            port: port
+            port: port,
+            allowAnyCompanyPeerDiscovery: allowAnyCompanyPeerDiscovery
         )
         discovery.onPeersChanged = { [weak self] peers in
             guard let self else { return }
@@ -182,21 +185,23 @@ public actor PeerManager {
 
         // 3. Start Multipeer Connectivity (Apple platforms)
         #if canImport(MultipeerConnectivity)
-        let mpManager = MultipeerManager(
-            deviceId: deviceId,
-            deviceName: deviceName,
-            companyId: companyId
-        )
-        mpManager.onPeersChanged = { [weak self] _ in
-            guard let self else { return }
-            Task { await self.mergePeerLists() }
+        if startMultipeer {
+            let mpManager = MultipeerManager(
+                deviceId: deviceId,
+                deviceName: deviceName,
+                companyId: companyId
+            )
+            mpManager.onPeersChanged = { [weak self] _ in
+                guard let self else { return }
+                Task { await self.mergePeerLists() }
+            }
+            mpManager.onDataReceived = { [weak self] message in
+                guard let self else { return }
+                Task { await self.handleMultipeerMessage(message) }
+            }
+            mpManager.start()
+            self.multipeerManager = mpManager
         }
-        mpManager.onDataReceived = { [weak self] message in
-            guard let self else { return }
-            Task { await self.handleMultipeerMessage(message) }
-        }
-        mpManager.start()
-        self.multipeerManager = mpManager
         #endif
 
         // 4. Start peer poll loop (every 10 seconds)
