@@ -2109,8 +2109,24 @@ struct JobsServiceTests {
     }
 
     @Test("isOnSupplyRun returns false when notes contain no supply run markers")
-    func testIsOnSupplyRunNoMarkers() {
+    func testIsOnSupplyRunWithoutMarkers() {
         #expect(!JobsService.isOnSupplyRun(notes: "Regular work notes, no supply run"))
+    }
+
+    @Test("activeSupplyRunStart returns latest unmatched supply run start date")
+    func testActiveSupplyRunStartReturnsLatestUnmatchedStart() throws {
+        let notes = "[supply_run_start:2026-04-16T09:00:00Z] [supply_run_end:2026-04-16T10:00:00Z] [supply_run_start:2026-04-16T14:30:00Z]"
+
+        let start = try #require(JobsService.activeSupplyRunStart(notes: notes))
+
+        #expect(CoreFormatters.iso8601.string(from: start) == "2026-04-16T14:30:00Z")
+    }
+
+    @Test("activeSupplyRunStart returns nil when latest supply run is ended")
+    func testActiveSupplyRunStartReturnsNilForEndedRun() {
+        let notes = "[supply_run_start:2026-04-16T09:00:00Z] [supply_run_end:2026-04-16T10:00:00Z]"
+
+        #expect(JobsService.activeSupplyRunStart(notes: notes) == nil)
     }
 
     // MARK: - computeStageStatuses (pure static)
