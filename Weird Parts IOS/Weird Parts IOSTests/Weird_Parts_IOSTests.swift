@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import GRDB
 import Security
 import Testing
 import WiredPartCore
@@ -769,6 +770,51 @@ struct Weird_Parts_IOSTests {
         let snapshotCall = try #require(source.range(of: "try IOSBackupFileCopier.copySQLiteSnapshot"))
         let successState = try #require(source.range(of: "backupSuccess = true"))
         #expect(snapshotCall.lowerBound < successState.lowerBound, "Success state must only be set after all database sidecars are copied")
+    }
+
+    @Test func fullDatabaseExportUsesGRDBSnapshotAndIncludesWALChanges() throws {
+        let tempRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("IOSDatabaseExportSnapshotterTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let sourceURL = tempRoot.appendingPathComponent("wiredpart-live.sqlite")
+        let destinationURL = tempRoot.appendingPathComponent("wiredpart-export.sqlite")
+        let source = try DatabasePool(path: sourceURL.path)
+        try source.write { db in
+            try db.execute(sql: "PRAGMA journal_mode = WAL")
+            try db.execute(sql: "PRAGMA wal_autocheckpoint = 0")
+            try db.execute(sql: "CREATE TABLE export_probe(id INTEGER PRIMARY KEY, value TEXT NOT NULL)")
+            try db.execute(sql: "INSERT INTO export_probe(value) VALUES (?)", arguments: ["committed-in-wal"])
+        }
+
+        #expect(FileManager.default.fileExists(atPath: sourceURL.path + "-wal"), "Test fixture should keep committed data in a WAL sidecar")
+
+        try IOSDatabaseExportSnapshotter.exportSQLiteSnapshot(from: source, to: destinationURL)
+
+        let exported = try DatabaseQueue(path: destinationURL.path)
+        let exportedValue = try exported.read { db in
+            try String.fetchOne(db, sql: "SELECT value FROM export_probe WHERE id = 1")
+        }
+        #expect(exportedValue == "committed-in-wal")
+    }
+
+    @Test func fullDatabaseExportDoesNotCopyMainDatabaseFileDirectly() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let exportPageURL = repoRoot
+            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSDataExportPage.swift")
+        let source = try String(contentsOf: exportPageURL, encoding: .utf8)
+
+        #expect(!source.contains("copyItem(at: URL(fileURLWithPath: dbPath), to: destURL)"), "Full database export must not copy only the main SQLite file")
+        #expect(source.contains("try IOSDatabaseExportSnapshotter.exportSQLiteSnapshot"), "Full database export should use the GRDB snapshot helper")
+        #expect(source.contains("Task.detached(priority: .userInitiated)"), "Full database export should run the snapshot off the main actor so large exports do not freeze Settings")
+        #expect(source.contains("await MainActor.run"), "Full database export should return success and error state updates to the main actor")
+        let snapshotCall = try #require(source.range(of: "try IOSDatabaseExportSnapshotter.exportSQLiteSnapshot"))
+        let successState = try #require(source.range(of: "exportSuccess = true", range: snapshotCall.lowerBound..<source.endIndex))
+        #expect(snapshotCall.lowerBound < successState.lowerBound, "Success state must only be set after the GRDB snapshot is complete")
     }
 
     @MainActor
