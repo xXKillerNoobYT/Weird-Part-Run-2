@@ -237,12 +237,7 @@ public final class BreakService: Sendable {
     public func getActiveBreak(userId: Int64) throws -> BreakRecord? {
         do {
             return try db.writer.read { dbConn in
-                try BreakRecord
-                    .filter(Column("user_id") == userId &&
-                            Column("ended_at") == nil &&
-                            Column("deleted_at") == nil)
-                    .order(Column("started_at").desc)
-                    .fetchOne(dbConn)
+                try Self.activeBreak(dbConn: dbConn, userId: userId)
             }
         } catch {
             if isTableNotFoundError(error) { return nil }
