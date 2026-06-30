@@ -265,6 +265,50 @@ struct Weird_Parts_IOSTests {
     }
 
     @MainActor
+    @Test func shopServerAddressNormalizationTrimsValidValuesAndRejectsBlankValues() async throws {
+        #expect(IOSSyncManager.normalizedShopServerAddress(nil) == nil)
+        #expect(IOSSyncManager.normalizedShopServerAddress("") == nil)
+        #expect(IOSSyncManager.normalizedShopServerAddress(" \n\t ") == nil)
+        #expect(IOSSyncManager.normalizedShopServerAddress("  http://127.0.0.1:8080\n") == "http://127.0.0.1:8080")
+        #expect(IOSSyncManager.normalizedShopServerAddress("  192.168.1.10:8080  ") == "192.168.1.10:8080")
+    }
+
+    @MainActor
+    @Test func whitespaceOnlyShopServerAddressDoesNotEnableSync() async throws {
+        let previousBluetooth = UserDefaults.standard.bool(forKey: "bluetooth_sync_enabled")
+        UserDefaults.standard.set(false, forKey: "bluetooth_sync_enabled")
+        defer { UserDefaults.standard.set(previousBluetooth, forKey: "bluetooth_sync_enabled") }
+
+        let db = try AppDatabase.openInMemoryDatabase()
+        let settings = SettingsService(db: db)
+        try settings.upsertSetting(key: "shop_server_address", value: " \n\t ", category: "sync")
+        let manager = IOSSyncManager()
+        manager.configure(db: db, settingsService: settings)
+
+        #expect(!manager.isSyncAvailable)
+
+        await manager.syncNow()
+
+        #expect(manager.syncStatus == .idle)
+        #expect(manager.errorMessage == "Sync not configured. Set up in Settings → Sync.")
+    }
+
+    @MainActor
+    @Test func trimmedShopServerAddressStillEnablesSync() async throws {
+        let previousBluetooth = UserDefaults.standard.bool(forKey: "bluetooth_sync_enabled")
+        UserDefaults.standard.set(false, forKey: "bluetooth_sync_enabled")
+        defer { UserDefaults.standard.set(previousBluetooth, forKey: "bluetooth_sync_enabled") }
+
+        let db = try AppDatabase.openInMemoryDatabase()
+        let settings = SettingsService(db: db)
+        try settings.upsertSetting(key: "shop_server_address", value: "  http://127.0.0.1:9\n", category: "sync")
+        let manager = IOSSyncManager()
+        manager.configure(db: db, settingsService: settings)
+
+        #expect(manager.isSyncAvailable)
+    }
+
+    @MainActor
     @Test func partsFlowDraftsAreScopedPerAuthenticatedUser() throws {
         let userA: Int64 = 101
         let userB: Int64 = 202

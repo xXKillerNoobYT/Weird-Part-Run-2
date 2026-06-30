@@ -82,7 +82,13 @@ final class IOSSyncManager {
     private var serverAddress: String? {
         guard let service = settingsService else { return nil }
         let addr = (try? service.getSettingsByCategory("sync"))?["shop_server_address"]
-        return addr?.isEmpty == true ? nil : addr
+        return Self.normalizedShopServerAddress(addr)
+    }
+
+    /// Trims a user-entered or persisted shop server address and rejects blank values.
+    static func normalizedShopServerAddress(_ address: String?) -> String? {
+        let trimmed = address?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     init() {}
@@ -634,6 +640,13 @@ final class IOSSyncManager {
         syncProgressMessage = "Connecting to shop..."
         syncProgressPercent = 0.1
 
+        guard let normalizedShopAddress = Self.normalizedShopServerAddress(shopAddress) else {
+            syncStatus = .error
+            syncProgressMessage = nil
+            errorMessage = SyncError.invalidShopAddress.localizedDescription
+            throw SyncError.invalidShopAddress
+        }
+
         guard let normalizedPairingCode = SyncCrypto.normalizedPairingCode(pairingCode) else {
             syncStatus = .error
             syncProgressMessage = nil
@@ -652,7 +665,7 @@ final class IOSSyncManager {
         }
 
         let pairResponse = try await verifyPairingCodeWithShop(
-            shopAddress: shopAddress,
+            shopAddress: normalizedShopAddress,
             pairingCode: normalizedPairingCode,
             deviceId: deviceId,
             deviceName: deviceName
@@ -672,7 +685,7 @@ final class IOSSyncManager {
         // local trusted-device registration succeeds.
         if let service = settingsService {
             try service.upsertSettingsMap([
-                "shop_server_address": shopAddress,
+                "shop_server_address": normalizedShopAddress,
                 "paired_shop_device_id": pairResponse.serverDeviceId,
                 "paired_company_id": pairResponse.companyId,
                 "device_pairing_verified_at": pairResponse.pairedAt,
@@ -729,7 +742,9 @@ final class IOSSyncManager {
     }
 
     private func normalizedShopBaseURL(_ shopAddress: String) throws -> URL {
-        let trimmed = shopAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let trimmed = Self.normalizedShopServerAddress(shopAddress) else {
+            throw SyncError.invalidShopAddress
+        }
         let addressWithScheme = trimmed.contains("://") ? trimmed : "http://\(trimmed)"
         guard let url = URL(string: addressWithScheme),
               let scheme = url.scheme?.lowercased(),

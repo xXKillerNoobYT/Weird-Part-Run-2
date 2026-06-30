@@ -28,6 +28,10 @@ struct DevicePairingView: View {
         SyncCrypto.normalizedPairingCode(pairingCode) != nil
     }
 
+    private var normalizedManualAddress: String? {
+        IOSSyncManager.normalizedShopServerAddress(manualAddress)
+    }
+
     var body: some View {
         VStack(spacing: 24) {
             Spacer()
@@ -113,7 +117,7 @@ struct DevicePairingView: View {
             // Show discovered peers as potential shops
             ForEach(syncManager.discoveredPeers) { peer in
                 Button {
-                    guard let address = peer.address else {
+                    guard let address = IOSSyncManager.normalizedShopServerAddress(peer.address) else {
                         errorMessage = "This device was found over Bluetooth only. Keep both devices on the same Wi-Fi network or enter the shop address manually."
                         return
                     }
@@ -161,16 +165,16 @@ struct DevicePairingView: View {
                     .autocorrectionDisabled()
 
                 Button("Connect") {
-                    guard !manualAddress.isEmpty else { return }
+                    guard let address = normalizedManualAddress else { return }
                     discoveredShop = DiscoveredShop(
-                        id: manualAddress,
-                        name: manualAddress,
-                        address: manualAddress
+                        id: address,
+                        name: address,
+                        address: address
                     )
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .disabled(manualAddress.isEmpty)
+                .disabled(normalizedManualAddress == nil)
             }
             .padding(.horizontal, 32)
         }
