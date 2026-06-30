@@ -300,6 +300,13 @@ struct PartsServiceCoverageTests {
         #expect(throws: (any Error).self) {
             try env.parts.updateCompanyCostSetting(key: "default_markup_percent", value: "-10", updatedBy: env.adminUserId)
         }
+
+        #expect(throws: (any Error).self) {
+            try env.parts.updateCompanyCostSetting(key: "default_markup_percent", value: "nan", updatedBy: env.adminUserId)
+        }
+
+        try env.parts.updateCompanyCostSetting(key: "default_markup_percent", value: " 35 ", updatedBy: env.adminUserId)
+        #expect(try env.parts.getCompanyCostSetting(key: "default_markup_percent") == " 35 ")
     }
 
     @Test("resolvePartPricing clamps corrupt negative company default markup")
@@ -312,7 +319,7 @@ struct PartsServiceCoverageTests {
             try db.execute(sql: "UPDATE parts SET weighted_avg_cost = 100 WHERE id = ?", arguments: [partId])
             try db.execute(sql: """
                 INSERT INTO company_cost_settings (setting_key, setting_value, updated_at)
-                VALUES ('default_markup_percent', '-25', datetime('now'))
+                VALUES ('default_markup_percent', ' -25 ', datetime('now'))
                 ON CONFLICT(setting_key) DO UPDATE SET
                     setting_value = excluded.setting_value,
                     updated_at = datetime('now')
