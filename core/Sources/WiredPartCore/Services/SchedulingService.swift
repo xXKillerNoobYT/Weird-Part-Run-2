@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import os.log
 
 /// Scheduling Service — schedule entries, dispatch board, time-off requests,
 /// dispatch templates, and scheduling stats.
@@ -10,6 +11,8 @@ import GRDB
 ///
 /// Ported from: Scheduling & Dispatch feature area (Phases 10, 16)
 public final class SchedulingService: Sendable {
+    private static let logger = Logger(subsystem: "com.wiredpart.core", category: "SchedulingService")
+
     private let db: AppDatabase
     private let auth: AuthService
 
@@ -602,10 +605,10 @@ public final class SchedulingService: Sendable {
         endDate: String,
         reason: String? = nil
     ) throws -> Int64 {
-        guard !startDate.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !startDate.isBlankRequiredText else {
             throw SchedulingError.requiredFieldEmpty
         }
-        guard !endDate.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !endDate.isBlankRequiredText else {
             throw SchedulingError.requiredFieldEmpty
         }
         // Guard: user must exist and not be tombstoned — otherwise the INSERT INTO
@@ -1117,7 +1120,7 @@ public final class SchedulingService: Sendable {
         notes: String? = nil,
         forceCreateDespiteTimeOff: Bool = false
     ) throws -> Int64 {
-        guard !date.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !date.isBlankRequiredText else {
             throw SchedulingError.requiredFieldEmpty
         }
         // Service-layer time-off conflict enforcement (fixes #355).
@@ -1386,7 +1389,7 @@ public final class SchedulingService: Sendable {
         timeSlot: String = "full",
         forceCreateDespiteTimeOff: Bool = false
     ) throws -> Int64 {
-        guard !date.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !date.isBlankRequiredText else {
             throw SchedulingError.requiredFieldEmpty
         }
         // Service-layer time-off conflict enforcement (consistent with createDispatch).
@@ -1778,7 +1781,7 @@ public final class SchedulingService: Sendable {
 
     /// Snooze a callback to a future date (updates the job's due_date).
     public func snoozeCallback(jobId: Int64, until: String) throws {
-        guard !until.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !until.isBlankRequiredText else {
             throw SchedulingError.requiredFieldEmpty
         }
         try db.writer.write { dbConn in
@@ -2252,16 +2255,16 @@ public final class SchedulingService: Sendable {
         breakMinutes: Int = 30, breakPaid: Bool = false,
         overtimeRule: String = "company_default"
     ) throws -> Int64 {
-        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !name.isBlankRequiredText else {
             throw SchedulingError.requiredFieldEmpty
         }
-        guard !workDays.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !workDays.isBlankRequiredText else {
             throw SchedulingError.requiredFieldEmpty
         }
-        guard !startTime.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !startTime.isBlankRequiredText else {
             throw SchedulingError.requiredFieldEmpty
         }
-        guard !endTime.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !endTime.isBlankRequiredText else {
             throw SchedulingError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
@@ -2347,10 +2350,10 @@ public final class SchedulingService: Sendable {
         id: Int64? = nil, name: String, date: String,
         isPaid: Bool = true, isRecurring: Bool = false
     ) throws -> Int64 {
-        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !name.isBlankRequiredText else {
             throw SchedulingError.requiredFieldEmpty
         }
-        guard !date.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !date.isBlankRequiredText else {
             throw SchedulingError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
@@ -2394,8 +2397,8 @@ public final class SchedulingService: Sendable {
     ///
     /// A job is visible to a user if:
     /// - `is_flex_pool = 1` and status is not completed/cancelled/on_hold
-    /// - `flex_pool_user_filter` is NULL **or** contains `userId`
-    /// - `flex_pool_team_filter` is NULL **or** the user belongs to one of the listed teams
+    /// - `flex_pool_user_filter` is NULL/blank **or** contains `userId`
+    /// - `flex_pool_team_filter` is NULL/blank **or** the user belongs to one of the listed teams
     ///
     /// Returns an empty array if the `jobs` table is missing (fresh install).
     public func fetchFlexPool(userId: Int64) throws -> [FlexPoolJob] {
@@ -2446,22 +2449,39 @@ public final class SchedulingService: Sendable {
                     let teamFilter: String? = row["flex_pool_team_filter"]
 
                     // User-level filter: if set, userId must appear in the JSON array.
-                    if let uf = userFilter,
-                       let data = uf.data(using: .utf8),
-                       let ids = try? JSONDecoder().decode([Int64].self, from: data),
-                       !ids.contains(userId) {
+                    // Malformed non-empty filters fail closed so corrupt restriction
+                    // data cannot broaden flex-pool visibility.
+                    switch Self.decodeFlexPoolIdFilter(userFilter) {
+                    case .unrestricted:
+                        break
+                    case .invalid:
+                        Self.logger.warning(
+                            "Malformed flex_pool_user_filter for flex-pool job \(id, privacy: .public); failing closed"
+                        )
                         return nil
+                    case .restricted(let ids) where !ids.contains(userId):
+                        return nil
+                    case .restricted:
+                        break
                     }
 
                     // Fix #167: Team-level filter. If the job restricts to specific teams,
                     // the user must belong to at least one of them.
-                    if let tf = teamFilter, !tf.isEmpty,
-                       let data = tf.data(using: .utf8),
-                       let allowedTeams = try? JSONDecoder().decode([Int64].self, from: data),
-                       !allowedTeams.isEmpty {
-                        if userTeamIds.isDisjoint(with: Set(allowedTeams)) {
-                            return nil
-                        }
+                    // Malformed non-empty filters fail closed for the same reason as
+                    // user filters. An empty decoded array preserves the historical
+                    // "no team restriction" behavior used by existing rows.
+                    switch Self.decodeFlexPoolIdFilter(teamFilter) {
+                    case .unrestricted, .restricted([]):
+                        break
+                    case .invalid:
+                        Self.logger.warning(
+                            "Malformed flex_pool_team_filter for flex-pool job \(id, privacy: .public); failing closed"
+                        )
+                        return nil
+                    case .restricted(let allowedTeams) where userTeamIds.isDisjoint(with: Set(allowedTeams)):
+                        return nil
+                    case .restricted:
+                        break
                     }
 
                     return FlexPoolJob(
@@ -2674,6 +2694,25 @@ public final class SchedulingService: Sendable {
     // =========================================================================
     // MARK: - Internal Helpers
     // =========================================================================
+
+    private enum FlexPoolFilter: Sendable {
+        case unrestricted
+        case restricted([Int64])
+        case invalid
+    }
+
+    /// Decode a persisted flex-pool allow-list. NULL/blank means unrestricted;
+    /// malformed non-blank JSON is invalid and must fail closed at call sites.
+    private static func decodeFlexPoolIdFilter(_ rawValue: String?) -> FlexPoolFilter {
+        guard let value = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+            return .unrestricted
+        }
+        guard let data = value.data(using: .utf8),
+              let ids = try? JSONDecoder().decode([Int64].self, from: data) else {
+            return .invalid
+        }
+        return .restricted(ids)
+    }
 
     /// Normalize a user-entered schedule date without timezone conversion.
     /// Accepts only a trimmed yyyy-MM-dd calendar date string.

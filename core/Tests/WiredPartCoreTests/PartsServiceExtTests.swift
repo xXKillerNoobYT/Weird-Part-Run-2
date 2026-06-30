@@ -382,6 +382,39 @@ struct PartsServiceExtTests {
         #expect(pricing.weightedAvgCost >= 0)
     }
 
+    @Test("Company default markup rejects negative writes and clamps corrupt saved values")
+    func testCompanyDefaultMarkupRejectsNegativeAndClampsCorruptSavedValues() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "Default Markup Guard")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Default Markup Guard Part", categoryId: catId)
+
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE parts SET weighted_avg_cost = ?, updated_at = datetime('now') WHERE id = ?",
+                arguments: [100.0, partId]
+            )
+        }
+
+        #expect(throws: (any Error).self) {
+            try env.parts.updateCompanyCostSetting(key: "default_markup_percent", value: "-10")
+        }
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO company_cost_settings (setting_key, setting_value, updated_at)
+                VALUES ('default_markup_percent', '-75', datetime('now'))
+                ON CONFLICT(setting_key) DO UPDATE SET
+                    setting_value = excluded.setting_value,
+                    updated_at = excluded.updated_at
+                """)
+        }
+
+        let pricing = try env.parts.resolvePartPricing(partId: partId)
+        #expect(pricing.effectiveMarkup == 0)
+        #expect(pricing.sellPrice == 100)
+        #expect(pricing.sellPrice >= pricing.weightedAvgCost)
+    }
+
     @Test("Cost layer FIFO/LIFO")
     func testCostLayers() throws {
         let env = try E2ETestHelpers.setUp()

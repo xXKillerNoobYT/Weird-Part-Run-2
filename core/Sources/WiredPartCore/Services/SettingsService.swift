@@ -779,10 +779,10 @@ public final class SettingsService: Sendable {
     /// Add a new clock-out question. Returns the inserted row ID.
     @discardableResult
     public func addClockOutQuestion(text: String, type: String, isRequired: Bool, sortOrder: Int) throws -> Int64 {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !text.isBlankRequiredText else {
             throw SettingsError.requiredFieldEmpty("text")
         }
-        guard !type.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !type.isBlankRequiredText else {
             throw SettingsError.requiredFieldEmpty("type")
         }
         return try db.writer.write { dbConnection -> Int64 in
@@ -796,10 +796,10 @@ public final class SettingsService: Sendable {
 
     /// Update an existing clock-out question.
     public func updateClockOutQuestion(id: String, text: String, type: String, isRequired: Bool) throws {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !text.isBlankRequiredText else {
             throw SettingsError.requiredFieldEmpty("text")
         }
-        guard !type.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !type.isBlankRequiredText else {
             throw SettingsError.requiredFieldEmpty("type")
         }
         try db.writer.write { dbConnection in

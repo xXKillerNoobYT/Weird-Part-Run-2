@@ -112,6 +112,42 @@ struct JobEstimationServiceTests {
         #expect(response.isUnknown != 0)
     }
 
+    @Test("Malformed numeric responses are stored as unknown")
+    func testMalformedNumericResponseStoredAsUnknown() throws {
+        let (env, est) = try freshEnv()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let q = try est.createQuestion(text: "Rooms?", group: "scope", stage: "initial", answerType: "number")
+
+        let response = try est.submitResponse(
+            jobId: jobId,
+            questionId: q.id!,
+            stage: "initial",
+            value: "abc",
+            answeredBy: env.adminUserId
+        )
+
+        #expect(response.isUnknown == 1)
+        #expect(response.responseValue == nil)
+    }
+
+    @Test("Submit response requires manage_jobs permission")
+    func testSubmitResponseRequiresManageJobsPermission() throws {
+        let (env, est) = try freshEnv()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let q = try est.createQuestion(text: "Rooms?", group: "scope", stage: "initial", answerType: "number")
+        let unprivilegedUserId = try env.auth.createUser(displayName: "No Job Estimation Permission", pin: "2468")
+
+        #expect(throws: ServicePermissionGate.GateError.insufficientPermissions(required: "manage_jobs")) {
+            _ = try est.submitResponse(
+                jobId: jobId,
+                questionId: q.id!,
+                stage: "initial",
+                value: "5",
+                answeredBy: unprivilegedUserId
+            )
+        }
+    }
+
     @Test("Filter responses by stage")
     func testResponsesByStage() throws {
         let (env, est) = try freshEnv()
@@ -140,6 +176,33 @@ struct JobEstimationServiceTests {
         let result = try est.calculateEstimate(jobId: jobId, stage: "initial")
         #expect(result.stage == "initial")
         #expect((result.estimatedDays ?? 0) >= 0)
+    }
+
+    @Test("Invalid numeric answers do not produce negative estimates or inflated confidence")
+    func testInvalidNumericAnswersDoNotProduceNegativeEstimatesOrInflatedConfidence() throws {
+        let (env, est) = try freshEnv()
+        let negativeJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-NEG", name: "Negative Estimate Test")
+        let malformedJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-MAL", name: "Malformed Estimate Test")
+        let highJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-HIGH", name: "High Estimate Test")
+
+        let negativeQuestion = try est.createQuestion(text: "Negative rooms?", group: "scope", stage: "initial", answerType: "number")
+        _ = try est.submitResponse(jobId: negativeJobId, questionId: negativeQuestion.id!, stage: "initial", value: "-5", answeredBy: env.adminUserId)
+        let negativeResult = try est.calculateEstimate(jobId: negativeJobId, stage: "initial")
+        #expect((negativeResult.estimatedDays ?? -1) >= 0)
+        #expect((negativeResult.estimatedHours ?? -1) >= 0)
+
+        let malformedQuestion = try est.createQuestion(text: "Malformed rooms?", group: "scope", stage: "malformed", answerType: "number")
+        let validQuestion = try est.createQuestion(text: "Valid rooms?", group: "scope", stage: "malformed", answerType: "number")
+        _ = try est.submitResponse(jobId: malformedJobId, questionId: malformedQuestion.id!, stage: "malformed", value: "not-a-number", answeredBy: env.adminUserId)
+        _ = try est.submitResponse(jobId: malformedJobId, questionId: validQuestion.id!, stage: "malformed", value: "5", answeredBy: env.adminUserId)
+        let malformedResult = try est.calculateEstimate(jobId: malformedJobId, stage: "malformed")
+        #expect(malformedResult.confidencePercent == 50)
+
+        let highQuestion = try est.createQuestion(text: "Oversized scope?", group: "scope", stage: "high", answerType: "number")
+        _ = try est.submitResponse(jobId: highJobId, questionId: highQuestion.id!, stage: "high", value: "25", answeredBy: env.adminUserId)
+        let highResult = try est.calculateEstimate(jobId: highJobId, stage: "high")
+        #expect(highResult.estimatedDays == 50)
+        #expect(highResult.estimatedHours == 400)
     }
 
     @Test("Get latest result for job")

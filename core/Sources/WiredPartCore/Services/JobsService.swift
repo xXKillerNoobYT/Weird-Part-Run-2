@@ -52,6 +52,12 @@ public final class JobsService: Sendable {
         case stageInUse(Int64)
         case invalidStageTemplate(Int64)
         case invalidClockOutTime(laborEntryId: Int64)
+        case invalidClockTimestamp(laborEntryId: Int64, field: ClockTimestampField)
+    }
+
+    public enum ClockTimestampField: String, Sendable, Equatable {
+        case clockIn = "clock_in"
+        case clockOut = "clock_out"
     }
 
     // =========================================================================
@@ -835,8 +841,8 @@ public final class JobsService: Sendable {
         createdBy: Int64? = nil,
         jobClassification: String = "standard"
     ) throws -> Int64 {
-        guard !jobName.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
-        guard !jobNumber.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
+        guard !jobName.isBlankRequiredText else { throw JobsError.requiredFieldEmpty }
+        guard !jobNumber.isBlankRequiredText else { throw JobsError.requiredFieldEmpty }
         let notebooks = NotebooksService(db: db)
         return try db.writer.write { dbConn in
             try dbConn.execute(
@@ -941,10 +947,10 @@ public final class JobsService: Sendable {
         clearEstimatedHours: Bool = false,
         clearBudgetLimit: Bool = false
     ) throws {
-        if let jobName, jobName.trimmingCharacters(in: .whitespaces).isEmpty {
+        if let jobName, jobName.isBlankRequiredText {
             throw JobsError.requiredFieldEmpty
         }
-        if let status, status.trimmingCharacters(in: .whitespaces).isEmpty {
+        if let status, status.isBlankRequiredText {
             throw JobsError.requiredFieldEmpty
         }
         try db.writer.write { dbConn in
@@ -1370,6 +1376,8 @@ public final class JobsService: Sendable {
     ) throws -> Int64 {
         let clockInTimestamp = Self.sqliteTimestamp(clockInAt)
         return try db.writer.write { dbConn in
+            try Self.requireActiveUser(dbConn, userId: userId)
+
             let existing = try Int.fetchOne(
                 dbConn,
                 sql: """
@@ -1861,7 +1869,7 @@ public final class JobsService: Sendable {
 
     /// Set work type for a clock entry ("new_work" or "warranty").
     public func setClockEntryWorkType(clockEntryId: Int64, workType: String) throws {
-        guard !workType.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !workType.isBlankRequiredText else {
             throw JobsError.requiredFieldEmpty
         }
         try db.writer.write { dbConn in
@@ -1933,8 +1941,18 @@ public final class JobsService: Sendable {
                 let todoName: String? = row["todo_name"] as String?
                 let wType: String = row["work_type"] ?? "new_work"
 
-                let startDate = Self.parseSQLiteUTCDateTime(clockInStr) ?? Date()
-                let endDate: Date? = clockOutStr.flatMap { Self.parseSQLiteUTCDateTime($0) }
+                guard let startDate = Self.parseSQLiteUTCDateTime(clockInStr) else {
+                    throw JobsError.invalidClockTimestamp(laborEntryId: entryId, field: .clockIn)
+                }
+                let endDate: Date?
+                if let clockOutStr {
+                    guard let parsedEndDate = Self.parseSQLiteUTCDateTime(clockOutStr) else {
+                        throw JobsError.invalidClockTimestamp(laborEntryId: entryId, field: .clockOut)
+                    }
+                    endDate = parsedEndDate
+                } else {
+                    endDate = nil
+                }
 
                 let summary = ClockEntrySummary(
                     id: entryId,
@@ -2046,7 +2064,7 @@ public final class JobsService: Sendable {
             ).map { (row: Row) -> Int64 in row["id"] as Int64 }
             let answeredSet = Set(
                 responses
-                    .filter { !$0.answer.trimmingCharacters(in: .whitespaces).isEmpty }
+                    .filter { !$0.answer.isBlankRequiredText }
                     .map { $0.questionId }
             )
             for reqId in requiredIds {
@@ -2153,7 +2171,7 @@ public final class JobsService: Sendable {
         createdBy: Int64,
         targetUserId: Int64? = nil
     ) throws -> Int64 {
-        guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
+        guard !text.isBlankRequiredText else { throw JobsError.requiredFieldEmpty }
         return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
@@ -2173,7 +2191,7 @@ public final class JobsService: Sendable {
         answerText: String,
         answeredBy: Int64
     ) throws {
-        guard !answerText.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
+        guard !answerText.isBlankRequiredText else { throw JobsError.requiredFieldEmpty }
         try db.writer.write { dbConn in
             let count = try Int.fetchOne(
                 dbConn,
@@ -3386,6 +3404,8 @@ public final class JobsService: Sendable {
         gpsLat: Double?,
         gpsLng: Double?
     ) throws -> Int64 {
+        try requireActiveUser(dbConn, userId: userId)
+
         guard let jobRow = try Row.fetchOne(
             dbConn,
             sql: "SELECT status FROM jobs WHERE id = ? AND deleted_at IS NULL",
@@ -3614,7 +3634,13 @@ public final class JobsService: Sendable {
         try db.writer.write { conn in
             guard let row = try Row.fetchOne(
                 conn,
-                sql: "SELECT notes FROM labor_entries WHERE id = ? AND deleted_at IS NULL",
+                sql: """
+                    SELECT notes FROM labor_entries
+                    WHERE id = ?
+                      AND status = 'clocked_in'
+                      AND clock_out IS NULL
+                      AND deleted_at IS NULL
+                    """,
                 arguments: [laborEntryId]
             ) else { return "working" }
 
@@ -3632,7 +3658,14 @@ public final class JobsService: Sendable {
             }
 
             try conn.execute(
-                sql: "UPDATE labor_entries SET notes = ? WHERE id = ? AND deleted_at IS NULL",
+                sql: """
+                    UPDATE labor_entries
+                    SET notes = ?
+                    WHERE id = ?
+                      AND status = 'clocked_in'
+                      AND clock_out IS NULL
+                      AND deleted_at IS NULL
+                    """,
                 arguments: [note, laborEntryId]
             )
 

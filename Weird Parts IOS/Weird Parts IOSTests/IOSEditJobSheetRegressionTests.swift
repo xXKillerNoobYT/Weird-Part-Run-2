@@ -38,6 +38,24 @@ final class IOSEditJobSheetRegressionTests: XCTestCase {
         )
     }
 
+    func testMalformedEditableNumericFieldsShowValidationBeforeSaving() throws {
+        let source = try Self.readEditJobSheetSource()
+
+        XCTAssertTrue(
+            source.contains("guard validateNumericFields() else { return }")
+                && source.contains("private func validateNumericFields() -> Bool")
+                && source.contains("numericValidationMessage(for: estimatedHours, label: \"Estimated Hours\")")
+                && source.contains("numericValidationMessage(for: budgetLimit, label: \"Budget Limit\")"),
+            "Edit job sheet should validate estimated hours and budget limit before updateJob so malformed text cannot be silently ignored."
+        )
+        XCTAssertTrue(
+            source.contains("guard Double(trimmed) != nil else")
+                && source.contains("must be a plain number, like 8 or 8.5")
+                && source.contains("Clear the field to remove it."),
+            "Malformed numeric input should show a clear error while still allowing users to clear an optional value."
+        )
+    }
+
     private static func readEditJobSheetSource(file: StaticString = #filePath) throws -> String {
         let testFileURL = URL(fileURLWithPath: "\(file)")
         let projectRoot = testFileURL

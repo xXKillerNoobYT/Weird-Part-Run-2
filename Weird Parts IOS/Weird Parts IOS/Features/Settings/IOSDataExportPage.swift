@@ -1,5 +1,29 @@
 import SwiftUI
 import WiredPartCore
+import GRDB
+
+enum IOSDatabaseExportSnapshotter {
+    nonisolated static func exportSQLiteSnapshot(from source: any DatabaseWriter, to destURL: URL) throws {
+        for url in [destURL, URL(fileURLWithPath: destURL.path + "-wal"), URL(fileURLWithPath: destURL.path + "-shm")] {
+            if FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.removeItem(at: url)
+            }
+        }
+
+        let destination = try DatabaseQueue(path: destURL.path)
+        try source.backup(to: destination)
+    }
+
+    nonisolated static func userFriendlyExportError(raw: String) -> String {
+        if raw.contains("database is locked") {
+            return "The database is busy. Please try again in a moment."
+        }
+        if raw.contains("disk I/O error") || raw.contains("disk full") {
+            return "Storage problem. Check your device has enough space."
+        }
+        return "Couldn't export data. Pull down to retry."
+    }
+}
 
 /// Data export page for iOS.
 ///
@@ -280,8 +304,8 @@ struct IOSDataExportPage: View {
         isExporting = true
         errorMessage = nil
 
-        guard let dbPath = try? AppCore.databasePath() else {
-            errorMessage = "Cannot locate database."
+        guard let database = appCore.db else {
+            errorMessage = "Database is not available."
             isExporting = false
             return
         }
@@ -292,16 +316,22 @@ struct IOSDataExportPage: View {
         let dateStr = formatter.string(from: Date())
         let destURL = tmpDir.appendingPathComponent("wiredpart-full-\(dateStr).sqlite")
 
-        do {
-            // Remove previous temp if exists
-            try? FileManager.default.removeItem(at: destURL)
-            try FileManager.default.copyItem(at: URL(fileURLWithPath: dbPath), to: destURL)
-            exportURLs = [destURL]
-            exportSuccess = true
-            showShareSheet = true
-        } catch {
-            errorMessage = userFriendlyError(error, context: "export data")
+        Task.detached(priority: .userInitiated) {
+            do {
+                try IOSDatabaseExportSnapshotter.exportSQLiteSnapshot(from: database.writer, to: destURL)
+                await MainActor.run {
+                    exportURLs = [destURL]
+                    exportSuccess = true
+                    showShareSheet = true
+                    isExporting = false
+                }
+            } catch {
+                let message = IOSDatabaseExportSnapshotter.userFriendlyExportError(raw: error.localizedDescription)
+                await MainActor.run {
+                    errorMessage = message
+                    isExporting = false
+                }
+            }
         }
-        isExporting = false
     }
 }

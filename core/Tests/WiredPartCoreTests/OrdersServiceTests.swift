@@ -301,6 +301,61 @@ struct OrdersServiceTests {
         }
     }
 
+    @Test("Grouped supplier send validates all selected POs before mutating any")
+    func testMarkPOsSentToSupplierIsAtomicWhenSelectedPOBecomesInvalid() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+        let firstPOId = try env.orders.createPurchaseOrder(
+            poNumber: "PO-GROUP-VALID",
+            supplierId: supplierId,
+            notes: nil
+        )
+        let invalidPOId = try env.orders.createPurchaseOrder(
+            poNumber: "PO-GROUP-CANCELLED",
+            supplierId: supplierId,
+            notes: nil
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE purchase_orders SET status = 'cancelled' WHERE id = ?",
+                arguments: [invalidPOId]
+            )
+        }
+
+        #expect(throws: OrdersService.OrdersError.invalidSupplierTransmission(
+            "Cannot send supplier order for every selected PO: PO-GROUP-CANCELLED is in cancelled status"
+        )) {
+            try env.orders.markPOsSentToSupplier(
+                ids: [firstPOId, invalidPOId],
+                sentByUserId: env.adminUserId,
+                confirmationNumber: "SHOULD-NOT-WRITE",
+                emailRequestType: "order",
+                sendGroupId: "group-atomic"
+            )
+        }
+
+        let firstDetail = try env.orders.getPODetail(id: firstPOId)
+        let invalidDetail = try env.orders.getPODetail(id: invalidPOId)
+        #expect(firstDetail.status == "draft")
+        #expect(firstDetail.sentToSupplierAt == nil)
+        #expect(firstDetail.sentByUserId == nil)
+        #expect(firstDetail.supplierConfirmationNum == nil)
+        #expect(firstDetail.sendGroupId == nil)
+        #expect(invalidDetail.status == "cancelled")
+        #expect(invalidDetail.sentToSupplierAt == nil)
+        #expect(invalidDetail.sendGroupId == nil)
+
+        let historyCount = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM order_status_history
+                WHERE entity_type = 'purchase_order'
+                  AND entity_id IN (?, ?)
+                """, arguments: [firstPOId, invalidPOId]) ?? 0
+        }
+        #expect(historyCount == 0)
+    }
+
     @Test("Update PO status supports cancellation from active states")
     func testUpdatePOStatusCancellation() throws {
         let env = try E2ETestHelpers.setUp()

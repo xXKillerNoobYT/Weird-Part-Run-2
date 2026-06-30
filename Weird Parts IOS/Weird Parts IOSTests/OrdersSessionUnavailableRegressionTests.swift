@@ -123,6 +123,75 @@ final class OrdersSessionUnavailableRegressionTests: XCTestCase {
         )
     }
 
+    func testGroupedPOSendToggleOffCannotConfirmSiblingPOs() throws {
+        let sendSheetSource = try Self.readOrdersSource(named: "POSendToSupplierSheet.swift")
+
+        XCTAssertTrue(
+            sendSheetSource.contains("guard groupEnabled else { return [po.id] }"),
+            "When grouped sending is off, confirmSent must only mark the primary PO sent even if stale sibling selections exist."
+        )
+        guard let clearStateStart = sendSheetSource.range(of: "private func clearSiblingPOState() {") else {
+            XCTFail("Grouped send state reset helper should exist.")
+            return
+        }
+        guard let clearStateEnd = sendSheetSource[clearStateStart.upperBound...].range(of: "    }") else {
+            XCTFail("Grouped send state reset helper should have a closing brace.")
+            return
+        }
+        let clearStateHelper = String(sendSheetSource[clearStateStart.lowerBound..<clearStateEnd.upperBound])
+        XCTAssertTrue(
+            clearStateHelper.contains("siblingPOs = []") &&
+            clearStateHelper.contains("includedSiblingIds = []") &&
+            clearStateHelper.contains("siblingPDFs = [:]") &&
+            clearStateHelper.contains("siblingPOsError = nil") &&
+            clearStateHelper.contains("siblingPOsLoading = false"),
+            "Turning grouped sending off should clear stale sibling rows, selections, generated PDFs, errors, and loading state."
+        )
+        XCTAssertTrue(
+            sendSheetSource.contains("clearSiblingPOState()\n                if on {\n                    fetchSiblingPOs()"),
+            "Turning grouped sending back on should clear stale sibling rows before the fresh sibling fetch completes."
+        )
+        XCTAssertTrue(
+            sendSheetSource.components(separatedBy: "guard groupEnabled else { return }").count >= 3,
+            "A stale sibling fetch completing after grouped sending is disabled must not repopulate sibling selections or surface stale errors."
+        )
+        XCTAssertTrue(
+            sendSheetSource.contains("private var includedSiblingPOs: [OrdersService.POListItem]") &&
+            sendSheetSource.contains("guard groupEnabled else { return [] }"),
+            "Email body, attachment, and share-sheet paths should use group-aware sibling inclusion instead of raw stale selected ids."
+        )
+        XCTAssertFalse(
+            sendSheetSource.contains("primary always included\n        [po.id] + Array(includedSiblingIds)"),
+            "includedPOs must not blindly append stale sibling ids after grouped sending has been disabled."
+        )
+        XCTAssertFalse(
+            sendSheetSource.contains("siblingPOs where includedSiblingIds.contains"),
+            "Attachment/PDF generation should use the group-aware includedSiblingPOs helper."
+        )
+    }
+
+    func testMailComposerOnlyRevealsConfirmSentAfterSentResult() throws {
+        let sendSheetSource = try Self.readOrdersSource(named: "POSendToSupplierSheet.swift")
+
+        XCTAssertFalse(
+            sendSheetSource.contains(") { _ in\n                showMailComposer = false\n                withAnimation { showConfirmSent = true }"),
+            "Mail composer completion must not ignore MFMailComposeResult and reveal Confirm Sent for cancelled/saved/failed dismissals."
+        )
+        XCTAssertTrue(
+            sendSheetSource.contains(") { result in\n                handleMailComposerFinished(result)"),
+            "The mail composer callback should route the actual result into a focused handler."
+        )
+        XCTAssertTrue(
+            sendSheetSource.contains("private func handleMailComposerFinished(_ result: MFMailComposeResult)") &&
+            sendSheetSource.contains("case .sent:\n            withAnimation { showConfirmSent = true }") &&
+            sendSheetSource.contains("case .cancelled, .saved:\n            break") &&
+            sendSheetSource.contains("case .failed:\n            mailError =") &&
+            sendSheetSource.contains(".alert(\"Mail Error\"") &&
+            sendSheetSource.contains("get: { mailError != nil }, set: { if !$0 { mailError = nil } }"),
+            "Only .sent should reveal Confirm Sent; cancelled/saved should not, and failed sends should surface an error."
+        )
+    }
+
     private static func readOrdersSource(named filename: String, file: StaticString = #filePath) throws -> String {
         let testFileURL = URL(fileURLWithPath: "\(file)")
         let projectRoot = testFileURL

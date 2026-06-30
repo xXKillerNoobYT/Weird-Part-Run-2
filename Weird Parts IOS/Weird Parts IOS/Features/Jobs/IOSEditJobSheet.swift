@@ -186,12 +186,13 @@ struct IOSEditJobSheet: View {
             errorMessage = "Service not available"
             return
         }
+        guard validateNumericFields() else { return }
+        errorMessage = nil
         if selectedStageTemplateId != job.stageTemplateId && !applyTemplateChange {
             showingTemplateChangeConfirmation = true
             return
         }
         isSaving = true
-        errorMessage = nil
 
         do {
             try service.updateJob(
@@ -244,5 +245,26 @@ struct IOSEditJobSheet: View {
 
     private func shouldClearDouble(_ value: String, original: Double?) -> Bool {
         value.trimmingCharacters(in: .whitespaces).isEmpty && original != nil
+    }
+
+    private func validateNumericFields() -> Bool {
+        if let message = numericValidationMessage(for: estimatedHours, label: "Estimated Hours") {
+            errorMessage = message
+            return false
+        }
+        if let message = numericValidationMessage(for: budgetLimit, label: "Budget Limit") {
+            errorMessage = message
+            return false
+        }
+        return true
+    }
+
+    private func numericValidationMessage(for value: String, label: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+        guard Double(trimmed) != nil else {
+            return "\(label) must be a plain number, like 8 or 8.5. Clear the field to remove it."
+        }
+        return nil
     }
 }

@@ -1082,7 +1082,12 @@ private struct IOSJobReturnSortingPage: View {
 
             let holdingItems = try warehouseService.getJobReturnHoldingItems(jobId: job.id, includeRouted: false)
                 .filter { $0.intakeId == intakeId }
-            try applyImmediateRoutes(holdingItems: holdingItems, userId: userId, jobId: job.id)
+            try applyImmediateRoutes(
+                holdingItems: holdingItems,
+                warehouseService: warehouseService,
+                userId: userId,
+                jobId: job.id
+            )
 
             await MainActor.run {
                 completionMessage = completionSummary()
@@ -1109,13 +1114,21 @@ private struct IOSJobReturnSortingPage: View {
 
     private func applyImmediateRoutes(
         holdingItems: [WarehouseService.JobReturnHoldingItem],
+        warehouseService: WarehouseService,
         userId: Int64,
         jobId: Int64
     ) throws {
-        guard let warehouseService = appCore.warehouseService else { return }
-        var remainingItems = holdingItems
+        // Holding items are fetched newest-first, but createJobReturnIntake inserts
+        // items in draft-line order. Route oldest-first so duplicate same-part
+        // lines stay paired with the line the user sorted.
+        var remainingItems = holdingItems.sorted { $0.id < $1.id }
         for line in lines where line.qty > 0 {
-            guard let itemIndex = remainingItems.firstIndex(where: { $0.partId == line.partId }) else { continue }
+            guard let itemIndex = remainingItems.firstIndex(where: { item in
+                item.partId == line.partId
+                    && item.condition == conditionForSubmit(line)
+                    && item.status == expectedInitialStatus(for: line)
+                    && normalizedOptionalText(item.notes) == normalizedOptionalText(line.notes)
+            }) else { continue }
             let item = remainingItems.remove(at: itemIndex)
             switch line.sortAction {
             case .shelf:
@@ -1145,6 +1158,22 @@ private struct IOSJobReturnSortingPage: View {
                 break
             }
         }
+    }
+
+    private func expectedInitialStatus(for line: JobReturnDraftLine) -> String {
+        switch conditionForSubmit(line) {
+        case "damaged":
+            "damaged_review"
+        case "wrong_part":
+            "wrong_part_review"
+        default:
+            "holding"
+        }
+    }
+
+    private func normalizedOptionalText(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func completionSummary() -> String {

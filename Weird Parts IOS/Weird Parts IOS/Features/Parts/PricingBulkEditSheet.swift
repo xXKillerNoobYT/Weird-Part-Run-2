@@ -346,8 +346,12 @@ struct PricingBulkEditSheet: View {
     // MARK: - Logic
 
     private var hasValidInput: Bool {
-        if pricingMode == "markup" { return Double(markupText) != nil }
-        return Double(marginText) != nil
+        if pricingMode == "markup" { return Self.isValidNonNegativePercent(markupText) }
+        return Self.isValidNonNegativePercent(marginText)
+    }
+
+    static func isValidNonNegativePercent(_ text: String) -> Bool {
+        nonNegativePercent(text) != nil
     }
 
     private func loadPreview() async {
@@ -357,8 +361,8 @@ struct PricingBulkEditSheet: View {
         }
         saveError = nil
         do {
-            let markup = pricingMode == "markup" ? Double(markupText) : nil
-            let margin = pricingMode == "margin" ? Double(marginText) : nil
+            let markup = pricingMode == "markup" ? Self.nonNegativePercent(markupText) : nil
+            let margin = pricingMode == "margin" ? Self.nonNegativePercent(marginText) : nil
 
             previewParts = try service.getPreviewParts(
                 categoryId: scope == .category ? categoryId : nil,
@@ -380,22 +384,27 @@ struct PricingBulkEditSheet: View {
                 isSaving = false
                 return
             }
+            guard let userId = appCore.currentUser?.id else {
+                saveError = "Please sign in before changing pricing."
+                isSaving = false
+                return
+            }
 
-            let markup = pricingMode == "markup" ? Double(markupText) : nil
-            let margin = pricingMode == "margin" ? Double(marginText) : nil
+            let markup = pricingMode == "markup" ? Self.nonNegativePercent(markupText) : nil
+            let margin = pricingMode == "margin" ? Self.nonNegativePercent(marginText) : nil
 
             // Set tier at the appropriate level
             if scope == .category, let catId = categoryId {
-                _ = try service.setPricingTier(categoryId: catId, markupPercent: markup, marginPercent: margin)
+                _ = try service.setPricingTier(categoryId: catId, markupPercent: markup, marginPercent: margin, setBy: userId)
             } else {
                 // "All" scope — update default markup in company settings
                 if let m = markup {
-                    try service.updateCompanyCostSetting(key: "default_markup_percent", value: String(format: "%.5f", m))
+                    try service.updateCompanyCostSetting(key: "default_markup_percent", value: String(format: "%.5f", m), updatedBy: userId)
                 }
                 if let m = margin {
                     // Convert margin to markup for default setting
                     let convertedMarkup = m < 100 ? (m / (100 - m)) * 100 : 100
-                    try service.updateCompanyCostSetting(key: "default_markup_percent", value: String(format: "%.5f", convertedMarkup))
+                    try service.updateCompanyCostSetting(key: "default_markup_percent", value: String(format: "%.5f", convertedMarkup), updatedBy: userId)
                 }
             }
 
@@ -404,5 +413,14 @@ struct PricingBulkEditSheet: View {
             saveError = userFriendlyError(error, context: "save data")
         }
         isSaving = false
+    }
+
+    private static func nonNegativePercent(_ text: String) -> Double? {
+        guard let value = Double(text.trimmingCharacters(in: .whitespacesAndNewlines)),
+              value.isFinite,
+              value >= 0 else {
+            return nil
+        }
+        return value
     }
 }
