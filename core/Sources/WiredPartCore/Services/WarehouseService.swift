@@ -33,6 +33,7 @@ public final class WarehouseService: Sendable {
         case jobNotFound(Int64)
         case userNotFound(Int64)
         case areaNotFound(Int64)
+        case binNotFound(Int64)
         case unitNotFound(Int64)
         case levelNotFound(Int64)
         case sessionItemNotFound(Int64)
@@ -854,6 +855,7 @@ public final class WarehouseService: Sendable {
         validatePath: Bool = true
     ) throws -> Int64 {
         try db.writer.read { dbConn in
+            try Self.requireActiveUser(performedBy, dbConn: dbConn)
             try ServicePermissionGate.requirePermission(dbConn, userId: performedBy, permissionKey: "move_stock_warehouse")
         }
 
@@ -861,7 +863,7 @@ public final class WarehouseService: Sendable {
         // which of fromLocationType/toLocationType is non-nil, not by sign. A
         // negative qty inverts the stock delta: `qty = qty - (-3)` = qty + 3.
         guard qty > 0 else { throw WarehouseError.invalidQuantity }
-        guard !movementType.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !movementType.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
         try Self.validateLocationEndpointCompleteness(locationType: fromLocationType, locationId: fromLocationId)
@@ -876,7 +878,7 @@ public final class WarehouseService: Sendable {
 
             // Guard: performing user must exist and not be tombstoned.
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [performedBy]) ?? 0) > 0
             guard userExists else { throw WarehouseError.userNotFound(performedBy) }
 
@@ -1133,7 +1135,7 @@ public final class WarehouseService: Sendable {
         guard !movements.isEmpty else { return [] }
         for m in movements {
             guard m.qty > 0 else { throw WarehouseError.invalidQuantity }
-            guard !m.movementType.trimmingCharacters(in: .whitespaces).isEmpty else {
+            guard !m.movementType.isBlankRequiredText else {
                 throw WarehouseError.requiredFieldEmpty
             }
             try Self.validateLocationEndpointCompleteness(locationType: m.fromLocationType, locationId: m.fromLocationId)
@@ -1141,7 +1143,7 @@ public final class WarehouseService: Sendable {
         }
         return try db.writer.write { dbConn in
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [performedBy]) ?? 0) > 0
             guard userExists else { throw WarehouseError.userNotFound(performedBy) }
 
@@ -1497,7 +1499,7 @@ public final class WarehouseService: Sendable {
             // we retain the existing permissive behavior for stockId (tags may
             // outlive their stock row). Only the user-FK is guarded.
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [taggedBy]) ?? 0) > 0
             guard userExists else { throw WarehouseError.userNotFound(taggedBy) }
 
@@ -1655,7 +1657,7 @@ public final class WarehouseService: Sendable {
             // Guard: session-starter must not be tombstoned
             guard let _ = try Row.fetchOne(
                 dbConn,
-                sql: "SELECT id FROM users WHERE id = ? AND deleted_at IS NULL",
+                sql: "SELECT id FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1",
                 arguments: [startedBy]
             ) else {
                 throw WarehouseError.userNotFound(startedBy)
@@ -1880,7 +1882,7 @@ public final class WarehouseService: Sendable {
             // Guard: completing user must not be tombstoned (stock movements will reference them)
             guard let _ = try Row.fetchOne(
                 dbConn,
-                sql: "SELECT id FROM users WHERE id = ? AND deleted_at IS NULL",
+                sql: "SELECT id FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1",
                 arguments: [completedBy]
             ) else {
                 throw WarehouseError.userNotFound(completedBy)
@@ -2275,6 +2277,9 @@ public final class WarehouseService: Sendable {
             guard let item = try Self.fetchJobReturnHoldingItem(id: intakeItemId, dbConn: dbConn) else {
                 throw WarehouseError.jobReturnItemNotFound(intakeItemId)
             }
+            guard item.status == "holding" else {
+                throw WarehouseError.invalidMovementPath(from: "job_return_\(item.status)", to: "warehouse")
+            }
             guard item.qtyRemaining >= qty else {
                 throw WarehouseError.insufficientStock(available: item.qtyRemaining, requested: qty)
             }
@@ -2650,7 +2655,7 @@ public final class WarehouseService: Sendable {
             try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "perform_audit")
         }
 
-        guard !scope.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !scope.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
@@ -2658,7 +2663,7 @@ public final class WarehouseService: Sendable {
             // pre-check, an orphan audit session with an unresolvable `started_by`
             // would appear in listAuditSessions' display joins as "Unknown" user.
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [userId]) ?? 0) > 0
             guard userExists else { throw WarehouseError.userNotFound(userId) }
 
@@ -2700,7 +2705,7 @@ public final class WarehouseService: Sendable {
         try db.writer.write { dbConn in
             if let uid = performedBy {
                 let userExists = (try Int.fetchOne(dbConn, sql: """
-                    SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                    SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                     """, arguments: [uid]) ?? 0) > 0
                 guard userExists else { throw WarehouseError.userNotFound(uid) }
                 try ServicePermissionGate.requirePermission(dbConn, userId: uid, permissionKey: "perform_audit")
@@ -2860,8 +2865,8 @@ public final class WarehouseService: Sendable {
         status: String = "active",
         notes: String? = nil
     ) throws -> Int64 {
-        guard !name.trimmingCharacters(in: .whitespaces).isEmpty,
-              !trailerCode.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !name.isBlankRequiredText,
+              !trailerCode.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
@@ -2929,7 +2934,7 @@ public final class WarehouseService: Sendable {
 
             // Guard: recording user must exist and not be tombstoned.
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [recordedBy]) ?? 0) > 0
             guard userExists else { throw WarehouseError.userNotFound(recordedBy) }
 
@@ -3046,17 +3051,10 @@ public final class WarehouseService: Sendable {
             let jobNumber = (jobRow["job_number"] as String?) ?? "\(jobId)"
             let jobName = (jobRow["job_name"] as String?) ?? ""
 
-            // Count existing boxes for this job to determine sequence
-            let existingCount = try Int.fetchOne(
-                dbConn,
-                sql: """
-                    SELECT COUNT(*) FROM staging_boxes
-                    WHERE job_id = ? AND deleted_at IS NULL
-                    """,
-                arguments: [jobId]
-            ) ?? 0
-
-            let seq = existingCount + 1
+            // Generate a monotonic per-job sequence from all historical boxes,
+            // including soft-deleted rows. Physical box labels must never be
+            // reused just because an old row was tombstoned.
+            let seq = try nextStagingBoxSequence(dbConn: dbConn, jobId: jobId, jobNumber: jobNumber)
             let seqStr = String(format: "%02d", seq)
             let boxNumber = "\(jobNumber)-\(seqStr)"
 
@@ -3186,14 +3184,10 @@ public final class WarehouseService: Sendable {
                 arguments: [boxId]
             )
 
-            // Create next box (inlined for atomicity — no nested db.writer.write)
-            let existingCount = try Int.fetchOne(
-                dbConn,
-                sql: "SELECT COUNT(*) FROM staging_boxes WHERE job_id = ? AND deleted_at IS NULL",
-                arguments: [jobId]
-            ) ?? 0
-
-            let seq = existingCount + 1
+            // Create next box (inlined for atomicity — no nested db.writer.write).
+            // Use all historical rows so soft-deleted physical box numbers are
+            // not reused.
+            let seq = try nextStagingBoxSequence(dbConn: dbConn, jobId: jobId, jobNumber: jobNumber)
             let seqStr = String(format: "%02d", seq)
             let boxNumber = "\(jobNumber)-\(seqStr)"
             let shortName = buildShortLabel(jobName: jobName)
@@ -3473,6 +3467,24 @@ public final class WarehouseService: Sendable {
             label = candidate
         }
         return label.uppercased()
+    }
+
+    /// Return the next staging-box sequence for a job from every historical
+    /// box number, including soft-deleted rows.
+    private func nextStagingBoxSequence(dbConn: Database, jobId: Int64, jobNumber: String) throws -> Int {
+        let prefix = "\(jobNumber)-"
+        let suffixStart = prefix.count + 1 // SQLite SUBSTR is 1-indexed.
+        let highestSequence = try Int.fetchOne(
+            dbConn,
+            sql: """
+                SELECT MAX(CAST(SUBSTR(box_number, ?) AS INTEGER))
+                FROM staging_boxes
+                WHERE job_id = ? AND SUBSTR(box_number, 1, ?) = ?
+                """,
+            arguments: [suffixStart, jobId, prefix.count, prefix]
+        ) ?? 0
+
+        return highestSequence + 1
     }
 
     // =========================================================================
@@ -3813,7 +3825,7 @@ public final class WarehouseService: Sendable {
 
     private static func requireActiveUser(_ userId: Int64, dbConn: Database) throws {
         let exists = (try Int.fetchOne(dbConn, sql: """
-            SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+            SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
             """, arguments: [userId]) ?? 0) > 0
         guard exists else { throw WarehouseError.userNotFound(userId) }
     }
@@ -4210,7 +4222,7 @@ public final class WarehouseService: Sendable {
 
     /// Create a new warehouse floor plan.
     public func createFloorPlan(name: String, widthInches: Int, lengthInches: Int) throws -> WarehouseFloorPlan {
-        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !name.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
         guard widthInches > 0, lengthInches > 0 else {
@@ -4279,10 +4291,18 @@ public final class WarehouseService: Sendable {
         floorPlanId: Int64, featureType: String, label: String?,
         gridX: Int, gridY: Int, gridWidth: Int = 1, gridHeight: Int = 1, rotation: Int = 0
     ) throws -> WarehouseFloorFeature {
-        guard !featureType.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !featureType.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
+            let floorPlan = try WarehouseFloorPlan.fetchOne(dbConn, key: floorPlanId)
+            try validateFloorPlanGridPlacement(
+                floorPlan: floorPlan,
+                gridX: gridX,
+                gridY: gridY,
+                gridWidth: gridWidth,
+                gridHeight: gridHeight
+            )
             var feature = WarehouseFloorFeature(
                 floorPlanId: floorPlanId,
                 featureType: featureType,
@@ -4325,7 +4345,7 @@ public final class WarehouseService: Sendable {
         gridX: Int = 0, gridY: Int = 0, gridWidth: Int = 4, gridHeight: Int = 4,
         rotation: Int = 0, zoneOrder: Int = 0
     ) throws -> WarehouseZone {
-        guard !zoneType.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !zoneType.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
         guard gridX >= 0, gridY >= 0, gridWidth > 0, gridHeight > 0 else {
@@ -4420,13 +4440,13 @@ public final class WarehouseService: Sendable {
         gridHeight: Int,
         dbConn: Database
     ) throws {
-        guard gridX >= 0, gridY >= 0, gridWidth > 0, gridHeight > 0 else {
-            throw WarehouseError.invalidDimension
-        }
-        if let cols = floorPlan?.gridCols, let rows = floorPlan?.gridRows,
-           gridX + gridWidth > cols || gridY + gridHeight > rows {
-            throw WarehouseError.invalidDimension
-        }
+        try validateFloorPlanGridPlacement(
+            floorPlan: floorPlan,
+            gridX: gridX,
+            gridY: gridY,
+            gridWidth: gridWidth,
+            gridHeight: gridHeight
+        )
 
         let existingZones = try WarehouseZone
             .filter(Column("floor_plan_id") == floorPlanId && Column("deleted_at") == nil)
@@ -4445,6 +4465,22 @@ public final class WarehouseService: Sendable {
             )
         }
         if collides {
+            throw WarehouseError.invalidDimension
+        }
+    }
+
+    private func validateFloorPlanGridPlacement(
+        floorPlan: WarehouseFloorPlan?,
+        gridX: Int,
+        gridY: Int,
+        gridWidth: Int,
+        gridHeight: Int
+    ) throws {
+        guard gridX >= 0, gridY >= 0, gridWidth > 0, gridHeight > 0 else {
+            throw WarehouseError.invalidDimension
+        }
+        if let cols = floorPlan?.gridCols, let rows = floorPlan?.gridRows,
+           gridX + gridWidth > cols || gridY + gridHeight > rows {
             throw WarehouseError.invalidDimension
         }
     }
@@ -4516,7 +4552,7 @@ public final class WarehouseService: Sendable {
             guard floorPlanExists else { throw WarehouseError.invalidDimension }
 
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [userId]) ?? 0) > 0
             guard userExists else { throw WarehouseError.userNotFound(userId) }
 
@@ -4808,7 +4844,7 @@ public final class WarehouseService: Sendable {
         rotation: Int = 0, frontFace: String? = "south",
         isMovable: Bool = false, isJobReady: Bool = false
     ) throws -> WarehouseStorageUnit {
-        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !name.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
@@ -4855,6 +4891,10 @@ public final class WarehouseService: Sendable {
         rotation: Int? = nil, frontFace: String? = nil,
         isConfigured: Bool? = nil, zoneId: Int64? = nil
     ) throws {
+        if let name, name.isBlankRequiredText {
+            throw WarehouseError.requiredFieldEmpty
+        }
+
         try db.writer.write { dbConn in
             guard var unit = try WarehouseStorageUnit.fetchOne(dbConn, key: id),
                   unit.deletedAt == nil else { return }
@@ -4886,6 +4926,10 @@ public final class WarehouseService: Sendable {
         levels: Int,
         areasPerLevel: Int
     ) throws -> WarehouseStorageUnit {
+        guard levels > 0, areasPerLevel > 0 else {
+            throw WarehouseError.invalidDimension
+        }
+
         let existingUnits = try listStorageUnits(floorPlanId: floorPlanId)
         let unitIndex = existingUnits.count + 1
         let rowNumber = String(format: "R%02d", 1)
@@ -4942,7 +4986,7 @@ public final class WarehouseService: Sendable {
         unitId: Int64, levelCode: String, levelName: String? = nil,
         order: Int = 0, heightInches: Int? = nil, areaCount: Int = 1
     ) throws -> WarehouseStorageLevel {
-        guard !levelCode.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !levelCode.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
@@ -5187,12 +5231,25 @@ public final class WarehouseService: Sendable {
 
     /// Move multiple bins to a target area in a single transaction (Cart Mode multi-bin transfer).
     ///
-    /// Updates `area_id` for each bin in `binIds`. Bins not found in the database are silently
-    /// skipped so partial-cart moves don't abort on a stale ID.
+    /// Validates the target area and every selected bin before moving so stale
+    /// cart-mode selections cannot partially move bins or point active bins at
+    /// soft-deleted storage areas.
     public func moveBinsToArea(binIds: [Int64], targetAreaId: Int64) throws {
         guard !binIds.isEmpty else { return }
         try db.writer.write { dbConn in
+            let areaExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM warehouse_storage_areas WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [targetAreaId]) ?? 0) > 0
+            guard areaExists else { throw WarehouseError.areaNotFound(targetAreaId) }
+
             for binId in binIds {
+                let binExists = (try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM warehouse_bins WHERE id = ? AND deleted_at IS NULL
+                    """, arguments: [binId]) ?? 0) > 0
+                guard binExists else { throw WarehouseError.binNotFound(binId) }
+            }
+
+            for binId in Set(binIds) {
                 try dbConn.execute(
                     sql: "UPDATE warehouse_bins SET area_id = ? WHERE id = ? AND deleted_at IS NULL",
                     arguments: [targetAreaId, binId]
@@ -5733,13 +5790,14 @@ public final class WarehouseService: Sendable {
     ) throws -> AuditCount {
         guard userCount >= 0 else { throw WarehouseError.invalidQuantity }
         guard systemCount >= 0 else { throw WarehouseError.invalidQuantity }
+        guard unitCostDollars.isFinite && unitCostDollars >= 0 else { throw WarehouseError.invalidQuantity }
         return try db.writer.write { dbConn in
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [countedBy]) ?? 0) > 0
             guard userExists else { throw WarehouseError.userNotFound(countedBy) }
             let variance = userCount - systemCount
-            let varianceDollars = Double(abs(variance)) * unitCostDollars
+            let varianceDollars = max(0, Double(abs(variance)) * unitCostDollars)
             let variancePercent: Double = systemCount > 0 ? (Double(abs(variance)) / Double(systemCount)) * 100.0 : (variance == 0 ? 0 : 100)
             let result: String
             if variance == 0 { result = "exact" }
@@ -5987,7 +6045,7 @@ public final class WarehouseService: Sendable {
         guard countedQuantity >= 0 else { throw WarehouseError.invalidQuantity }
         return try db.writer.write { dbConn in
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [verifiedBy]) ?? 0) > 0
             guard userExists else { throw WarehouseError.userNotFound(verifiedBy) }
 
@@ -6038,6 +6096,8 @@ public final class WarehouseService: Sendable {
         targetUnitId: Int64? = nil
     ) throws -> AuditSessionV2 {
         try db.writer.write { dbConn in
+            try Self.requireActiveUser(startedBy, dbConn: dbConn)
+
             var session = AuditSessionV2(
                 id: nil, sessionType: sessionType, startedBy: startedBy,
                 floorPlanId: floorPlanId, targetAreaId: targetAreaId,
@@ -6120,7 +6180,7 @@ public final class WarehouseService: Sendable {
     public func updateUserRating(userId: Int64, action: String, result: String? = nil) throws {
         try db.writer.write { dbConn in
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [userId]) ?? 0) > 0
             guard userExists else { throw WarehouseError.userNotFound(userId) }
 
@@ -6224,7 +6284,7 @@ public final class WarehouseService: Sendable {
             guard areaExists else { throw WarehouseError.areaNotFound(areaId) }
 
             let checkerExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [checkedBy]) ?? 0) > 0
             guard checkerExists else { throw WarehouseError.userNotFound(checkedBy) }
 
@@ -6316,7 +6376,7 @@ public final class WarehouseService: Sendable {
     public func castConsolidationVote(voteId: Int64, userId: Int64, chosenAreaId: Int64) throws {
         try db.writer.write { dbConn in
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [userId]) ?? 0) > 0
             guard userExists else { throw WarehouseError.userNotFound(userId) }
 
@@ -6410,7 +6470,7 @@ public final class WarehouseService: Sendable {
             // Guard: reporter must be a non-tombstoned user — orphan foundBy would
             // produce Unknown-user entries in the misplaced-parts dashboard.
             let userOk = (try Int.fetchOne(dbConn, sql:
-                "SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL",
+                "SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1",
                 arguments: [foundBy]) ?? 0) > 0
             guard userOk else { throw WarehouseError.userNotFound(foundBy) }
             var log = MisplacedPartsLog(
@@ -6454,14 +6514,14 @@ public final class WarehouseService: Sendable {
 
     /// Resolve a misplaced part entry.
     public func resolveMisplacedPart(logId: Int64, resolution: String, resolvedBy: Int64) throws {
-        guard !resolution.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !resolution.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
         try db.writer.write { dbConn in
             // Guard: resolver must be non-tombstoned — a blank resolved_by would
             // make the resolution appear as "Unknown" on the audit dashboard.
             let userOk = (try Int.fetchOne(dbConn, sql:
-                "SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL",
+                "SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1",
                 arguments: [resolvedBy]) ?? 0) > 0
             guard userOk else { throw WarehouseError.userNotFound(resolvedBy) }
             try dbConn.execute(sql: """
@@ -7009,7 +7069,7 @@ public final class WarehouseService: Sendable {
     ) throws -> Int? {
         try db.writer.write { dbConn in
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [resolvedBy]) ?? 0) > 0
             guard userExists else { throw WarehouseError.userNotFound(resolvedBy) }
             // Get all assignments for this part in this session

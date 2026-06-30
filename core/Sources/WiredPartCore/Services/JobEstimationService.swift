@@ -169,6 +169,28 @@ public final class JobEstimationService: Sendable {
     ) throws -> EstimationResponse {
         do {
             return try db.writer.write { dbConn in
+                try ServicePermissionGate.requirePermission(dbConn, userId: answeredBy, permissionKey: "manage_jobs")
+
+                let submittedValue: String?
+                let submittedIsUnknown: Bool
+
+                if isUnknown {
+                    submittedValue = nil
+                    submittedIsUnknown = true
+                } else if let question = try EstimationQuestion
+                    .filter(Column("id") == questionId &&
+                            Column("is_active") == 1 &&
+                            Column("deleted_at") == nil)
+                    .fetchOne(dbConn),
+                          question.answerType == "number",
+                          Self.parseNumericScore(value) == nil {
+                    submittedValue = nil
+                    submittedIsUnknown = true
+                } else {
+                    submittedValue = value
+                    submittedIsUnknown = false
+                }
+
                 // Delete any existing response for this job+question+stage
                 try dbConn.execute(sql: """
                     DELETE FROM estimation_responses
@@ -177,8 +199,8 @@ public final class JobEstimationService: Sendable {
 
                 var response = EstimationResponse(
                     id: nil, jobId: jobId, questionId: questionId,
-                    stage: stage, responseValue: isUnknown ? nil : value,
-                    isUnknown: isUnknown ? 1 : 0,
+                    stage: stage, responseValue: submittedValue,
+                    isUnknown: submittedIsUnknown ? 1 : 0,
                     answeredBy: answeredBy, answeredAt: nil
                 )
                 try response.insert(dbConn)
@@ -247,8 +269,12 @@ public final class JobEstimationService: Sendable {
                 continue
             }
 
+            guard let score = scoreResponse(response: response, question: question) else {
+                unknownCount += 1
+                continue
+            }
+
             answeredCount += 1
-            let score = scoreResponse(response: response, question: question)
             totalWeightedScore += score * question.weight
             totalWeight += question.weight
         }
@@ -297,13 +323,13 @@ public final class JobEstimationService: Sendable {
     }
 
     /// Score a single response on a 0-10 scale based on answer type and value.
-    private func scoreResponse(response: EstimationResponse, question: EstimationQuestion) -> Double {
-        guard let value = response.responseValue else { return 0 }
+    private func scoreResponse(response: EstimationResponse, question: EstimationQuestion) -> Double? {
+        guard let value = response.responseValue else { return nil }
 
         switch question.answerType {
         case "number":
-            // Normalize: treat as a direct numeric factor
-            return min(Double(value) ?? 0, 10.0)
+            // Normalize numeric answers to the supported 0...10 scoring range.
+            return Self.parseNumericScore(value)
         case "boolean":
             return value.lowercased() == "yes" ? 1.0 : 0.0
         case "choice":
@@ -316,6 +342,17 @@ public final class JobEstimationService: Sendable {
         default:
             return 1.0 // text answers get a neutral score
         }
+    }
+
+    private static func parseNumericScore(_ value: String?) -> Double? {
+        guard let rawValue = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !rawValue.isEmpty,
+              let parsed = Double(rawValue),
+              parsed.isFinite else {
+            return nil
+        }
+
+        return min(max(parsed, 0.0), 10.0)
     }
 
     /// Get the most recent estimation result for a job and stage.

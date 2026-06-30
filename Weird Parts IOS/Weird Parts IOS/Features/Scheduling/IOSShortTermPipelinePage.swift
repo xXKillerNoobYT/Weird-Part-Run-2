@@ -4,6 +4,31 @@ import os
 
 private let pipelineLog = Logger(subsystem: "com.wiredpart", category: "scheduling.pipeline")
 
+struct IOSShortTermPipelineCallbackActionResult: Equatable {
+    let errorMessage: String?
+    let shouldDismissSheet: Bool
+}
+
+enum IOSShortTermPipelineCallbackActionHandler {
+    static func perform(
+        context: String,
+        operation: () throws -> Void,
+        reload: () -> Void,
+        errorFormatter: (Error, String) -> String
+    ) -> IOSShortTermPipelineCallbackActionResult {
+        do {
+            try operation()
+            reload()
+            return IOSShortTermPipelineCallbackActionResult(errorMessage: nil, shouldDismissSheet: true)
+        } catch {
+            return IOSShortTermPipelineCallbackActionResult(
+                errorMessage: errorFormatter(error, context),
+                shouldDismissSheet: false
+            )
+        }
+    }
+}
+
 /// Short-term pipeline page showing jobs ready or near-ready for scheduling.
 ///
 /// Categories: Start Anytime (target: 3), Schedule Needed (target: 2),

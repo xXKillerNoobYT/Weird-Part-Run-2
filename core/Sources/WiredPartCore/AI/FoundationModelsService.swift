@@ -96,6 +96,32 @@ public enum AIConversationPersistenceError: LocalizedError, Sendable, Equatable 
     }
 }
 
+/// Identifies the security- and context-bearing inputs used to build a chat session.
+///
+/// Foundation Models sessions capture tool instances and instructions at creation time,
+/// so a cached session is safe to reuse only when every field here is unchanged.
+struct AIChatSessionIdentity: Equatable, Sendable {
+    let conversationId: String
+    let databaseIdentity: String
+    let userId: Int64
+    let permissionKeys: [String]
+    let navigationContext: String
+
+    init(
+        conversationId: String,
+        db: AppDatabase,
+        permissions: [String],
+        userId: Int64,
+        navigationContext: String
+    ) {
+        self.conversationId = conversationId
+        self.databaseIdentity = String(describing: ObjectIdentifier(db))
+        self.userId = userId
+        self.permissionKeys = Array(Set(permissions)).sorted()
+        self.navigationContext = navigationContext
+    }
+}
+
 /// Provides on-device AI text generation via Apple Foundation Models.
 ///
 /// This service wraps `LanguageModelSession` to provide:
@@ -133,6 +159,9 @@ public actor FoundationModelsService {
 
     /// Conversation ID that the current active session belongs to.
     private var activeChatConversationId: String?
+
+    /// Security/context identity that the current active session was built with.
+    private var activeChatSessionIdentity: AIChatSessionIdentity?
 
     /// In-memory message history for the current conversation.
     private var messageHistory: [AIConversationMessage] = []
@@ -276,8 +305,8 @@ public actor FoundationModelsService {
         remoteText: String,
         context: String? = nil
     ) async -> AIResult {
-        guard !localText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-              !remoteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !localText.isBlankRequiredText ||
+              !remoteText.isBlankRequiredText else {
             return .fail("No text to merge")
         }
 
@@ -340,7 +369,7 @@ public actor FoundationModelsService {
     /// - Parameter query: The user's question.
     /// - Returns: An `AIResult` containing the assistant's response.
     public func chat(query: String) async -> AIResult {
-        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !query.isBlankRequiredText else {
             return .fail("Empty query")
         }
 
@@ -381,7 +410,7 @@ public actor FoundationModelsService {
         navigationContext: String,
         conversationId: String = "default"
     ) async -> AIResult {
-        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !query.isBlankRequiredText else {
             return .fail("Empty query")
         }
 
@@ -415,8 +444,16 @@ public actor FoundationModelsService {
                     \(navigationContext)
                     """
 
-                let session = getOrCreateChatSession(
+                let sessionIdentity = AIChatSessionIdentity(
                     conversationId: conversationId,
+                    db: db,
+                    permissions: permissions,
+                    userId: userId,
+                    navigationContext: navigationContext
+                )
+
+                let session = getOrCreateChatSession(
+                    identity: sessionIdentity,
                     tools: tools,
                     instructions: chatInstructions
                 )
@@ -453,22 +490,23 @@ public actor FoundationModelsService {
 
     // MARK: - Session Management
 
-    /// Returns the existing `LanguageModelSession` if the conversation ID matches,
+    /// Returns the existing `LanguageModelSession` if the full session identity matches,
     /// otherwise creates a new session and caches it.
     #if canImport(FoundationModels)
     @available(macOS 26.0, iOS 26.0, *)
     private func getOrCreateChatSession(
-        conversationId: String,
+        identity: AIChatSessionIdentity,
         tools: [any FoundationModels.Tool],
         instructions: String
     ) -> LanguageModelSession {
-        if conversationId == activeChatConversationId,
+        if identity == activeChatSessionIdentity,
            let existing = activeChatSession as? LanguageModelSession {
             return existing
         }
         let session = LanguageModelSession(tools: tools, instructions: instructions)
         activeChatSession = session
-        activeChatConversationId = conversationId
+        activeChatConversationId = identity.conversationId
+        activeChatSessionIdentity = identity
         messageHistory.removeAll()
         return session
     }
@@ -481,6 +519,7 @@ public actor FoundationModelsService {
         activeChatSession = nil
         #endif
         activeChatConversationId = nil
+        activeChatSessionIdentity = nil
         messageHistory.removeAll()
     }
 

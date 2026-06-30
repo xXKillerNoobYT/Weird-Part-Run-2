@@ -370,7 +370,7 @@ public final class NotebooksService: Sendable {
             try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_notebooks")
         }
 
-        guard !title.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !title.isBlankRequiredText else {
             throw NotebooksError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
@@ -424,7 +424,7 @@ public final class NotebooksService: Sendable {
             try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_notebooks")
         }
 
-        guard !title.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !title.isBlankRequiredText else {
             throw NotebooksError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
@@ -803,7 +803,7 @@ public final class NotebooksService: Sendable {
     /// Create a new section group in a notebook.
     @discardableResult
     public func createSectionGroup(notebookId: Int64, name: String) throws -> Int64 {
-        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !name.isBlankRequiredText else {
             throw NotebooksError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
@@ -822,7 +822,7 @@ public final class NotebooksService: Sendable {
 
     /// Update a section group's name.
     public func updateSectionGroup(groupId: Int64, name: String) throws {
-        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !name.isBlankRequiredText else {
             throw NotebooksError.requiredFieldEmpty
         }
         try db.writer.write { dbConn in
@@ -867,7 +867,7 @@ public final class NotebooksService: Sendable {
     /// Create a new section in a notebook, optionally within a group.
     @discardableResult
     public func createSection(notebookId: Int64, groupId: Int64?, name: String) throws -> Int64 {
-        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !name.isBlankRequiredText else {
             throw NotebooksError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
@@ -886,7 +886,7 @@ public final class NotebooksService: Sendable {
 
     /// Update a section's name.
     public func updateSection(sectionId: Int64, name: String) throws {
-        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !name.isBlankRequiredText else {
             throw NotebooksError.requiredFieldEmpty
         }
         try db.writer.write { dbConn in
@@ -1485,7 +1485,7 @@ public final class NotebooksService: Sendable {
             try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_templates")
         }
 
-        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !name.isBlankRequiredText else {
             throw NotebooksError.requiredFieldEmpty
         }
         let jsonData = try JSONEncoder().encode(templateData)
@@ -1903,7 +1903,7 @@ public final class NotebooksService: Sendable {
 
         guard let pending else { return false }
         guard let merged = await mergeText(pending.local, pending.remote, pending.context),
-              !merged.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+              !merged.isBlankRequiredText else {
             return false
         }
 

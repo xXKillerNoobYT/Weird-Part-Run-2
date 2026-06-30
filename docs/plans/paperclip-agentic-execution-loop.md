@@ -42,6 +42,8 @@ The operating rule is: field-test beta work comes first. Process or infrastructu
 
 Every new or materially updated GitHub issue created from Paperclip, QA, or autonomous findings must include:
 
+- **Dedupe evidence:** the exact GitHub search/query or existing issue review performed before filing. If a matching root-cause issue exists, update it instead of opening another issue.
+- **Grouping decision:** why this should be a standalone issue, or the umbrella issue/checklist item it belongs under. Prefer one issue per coherent fix/PR; repeated instances of the same scanner/root-cause class should become one umbrella with affected files/flows listed.
 - **Field-test relevance:** why the issue matters before beta, or why it is explicitly deferred.
 - **Area label:** one of the product areas used by the beta checklist, plus severity/tier labels when applicable.
 - **Acceptance criteria:** observable behavior, not only "update docs" or "investigate".
