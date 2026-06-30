@@ -129,15 +129,13 @@ struct IOSPeerBrowser: View {
 
                         Spacer()
 
-                        if peer.state == "found" || peer.state == "multipeer" || peer.state == "lan" {
-                            Button("Sync") {
-                                Task { await syncManager.syncNow() }
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        } else if peer.state == "connecting" {
+                        if peer.state == "connecting" {
                             ProgressView()
                                 .scaleEffect(0.7)
+                        } else if peer.state == "found" || peer.state == "multipeer" || peer.state == "lan" {
+                            Text("Ready")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         } else {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(.green)
@@ -145,6 +143,13 @@ struct IOSPeerBrowser: View {
                     }
                     .frame(minHeight: 56)
                 }
+
+                Button {
+                    Task { await syncManager.syncNow() }
+                } label: {
+                    Label("Sync All Devices", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .disabled(syncManager.syncStatus == .syncing)
             }
         }
         .listStyle(.insetGrouped)
