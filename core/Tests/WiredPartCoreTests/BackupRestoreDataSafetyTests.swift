@@ -81,9 +81,10 @@ struct BackupRestoreDataSafetyTests {
         }
 
         #expect(Set(backupPaths).count == backupPaths.count)
-        for backupPath in backupPaths.suffix(5) {
-            #expect(FileManager.default.fileExists(atPath: backupPath))
-        }
+        let backupDir = fixture.directory.appendingPathComponent("Backups").path
+        let retainedBackups = try FileManager.default.contentsOfDirectory(atPath: backupDir)
+            .filter { $0.hasPrefix("pre-migration-") && $0.hasSuffix(".sqlite") }
+        #expect(retainedBackups.count == 5)
     }
 
     @Test("Production backup and restore preserves critical beta records")

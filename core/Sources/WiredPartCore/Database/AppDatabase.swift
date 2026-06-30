@@ -197,6 +197,15 @@ public final class AppDatabase: Sendable {
             }
         }
 
+        func removeDestinationFilesForRollbackBundle() {
+            if fileManager.fileExists(atPath: rollbackPath) {
+                try? fileManager.removeItem(atPath: dbPath)
+            }
+            for suffix in ["-wal", "-shm"] where fileManager.fileExists(atPath: rollbackPath + suffix) {
+                try? fileManager.removeItem(atPath: dbPath + suffix)
+            }
+        }
+
         removeDatabaseFiles(at: stagedPath)
         removeDatabaseFiles(at: rollbackPath)
         defer {
@@ -224,7 +233,7 @@ public final class AppDatabase: Sendable {
             if fileManager.fileExists(atPath: rollbackPath)
                 || fileManager.fileExists(atPath: rollbackPath + "-wal")
                 || fileManager.fileExists(atPath: rollbackPath + "-shm") {
-                removeDatabaseFiles(at: dbPath)
+                removeDestinationFilesForRollbackBundle()
                 do {
                     try moveDatabaseFiles(from: rollbackPath, to: dbPath)
                 } catch {
