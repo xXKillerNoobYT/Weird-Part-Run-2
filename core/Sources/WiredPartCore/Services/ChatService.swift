@@ -324,7 +324,7 @@ public final class ChatService: Sendable {
     /// Send a message to a channel. Returns the inserted message row ID.
     @discardableResult
     public func sendMessage(channelId: Int64, senderId: Int64, content: String) throws -> Int64 {
-        guard !content.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !content.isBlankRequiredText else {
             throw ChatError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
@@ -368,7 +368,7 @@ public final class ChatService: Sendable {
             try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_chat")
         }
 
-        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !name.isBlankRequiredText else {
             throw ChatError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
@@ -502,7 +502,7 @@ public final class ChatService: Sendable {
         subject: String,
         priority: String = "normal"
     ) throws -> Int64 {
-        guard !subject.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !subject.isBlankRequiredText else {
             throw ChatError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
