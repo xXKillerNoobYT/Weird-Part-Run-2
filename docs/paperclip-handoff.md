@@ -28,7 +28,7 @@
 - **Plans before prompts.** ALL design decisions go to `docs/plans/*.md` BEFORE any code is generated. CLAUDE.md §"Plan Filing & History" is the rule. If you find yourself coding without a plan, stop and ask the user (Q&A workflow in §7).
 - **Goal -> plan -> issue -> PR loop.** For Paperclip/GitHub routing, read `docs/plans/paperclip-agentic-execution-loop.md`. It defines the required fields for GitHub issues, Paperclip child issues, branch/worktree hygiene, PR evidence, and closeout comments.
 - **Slow, focused, one-area-at-a-time.** AUTO GO's soul (`docs/auto-go-soul.md`) is the canonical statement. Convergence over breadth. 25-minute cap per iteration. No spraying.
-- **No finding gets lost.** Anything you notice that's out-of-scope for the current check goes to a GitHub issue with the right area label and tier (T1/T2/T3) BEFORE you continue. See `feedback_issue_ordering.md`.
+- **No finding gets lost, but no issue spraying.** Anything you notice that's out-of-scope for the current check gets GitHub tracking before you continue, but first search existing issues and umbrella trackers. If the finding shares a root cause or likely PR with an existing tracker, add it there instead of opening a new issue. See `feedback_issue_ordering.md`.
 - **Per-POV Q&A.** Each `Answer: _pending_` line in `docs/dev-qa.md` waits for a role-specific answer (Owner / Manager / Developer / User). Never collapse. See `feedback_qa_workflow.md`.
 - **Tests are non-negotiable.** Every new public service method gets a test in the same iteration that introduces it. C4 + C5 must pass before an area graduates.
 - **The user does not read code.** Reports come back as dashboards / plain-English / per-POV breakdowns. See `user_background.md`.

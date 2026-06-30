@@ -279,9 +279,9 @@ done
 
 ### Priority Order
 1. **CRITICAL** — Fix immediately. Dismiss bugs causing stuck sheets, data loss from silent saves, dead-end navigation. Direct Swift edit, test, commit.
-2. **HIGH** — Fix if under 30 minutes. Missing feedback, validation gaps, guard-let-service-return. Otherwise file GitHub issue.
-3. **MODERATE** — File GitHub issue with `usability-hunter` + `bug` labels. Include file path, line number, pattern category.
-4. **LOW** — File GitHub issue with `usability-hunter` + `enhancement` labels.
+2. **HIGH** — Fix if under 30 minutes. Missing feedback, validation gaps, guard-let-service-return. Otherwise update an existing GitHub issue/umbrella or file one if no tracker exists after search.
+3. **MODERATE** — Update or file GitHub tracking with `usability-hunter` + `bug` labels. Include file path, line number, pattern category. Group repeated instances with the same root cause into one umbrella issue/checklist instead of one issue per file.
+4. **LOW** — Update or file GitHub tracking with `usability-hunter` + `enhancement` labels; prefer umbrella/checklist tracking for repeated scanner classes.
 
 ### Per-Fix Steps
 1. Read the file and understand root cause
