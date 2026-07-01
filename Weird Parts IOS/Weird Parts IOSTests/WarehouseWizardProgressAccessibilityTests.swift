@@ -75,6 +75,23 @@ final class WarehouseWizardProgressAccessibilityTests: XCTestCase {
         )
     }
 
+    func testMovementWizardOnlyOffersCoreSupportedMovementLocations() throws {
+        let source = try Self.readWarehouseSource("IOSMovementWizard.swift")
+        let locationTypes = try Self.movementWizardLocationTypesSection(in: source)
+
+        XCTAssertTrue(
+            locationTypes.contains("\"warehouse\"") &&
+                locationTypes.contains("\"truck\"") &&
+                locationTypes.contains("\"trailer\"") &&
+                locationTypes.contains("\"job\""),
+            "Movement wizard should keep offering the core-supported warehouse/truck/trailer/job movement buckets."
+        )
+        XCTAssertFalse(
+            locationTypes.contains("\"staging\"") || locationTypes.contains("\"Staging\""),
+            "Movement wizard must not offer staging as a movement endpoint until WarehouseService accepts staging movement paths."
+        )
+    }
+
     func testMovementWizardPartSelectionDismissesKeyboardBeforeNextNavigation() throws {
         let source = try Self.readWarehouseSource("IOSMovementWizard.swift")
 
@@ -140,6 +157,16 @@ final class WarehouseWizardProgressAccessibilityTests: XCTestCase {
         }
         let afterStart = source[start.lowerBound...]
         let end = afterStart.range(of: "// MARK: - Step 1")?.lowerBound ?? afterStart.endIndex
+        return String(afterStart[..<end])
+    }
+
+    private static func movementWizardLocationTypesSection(in source: String) throws -> String {
+        guard let start = source.range(of: "private let locationTypes = [") else {
+            XCTFail("Missing movement wizard locationTypes list")
+            return source
+        }
+        let afterStart = source[start.lowerBound...]
+        let end = afterStart.range(of: "]")?.upperBound ?? afterStart.endIndex
         return String(afterStart[..<end])
     }
 

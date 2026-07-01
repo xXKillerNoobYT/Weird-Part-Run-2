@@ -240,7 +240,6 @@ struct IOSMovementWizard: View {
 
     private let locationTypes = [
         ("warehouse", "Warehouse", "building.2.fill"),
-        ("staging", "Staging", "tray.2.fill"),
         ("truck", "Truck", "truck.box.fill"),
         ("trailer", "Trailer", "box.truck.fill"),
         ("job", "Job Site", "hammer.fill"),
