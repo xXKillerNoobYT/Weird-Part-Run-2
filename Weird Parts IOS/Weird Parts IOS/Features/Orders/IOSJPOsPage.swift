@@ -13,8 +13,13 @@ struct IOSJPOsPage: View {
     // MARK: - State
 
     @State private var allJPOs: [OrdersService.JPOListItem] = []
+    @State private var dateFilteredJPOs: [OrdersService.JPOListItem] = []
+    @State private var dateScopedStatusCounts: [String: Int] = [:]
     @State private var isLoading = true
     @State private var searchText = ""
+    @State private var dateRange: ReportDateRange = .thisWeek
+    @State private var customStart = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+    @State private var customEnd = Date()
     @State private var statusFilter = "all"
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
@@ -38,6 +43,7 @@ struct IOSJPOsPage: View {
     var body: some View {
         VStack(spacing: 0) {
             OnboardingBanner(pageId: "orders-jpos")
+            StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
             statusPicker
 
             // Pending KPI line
@@ -86,6 +92,9 @@ struct IOSJPOsPage: View {
             loadData()
             appCore.onboardingManager?.markCompleted("jpo-view-list")
         }
+        .onChange(of: dateRange) { refreshDateScopedJPOs() }
+        .onChange(of: customStart) { refreshDateScopedJPOs() }
+        .onChange(of: customEnd) { refreshDateScopedJPOs() }
         .onAppear {
             NotificationCenter.default.post(
                 name: .jposPageActive,
@@ -146,12 +155,12 @@ struct IOSJPOsPage: View {
     // MARK: - Counts
 
     private var pendingCount: Int {
-        allJPOs.filter { $0.status == "pending" }.count
+        dateScopedStatusCounts["pending"] ?? 0
     }
 
     private func countForStatus(_ status: String) -> Int {
-        if status == "all" { return allJPOs.count }
-        return allJPOs.filter { $0.status == status }.count
+        if status == "all" { return dateFilteredJPOs.count }
+        return dateScopedStatusCounts[status] ?? 0
     }
 
     // MARK: - Status Picker
@@ -204,7 +213,7 @@ struct IOSJPOsPage: View {
 
     /// JPOs filtered by status and search text.
     private var displayedJPOs: [OrdersService.JPOListItem] {
-        var result = allJPOs
+        var result = dateFilteredJPOs
         // Status filter
         if statusFilter != "all" {
             result = result.filter { $0.status == statusFilter }
@@ -300,9 +309,23 @@ struct IOSJPOsPage: View {
         do {
             // Load all JPOs for counts, then filter in-memory
             allJPOs = try service.listJPOs(status: nil, limit: 500)
+            refreshDateScopedJPOs()
         } catch {
             loadError = userFriendlyError(error, context: "load job parts orders")
         }
         isLoading = false
+    }
+
+    private func refreshDateScopedJPOs() {
+        dateFilteredJPOs = allJPOs.filter {
+            StandardDateRangeFilter.contains(
+                $0.createdAt ?? $0.dueDate,
+                selectedRange: dateRange,
+                customStart: customStart,
+                customEnd: customEnd
+            )
+        }
+        dateScopedStatusCounts = Dictionary(grouping: dateFilteredJPOs, by: \.status)
+            .mapValues(\.count)
     }
 }

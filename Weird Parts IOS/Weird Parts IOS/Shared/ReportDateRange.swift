@@ -110,3 +110,34 @@ enum ReportDateRange: String, CaseIterable, Identifiable {
         return remainder < 0 ? quotient - 1 : quotient
     }
 }
+
+/// Shared evaluator for StandardFilterBar-backed date filtering.
+///
+/// Rows without a parseable date stay visible: the date bar should narrow rows
+/// with known dates, not make undated legacy rows disappear by default.
+enum StandardDateRangeFilter {
+    static func contains(
+        _ rawDate: String?,
+        selectedRange: ReportDateRange,
+        customStart: Date,
+        customEnd: Date,
+        calendar: Calendar = .current
+    ) -> Bool {
+        guard let date = parse(rawDate) else { return true }
+        let interval = selectedRange.dateInterval ?? (start: customStart, end: customEnd)
+        return date >= calendar.startOfDay(for: interval.start)
+            && date < exclusiveEndOfDay(for: interval.end, calendar: calendar)
+    }
+
+    private static func exclusiveEndOfDay(for date: Date, calendar: Calendar) -> Date {
+        calendar.dateInterval(of: .day, for: date)?.end ?? date
+    }
+
+    private static func parse(_ rawDate: String?) -> Date? {
+        guard let trimmed = rawDate?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
+        return Formatters.sqlDateTimeFormatter.date(from: trimmed)
+            ?? Formatters.iso8601Fractional.date(from: trimmed)
+            ?? Formatters.iso8601Basic.date(from: trimmed)
+            ?? Formatters.localDateFormatter.date(from: String(trimmed.prefix(10)))
+    }
+}

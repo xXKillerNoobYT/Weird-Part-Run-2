@@ -72,6 +72,69 @@ final class StandardFilterBarRegressionTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: reportsURL.path))
     }
 
+    func testCoreJobsAndOrdersPagesUseStandardFilterBarBeforePageSpecificFilters() throws {
+        let jobsSource = try Self.readFeatureSource(pathComponents: ["Jobs", "JobsListPage.swift"])
+        let jposSource = try Self.readFeatureSource(pathComponents: ["Orders", "IOSJPOsPage.swift"])
+        let partsManagementSource = try Self.readFeatureSource(pathComponents: ["Orders", "IOSPartsOrderManagementPage.swift"])
+
+        XCTAssertLessThan(
+            try XCTUnwrap(jobsSource.range(of: "StandardFilterBar")?.lowerBound),
+            try XCTUnwrap(jobsSource.range(of: "smartCards")?.lowerBound),
+            "Jobs list should place the standard date bar before its status smart cards."
+        )
+        XCTAssertLessThan(
+            try XCTUnwrap(jposSource.range(of: "StandardFilterBar")?.lowerBound),
+            try XCTUnwrap(jposSource.range(of: "statusPicker")?.lowerBound),
+            "JPO list should place the standard date bar before its status chips."
+        )
+        XCTAssertLessThan(
+            try XCTUnwrap(partsManagementSource.range(of: "StandardFilterBar")?.lowerBound),
+            try XCTUnwrap(partsManagementSource.range(of: "supplierPicker")?.lowerBound),
+            "Parts management should place the standard date bar before supplier and status filters."
+        )
+    }
+
+    func testCoreJobsAndOrdersPagesFilterRowsBySelectedStandardDateRange() throws {
+        let jobsSource = try Self.readFeatureSource(pathComponents: ["Jobs", "JobsListPage.swift"])
+        let jposSource = try Self.readFeatureSource(pathComponents: ["Orders", "IOSJPOsPage.swift"])
+        let partsManagementSource = try Self.readFeatureSource(pathComponents: ["Orders", "IOSPartsOrderManagementPage.swift"])
+
+        XCTAssertTrue(jobsSource.contains("StandardDateRangeFilter.contains("))
+        XCTAssertTrue(jobsSource.contains("job.startDate ?? job.dueDate"))
+        XCTAssertTrue(jposSource.contains("StandardDateRangeFilter.contains("))
+        XCTAssertTrue(jposSource.contains("$0.createdAt ?? $0.dueDate"))
+        XCTAssertTrue(partsManagementSource.contains("StandardDateRangeFilter.contains("))
+        XCTAssertTrue(partsManagementSource.contains("row.orderDate ?? row.expectedDelivery"))
+    }
+
+    func testStandardDateRangeFilterKeepsRowsWithoutFilterableDates() throws {
+        let sharedSource = try Self.readSharedSource(named: "ReportDateRange.swift")
+
+        XCTAssertTrue(sharedSource.contains("enum StandardDateRangeFilter"))
+        XCTAssertTrue(sharedSource.contains("guard let date = parse(rawDate) else { return true }"))
+        XCTAssertTrue(sharedSource.contains("guard let trimmed = rawDate?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }"))
+        XCTAssertTrue(sharedSource.contains("Formatters.sqlDateTimeFormatter.date(from: trimmed)"))
+    }
+
+    func testCoreJobsAndJPOStatusCountsUsePrecomputedSelectedDateRangeCounts() throws {
+        let jobsSource = try Self.readFeatureSource(pathComponents: ["Jobs", "JobsListPage.swift"])
+        let jposSource = try Self.readFeatureSource(pathComponents: ["Orders", "IOSJPOsPage.swift"])
+
+        XCTAssertTrue(jobsSource.contains("refreshDateScopedStatusCounts(from: dateFiltered)"))
+        XCTAssertTrue(jobsSource.contains("statusCounts = Dictionary(grouping: dateFilteredJobs, by: \\.status)"))
+        XCTAssertTrue(jposSource.contains("@State private var dateFilteredJPOs: [OrdersService.JPOListItem] = []"))
+        XCTAssertTrue(jposSource.contains("dateScopedStatusCounts = Dictionary(grouping: dateFilteredJPOs, by: \\.status)"))
+        XCTAssertTrue(jposSource.contains("dateScopedStatusCounts[\"pending\"] ?? 0"))
+        XCTAssertTrue(jposSource.contains("return dateScopedStatusCounts[status] ?? 0"))
+    }
+
+    func testStandardDateRangeFilterUsesExclusiveEndOfDay() throws {
+        let sharedSource = try Self.readSharedSource(named: "ReportDateRange.swift")
+
+        XCTAssertTrue(sharedSource.contains("date < exclusiveEndOfDay(for: interval.end, calendar: calendar)"))
+        XCTAssertFalse(sharedSource.contains(".end.addingTimeInterval(-1) ?? date"))
+    }
+
     @MainActor
     func testPayPeriodRangesUseInjectedAnchorAndLength() throws {
         var calendar = Calendar(identifier: .gregorian)
@@ -163,6 +226,19 @@ final class StandardFilterBarRegressionTests: XCTestCase {
             .appendingPathComponent("Weird Parts IOS")
             .appendingPathComponent("Shared")
             .appendingPathComponent(fileName)
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    private static func readFeatureSource(pathComponents: [String], file: StaticString = #filePath) throws -> String {
+        let testFileURL = URL(fileURLWithPath: "\(file)")
+        var sourceURL = testFileURL
+            .deletingLastPathComponent() // Weird Parts IOSTests
+            .deletingLastPathComponent() // Weird Parts IOS
+            .appendingPathComponent("Weird Parts IOS")
+            .appendingPathComponent("Features")
+        for component in pathComponents {
+            sourceURL.appendPathComponent(component)
+        }
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 }
