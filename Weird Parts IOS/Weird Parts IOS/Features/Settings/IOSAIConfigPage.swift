@@ -32,11 +32,11 @@ struct IOSAIConfigPage: View {
         if isLoading {
             ProgressView("Loading AI settings…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .navigationTitle("AI Config")
+                .navigationTitle("AI Configuration")
                 .task { loadSettings() }
         } else if let loadError {
             ErrorStateView(message: loadError)
-                .navigationTitle("AI Config")
+                .navigationTitle("AI Configuration")
         } else {
             loadedForm
         }
