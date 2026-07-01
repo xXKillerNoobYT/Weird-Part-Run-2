@@ -516,6 +516,10 @@ struct IOSClockPage: View {
                     .foregroundStyle(.secondary)
                     .accessibilityElement(children: .combine)
 
+                if let supplyRunStart = activeSupplyRunStartDate, activityStatus == "supply_run" {
+                    activeSupplyRunCard(startedAt: supplyRunStart)
+                }
+
                 // Active break/lunch indicator
                 if let breakRecord = activeBreakRecord {
                     activeBreakBanner(breakRecord)
@@ -703,6 +707,46 @@ struct IOSClockPage: View {
     }
 
     // MARK: - Active Break Banner
+
+    private func activeSupplyRunCard(startedAt: Date) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Supply Run Active", systemImage: "car.fill")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundStyle(.orange)
+
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Started")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(formatClockTime(startedAt))
+                        .font(.system(.body, design: .monospaced))
+                        .fontWeight(.medium)
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("Duration")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(supplyRunElapsedText)
+                        .font(.system(.body, design: .monospaced))
+                        .fontWeight(.medium)
+                }
+            }
+
+            Text("You stay clocked in and billable while this supply run is active.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(10)
+        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Supply Run Active. Started \(formatClockTime(startedAt)). Duration \(supplyRunElapsedText). You stay clocked in and billable while this supply run is active.")
+        .accessibilityIdentifier("clock-active-supply-run-card")
+    }
 
     private func activeBreakBanner(_ breakRecord: BreakRecord) -> some View {
         VStack(spacing: 6) {
@@ -1619,6 +1663,8 @@ struct IOSClockPage: View {
                 breakTimer = nil
                 activeBreakRecord = nil
                 activityStatus = "working"
+                activeSupplyRunStartDate = nil
+                supplyRunElapsedText = ""
                 breakElapsedText = ""
                 errorMessage = nil
             }
@@ -1869,7 +1915,7 @@ struct IOSClockPage: View {
         let minutes = (Int(elapsed) % 3600) / 60
         elapsedText = "\(hours)h \(minutes)m"
         if let activeSupplyRunStartDate {
-            supplyRunElapsedText = formatDuration(Date().timeIntervalSince(activeSupplyRunStartDate))
+            supplyRunElapsedText = formatDuration(max(0, Date().timeIntervalSince(activeSupplyRunStartDate)))
         }
     }
 
@@ -1878,10 +1924,7 @@ struct IOSClockPage: View {
             supplyRunElapsedText = ""
             return
         }
-        let elapsed = Date().timeIntervalSince(activeSupplyRunStartDate)
-        let hours = Int(elapsed) / 3600
-        let minutes = (Int(elapsed) % 3600) / 60
-        supplyRunElapsedText = "\(hours)h \(minutes)m"
+        supplyRunElapsedText = formatDuration(max(0, Date().timeIntervalSince(activeSupplyRunStartDate)))
     }
 
     // MARK: - To-Do Actions
@@ -1961,6 +2004,10 @@ struct IOSClockPage: View {
         let start = iso.index(iso.startIndex, offsetBy: 11)
         let end = iso.index(iso.startIndex, offsetBy: 16)
         return String(iso[start..<end])
+    }
+
+    private func formatClockTime(_ date: Date) -> String {
+        Formatters.timeFormatter.string(from: date)
     }
 
     private func formatDuration(_ interval: TimeInterval) -> String {
@@ -2116,6 +2163,8 @@ struct IOSClockPage: View {
                 lunchPaidMinutes = lunchPaid
                 if let brk = currentBreak {
                     activityStatus = brk.breakType
+                    activeSupplyRunStartDate = nil
+                    supplyRunElapsedText = ""
                     if let timer = brk.timerDurationMinutes, timer > 0 {
                         switch brk.breakType {
                         case "break": breakBudgetMinutes = timer
