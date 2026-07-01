@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import CoreGraphics
 @testable import WiredPartCore
 
 @Suite("QR Label Generator Tests")
@@ -56,5 +57,59 @@ struct QRLabelGeneratorTests {
         let usedPositions: Set<Int> = [-1, grid.totalPositions, grid.totalPositions + 10]
 
         #expect(QRLabelPDFGenerator.availableStickerPositionCount(grid: grid, usedPositions: usedPositions) == grid.totalPositions)
+    }
+
+    @Test("PDF generation preflight rejects any label whose QR image cannot render")
+    func testQRCodeRenderFailureRejectsWholeBatch() throws {
+        let renderedImage = try #require(Self.makeTestImage())
+        let items = [
+            QRLabelContent(entityType: .part, entityId: 1, code: "PART-001", title: "Good part"),
+            QRLabelContent(entityType: .part, entityId: 2, code: "PART-002", title: "Failing part")
+        ]
+
+        let canRender = QRLabelPDFGenerator.canRenderQRCodesForPDF(
+            items: items,
+            labelSize: .standard,
+            paperSize: .avery5160
+        ) { _, id, _, _ in
+            id == 2 ? nil : renderedImage
+        }
+
+        #expect(canRender == false)
+    }
+
+    @Test("PDF generation preflight accepts a batch only when every QR image renders")
+    func testQRCodeRenderPreflightAcceptsCompleteBatch() throws {
+        let renderedImage = try #require(Self.makeTestImage())
+        let items = [
+            QRLabelContent(entityType: .part, entityId: 1, code: "PART-001", title: "Part 001"),
+            QRLabelContent(entityType: .bin, entityId: 2, code: "BIN-002", title: "Bin 002")
+        ]
+
+        let canRender = QRLabelPDFGenerator.canRenderQRCodesForPDF(
+            items: items,
+            labelSize: .standard,
+            paperSize: .letter
+        ) { _, _, _, _ in
+            renderedImage
+        }
+
+        #expect(canRender == true)
+    }
+
+    private static func makeTestImage() -> CGImage? {
+        let colorSpace = CGColorSpaceCreateDeviceGray()
+        guard let context = CGContext(
+            data: nil,
+            width: 1,
+            height: 1,
+            bitsPerComponent: 8,
+            bytesPerRow: 1,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.none.rawValue
+        ) else {
+            return nil
+        }
+        return context.makeImage()
     }
 }

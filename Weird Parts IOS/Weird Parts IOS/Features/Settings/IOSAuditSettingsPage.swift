@@ -193,22 +193,24 @@ struct IOSAuditSettingsPage: View {
         do {
             let map = try service.getSettingsByCategory("audit")
 
-            enableAutoScheduling = try SettingsValueParser.bool(map, key: "audit_auto_scheduling", default: true)
+            var parser = SettingsValueParser()
+            enableAutoScheduling = parser.bool(map, key: "audit_auto_scheduling", default: true)
             defaultAuditType = map["audit_default_type"] ?? "cycle_count"
-            maxConcurrentAudits = try SettingsValueParser.int(map, key: "audit_max_concurrent", default: 1)
+            maxConcurrentAudits = parser.int(map, key: "audit_max_concurrent", default: 1)
 
-            allowSpeedMode = try SettingsValueParser.bool(map, key: "audit_allow_speed_mode", default: true)
-            speedModeRequiresQR = try SettingsValueParser.bool(map, key: "audit_speed_requires_qr", default: true)
-            speedModeTimeLimit = try SettingsValueParser.int(map, key: "audit_speed_time_limit", default: 10)
+            allowSpeedMode = parser.bool(map, key: "audit_allow_speed_mode", default: true)
+            speedModeRequiresQR = parser.bool(map, key: "audit_speed_requires_qr", default: true)
+            speedModeTimeLimit = parser.int(map, key: "audit_speed_time_limit", default: 10)
 
-            verificationThreshold = try SettingsValueParser.int(map, key: "audit_verification_threshold", default: 2)
-            misplacementPenalty = try SettingsValueParser.double(map, key: "audit_misplacement_penalty", default: 1.5)
+            verificationThreshold = parser.int(map, key: "audit_verification_threshold", default: 2)
+            misplacementPenalty = parser.double(map, key: "audit_misplacement_penalty", default: 1.5)
 
-            keepHistoryMonths = try SettingsValueParser.int(map, key: "audit_keep_history_months", default: 12)
-            autoArchive = try SettingsValueParser.bool(map, key: "audit_auto_archive", default: true)
-            includeInDailyReport = try SettingsValueParser.bool(map, key: "audit_include_in_daily_report", default: false)
+            keepHistoryMonths = parser.int(map, key: "audit_keep_history_months", default: 12)
+            autoArchive = parser.bool(map, key: "audit_auto_archive", default: true)
+            includeInDailyReport = parser.bool(map, key: "audit_include_in_daily_report", default: false)
+            try parser.throwIfInvalid()
         } catch {
-            loadError = userFriendlyError(error, context: "load")
+            loadError = settingsHydrationMessage(error)
         }
         isLoading = false
         isDirty = false

@@ -126,12 +126,53 @@ struct IOSCameraMatchView: View {
         .fullScreenCover(isPresented: $showCamera) {
             CameraCapture(image: $selectedImage)
         }
-        .onChange(of: photoPickerItem) { _, item in
-            Task {
-                if let data = try? await item?.loadTransferable(type: Data.self),
-                   let uiImage = UIImage(data: data) {
-                    selectedImage = uiImage
+        .task(id: photoPickerItem) {
+            await loadPhotoPickerItem(photoPickerItem)
+        }
+    }
+
+    // MARK: - Photo Import
+
+    private func loadPhotoPickerItem(_ item: PhotosPickerItem?) async {
+        guard let item else { return }
+
+        await MainActor.run {
+            selectedImage = nil
+            matchResults = []
+            errorMessage = nil
+        }
+
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self) else {
+                guard !Task.isCancelled else { return }
+
+                await MainActor.run {
+                    errorMessage = "Could not load that photo. Try another image or use Camera."
                 }
+                return
+            }
+            try Task.checkCancellation()
+
+            guard let uiImage = UIImage(data: data) else {
+                guard !Task.isCancelled else { return }
+
+                await MainActor.run {
+                    errorMessage = "Could not read that photo. Try another image or use Camera."
+                }
+                return
+            }
+            try Task.checkCancellation()
+
+            await MainActor.run {
+                selectedImage = uiImage
+                matchResults = []
+                errorMessage = nil
+            }
+        } catch {
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
+                errorMessage = "Could not load that photo. Try another image or use Camera."
             }
         }
     }

@@ -223,22 +223,24 @@ struct IOSOrganizationThresholdsPage: View {
         do {
             let map = try service.getSettingsByCategory("org")
 
-            baseDecayRate = try SettingsValueParser.double(map, key: "org_base_decay_rate", default: 0.1)
-            movementDecayFactor = try SettingsValueParser.double(map, key: "org_movement_decay_factor", default: 0.5)
+            var parser = SettingsValueParser()
+            baseDecayRate = parser.double(map, key: "org_base_decay_rate", default: 0.1)
+            movementDecayFactor = parser.double(map, key: "org_movement_decay_factor", default: 0.5)
 
-            auditThreshold = try SettingsValueParser.double(map, key: "org_audit_threshold", default: 80)
-            maxRecsPerDay = try SettingsValueParser.int(map, key: "org_max_recs_per_day", default: 1)
-            recCooldownDays = try SettingsValueParser.int(map, key: "org_rec_cooldown_days", default: 60)
+            auditThreshold = parser.double(map, key: "org_audit_threshold", default: 80)
+            maxRecsPerDay = parser.int(map, key: "org_max_recs_per_day", default: 1)
+            recCooldownDays = parser.int(map, key: "org_rec_cooldown_days", default: 60)
 
-            votingTimeoutDays = try SettingsValueParser.int(map, key: "org_voting_timeout_days", default: 7)
-            minVotesRequired = try SettingsValueParser.int(map, key: "org_min_votes_required", default: 2)
-            autoApproveUnanimous = try SettingsValueParser.bool(map, key: "org_auto_approve_unanimous", default: true)
+            votingTimeoutDays = parser.int(map, key: "org_voting_timeout_days", default: 7)
+            minVotesRequired = parser.int(map, key: "org_min_votes_required", default: 2)
+            autoApproveUnanimous = parser.bool(map, key: "org_auto_approve_unanimous", default: true)
 
-            targetScore = try SettingsValueParser.double(map, key: "org_target_score", default: 85)
-            showOnDashboard = try SettingsValueParser.bool(map, key: "org_show_on_dashboard", default: true)
-            includeInDailyReport = try SettingsValueParser.bool(map, key: "org_include_in_daily_report", default: false)
+            targetScore = parser.double(map, key: "org_target_score", default: 85)
+            showOnDashboard = parser.bool(map, key: "org_show_on_dashboard", default: true)
+            includeInDailyReport = parser.bool(map, key: "org_include_in_daily_report", default: false)
+            try parser.throwIfInvalid()
         } catch {
-            loadError = userFriendlyError(error, context: "load")
+            loadError = settingsHydrationMessage(error)
         }
         isLoading = false
         resetDirtyTracking()
