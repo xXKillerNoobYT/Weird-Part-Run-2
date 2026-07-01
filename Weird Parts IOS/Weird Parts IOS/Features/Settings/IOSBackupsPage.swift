@@ -2,6 +2,8 @@ import SwiftUI
 import WiredPartCore
 
 enum IOSBackupFileCopier {
+    nonisolated static let retainedBackupLimit = 7
+
     struct CleanupFailure: LocalizedError {
         let copyError: Error
         let cleanupError: Error
@@ -40,6 +42,27 @@ enum IOSBackupFileCopier {
                 throw CleanupFailure(copyError: error, cleanupError: cleanupError)
             }
             throw error
+        }
+    }
+
+    nonisolated static func retainedBackupFiles(in directoryURL: URL) throws -> [URL] {
+        try FileManager.default.contentsOfDirectory(at: directoryURL, includingPropertiesForKeys: nil)
+            .filter { url in
+                url.lastPathComponent.hasPrefix("wiredpart-backup-") && url.pathExtension == "sqlite"
+            }
+            .sorted { $0.lastPathComponent > $1.lastPathComponent }
+    }
+
+    nonisolated static func pruneBackups(in directoryURL: URL, retaining maxCount: Int = retainedBackupLimit) throws {
+        guard maxCount >= 0 else { return }
+
+        let backupsToRemove = try retainedBackupFiles(in: directoryURL).dropFirst(maxCount)
+        for backupURL in backupsToRemove {
+            for url in [backupURL, URL(fileURLWithPath: backupURL.path + "-wal"), URL(fileURLWithPath: backupURL.path + "-shm")] {
+                if FileManager.default.fileExists(atPath: url.path) {
+                    try FileManager.default.removeItem(at: url)
+                }
+            }
         }
     }
 }
@@ -233,9 +256,7 @@ struct IOSBackupsPage: View {
 
         // Scan backups
         if let dir = backupDir,
-           let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.fileSizeKey, .creationDateKey]) {
-            let backups = files.filter { $0.pathExtension == "sqlite" }
-                .sorted { $0.lastPathComponent > $1.lastPathComponent }
+           let backups = try? IOSBackupFileCopier.retainedBackupFiles(in: dir) {
             backupCount = backups.count
             if let newest = backups.first {
                 lastBackupTime = newest.lastPathComponent
@@ -280,6 +301,7 @@ struct IOSBackupsPage: View {
         do {
             let sourceURL = URL(fileURLWithPath: sourcePath)
             try IOSBackupFileCopier.copySQLiteSnapshot(from: sourceURL, to: destURL)
+            try IOSBackupFileCopier.pruneBackups(in: dir)
 
             backupSuccess = true
             loadData()
