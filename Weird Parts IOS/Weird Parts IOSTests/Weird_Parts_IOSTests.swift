@@ -1022,6 +1022,24 @@ struct Weird_Parts_IOSTests {
         }
     }
 
+    @Test func manualBackupSnapshotRemovalDeletesSidecars() throws {
+        let tempRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("IOSBackupSnapshotRemovalTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let backupURL = tempRoot.appendingPathComponent("wiredpart-backup-2026-06-10-120000.sqlite")
+        try Data("backup".utf8).write(to: backupURL)
+        try Data("wal".utf8).write(to: URL(fileURLWithPath: backupURL.path + "-wal"))
+        try Data("shm".utf8).write(to: URL(fileURLWithPath: backupURL.path + "-shm"))
+
+        try IOSBackupFileCopier.removeSQLiteSnapshot(at: backupURL)
+
+        #expect(!FileManager.default.fileExists(atPath: backupURL.path))
+        #expect(!FileManager.default.fileExists(atPath: backupURL.path + "-wal"))
+        #expect(!FileManager.default.fileExists(atPath: backupURL.path + "-shm"))
+    }
+
     @Test func manualBackupSidecarCopiesAreNotSwallowedBeforeSuccessState() throws {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -1036,6 +1054,7 @@ struct Weird_Parts_IOSTests {
         #expect(source.contains("try IOSBackupFileCopier.copySQLiteSnapshot"), "Manual backup creation should use the throwing SQLite snapshot copier")
         #expect(source.contains("try IOSBackupFileCopier.pruneBackups"), "Successful manual backup creation should enforce the rolling retention limit")
         #expect(source.contains("createdURLs.reversed()"), "Partial backup cleanup should remove sidecars before the main database")
+        #expect(source.contains("try IOSBackupFileCopier.removeSQLiteSnapshot(at: destURL)"), "A backup copied before retention failure should be rolled back instead of being left on disk")
         let snapshotCall = try #require(source.range(of: "try IOSBackupFileCopier.copySQLiteSnapshot"))
         let pruneCall = try #require(source.range(of: "try IOSBackupFileCopier.pruneBackups"))
         let successState = try #require(source.range(of: "backupSuccess = true"))

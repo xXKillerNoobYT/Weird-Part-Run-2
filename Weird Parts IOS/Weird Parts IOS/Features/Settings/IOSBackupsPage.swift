@@ -5,11 +5,11 @@ enum IOSBackupFileCopier {
     nonisolated static let retainedBackupLimit = 7
 
     struct CleanupFailure: LocalizedError {
-        let copyError: Error
+        let originalError: Error
         let cleanupError: Error
 
         var errorDescription: String? {
-            "Backup failed and the partial backup could not be cleaned up: \(cleanupError.localizedDescription). Original backup error: \(copyError.localizedDescription)"
+            "Backup failed and the partial backup could not be cleaned up: \(cleanupError.localizedDescription). Original backup error: \(originalError.localizedDescription)"
         }
     }
 
@@ -47,9 +47,17 @@ enum IOSBackupFileCopier {
             }
 
             if let cleanupError {
-                throw CleanupFailure(copyError: error, cleanupError: cleanupError)
+                throw CleanupFailure(originalError: error, cleanupError: cleanupError)
             }
             throw error
+        }
+    }
+
+    nonisolated static func removeSQLiteSnapshot(at snapshotURL: URL) throws {
+        for url in [snapshotURL, URL(fileURLWithPath: snapshotURL.path + "-wal"), URL(fileURLWithPath: snapshotURL.path + "-shm")] {
+            if FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.removeItem(at: url)
+            }
         }
     }
 
@@ -309,7 +317,16 @@ struct IOSBackupsPage: View {
         do {
             let sourceURL = URL(fileURLWithPath: sourcePath)
             try IOSBackupFileCopier.copySQLiteSnapshot(from: sourceURL, to: destURL)
-            try IOSBackupFileCopier.pruneBackups(in: dir)
+            do {
+                try IOSBackupFileCopier.pruneBackups(in: dir)
+            } catch {
+                do {
+                    try IOSBackupFileCopier.removeSQLiteSnapshot(at: destURL)
+                } catch let cleanupError {
+                    throw IOSBackupFileCopier.CleanupFailure(originalError: error, cleanupError: cleanupError)
+                }
+                throw error
+            }
 
             backupSuccess = true
             loadData()
