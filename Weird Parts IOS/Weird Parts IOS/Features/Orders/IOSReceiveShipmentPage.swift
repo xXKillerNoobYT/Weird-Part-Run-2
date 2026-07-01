@@ -58,13 +58,16 @@ struct IOSReceiveShipmentPage: View {
         }
 
         private let source: Source
+        private let routedQty: Int?
 
         init(route: WarehouseService.ReceivingRoute) {
             self.source = .live(route)
+            self.routedQty = nil
         }
 
-        init(disposition: WarehouseService.ReceivingRoutingDisposition) {
+        init(disposition: WarehouseService.ReceivingRoutingDisposition, routedQty: Int) {
             self.source = .persisted(disposition)
+            self.routedQty = routedQty
         }
 
         var label: String {
@@ -197,13 +200,18 @@ struct IOSReceiveShipmentPage: View {
                 false
             }
         }
+
+        func covers(receivedQty: Int) -> Bool {
+            guard let routedQty else { return true }
+            return routedQty >= receivedQty
+        }
     }
 
-    /// Items that have been received (qty > 0) but not yet routed (62H).
+    /// Items that have been received (qty > 0) but not yet fully routed (62H).
     private var unroutedItems: [WarehouseService.ReceivingItemInfo] {
         sessionItems.filter { item in
             let qty = receivedQtys[item.id] ?? 0
-            return qty > 0 && routingResults[item.id] == nil
+            return qty > 0 && !(routingResults[item.id]?.covers(receivedQty: qty) ?? false)
         }
     }
 
@@ -1056,8 +1064,8 @@ struct IOSReceiveShipmentPage: View {
                 if routingResults[item.id] == nil,
                    let disposition = item.routingDisposition,
                    currentReceivedQty > 0,
-                   item.routedQty >= currentReceivedQty {
-                    routingResults[item.id] = RoutingResult(disposition: disposition)
+                   item.routedQty > 0 {
+                    routingResults[item.id] = RoutingResult(disposition: disposition, routedQty: item.routedQty)
                 }
             }
             postAIContext()
@@ -1200,8 +1208,8 @@ struct IOSReceiveShipmentPage: View {
                 if stagedCount > 0 { parts.append("\(stagedCount) routed to staging") }
                 if shelfCount > 0 { parts.append("\(shelfCount) shelved") }
                 if returnCount > 0 { parts.append("\(returnCount) returning") }
-                if otherCount > 0 { parts.append("\(otherCount) routed for review") }
-                summary = "Receiving complete. \(routedCount)/\(totalCount) items routed: \(parts.joined(separator: ", "))."
+                if otherCount > 0 { parts.append("\(otherCount) routed other ways") }
+                summary = "Receiving complete. \(routedCount)/\(totalCount) items with routes: \(parts.joined(separator: ", "))."
             } else {
                 summary = "Receiving complete. Stock has been updated."
             }
