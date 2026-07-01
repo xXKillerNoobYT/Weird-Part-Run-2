@@ -30,6 +30,8 @@ struct IOSReceiveShipmentPage: View {
     @State private var showBarcodeScanner = false
     @State private var highlightedItemId: Int64?
     @State private var scanError: String?
+    @State private var scannerCountedItemIds = Set<Int64>()
+    @State private var manuallyEditedQuantityItemIds = Set<Int64>()
 
     // Unrouted items warning (62H)
     @State private var showUnroutedWarning = false
@@ -165,10 +167,7 @@ struct IOSReceiveShipmentPage: View {
             Button("OK") {
                 completionMessage = nil
                 activeSessionId = nil
-                sessionItems = []
-                priceVerifications = [:]
-                receivedQtys = [:]
-                routingResults = [:]
+                resetReceivingSessionState()
                 loadData()
             }
         } message: {
@@ -332,6 +331,7 @@ struct IOSReceiveShipmentPage: View {
                             let svc = appCore.warehouseService
                             let items = sessionItems
                             for item in items { receivedQtys[item.id] = item.expectedQty }
+                            manuallyEditedQuantityItemIds.formUnion(items.map(\.id))
                             Task {
                                 guard let svc else { return }
                                 var failed = 0
@@ -351,6 +351,7 @@ struct IOSReceiveShipmentPage: View {
                             let svc = appCore.warehouseService
                             let items = sessionItems
                             for item in items { receivedQtys[item.id] = 0 }
+                            manuallyEditedQuantityItemIds.formUnion(items.map(\.id))
                             Task {
                                 guard let svc else { return }
                                 var failed = 0
@@ -477,10 +478,7 @@ struct IOSReceiveShipmentPage: View {
                 Section {
                     Button(role: .destructive) {
                         activeSessionId = nil
-                        sessionItems = []
-                        priceVerifications = [:]
-                        receivedQtys = [:]
-                        routingResults = [:]
+                        resetReceivingSessionState()
                         loadData()
                     } label: {
                         HStack {
@@ -515,10 +513,7 @@ struct IOSReceiveShipmentPage: View {
                 // Quantities are auto-saved — no discard dialog needed (PE-041)
                 Button {
                     activeSessionId = nil
-                    sessionItems = []
-                    priceVerifications = [:]
-                    receivedQtys = [:]
-                    routingResults = [:]
+                    resetReceivingSessionState()
                     loadData()
                 } label: {
                     HStack(spacing: 4) {
@@ -640,6 +635,7 @@ struct IOSReceiveShipmentPage: View {
                         if current > 0 {
                             let newQty = current - 1
                             receivedQtys[item.id] = newQty
+                            manuallyEditedQuantityItemIds.insert(item.id)
                             let svc = appCore.warehouseService
                             let iid = item.id
                             Task {
@@ -668,6 +664,7 @@ struct IOSReceiveShipmentPage: View {
                         let current = receivedQtys[item.id] ?? item.expectedQty
                         let newQty = current + 1
                         receivedQtys[item.id] = newQty
+                        manuallyEditedQuantityItemIds.insert(item.id)
                         let svc = appCore.warehouseService
                         let iid = item.id
                         Task {
@@ -686,6 +683,7 @@ struct IOSReceiveShipmentPage: View {
                         Button {
                             let newQty = item.expectedQty
                             receivedQtys[item.id] = newQty
+                            manuallyEditedQuantityItemIds.insert(item.id)
                             let svc = appCore.warehouseService
                             let iid = item.id
                             Task {
@@ -888,10 +886,19 @@ struct IOSReceiveShipmentPage: View {
             return
         }
 
-        // Auto-increment received quantity and auto-save (PE-041)
-        let currentQty = receivedQtys[item.id] ?? item.expectedQty
+        // Auto-increment received quantity and auto-save (PE-041).
+        // Fresh sessions may display expected quantities, but barcode scans are
+        // physical counted units. The first scan starts from zero unless the
+        // worker has already saved/edited a quantity for this line.
+        let currentQty = receivingBarcodeScanBaseQuantity(
+            displayedQty: receivedQtys[item.id],
+            persistedReceivedQty: item.receivedQty,
+            hasScannerCount: scannerCountedItemIds.contains(item.id),
+            hasManualQuantityEdit: manuallyEditedQuantityItemIds.contains(item.id)
+        )
         let newQty = currentQty + 1
         receivedQtys[item.id] = newQty
+        scannerCountedItemIds.insert(item.id)
         let svc = appCore.warehouseService
         let iid = item.id
         Task {
@@ -919,6 +926,7 @@ struct IOSReceiveShipmentPage: View {
         do {
             let sessionId = try service.startReceivingSession(poId: poId, startedBy: userId)
             activeSessionId = sessionId
+            resetReceivingSessionState()
             loadSessionItems()
         } catch {
             actionError = userFriendlyError(error, context: "receive shipment")
@@ -946,6 +954,17 @@ struct IOSReceiveShipmentPage: View {
         } catch {
             actionError = userFriendlyError(error, context: "receive shipment")
         }
+    }
+
+    private func resetReceivingSessionState() {
+        sessionItems = []
+        receivedQtys = [:]
+        priceVerifications = [:]
+        routingResults = [:]
+        scannerCountedItemIds = []
+        manuallyEditedQuantityItemIds = []
+        highlightedItemId = nil
+        scanError = nil
     }
 
     private func completeReceiving() async {
@@ -1146,6 +1165,19 @@ struct IOSReceiveShipmentPage: View {
             userInfo: ["context": context]
         )
     }
+}
+
+func receivingBarcodeScanBaseQuantity(
+    displayedQty: Int?,
+    persistedReceivedQty: Int,
+    hasScannerCount: Bool,
+    hasManualQuantityEdit: Bool
+) -> Int {
+    if hasScannerCount || hasManualQuantityEdit || persistedReceivedQty > 0 {
+        return displayedQty ?? persistedReceivedQty
+    }
+
+    return 0
 }
 
 // MARK: - Price Verification
