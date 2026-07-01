@@ -68,6 +68,7 @@ final class IOSSyncManager {
         let state: String
         let discoveredAt: String
         let address: String?
+        let isManuallySyncable: Bool
     }
 
     enum PeerDiscoveryMode: Equatable {
@@ -582,12 +583,18 @@ final class IOSSyncManager {
     private func handlePeerStateChange(_ state: PeerManagerState) {
         // Merge LAN peers into our peer list
         let lanPeers = state.peers.map { peer in
-            PeerInfo(
+            let address = formattedPeerAddress(host: peer.host, port: Int(peer.port))
+            return PeerInfo(
                 id: peer.deviceId,
                 name: peer.deviceName,
                 state: peer.multipeerState == "connected" ? "connected" : peer.transport,
                 discoveredAt: peer.discoveredAt,
-                address: formattedPeerAddress(host: peer.host, port: Int(peer.port))
+                address: address,
+                isManuallySyncable: Self.isManuallySyncablePeer(
+                    transport: peer.transport,
+                    multipeerState: peer.multipeerState,
+                    address: address
+                )
             )
         }
 
@@ -604,7 +611,12 @@ final class IOSSyncManager {
                 name: peer.deviceName,
                 state: peer.state.rawValue == "connected" ? "connected" : "multipeer",
                 discoveredAt: peer.discoveredAt,
-                address: nil
+                address: nil,
+                isManuallySyncable: Self.isManuallySyncablePeer(
+                    transport: "multipeer",
+                    multipeerState: peer.state.rawValue,
+                    address: nil
+                )
             )
         }
 
@@ -629,6 +641,17 @@ final class IOSSyncManager {
         guard !host.isEmpty, port > 0 else { return nil }
         let formattedHost = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
         return "\(formattedHost):\(port)"
+    }
+
+    private static func isManuallySyncablePeer(
+        transport: String,
+        multipeerState: String?,
+        address: String?
+    ) -> Bool {
+        if transport == "multipeer" {
+            return multipeerState == "connected"
+        }
+        return transport == "lan" && address != nil
     }
 
     private func refreshPendingCount() {
