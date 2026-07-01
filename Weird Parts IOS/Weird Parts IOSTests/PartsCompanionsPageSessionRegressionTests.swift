@@ -26,16 +26,43 @@ final class PartsCompanionsPageSessionRegressionTests: XCTestCase {
             "Companion poll service calls should use the unwrapped real user id."
         )
         XCTAssertTrue(
-            source.contains(".onChange(of: currentUserId)")
-                && source.contains("reloadForCurrentUserChange()")
+            source.contains(".task(id: currentUserId)")
                 && source.contains("await loadDataAndMarkViewed()"),
-            "Companion polls should reload when the current user becomes available after initial page load."
+            "Companion polls should reload with SwiftUI task cancellation when the current user becomes available after initial page load."
         )
         XCTAssertTrue(
             source.contains("markCompanionsViewedIfReady()")
                 && source.contains("currentUserId != nil")
                 && source.contains("loadError == nil"),
             "Companion polls should not mark onboarding completed when the missing-session load fails closed."
+        )
+        XCTAssertTrue(
+            source.contains("guard !Task.isCancelled, currentUserId != nil, loadError == nil else { return }"),
+            "Companion polls should not mark onboarding completed if cancellation happens immediately before the mark."
+        )
+        XCTAssertTrue(
+            source.contains("guard !Task.isCancelled else { return }"),
+            "Companion poll loads should not publish stale state or mark onboarding after SwiftUI cancels an old user-id task."
+        )
+        let closeExpiredRange = try XCTUnwrap(source.range(of: "try service.closeExpiredPolls()"))
+        let purgeExpiredRange = try XCTUnwrap(source.range(of: "try service.purgeExpiredRules()"))
+        XCTAssertNotNil(
+            source[..<closeExpiredRange.lowerBound].range(
+                of: "guard !Task.isCancelled else { return }",
+                options: .backwards
+            ),
+            "Companion poll housekeeping should check cancellation before closeExpiredPolls writes."
+        )
+        XCTAssertNotNil(
+            source[closeExpiredRange.upperBound..<purgeExpiredRange.lowerBound].range(
+                of: "guard !Task.isCancelled else { return }"
+            ),
+            "Companion poll housekeeping should check cancellation between closeExpiredPolls and purgeExpiredRules writes."
+        )
+        XCTAssertTrue(
+            source.range(of: "guard let userId = currentUserId else")?.lowerBound ?? source.endIndex
+                < source.range(of: "let rules = try service.listCompanionRulesHierarchy()")?.lowerBound ?? source.startIndex,
+            "Companion loads should fail closed before doing unused service work when the user session is missing."
         )
     }
 

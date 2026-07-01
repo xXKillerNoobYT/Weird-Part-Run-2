@@ -208,11 +208,8 @@ struct PartsCompanionsPage: View {
             Text("This poll will be closed and a -50 point penalty applied. A replacement poll will be created from the next-best suggestion.")
         }
         .background(DS.Background.page)
-        .task {
+        .task(id: currentUserId) {
             await loadDataAndMarkViewed()
-        }
-        .onChange(of: currentUserId) { _, _ in
-            reloadForCurrentUserChange()
         }
         .onAppear { postCompanionsContext() }
         .onDisappear {
@@ -885,22 +882,22 @@ struct PartsCompanionsPage: View {
 
     // MARK: - Data Loading
 
+    @MainActor
     private func retryLoadData() {
         Task { await loadDataAndMarkViewed() }
     }
 
+    @MainActor
     private func loadDataAndMarkViewed() async {
         await loadData()
+        guard !Task.isCancelled else { return }
         markCompanionsViewedIfReady()
     }
 
+    @MainActor
     private func markCompanionsViewedIfReady() {
-        guard currentUserId != nil, loadError == nil else { return }
+        guard !Task.isCancelled, currentUserId != nil, loadError == nil else { return }
         appCore.onboardingManager?.markCompleted("companions-view")
-    }
-
-    private func reloadForCurrentUserChange() {
-        Task { await loadDataAndMarkViewed() }
     }
 
     private func postCompanionsContext() {
@@ -922,26 +919,30 @@ struct PartsCompanionsPage: View {
         )
     }
 
+    @MainActor
     private func loadData() async {
         isLoading = true
         loadError = nil
         do {
             guard let service = appCore.partsService else {
+                guard !Task.isCancelled else { return }
                 loadError = "Parts service not available"
                 isLoading = false
                 return
             }
-            let rules = try service.listCompanionRulesHierarchy()
-            let alts = try service.listAllAlternatives()
-
-            // Poll data
             guard let userId = currentUserId else {
+                guard !Task.isCancelled else { return }
                 await MainActor.run {
                     loadError = "User session unavailable. Sign in again."
                     isLoading = false
                 }
                 return
             }
+
+            let rules = try service.listCompanionRulesHierarchy()
+            let alts = try service.listAllAlternatives()
+
+            // Poll data
             let isAdmin = appCore.hasPermission("vote_veto")
             let polls = try service.getActivePolls(userId: userId, isAdmin: isAdmin)
             let results = try service.getLastWeekResults(userId: userId)
@@ -949,9 +950,12 @@ struct PartsCompanionsPage: View {
             let preview = isAdmin ? try service.getNextPollPreview() : nil
 
             // Housekeeping
+            guard !Task.isCancelled else { return }
             try service.closeExpiredPolls()
+            guard !Task.isCancelled else { return }
             try service.purgeExpiredRules()
 
+            guard !Task.isCancelled else { return }
             await MainActor.run {
                 companionRules = rules
                 alternatives = alts
@@ -962,6 +966,7 @@ struct PartsCompanionsPage: View {
                 isLoading = false
             }
         } catch {
+            guard !Task.isCancelled else { return }
             await MainActor.run {
                 loadError = userFriendlyError(error, context: "load companion parts")
                 isLoading = false
