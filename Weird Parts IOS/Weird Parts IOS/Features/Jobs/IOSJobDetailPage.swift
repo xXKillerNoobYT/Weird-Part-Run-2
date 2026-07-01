@@ -125,12 +125,46 @@ struct IOSJobDetailPage: View {
         }
     }
 
+    private enum JobQuickActionDestination {
+        case tab(DetailTab)
+        case editJob
+        case pullMaterial
+        case weeklyReview
+    }
+
+    private struct JobQuickAction: Identifiable {
+        let id: String
+        let title: String
+        let icon: String
+        let isEnabled: Bool
+        let accessibilityHint: String
+        let disabledAccessibilityHint: String
+        let destination: JobQuickActionDestination
+
+        init(
+            id: String,
+            title: String,
+            icon: String,
+            isEnabled: Bool,
+            accessibilityHint: String,
+            disabledAccessibilityHint: String = "Action unavailable for the current job state",
+            destination: JobQuickActionDestination
+        ) {
+            self.id = id
+            self.title = title
+            self.icon = icon
+            self.isEnabled = isEnabled
+            self.accessibilityHint = accessibilityHint
+            self.disabledAccessibilityHint = disabledAccessibilityHint
+            self.destination = destination
+        }
+    }
+
     private enum ActiveSheet: Identifiable {
         case help
         case editJob
         case weeklyReview
         case stageDetails(String)
-        case quickAction(String)
         case materialAction(MaterialAction)
 
         var id: String {
@@ -139,7 +173,6 @@ struct IOSJobDetailPage: View {
             case .editJob: "editJob"
             case .weeklyReview: "weeklyReview"
             case .stageDetails(let name): "stage-\(name)"
-            case .quickAction(let name): "action-\(name)"
             case .materialAction(let action): "material-\(action.id)"
             }
         }
@@ -203,11 +236,6 @@ struct IOSJobDetailPage: View {
                     informationalSheet(
                         title: stageName,
                         message: "Stage details are read-only from this dashboard for now. Use the stage workflow pages to change progression."
-                    )
-                case .quickAction(let action):
-                    informationalSheet(
-                        title: action,
-                        message: quickActionMessage(action)
                     )
                 case .materialAction(let action):
                     materialActionSheet(action)
@@ -462,30 +490,97 @@ struct IOSJobDetailPage: View {
         dashboardCard {
             VStack(alignment: .leading, spacing: 10) {
                 sectionHeader("Quick Actions", systemImage: "bolt.fill")
-                let actions: [(String, String, Bool)] = [
-                    ("Clock In", "clock.badge.checkmark", !isPaymentHold),
-                    ("Add To-Do", "checklist.unchecked", true),
-                    ("Create JPO", "doc.badge.plus", true),
-                    ("Add Note", "note.text.badge.plus", true),
-                    ("Change Status", "arrow.triangle.2.circlepath", true),
-                    ("Job QR", "qrcode", true),
-                ]
+                let actions = jobQuickActions
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                    ForEach(actions.indices, id: \.self) { index in
-                        let action = actions[index]
+                    ForEach(actions) { action in
                         Button {
-                            activeSheet = .quickAction(action.0)
+                            performQuickAction(action)
                         } label: {
-                            Label(action.0, systemImage: action.1)
+                            Label(action.title, systemImage: action.icon)
                                 .font(.subheadline)
                                 .frame(maxWidth: .infinity, minHeight: 36)
                         }
                         .buttonStyle(.bordered)
-                        .disabled(!action.2)
-                        .accessibilityHint(action.2 ? "Opens \(action.0) workflow" : "Disabled while payment hold is active")
+                        .disabled(!action.isEnabled)
+                        .accessibilityHint(action.isEnabled ? action.accessibilityHint : action.disabledAccessibilityHint)
                     }
                 }
             }
+        }
+    }
+
+    private var jobQuickActions: [JobQuickAction] {
+        var actions: [JobQuickAction] = [
+            JobQuickAction(
+                id: "labor",
+                title: "View Labor",
+                icon: "clock.badge.checkmark",
+                isEnabled: true,
+                accessibilityHint: "Opens this job’s labor tab where clock entries and payment-hold context are reviewed",
+                destination: .tab(.labor)
+            ),
+            JobQuickAction(
+                id: "todos",
+                title: "Open To-Dos",
+                icon: "checklist.unchecked",
+                isEnabled: true,
+                accessibilityHint: "Opens this job’s to-do list",
+                destination: .tab(.todos)
+            ),
+            JobQuickAction(
+                id: "pull-material",
+                title: "Pull Material",
+                icon: "shippingbox.and.arrow.backward",
+                isEnabled: true,
+                accessibilityHint: "Opens the job-scoped material pull workflow",
+                destination: .pullMaterial
+            ),
+            JobQuickAction(
+                id: "notes",
+                title: "View Notes",
+                icon: "note.text.badge.plus",
+                isEnabled: true,
+                accessibilityHint: "Opens this job’s notes tab",
+                destination: .tab(.notes)
+            ),
+            JobQuickAction(
+                id: "weekly-review",
+                title: "Weekly Review",
+                icon: "calendar.badge.clock",
+                isEnabled: true,
+                accessibilityHint: "Opens the weekly review sheet for this job",
+                destination: .weeklyReview
+            ),
+        ]
+
+        if appCore.hasPermission("manage_jobs") {
+            actions.insert(
+                JobQuickAction(
+                    id: "edit-status",
+                    title: "Edit Status",
+                    icon: "arrow.triangle.2.circlepath",
+                    isEnabled: true,
+                    accessibilityHint: "Opens the editable job sheet with status controls",
+                    destination: .editJob
+                ),
+                at: 4
+            )
+        }
+
+        return actions
+    }
+
+    private func performQuickAction(_ action: JobQuickAction) {
+        switch action.destination {
+        case .tab(let tab):
+            selectedTab = tab
+        case .editJob:
+            prepareJobEdit()
+        case .pullMaterial:
+            selectedTab = .materials
+            prepareMaterialAction(.pull)
+        case .weeklyReview:
+            activeSheet = .weeklyReview
         }
     }
 
@@ -669,11 +764,12 @@ struct IOSJobDetailPage: View {
                 VStack(alignment: .leading, spacing: 8) {
                     placeholderRow("No staged material. Pulled or received parts for this job will appear here.", systemImage: "shippingbox")
                     Button {
-                        activeSheet = .quickAction("Create JPO")
+                        prepareMaterialAction(.pull)
                     } label: {
-                        Label("Open Stage Planner", systemImage: "list.bullet.clipboard")
+                        Label("Pull Material", systemImage: "shippingbox.and.arrow.backward")
                     }
                     .buttonStyle(.bordered)
+                    .accessibilityHint("Opens the job-scoped material pull workflow")
                 }
             } else {
                 ForEach(readyMaterials) { material in
@@ -1506,27 +1602,6 @@ struct IOSJobDetailPage: View {
         let holdText = isPaymentHold ? " Payment hold is active, so clock-in should remain blocked until resolved." : ""
         let warrantyText = warrantyDaysRemaining.map { " Warranty has \($0) days remaining." } ?? " Warranty is not currently active."
         return "\(job.jobName) is \(job.status.replacingOccurrences(of: "_", with: " ")) with \(teamMembers.count) assigned team members and \(totalHoursText) logged. Current stage: \(stageName). Active to-dos: \(activeTodos.count).\(holdText)\(warrantyText)"
-    }
-
-    private func quickActionMessage(_ action: String) -> String {
-        switch action {
-        case "Clock In" where isPaymentHold:
-            return "Clock-in is disabled while this job is on payment hold. A manager with payment-hold permissions must resume the job first."
-        case "Clock In":
-            return "Open the Clock page to clock into this job. The Jobs service still validates status, payment hold, and existing active clock entries."
-        case "Add To-Do":
-            return "Add to-dos from the job notebook flow. Future work can deep-link this button directly into the add-to-do sheet."
-        case "Create JPO":
-            return "Create a job purchase order from the JPO workflow. Future work can preselect this job from the action."
-        case "Add Note":
-            return "Add notes from the job notebook. Future work can deep-link this button directly to the notebook entry composer."
-        case "Change Status":
-            return "Change status from the manager job workflow. This dashboard keeps the action visible but avoids bypassing role checks."
-        case "Job QR":
-            return "Job-site QR signage generation is queued for this dashboard. The action is reserved here so crews know where it will live."
-        default:
-            return "This action is available from the related job workflow."
-        }
     }
 
     private func stageTint(_ stage: JobsService.JobStageStatus) -> Color {
