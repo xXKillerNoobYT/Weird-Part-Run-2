@@ -1,49 +1,69 @@
 import Foundation
 
-/// Parses persisted SettingsService values without hiding corrupt saved configuration.
-///
-/// Missing keys intentionally use page defaults. Present-but-malformed values throw so
-/// settings pages surface a visible load error instead of silently overwriting the
-/// existing stored value on the next save.
-enum SettingsValueParser {
-    enum ParseError: LocalizedError, Equatable {
-        case invalidValue(key: String, value: String, expectedType: String)
+/// Parses persisted SettingsService values without silently treating malformed saved values as missing.
+/// Missing keys use the supplied UI default. Present-but-invalid keys are collected so settings pages
+/// can stop loading and warn the owner before a later save overwrites the corrupt stored value.
+struct SettingsValueParser {
+    private(set) var invalidEntries: [SettingsHydrationError.InvalidEntry] = []
 
-        var errorDescription: String? {
-            switch self {
-            case let .invalidValue(key, value, expectedType):
-                return "Saved setting \"\(key)\" has invalid \(expectedType) value \"\(value)\". Fix or reset this setting before saving."
-            }
+    mutating func int(_ settings: [String: String], key: String, default defaultValue: Int) -> Int {
+        guard let rawValue = settings[key] else { return defaultValue }
+        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let parsed = Int(value) else {
+            recordInvalid(key: key, value: rawValue, expectedType: "whole number")
+            return defaultValue
         }
+        return parsed
     }
 
-    static func int(_ map: [String: String], key: String, default defaultValue: Int) throws -> Int {
-        guard let rawValue = map[key] else { return defaultValue }
-        let trimmedValue = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let parsedValue = Int(trimmedValue) else {
-            throw ParseError.invalidValue(key: key, value: rawValue, expectedType: "whole-number")
+    mutating func double(_ settings: [String: String], key: String, default defaultValue: Double) -> Double {
+        guard let rawValue = settings[key] else { return defaultValue }
+        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let parsed = Double(value), parsed.isFinite else {
+            recordInvalid(key: key, value: rawValue, expectedType: "number")
+            return defaultValue
         }
-        return parsedValue
+        return parsed
     }
 
-    static func double(_ map: [String: String], key: String, default defaultValue: Double) throws -> Double {
-        guard let rawValue = map[key] else { return defaultValue }
-        let trimmedValue = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let parsedValue = Double(trimmedValue) else {
-            throw ParseError.invalidValue(key: key, value: rawValue, expectedType: "decimal-number")
-        }
-        return parsedValue
-    }
-
-    static func bool(_ map: [String: String], key: String, default defaultValue: Bool) throws -> Bool {
-        guard let rawValue = map[key] else { return defaultValue }
-        switch rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-        case "true":
-            return true
-        case "false":
-            return false
+    mutating func bool(_ settings: [String: String], key: String, default defaultValue: Bool) -> Bool {
+        guard let rawValue = settings[key] else { return defaultValue }
+        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch value {
+        case "true": return true
+        case "false": return false
         default:
-            throw ParseError.invalidValue(key: key, value: rawValue, expectedType: "true/false")
+            recordInvalid(key: key, value: rawValue, expectedType: "true or false")
+            return defaultValue
         }
+    }
+
+    func throwIfInvalid() throws {
+        guard !invalidEntries.isEmpty else { return }
+        throw SettingsHydrationError(invalidEntries: invalidEntries)
+    }
+
+    private mutating func recordInvalid(key: String, value: String, expectedType: String) {
+        invalidEntries.append(.init(key: key, value: value, expectedType: expectedType))
+    }
+}
+
+struct SettingsHydrationError: LocalizedError, Equatable {
+    struct InvalidEntry: Equatable {
+        let key: String
+        let value: String
+        let expectedType: String
+    }
+
+    let invalidEntries: [InvalidEntry]
+
+    var errorDescription: String? {
+        let listedEntries = invalidEntries
+            .prefix(5)
+            .map { "\($0.key)=\"\($0.value)\" (expected \($0.expectedType))" }
+            .joined(separator: ", ")
+        let extraCount = max(0, invalidEntries.count - 5)
+        let suffix = extraCount > 0 ? ", and \(extraCount) more" : ""
+        return "Saved settings contain invalid values and were not overwritten. Fix these stored values before saving: \(listedEntries)\(suffix)."
     }
 }
