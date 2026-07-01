@@ -223,20 +223,20 @@ struct IOSOrganizationThresholdsPage: View {
         do {
             let map = try service.getSettingsByCategory("org")
 
-            baseDecayRate = Double(map["org_base_decay_rate"] ?? "") ?? 0.1
-            movementDecayFactor = Double(map["org_movement_decay_factor"] ?? "") ?? 0.5
+            baseDecayRate = try SettingsValueParser.double(map, key: "org_base_decay_rate", default: 0.1)
+            movementDecayFactor = try SettingsValueParser.double(map, key: "org_movement_decay_factor", default: 0.5)
 
-            auditThreshold = Double(map["org_audit_threshold"] ?? "") ?? 80
-            maxRecsPerDay = Int(map["org_max_recs_per_day"] ?? "") ?? 1
-            recCooldownDays = Int(map["org_rec_cooldown_days"] ?? "") ?? 60
+            auditThreshold = try SettingsValueParser.double(map, key: "org_audit_threshold", default: 80)
+            maxRecsPerDay = try SettingsValueParser.int(map, key: "org_max_recs_per_day", default: 1)
+            recCooldownDays = try SettingsValueParser.int(map, key: "org_rec_cooldown_days", default: 60)
 
-            votingTimeoutDays = Int(map["org_voting_timeout_days"] ?? "") ?? 7
-            minVotesRequired = Int(map["org_min_votes_required"] ?? "") ?? 2
-            autoApproveUnanimous = (map["org_auto_approve_unanimous"] ?? "true") == "true"
+            votingTimeoutDays = try SettingsValueParser.int(map, key: "org_voting_timeout_days", default: 7)
+            minVotesRequired = try SettingsValueParser.int(map, key: "org_min_votes_required", default: 2)
+            autoApproveUnanimous = try SettingsValueParser.bool(map, key: "org_auto_approve_unanimous", default: true)
 
-            targetScore = Double(map["org_target_score"] ?? "") ?? 85
-            showOnDashboard = (map["org_show_on_dashboard"] ?? "true") == "true"
-            includeInDailyReport = (map["org_include_in_daily_report"] ?? "false") == "true"
+            targetScore = try SettingsValueParser.double(map, key: "org_target_score", default: 85)
+            showOnDashboard = try SettingsValueParser.bool(map, key: "org_show_on_dashboard", default: true)
+            includeInDailyReport = try SettingsValueParser.bool(map, key: "org_include_in_daily_report", default: false)
         } catch {
             loadError = userFriendlyError(error, context: "load")
         }

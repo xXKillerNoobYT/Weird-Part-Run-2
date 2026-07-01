@@ -226,6 +226,47 @@ final class SettingsSaveButtonValidationTests: XCTestCase {
         )
     }
 
+    // MARK: - Settings persisted value parsing
+
+    func testSettingsPagesUseStrictPersistedValueParser() throws {
+        let pages = [
+            "IOSAuditSettingsPage.swift",
+            "IOSDispatchPreferencesPage.swift",
+            "IOSForecastSettingsPage.swift",
+            "IOSOrganizationThresholdsPage.swift",
+            "IOSToolPoliciesPage.swift",
+        ]
+
+        for page in pages {
+            let source = try Self.readSettingsSource(page)
+            XCTAssertTrue(
+                source.contains("try SettingsValueParser."),
+                "\(page) must parse persisted numeric and boolean settings through SettingsValueParser so malformed saved values surface as load errors."
+            )
+            XCTAssertFalse(
+                source.contains("Int(map[") || source.contains("Double(map[") || source.contains("] ?? \"true\") == \"true\"") || source.contains("] ?? \"false\") == \"true\""),
+                "\(page) must not silently coerce malformed persisted settings to fallback defaults."
+            )
+        }
+    }
+
+    func testSettingsValueParserDistinguishesMissingFromMalformedValues() throws {
+        let source = try Self.readSettingsSource("SettingsValueParser.swift")
+
+        XCTAssertTrue(
+            source.contains("guard let rawValue = map[key] else { return defaultValue }"),
+            "SettingsValueParser must continue allowing missing values to use page defaults."
+        )
+        XCTAssertTrue(
+            source.contains("throw ParseError.invalidValue") && source.contains("Saved setting") && source.contains("Fix or reset this setting before saving"),
+            "SettingsValueParser must throw a visible validation error for present-but-malformed values before a page can overwrite them."
+        )
+        XCTAssertTrue(
+            source.contains("case \"true\"") && source.contains("case \"false\"") && source.contains("expectedType: \"true/false\""),
+            "SettingsValueParser must validate persisted booleans instead of treating every non-true value as false."
+        )
+    }
+
     // MARK: - Helpers
 
     private static func readSettingsSource(_ filename: String, file: StaticString = #filePath) throws -> String {

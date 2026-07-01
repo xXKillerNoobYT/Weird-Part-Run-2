@@ -181,19 +181,19 @@ struct IOSDispatchPreferencesPage: View {
         do {
             let map = try service.getSettingsByCategory("dispatch")
 
-            enableAISuggestions = (map["dispatch_ai_suggestions_enabled"] ?? "true") == "true"
-            enableAILearning = (map["dispatch_ai_learning_enabled"] ?? "true") == "true"
-            showConfidenceScores = (map["dispatch_show_confidence_scores"] ?? "false") == "true"
+            enableAISuggestions = try SettingsValueParser.bool(map, key: "dispatch_ai_suggestions_enabled", default: true)
+            enableAILearning = try SettingsValueParser.bool(map, key: "dispatch_ai_learning_enabled", default: true)
+            showConfidenceScores = try SettingsValueParser.bool(map, key: "dispatch_show_confidence_scores", default: false)
 
-            enableFlexSelfAssign = (map["dispatch_flex_self_assign_enabled"] ?? "false") == "true"
-            requireManagerApproval = (map["dispatch_flex_require_approval"] ?? "true") == "true"
+            enableFlexSelfAssign = try SettingsValueParser.bool(map, key: "dispatch_flex_self_assign_enabled", default: false)
+            requireManagerApproval = try SettingsValueParser.bool(map, key: "dispatch_flex_require_approval", default: true)
 
-            startAnytimeTarget = Int(map["dispatch_pipeline_start_anytime_target"] ?? "") ?? 3
-            scheduleNeededTarget = Int(map["dispatch_pipeline_schedule_needed_target"] ?? "") ?? 2
-            favoriteGCTarget = Int(map["dispatch_pipeline_favorite_gc_target"] ?? "") ?? 1
+            startAnytimeTarget = try SettingsValueParser.int(map, key: "dispatch_pipeline_start_anytime_target", default: 3)
+            scheduleNeededTarget = try SettingsValueParser.int(map, key: "dispatch_pipeline_schedule_needed_target", default: 2)
+            favoriteGCTarget = try SettingsValueParser.int(map, key: "dispatch_pipeline_favorite_gc_target", default: 1)
 
             defaultView = map["dispatch_default_view"] ?? "week"
-            crewHistoryMonths = Int(map["dispatch_crew_history_months"] ?? "") ?? 3
+            crewHistoryMonths = try SettingsValueParser.int(map, key: "dispatch_crew_history_months", default: 3)
             crewContinuityWeight = map["dispatch_crew_continuity_weight"] ?? "medium"
         } catch {
             loadError = userFriendlyError(error, context: "load")

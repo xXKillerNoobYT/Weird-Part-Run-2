@@ -179,20 +179,20 @@ struct IOSToolPoliciesPage: View {
         do {
             let map = try service.getSettingsByCategory("tool_policy")
 
-            maxCheckoutDays = Int(map["tool_policy_max_checkout_days"] ?? "") ?? 30
-            overdueNotificationDays = Int(map["tool_policy_overdue_notification_days"] ?? "") ?? 7
-            autoExtendOnActiveJob = (map["tool_policy_auto_extend_active_job"] ?? "true") == "true"
+            maxCheckoutDays = try SettingsValueParser.int(map, key: "tool_policy_max_checkout_days", default: 30)
+            overdueNotificationDays = try SettingsValueParser.int(map, key: "tool_policy_overdue_notification_days", default: 7)
+            autoExtendOnActiveJob = try SettingsValueParser.bool(map, key: "tool_policy_auto_extend_active_job", default: true)
 
-            requireCheckoutCondition = (map["tool_policy_require_checkout_condition"] ?? "true") == "true"
-            requireReturnCondition = (map["tool_policy_require_return_condition"] ?? "true") == "true"
-            requireDamagePhoto = (map["tool_policy_require_damage_photo"] ?? "false") == "true"
+            requireCheckoutCondition = try SettingsValueParser.bool(map, key: "tool_policy_require_checkout_condition", default: true)
+            requireReturnCondition = try SettingsValueParser.bool(map, key: "tool_policy_require_return_condition", default: true)
+            requireDamagePhoto = try SettingsValueParser.bool(map, key: "tool_policy_require_damage_photo", default: false)
 
-            maintenanceAfterCheckouts = Int(map["tool_policy_maintenance_after_checkouts"] ?? "") ?? 50
-            maintenanceReminderDays = Int(map["tool_policy_maintenance_reminder_days"] ?? "") ?? 14
+            maintenanceAfterCheckouts = try SettingsValueParser.int(map, key: "tool_policy_maintenance_after_checkouts", default: 50)
+            maintenanceReminderDays = try SettingsValueParser.int(map, key: "tool_policy_maintenance_reminder_days", default: 14)
 
-            allowTrades = (map["tool_policy_allow_trades"] ?? "true") == "true"
-            tradeTimeoutDays = Int(map["tool_policy_trade_timeout_days"] ?? "") ?? 7
-            requireTradeCondition = (map["tool_policy_require_trade_condition"] ?? "true") == "true"
+            allowTrades = try SettingsValueParser.bool(map, key: "tool_policy_allow_trades", default: true)
+            tradeTimeoutDays = try SettingsValueParser.int(map, key: "tool_policy_trade_timeout_days", default: 7)
+            requireTradeCondition = try SettingsValueParser.bool(map, key: "tool_policy_require_trade_condition", default: true)
         } catch {
             loadError = userFriendlyError(error, context: "load")
         }

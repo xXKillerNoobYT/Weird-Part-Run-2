@@ -274,22 +274,22 @@ struct IOSForecastSettingsPage: View {
 
             for loc in locationTypes {
                 method[loc] = map["forecast_\(loc)_method"] ?? (loc == "shop" ? "adu" : "apw")
-                lookbackDays[loc] = Int(map["forecast_\(loc)_lookback_days"] ?? "") ?? (loc == "shop" ? 90 : 42)
-                minDataDays[loc] = Int(map["forecast_\(loc)_min_data_days"] ?? "") ?? (loc == "shop" ? 14 : 7)
-                apwWindow[loc] = Int(map["forecast_\(loc)_apw_window"] ?? "") ?? 2
+                lookbackDays[loc] = try SettingsValueParser.int(map, key: "forecast_\(loc)_lookback_days", default: loc == "shop" ? 90 : 42)
+                minDataDays[loc] = try SettingsValueParser.int(map, key: "forecast_\(loc)_min_data_days", default: loc == "shop" ? 14 : 7)
+                apwWindow[loc] = try SettingsValueParser.int(map, key: "forecast_\(loc)_apw_window", default: 2)
             }
 
-            commonMinMult = Double(map["forecast_common_min_mult"] ?? "") ?? 1.0
-            commonTargetMult = Double(map["forecast_common_target_mult"] ?? "") ?? 1.5
-            commonMaxMult = Double(map["forecast_common_max_mult"] ?? "") ?? 2.0
-            criticalMinMult = Double(map["forecast_critical_min_mult"] ?? "") ?? 1.5
-            criticalTargetMult = Double(map["forecast_critical_target_mult"] ?? "") ?? 2.0
-            criticalMaxMult = Double(map["forecast_critical_max_mult"] ?? "") ?? 3.0
+            commonMinMult = try SettingsValueParser.double(map, key: "forecast_common_min_mult", default: 1.0)
+            commonTargetMult = try SettingsValueParser.double(map, key: "forecast_common_target_mult", default: 1.5)
+            commonMaxMult = try SettingsValueParser.double(map, key: "forecast_common_max_mult", default: 2.0)
+            criticalMinMult = try SettingsValueParser.double(map, key: "forecast_critical_min_mult", default: 1.5)
+            criticalTargetMult = try SettingsValueParser.double(map, key: "forecast_critical_target_mult", default: 2.0)
+            criticalMaxMult = try SettingsValueParser.double(map, key: "forecast_critical_max_mult", default: 3.0)
 
-            freeSpaceThreshold = Double(map["forecast_free_space_threshold"] ?? "") ?? 20
-            autoRecalcDaily = (map["forecast_auto_recalc_daily"] ?? "true") == "true"
-            recalcHour = Int(map["forecast_recalc_hour"] ?? "") ?? 2
-            categorySuggestionMonths = Int(map["forecast_category_suggestion_months"] ?? "") ?? 6
+            freeSpaceThreshold = try SettingsValueParser.double(map, key: "forecast_free_space_threshold", default: 20)
+            autoRecalcDaily = try SettingsValueParser.bool(map, key: "forecast_auto_recalc_daily", default: true)
+            recalcHour = try SettingsValueParser.int(map, key: "forecast_recalc_hour", default: 2)
+            categorySuggestionMonths = try SettingsValueParser.int(map, key: "forecast_category_suggestion_months", default: 6)
         } catch {
             loadError = userFriendlyError(error, context: "load")
         }
