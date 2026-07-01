@@ -1,6 +1,31 @@
 import XCTest
 
 final class OnboardingAX5LayoutRegressionTests: XCTestCase {
+    func testInitialGetStartedScreenWrapsAndScrollsAtAccessibilitySizes() throws {
+        let source = try Self.readSource("Auth/OnboardingWelcomeView.swift")
+
+        XCTAssertTrue(
+            source.contains("@Environment(\\.dynamicTypeSize) private var dynamicTypeSize"),
+            "Initial Get Started screen should read Dynamic Type so it can adapt before labels truncate."
+        )
+        XCTAssertTrue(
+            source.contains("ScrollView {"),
+            "Initial Get Started content should scroll at AX5 instead of clipping the privacy footer."
+        )
+        XCTAssertTrue(
+            source.contains("HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center"),
+            "Onboarding action rows should top-align when titles and subtitles wrap at accessibility sizes."
+        )
+        XCTAssertTrue(
+            source.contains(".lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)"),
+            "Onboarding subtitles/footer should remove restrictive line clamps at accessibility sizes."
+        )
+        XCTAssertTrue(
+            source.contains(".fixedSize(horizontal: false, vertical: true)"),
+            "Wrapped onboarding copy should keep its full vertical height instead of compressing inside rows."
+        )
+    }
+
     func testWelcomeOverlayUsesScrollableWrappedAccessibilityRows() throws {
         let source = try Self.readSource("Auth/NewUserWelcomeView.swift")
 
