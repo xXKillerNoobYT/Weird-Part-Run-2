@@ -39,4 +39,17 @@ final class ManualPricingInputValidatorTests: XCTestCase {
         XCTAssertEqual(try ManualPricingInputValidator.parsePercent("0", fieldName: "Markup"), 0)
         XCTAssertEqual(try ManualPricingInputValidator.parsePercent("12.5", fieldName: "Markup"), 12.5)
     }
+
+    func testManualMarginRejectsOneHundredPercentAndAbove() throws {
+        XCTAssertEqual(try ManualPricingInputValidator.parseMarginPercent("25", fieldName: "Margin"), 25)
+
+        XCTAssertThrowsError(
+            try ManualPricingInputValidator.parseMarginPercent("100", fieldName: "Margin")
+        ) { error in
+            XCTAssertEqual(
+                error.localizedDescription,
+                "Margin must be less than 100%. Keep your entered value and fix it before saving."
+            )
+        }
+    }
 }

@@ -10,6 +10,7 @@ public enum ManualPricingInputValidator {
         case required(fieldName: String)
         case invalidNumber(fieldName: String)
         case negative(fieldName: String)
+        case percentTooHigh(fieldName: String, maxExclusive: Double)
 
         public var errorDescription: String? {
             switch self {
@@ -19,6 +20,8 @@ public enum ManualPricingInputValidator {
                 return "\(fieldName) must be a valid number. Keep your entered value and fix it before saving."
             case .negative(let fieldName):
                 return "\(fieldName) must be zero or greater. Keep your entered value and fix it before saving."
+            case .percentTooHigh(let fieldName, let maxExclusive):
+                return "\(fieldName) must be less than \(String(format: "%.0f", maxExclusive))%. Keep your entered value and fix it before saving."
             }
         }
     }
@@ -29,6 +32,14 @@ public enum ManualPricingInputValidator {
 
     public static func parsePercent(_ rawValue: String, fieldName: String) throws -> Double {
         try parseNonNegativeDecimal(rawValue, fieldName: fieldName)
+    }
+
+    public static func parseMarginPercent(_ rawValue: String, fieldName: String) throws -> Double {
+        let value = try parsePercent(rawValue, fieldName: fieldName)
+        guard value < 100 else {
+            throw ValidationError.percentTooHigh(fieldName: fieldName, maxExclusive: 100)
+        }
+        return value
     }
 
     private static func parseNonNegativeDecimal(_ rawValue: String, fieldName: String) throws -> Double {
