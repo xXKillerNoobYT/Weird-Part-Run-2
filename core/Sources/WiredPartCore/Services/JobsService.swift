@@ -3694,22 +3694,6 @@ public final class JobsService: Sendable {
         return true
     }
 
-    /// Returns the timestamp for the latest unmatched supply run start marker.
-    public static func activeSupplyRunStart(notes: String?) -> Date? {
-        guard let notes, notes.contains("[supply_run_start:") else { return nil }
-        let lastStart = notes.range(of: "[supply_run_start:", options: .backwards)
-        let lastEnd = notes.range(of: "[supply_run_end:", options: .backwards)
-        guard let start = lastStart else { return nil }
-        if let end = lastEnd, end.lowerBound > start.lowerBound {
-            return nil
-        }
-
-        let timestampStart = start.upperBound
-        guard let closeBracket = notes[timestampStart...].firstIndex(of: "]") else { return nil }
-        let timestamp = String(notes[timestampStart..<closeBracket])
-        return CoreFormatters.parseDateTime(timestamp)
-    }
-
     /// Returns the start timestamp for the latest active supply run, if the
     /// newest `supply_run_start` marker has not been matched by a later end marker.
     public static func activeSupplyRunStart(notes: String?) -> Date? {

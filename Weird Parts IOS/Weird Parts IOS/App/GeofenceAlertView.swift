@@ -244,11 +244,30 @@ struct GeofenceAlertView: View {
         let exitLat = geofenceManager.exitLocation?.latitude
         let exitLng = geofenceManager.exitLocation?.longitude
 
+        if reason.requiresActiveClockEntry && activeEntryId == nil {
+            await showMissingActiveClockEntryError()
+            return
+        }
+
         do {
             switch reason {
             case .supplyRun:
-                // Stay clocked in, acknowledge and continue
-                break
+                guard let entryId = activeEntryId else {
+                    await showMissingActiveClockEntryError()
+                    return
+                }
+                let notes = try service.getLaborEntryNotes(laborEntryId: entryId)
+                if !JobsService.isOnSupplyRun(notes: notes) {
+                    let newStatus = try service.toggleSupplyRun(laborEntryId: entryId)
+                    guard newStatus == "supply_run" else {
+                        await MainActor.run {
+                            errorMessage = "Supply run could not be started. Please refresh the Clock page and try again."
+                            showError = true
+                            isProcessing = false
+                        }
+                        return
+                    }
+                }
 
             case .anotherJob:
                 if let newJobId = targetJobId {
@@ -284,6 +303,14 @@ struct GeofenceAlertView: View {
                 showError = true
                 isProcessing = false
             }
+        }
+    }
+
+    private func showMissingActiveClockEntryError() async {
+        await MainActor.run {
+            errorMessage = "No active clock entry was found. Please refresh the Clock page and try again."
+            showError = true
+            isProcessing = false
         }
     }
 
@@ -337,6 +364,17 @@ struct GeofenceAlertView: View {
         case .breakTime: return "Taking a break. Clock pauses."
         case .doneForDay: return "Clock out and done."
         case .other: return "Something else — explain below."
+        }
+    }
+}
+
+private extension GeofenceAlertView.ExitReason {
+    var requiresActiveClockEntry: Bool {
+        switch self {
+        case .supplyRun, .lunch, .breakTime, .doneForDay:
+            return true
+        case .anotherJob, .other:
+            return false
         }
     }
 }
