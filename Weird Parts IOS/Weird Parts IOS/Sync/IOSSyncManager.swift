@@ -23,7 +23,14 @@ final class IOSSyncManager {
     var syncProgressMessage: String?
     var syncProgressPercent: Double = 0
     var isPaired: Bool {
-        guard let map = try? settingsService?.getSettingsByCategory("sync") else {
+        guard let service = settingsService else {
+            return false
+        }
+        let map: [String: String]
+        do {
+            map = try service.getSettingsByCategory("sync")
+        } catch {
+            syncSettingsReadFailed(error, context: "load pairing status")
             return false
         }
         return !(map["device_pairing_verified_at"] ?? "").isEmpty
@@ -75,14 +82,31 @@ final class IOSSyncManager {
 
     /// Whether automatic launch/foreground sync is enabled by settings.
     var isAutoSyncEnabled: Bool {
-        (try? settingsService?.isAutoSyncEnabled()) ?? true
+        guard let service = settingsService else { return false }
+        do {
+            return try service.isAutoSyncEnabled()
+        } catch {
+            syncSettingsReadFailed(error, context: "load auto-sync setting")
+            return false
+        }
     }
 
     /// The configured shop server address from settings, or nil.
     private var serverAddress: String? {
         guard let service = settingsService else { return nil }
-        let addr = (try? service.getSettingsByCategory("sync"))?["shop_server_address"]
-        return Self.normalizedShopServerAddress(addr)
+        do {
+            let addr = try service.getSettingsByCategory("sync")["shop_server_address"]
+            return Self.normalizedShopServerAddress(addr)
+        } catch {
+            syncSettingsReadFailed(error, context: "load sync server address")
+            return nil
+        }
+    }
+
+    private func syncSettingsReadFailed(_ error: Error, context: String) {
+        let message = userFriendlyError(error, context: context)
+        errorMessage = message
+        logger.error("[IOSSyncManager] \(context) failed: \(error.localizedDescription)")
     }
 
     /// Trims a user-entered or persisted shop server address and rejects blank values.
@@ -584,22 +608,39 @@ final class IOSSyncManager {
 
     private func refreshPendingCount() {
         guard let db else { return }
-        pendingChanges = (try? ChangeTracker.getPendingChangeCount(db: db)) ?? 0
+        do {
+            pendingChanges = try ChangeTracker.getPendingChangeCount(db: db)
+        } catch {
+            errorMessage = userFriendlyError(error, context: "load pending sync changes")
+            logger.error("[IOSSyncManager] pending change count refresh failed: \(error.localizedDescription)")
+        }
     }
 
     /// Refresh and return the current unreviewed conflict count.
     @discardableResult
     func refreshConflictCount() -> Int {
         guard let db else { return 0 }
-        let stats = try? ConflictResolver.getConflictStats(db: db)
-        unreviewedConflictCount = stats?.unreviewed ?? 0
-        return stats?.last24h ?? 0
+        do {
+            let stats = try ConflictResolver.getConflictStats(db: db)
+            unreviewedConflictCount = stats.unreviewed
+            return stats.last24h
+        } catch {
+            errorMessage = userFriendlyError(error, context: "load sync conflict count")
+            logger.error("[IOSSyncManager] conflict count refresh failed: \(error.localizedDescription)")
+            return 0
+        }
     }
 
     /// Get unreviewed conflicts for the review page.
     func getUnreviewedConflicts() -> [ConflictLogEntry] {
         guard let db else { return [] }
-        return (try? ConflictResolver.getUnreviewedConflicts(db: db)) ?? []
+        do {
+            return try ConflictResolver.getUnreviewedConflicts(db: db)
+        } catch {
+            errorMessage = userFriendlyError(error, context: "load unreviewed sync conflicts")
+            logger.error("[IOSSyncManager] unreviewed conflict load failed: \(error.localizedDescription)")
+            return []
+        }
     }
 
     /// Mark a single conflict as reviewed.
