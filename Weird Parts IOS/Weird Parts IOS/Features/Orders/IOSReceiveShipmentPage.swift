@@ -206,16 +206,24 @@ struct IOSReceiveShipmentPage: View {
         }
     }
 
-    private func isFullyRouted(_ item: WarehouseService.ReceivingItemInfo) -> Bool {
-        let qty = receivedQtys[item.id] ?? 0
-        return qty > 0 && (routingResults[item.id]?.covers(receivedQty: qty) ?? false)
-    }
-
     /// Items that have been received (qty > 0) but not yet fully routed (62H).
     private var unroutedItems: [WarehouseService.ReceivingItemInfo] {
         sessionItems.filter { item in
             let qty = receivedQtys[item.id] ?? 0
             return qty > 0 && !(routingResults[item.id]?.covers(receivedQty: qty) ?? false)
+        }
+    }
+
+    private var receivedItems: [WarehouseService.ReceivingItemInfo] {
+        sessionItems.filter { item in
+            (receivedQtys[item.id] ?? 0) > 0
+        }
+    }
+
+    private var fullyRoutedReceivedItems: [WarehouseService.ReceivingItemInfo] {
+        receivedItems.filter { item in
+            let qty = receivedQtys[item.id] ?? 0
+            return routingResults[item.id]?.covers(receivedQty: qty) ?? false
         }
     }
 
@@ -656,20 +664,20 @@ struct IOSReceiveShipmentPage: View {
     // MARK: - Routing Progress Summary
 
     private var routingProgressSummary: some View {
-        let routedCount = sessionItems.filter(isFullyRouted).count
-        let totalCount = sessionItems.count
-        let allRouted = routedCount == totalCount
+        let routedCount = fullyRoutedReceivedItems.count
+        let totalCount = receivedItems.count
+        let allRouted = totalCount > 0 && routedCount == totalCount
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Image(systemName: allRouted ? "checkmark.circle.fill" : "arrow.triangle.branch")
                     .foregroundStyle(allRouted ? .green : .blue)
-                Text("\(routedCount)/\(totalCount) items fully routed")
+                Text("\(routedCount)/\(totalCount) received items fully routed")
                     .font(.subheadline)
                     .fontWeight(.medium)
                 Spacer()
                 if allRouted {
-                    Text("All routed")
+                    Text("All received quantities routed")
                         .font(.caption)
                         .foregroundStyle(.green)
                 }
