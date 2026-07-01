@@ -851,7 +851,7 @@ struct IOSReceiveShipmentPage: View {
                             return ""
                         },
                         set: { newVal in
-                            let parsedPrice = Double(newVal) ?? 0
+                            let parsedPrice = Double(newVal) ?? .nan
                             priceVerifications[itemId] = .different(newPrice: parsedPrice)
                             if isValidReceiveShipmentDifferentPrice(parsedPrice) {
                                 invalidPriceVerificationItemIds.remove(itemId)
@@ -866,7 +866,7 @@ struct IOSReceiveShipmentPage: View {
                 }
 
                 if invalidPriceVerificationItemIds.contains(itemId) {
-                    Label("Enter a valid actual price greater than $0 before completing.", systemImage: "exclamationmark.triangle.fill")
+                    Label("Enter a valid actual price greater than $0.00 before completing.", systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)
                         .foregroundStyle(.red)
                 }

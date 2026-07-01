@@ -10,6 +10,7 @@ import GRDB
 import Security
 import Testing
 import WiredPartCore
+import XCTest
 import os.log
 @testable import Weird_Parts
 
@@ -765,18 +766,22 @@ struct Weird_Parts_IOSTests {
     @Test func receiveShipmentDifferentPriceValidationBlocksBlankOrZeroActualPrices() throws {
         let items = [
             ReceiveShipmentPriceValidationItem(id: 10, partName: "Breaker"),
-            ReceiveShipmentPriceValidationItem(id: 11, partName: "Panel")
+            ReceiveShipmentPriceValidationItem(id: 11, partName: "Panel"),
+            ReceiveShipmentPriceValidationItem(id: 12, partName: "Fuse"),
+            ReceiveShipmentPriceValidationItem(id: 13, partName: "Disconnect")
         ]
 
         let message = receiveShipmentDifferentPriceValidationMessage(
             for: items,
             priceVerifications: [
                 10: .different(newPrice: 0),
-                11: .matches
+                11: .different(newPrice: -1),
+                12: .different(newPrice: .nan),
+                13: .different(newPrice: .infinity)
             ]
         )
 
-        #expect(message == "Enter a valid actual price greater than $0.00 for: Breaker.")
+        #expect(message == "Enter a valid actual price greater than $0.00 for: Breaker, Panel, Fuse, Disconnect.")
     }
 
     @Test func receiveShipmentDifferentPriceValidationAllowsPositiveActualPrices() throws {
@@ -1279,5 +1284,39 @@ struct PartsFlowDraftStoreTests {
 
         #expect(PartsFlowDraftStore.loadCounts(userId: userId).isEmpty)
         #expect(PartsFlowDraftStore.loadLocations(userId: userId).isEmpty)
+    }
+}
+
+final class ReceiveShipmentPriceVerificationXCTests: XCTestCase {
+    func testDifferentPriceValidationBlocksBlankZeroNegativeAndNonFiniteActualPrices() throws {
+        let items = [
+            ReceiveShipmentPriceValidationItem(id: 10, partName: "Blank"),
+            ReceiveShipmentPriceValidationItem(id: 11, partName: "Negative"),
+            ReceiveShipmentPriceValidationItem(id: 12, partName: "NaN"),
+            ReceiveShipmentPriceValidationItem(id: 13, partName: "Infinity"),
+            ReceiveShipmentPriceValidationItem(id: 14, partName: "Panel")
+        ]
+
+        let message = receiveShipmentDifferentPriceValidationMessage(
+            for: items,
+            priceVerifications: [
+                10: .different(newPrice: 0),
+                11: .different(newPrice: -1),
+                12: .different(newPrice: .nan),
+                13: .different(newPrice: .infinity),
+                14: .matches
+            ]
+        )
+
+        XCTAssertEqual(message, "Enter a valid actual price greater than $0.00 for: Blank, Negative, NaN, Infinity.")
+    }
+
+    func testDifferentPriceValidationAllowsPositiveActualPrices() throws {
+        let message = receiveShipmentDifferentPriceValidationMessage(
+            for: [ReceiveShipmentPriceValidationItem(id: 10, partName: "Breaker")],
+            priceVerifications: [10: .different(newPrice: 12.50)]
+        )
+
+        XCTAssertNil(message)
     }
 }
