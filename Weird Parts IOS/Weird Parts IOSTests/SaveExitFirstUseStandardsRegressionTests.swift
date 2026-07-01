@@ -30,10 +30,19 @@ final class SaveExitFirstUseStandardsRegressionTests: XCTestCase {
             "Primary, secondary, and help empty-state actions must remain touch-friendly."
         )
         XCTAssertTrue(
-            source.contains("(actionLabel != nil && action != nil)") &&
-                source.contains("(secondaryActionLabel != nil && secondaryAction != nil)") &&
-                source.contains("(helpLabel != nil && helpAction != nil)"),
+            source.contains("private var hasPrimaryAction: Bool") &&
+                source.contains("actionLabel != nil && action != nil") &&
+                source.contains("private var hasSecondaryAction: Bool") &&
+                source.contains("secondaryActionLabel != nil && secondaryAction != nil") &&
+                source.contains("private var hasHelpAction: Bool") &&
+                source.contains("helpLabel != nil && helpAction != nil"),
             "The empty-state action container should render only when a label/action pair exists, avoiding blank padded action areas."
+        )
+        XCTAssertTrue(
+            source.contains("VStack(spacing: 0)") &&
+                source.contains("if hasPrimaryOrSecondaryAction") &&
+                source.contains(".padding(.top, hasPrimaryOrSecondaryAction ? DS.Space.xs : 0)"),
+            "Help-only empty states should avoid a blank primary-action gap while preserving spacing when create/cancel actions exist."
         )
     }
 
