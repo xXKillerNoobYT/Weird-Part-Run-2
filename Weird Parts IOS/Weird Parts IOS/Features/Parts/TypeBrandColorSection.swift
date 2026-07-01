@@ -100,7 +100,8 @@ struct TypeBrandColorSection: View {
                         typeId: typeId,
                         brand: selectedBrand,
                         colors: allColors,
-                        onSave: handleSKUSave
+                        onSave: handleSKUSave,
+                        onRefreshAfterSave: refreshAfterSKUSave
                     )
                 }
             case .edit(let row):
@@ -110,7 +111,8 @@ struct TypeBrandColorSection: View {
                         typeId: typeId,
                         brand: brand,
                         colors: allColors,
-                        onSave: handleSKUSave
+                        onSave: handleSKUSave,
+                        onRefreshAfterSave: refreshAfterSKUSave
                     )
                 }
             }
@@ -417,6 +419,9 @@ struct TypeBrandColorSection: View {
             )
         }
 
+    }
+
+    private func refreshAfterSKUSave() async {
         await loadSKUData()
         await onRefresh()
     }
@@ -522,6 +527,7 @@ private struct ColorBrandSKUEditorSheet: View {
     let brand: Brand
     let colors: [PartColor]
     let onSave: (Draft) async throws -> Void
+    let onRefreshAfterSave: () async -> Void
 
     @State private var selectedColorId: Int64
     @State private var partNumber: String
@@ -529,12 +535,20 @@ private struct ColorBrandSKUEditorSheet: View {
     @State private var saveError: String?
     @State private var isSaving = false
 
-    init(mode: Mode, typeId: Int64, brand: Brand, colors: [PartColor], onSave: @escaping (Draft) async throws -> Void) {
+    init(
+        mode: Mode,
+        typeId: Int64,
+        brand: Brand,
+        colors: [PartColor],
+        onSave: @escaping (Draft) async throws -> Void,
+        onRefreshAfterSave: @escaping () async -> Void
+    ) {
         self.mode = mode
         self.typeId = typeId
         self.brand = brand
         self.colors = colors
         self.onSave = onSave
+        self.onRefreshAfterSave = onRefreshAfterSave
 
         switch mode {
         case .create:
@@ -673,10 +687,12 @@ private struct ColorBrandSKUEditorSheet: View {
                 unitCostText: unitCostText
             ))
             dismiss()
+            await onRefreshAfterSave()
+            isSaving = false
         } catch {
             saveError = userFriendlyError(error, context: "save SKU row")
+            isSaving = false
         }
-        isSaving = false
     }
 }
 
