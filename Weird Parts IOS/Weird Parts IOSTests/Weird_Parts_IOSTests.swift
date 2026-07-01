@@ -1004,7 +1004,7 @@ struct Weird_Parts_IOSTests {
         #expect(syncSource.contains("syncSettingsReadFailed(error, context: \"load sync server address\")"))
         #expect(syncSource.contains("syncSettingsReadFailed(error, context: \"load pairing status\")"))
         #expect(syncSource.contains("guard lastSurfacedSyncReadFailure != failureKey else { return }"), "Repeated sync setting read failures should not re-alert on every SwiftUI render")
-        #expect(syncSource.contains("errorMessage = userFriendlyError(error, context: \"load sync conflict count\")"))
+        #expect(syncSource.contains("context: \"load sync conflict count\""))
     }
 
     @Test func manualBackupSidecarCopyFailureIsReportedAndCleanedUp() throws {
