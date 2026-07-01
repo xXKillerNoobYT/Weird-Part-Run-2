@@ -1049,13 +1049,14 @@ struct IOSReceiveShipmentPage: View {
             // Otherwise fall back to expectedQty so fresh sessions are pre-filled (61L).
             for item in sessionItems {
                 let restoredReceivedQty = item.receivedQty > 0 ? item.receivedQty : item.expectedQty
+                let currentReceivedQty = receivedQtys[item.id] ?? restoredReceivedQty
                 if receivedQtys[item.id] == nil {
                     receivedQtys[item.id] = restoredReceivedQty
                 }
                 if routingResults[item.id] == nil,
                    let disposition = item.routingDisposition,
-                   restoredReceivedQty > 0,
-                   item.routedQty >= restoredReceivedQty {
+                   currentReceivedQty > 0,
+                   item.routedQty >= currentReceivedQty {
                     routingResults[item.id] = RoutingResult(disposition: disposition)
                 }
             }
@@ -1194,10 +1195,12 @@ struct IOSReceiveShipmentPage: View {
                 let returnCount = routingResults.values.filter { result in
                     result.isReturn
                 }.count
+                let otherCount = routedCount - stagedCount - shelfCount - returnCount
                 var parts: [String] = []
                 if stagedCount > 0 { parts.append("\(stagedCount) routed to staging") }
                 if shelfCount > 0 { parts.append("\(shelfCount) shelved") }
                 if returnCount > 0 { parts.append("\(returnCount) returning") }
+                if otherCount > 0 { parts.append("\(otherCount) routed for review") }
                 summary = "Receiving complete. \(routedCount)/\(totalCount) items routed: \(parts.joined(separator: ", "))."
             } else {
                 summary = "Receiving complete. Stock has been updated."
