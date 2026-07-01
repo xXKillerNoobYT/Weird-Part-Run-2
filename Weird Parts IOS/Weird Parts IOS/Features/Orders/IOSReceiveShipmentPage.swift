@@ -58,13 +58,16 @@ struct IOSReceiveShipmentPage: View {
         }
 
         private let source: Source
+        private let routedQty: Int
 
-        init(route: WarehouseService.ReceivingRoute) {
+        init(route: WarehouseService.ReceivingRoute, routedQty: Int) {
             self.source = .live(route)
+            self.routedQty = routedQty
         }
 
-        init(disposition: WarehouseService.ReceivingRoutingDisposition) {
+        init(disposition: WarehouseService.ReceivingRoutingDisposition, routedQty: Int) {
             self.source = .persisted(disposition)
+            self.routedQty = routedQty
         }
 
         var label: String {
@@ -197,13 +200,30 @@ struct IOSReceiveShipmentPage: View {
                 false
             }
         }
+
+        func covers(receivedQty: Int) -> Bool {
+            return routedQty >= receivedQty
+        }
     }
 
-    /// Items that have been received (qty > 0) but not yet routed (62H).
+    /// Items that have been received (qty > 0) but not yet fully routed (62H).
     private var unroutedItems: [WarehouseService.ReceivingItemInfo] {
         sessionItems.filter { item in
             let qty = receivedQtys[item.id] ?? 0
-            return qty > 0 && routingResults[item.id] == nil
+            return qty > 0 && !(routingResults[item.id]?.covers(receivedQty: qty) ?? false)
+        }
+    }
+
+    private var receivedItems: [WarehouseService.ReceivingItemInfo] {
+        sessionItems.filter { item in
+            (receivedQtys[item.id] ?? 0) > 0
+        }
+    }
+
+    private var fullyRoutedReceivedItems: [WarehouseService.ReceivingItemInfo] {
+        receivedItems.filter { item in
+            let qty = receivedQtys[item.id] ?? 0
+            return routingResults[item.id]?.covers(receivedQty: qty) ?? false
         }
     }
 
@@ -297,7 +317,8 @@ struct IOSReceiveShipmentPage: View {
                         poLineId: item.poLineId,
                         receivedQty: receivedQtys[item.id] ?? item.expectedQty,
                         onRouteComplete: { route in
-                            routingResults[item.id] = RoutingResult(route: route)
+                            let routedQty = receivedQtys[item.id] ?? item.expectedQty
+                            routingResults[item.id] = RoutingResult(route: route, routedQty: routedQty)
                         },
                         onDismiss: {
                             activeSheet = nil
@@ -636,27 +657,27 @@ struct IOSReceiveShipmentPage: View {
             }
             Button("Go Back and Route Items", role: .cancel) { }
         } message: {
-            Text("\(unroutedItems.count) item\(unroutedItems.count == 1 ? " has" : "s have") been received but not routed to a location. Continue anyway?")
+            Text("\(unroutedItems.count) item\(unroutedItems.count == 1 ? " has" : "s have") received quantities that are not fully routed. Continue anyway?")
         }
     }
 
     // MARK: - Routing Progress Summary
 
     private var routingProgressSummary: some View {
-        let routedCount = routingResults.count
-        let totalCount = sessionItems.count
-        let allRouted = routedCount == totalCount
+        let routedCount = fullyRoutedReceivedItems.count
+        let totalCount = receivedItems.count
+        let allRouted = totalCount > 0 && routedCount == totalCount
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Image(systemName: allRouted ? "checkmark.circle.fill" : "arrow.triangle.branch")
                     .foregroundStyle(allRouted ? .green : .blue)
-                Text("\(routedCount)/\(totalCount) items routed")
+                Text("\(routedCount)/\(totalCount) received items fully routed")
                     .font(.subheadline)
                     .fontWeight(.medium)
                 Spacer()
                 if allRouted {
-                    Text("All routed")
+                    Text("All received quantities routed")
                         .font(.caption)
                         .foregroundStyle(.green)
                 }
@@ -1057,8 +1078,8 @@ struct IOSReceiveShipmentPage: View {
                 if routingResults[item.id] == nil,
                    let disposition = item.routingDisposition,
                    currentReceivedQty > 0,
-                   item.routedQty >= currentReceivedQty {
-                    routingResults[item.id] = RoutingResult(disposition: disposition)
+                   item.routedQty > 0 {
+                    routingResults[item.id] = RoutingResult(disposition: disposition, routedQty: item.routedQty)
                 }
             }
             postAIContext()
@@ -1201,8 +1222,8 @@ struct IOSReceiveShipmentPage: View {
                 if stagedCount > 0 { parts.append("\(stagedCount) routed to staging") }
                 if shelfCount > 0 { parts.append("\(shelfCount) shelved") }
                 if returnCount > 0 { parts.append("\(returnCount) returning") }
-                if otherCount > 0 { parts.append("\(otherCount) routed for review") }
-                summary = "Receiving complete. \(routedCount)/\(totalCount) items routed: \(parts.joined(separator: ", "))."
+                if otherCount > 0 { parts.append("\(otherCount) routed other ways") }
+                summary = "Receiving complete. \(routedCount)/\(totalCount) items with routes: \(parts.joined(separator: ", "))."
             } else {
                 summary = "Receiving complete. Stock has been updated."
             }
