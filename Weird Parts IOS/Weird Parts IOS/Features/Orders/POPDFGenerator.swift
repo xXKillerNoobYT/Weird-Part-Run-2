@@ -108,6 +108,7 @@ struct POPDFGenerator {
 
             metaRow("Supplier:",      po.supplierName)
             if let email = supplierEmail { metaRow("Supplier Email:", email) }
+            if let relatedJobSummary = po.supplierRelatedJobSummary { metaRow("Related Job(s):", relatedJobSummary) }
             metaRow("Order Date:",    po.orderDate ?? "—")
             metaRow("Expected By:",   po.expectedDelivery ?? "—")
             if let tracking = po.trackingNumber { metaRow("Tracking:", tracking) }
