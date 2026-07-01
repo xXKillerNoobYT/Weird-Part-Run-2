@@ -356,6 +356,14 @@ struct PreTripInspectionView: View {
             return
         }
 
+        let parsedOdometerReading: Int?
+        do {
+            parsedOdometerReading = try PreTripInspectionInputValidator.parseOdometerReading(odometerReading)
+        } catch {
+            saveError = PreTripInspectionInputValidator.ValidationError.invalidOdometerReading.localizedDescription
+            return
+        }
+
         isSaving = true
         saveError = nil
 
@@ -375,7 +383,7 @@ struct PreTripInspectionView: View {
                     )
                 },
                 notes: generalNotes.isEmpty ? nil : generalNotes,
-                odometerReading: Int(odometerReading),
+                odometerReading: parsedOdometerReading,
                 fuelLevel: fuelLevel
             )
 
@@ -386,6 +394,32 @@ struct PreTripInspectionView: View {
         }
 
         isSaving = false
+    }
+}
+
+enum PreTripInspectionInputValidator {
+    enum ValidationError: LocalizedError {
+        case invalidOdometerReading
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidOdometerReading:
+                return "Enter the odometer as positive whole miles using digits only, or leave it blank."
+            }
+        }
+    }
+
+    static func parseOdometerReading(_ rawValue: String) throws -> Int? {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        guard trimmed.allSatisfy({ $0 >= "0" && $0 <= "9" }),
+              let miles = Int(trimmed),
+              miles > 0 else {
+            throw ValidationError.invalidOdometerReading
+        }
+
+        return miles
     }
 }
 
