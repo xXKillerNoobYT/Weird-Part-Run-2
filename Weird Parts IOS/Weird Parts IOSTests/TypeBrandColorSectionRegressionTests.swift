@@ -52,6 +52,47 @@ final class TypeBrandColorSectionRegressionTests: XCTestCase {
         )
     }
 
+    func testSkuEditorDismissesBeforeRefreshingParentAfterSuccessfulSave() throws {
+        let source = try Self.readTypeBrandColorSectionSource()
+        guard let sheetStart = source.range(of: "private struct ColorBrandSKUEditorSheet") else {
+            XCTFail("ColorBrandSKUEditorSheet should exist.")
+            return
+        }
+        guard let sheetEnd = source[sheetStart.upperBound...].range(of: "private func parseLocalizedDecimal") else {
+            XCTFail("ColorBrandSKUEditorSheet should end before decimal helpers.")
+            return
+        }
+
+        let sheetSource = source[sheetStart.lowerBound..<sheetEnd.lowerBound]
+        guard let saveStart = sheetSource.range(
+            of: #"private\s+func\s+save\s*\(\)\s+async\s*\{"#,
+            options: .regularExpression
+        ) else {
+            XCTFail("SKU editor save function should exist inside ColorBrandSKUEditorSheet.")
+            return
+        }
+
+        let saveSource = sheetSource[saveStart.lowerBound...]
+        guard let dismissRange = saveSource.range(of: "dismiss()") else {
+            XCTFail("Successful SKU editor save should dismiss the sheet.")
+            return
+        }
+        guard let refreshRange = saveSource.range(of: "await onRefreshAfterSave()") else {
+            XCTFail("Successful SKU editor save should still refresh parent SKU data after dismissing.")
+            return
+        }
+
+        XCTAssertLessThan(
+            dismissRange.lowerBound,
+            refreshRange.lowerBound,
+            "Successful SKU editor save should dismiss before awaiting the parent refresh to avoid stale sheet dismissal."
+        )
+        XCTAssertTrue(
+            source.contains("private func refreshAfterSKUSave() async"),
+            "Parent refresh should be split from the save callback so it can run after the editor dismisses."
+        )
+    }
+
     private static func readTypeBrandColorSectionSource(
         file: StaticString = #filePath
     ) throws -> String {
