@@ -197,21 +197,22 @@ final class OrdersSessionUnavailableRegressionTests: XCTestCase {
         let pdfGeneratorSource = try Self.readOrdersSource(named: "POPDFGenerator.swift")
 
         XCTAssertTrue(
-            sendSheetSource.contains("private var relatedJobSummary: String?") &&
+            sendSheetSource.contains("extension OrdersService.PODetail") &&
+            sendSheetSource.contains("var supplierRelatedJobSummary: String?") &&
             sendSheetSource.contains("line.jobName?.trimmingCharacters(in: .whitespacesAndNewlines)") &&
             sendSheetSource.contains("return jobNames.joined(separator: \", \")"),
             "Supplier email content should derive a stable, deduplicated related-job summary from PO line job names."
         )
         XCTAssertTrue(
             sendSheetSource.contains("let isGroupedSend = groupEnabled && !includedSiblingIds.isEmpty") &&
-            sendSheetSource.contains("let jobSuffix = isGroupedSend ? \"\" : (relatedJobSummary.map { \" — Job: \\($0)\" } ?? \"\")") &&
-            sendSheetSource.contains("if !isGroupedSend, let relatedJobSummary") &&
+            sendSheetSource.contains("let jobSuffix = isGroupedSend ? \"\" : (po.supplierRelatedJobSummary.map { \" — Job: \\($0)\" } ?? \"\")") &&
+            sendSheetSource.contains("if !isGroupedSend, let relatedJobSummary = po.supplierRelatedJobSummary") &&
             sendSheetSource.contains("lines.append(\"Re: \\(relatedJobSummary)\")"),
             "Supplier email subject and body should surface related job context for single-PO sends without implying primary-only jobs apply to grouped sibling POs."
         )
         XCTAssertTrue(
-            pdfGeneratorSource.contains("private var relatedJobSummary: String?") &&
-            pdfGeneratorSource.contains("if let relatedJobSummary { metaRow(\"Related Job(s):\", relatedJobSummary) }"),
+            pdfGeneratorSource.contains("po.supplierRelatedJobSummary") &&
+            pdfGeneratorSource.contains("if let relatedJobSummary = po.supplierRelatedJobSummary { metaRow(\"Related Job(s):\", relatedJobSummary) }"),
             "Supplier PDF meta block should include a Related Job(s) row when PO lines are job-linked."
         )
     }

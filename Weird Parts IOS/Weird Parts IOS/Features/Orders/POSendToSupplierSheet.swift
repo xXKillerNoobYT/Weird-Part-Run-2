@@ -2,6 +2,23 @@ import SwiftUI
 import MessageUI
 import WiredPartCore
 
+extension OrdersService.PODetail {
+    var supplierRelatedJobSummary: String? {
+        var seen = Set<String>()
+        let jobNames = lines.compactMap { line -> String? in
+            guard let name = line.jobName?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !name.isEmpty,
+                  !seen.contains(name)
+            else { return nil }
+            seen.insert(name)
+            return name
+        }
+
+        guard !jobNames.isEmpty else { return nil }
+        return jobNames.joined(separator: ", ")
+    }
+}
+
 // MARK: - POSendToSupplierSheet
 //
 // Full "Send to Supplier" flow for one or more Purchase Orders.
@@ -110,25 +127,10 @@ struct POSendToSupplierSheet: View {
         return siblingPOs.filter { includedSiblingIds.contains($0.id) }
     }
 
-    private var relatedJobSummary: String? {
-        var seen = Set<String>()
-        let jobNames = po.lines.compactMap { line -> String? in
-            guard let name = line.jobName?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !name.isEmpty,
-                  !seen.contains(name)
-            else { return nil }
-            seen.insert(name)
-            return name
-        }
-
-        guard !jobNames.isEmpty else { return nil }
-        return jobNames.joined(separator: ", ")
-    }
-
     private var emailSubject: String {
         let type = selectedRequestType == .pricing ? "Pricing Request" : "Purchase Order"
         let isGroupedSend = groupEnabled && !includedSiblingIds.isEmpty
-        let jobSuffix = isGroupedSend ? "" : (relatedJobSummary.map { " — Job: \($0)" } ?? "")
+        let jobSuffix = isGroupedSend ? "" : (po.supplierRelatedJobSummary.map { " — Job: \($0)" } ?? "")
         if isGroupedSend {
             return "\(type) — \(po.supplierName) (\(includedPOs.count) orders)"
         }
@@ -141,16 +143,16 @@ struct POSendToSupplierSheet: View {
         lines.append("Dear \(po.supplierName),")
         lines.append("")
 
-        if !isGroupedSend, let relatedJobSummary {
+        if !isGroupedSend, let relatedJobSummary = po.supplierRelatedJobSummary {
             lines.append("Re: \(relatedJobSummary)")
             lines.append("")
         }
 
         if selectedRequestType == .pricing {
-            lines.append("Please find attached our pricing request\(groupEnabled && !includedSiblingIds.isEmpty ? "s" : "") for the following items.")
+            lines.append("Please find attached our pricing request\(isGroupedSend ? "s" : "") for the following items.")
             lines.append("We would appreciate your best pricing and availability at your earliest convenience.")
         } else {
-            lines.append("Please find attached our purchase order\(groupEnabled && !includedSiblingIds.isEmpty ? "s" : "") for your review and processing.")
+            lines.append("Please find attached our purchase order\(isGroupedSend ? "s" : "") for your review and processing.")
         }
 
         lines.append("")

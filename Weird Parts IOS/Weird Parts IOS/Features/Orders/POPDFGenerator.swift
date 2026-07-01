@@ -12,21 +12,6 @@ struct POPDFGenerator {
     let supplierEmail: String?
     let companyName: String
 
-    private var relatedJobSummary: String? {
-        var seen = Set<String>()
-        let jobNames = po.lines.compactMap { line -> String? in
-            guard let name = line.jobName?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !name.isEmpty,
-                  !seen.contains(name)
-            else { return nil }
-            seen.insert(name)
-            return name
-        }
-
-        guard !jobNames.isEmpty else { return nil }
-        return jobNames.joined(separator: ", ")
-    }
-
     // Layout constants
     private let pageW: CGFloat = 612
     private let pageH: CGFloat = 792
@@ -123,7 +108,7 @@ struct POPDFGenerator {
 
             metaRow("Supplier:",      po.supplierName)
             if let email = supplierEmail { metaRow("Supplier Email:", email) }
-            if let relatedJobSummary { metaRow("Related Job(s):", relatedJobSummary) }
+            if let relatedJobSummary = po.supplierRelatedJobSummary { metaRow("Related Job(s):", relatedJobSummary) }
             metaRow("Order Date:",    po.orderDate ?? "—")
             metaRow("Expected By:",   po.expectedDelivery ?? "—")
             if let tracking = po.trackingNumber { metaRow("Tracking:", tracking) }
