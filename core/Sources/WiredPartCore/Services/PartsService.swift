@@ -1247,6 +1247,22 @@ public final class PartsService: Sendable {
         }
     }
 
+    private func validateStockTargetHierarchy(
+        minStockLevel: Int?,
+        maxStockLevel: Int?,
+        targetStockLevel: Int?
+    ) throws {
+        if let minStockLevel, let targetStockLevel, minStockLevel > targetStockLevel {
+            throw PartsError.invalidInput("Minimum stock must be less than or equal to target stock.")
+        }
+        if let targetStockLevel, let maxStockLevel, targetStockLevel > maxStockLevel {
+            throw PartsError.invalidInput("Target stock must be less than or equal to maximum stock.")
+        }
+        if let minStockLevel, let maxStockLevel, minStockLevel > maxStockLevel {
+            throw PartsError.invalidInput("Minimum stock must be less than or equal to maximum stock.")
+        }
+    }
+
     /// Create a new part. Returns the inserted row ID.
     @discardableResult
     public func createPart(
@@ -1286,6 +1302,11 @@ public final class PartsService: Sendable {
         if let m = minStockLevel { try Validators.requireNonNegative(m, field: "Min stock") }
         if let m = maxStockLevel { try Validators.requireNonNegative(m, field: "Max stock") }
         if let t = targetStockLevel { try Validators.requireNonNegative(t, field: "Target stock") }
+        try validateStockTargetHierarchy(
+            minStockLevel: minStockLevel,
+            maxStockLevel: maxStockLevel,
+            targetStockLevel: targetStockLevel
+        )
         if let r = reorderPoint { try Validators.requireNonNegative(r, field: "Reorder point") }
 
         // Guard: all referenced FK parents must exist and not be tombstoned.
@@ -1381,9 +1402,24 @@ public final class PartsService: Sendable {
         shelfLocation: String? = nil,
         binLocation: String? = nil
     ) throws {
-        // Read current values for change detection (non-fatal if fails)
-        let currentRow = try? db.writer.read { dbConn in
+        // Read current values for effective stock-target validation and audit change detection.
+        let currentRow = try db.writer.read { dbConn in
             try Row.fetchOne(dbConn, sql: "SELECT * FROM parts WHERE id = ?", arguments: [id])
+        }
+
+        if minStockLevel != nil || maxStockLevel != nil || targetStockLevel != nil {
+            if let m = minStockLevel { try Validators.requireNonNegative(m, field: "Min stock") }
+            if let m = maxStockLevel { try Validators.requireNonNegative(m, field: "Max stock") }
+            if let t = targetStockLevel { try Validators.requireNonNegative(t, field: "Target stock") }
+
+            let effectiveMin: Int? = minStockLevel ?? currentRow?["min_stock_level"]
+            let effectiveMax: Int? = maxStockLevel ?? currentRow?["max_stock_level"]
+            let effectiveTarget: Int? = targetStockLevel ?? currentRow?["target_stock_level"]
+            try validateStockTargetHierarchy(
+                minStockLevel: effectiveMin,
+                maxStockLevel: effectiveMax,
+                targetStockLevel: effectiveTarget
+            )
         }
 
         try db.writer.write { dbConn in
