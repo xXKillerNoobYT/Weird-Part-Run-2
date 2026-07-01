@@ -13,7 +13,7 @@ final class PartsCompanionsPageSessionRegressionTests: XCTestCase {
             "Companion polls should model the current user id as optional so missing-session state is explicit."
         )
         XCTAssertTrue(
-            source.contains("guard let userId = currentUserId else"),
+            source.contains("guard let userId = loadContext.userId else"),
             "Companion poll loads should fail closed until a real current user id exists."
         )
         XCTAssertTrue(
@@ -21,14 +21,23 @@ final class PartsCompanionsPageSessionRegressionTests: XCTestCase {
             "Companion polls should show a visible session error instead of loading vote state for user 0."
         )
         XCTAssertTrue(
-            source.contains("try service.getActivePolls(userId: userId, isAdmin: isAdmin)")
+            source.contains("try service.getActivePolls(userId: userId, isAdmin: loadContext.isAdmin)")
                 && source.contains("try service.getLastWeekResults(userId: userId)"),
             "Companion poll service calls should use the unwrapped real user id."
         )
         XCTAssertTrue(
-            source.contains(".task(id: currentUserId)")
+            source.contains(".task(id: LoadDataTaskID(userId: currentUserId, reloadToken: reloadToken))")
                 && source.contains("await loadDataAndMarkViewed()"),
             "Companion polls should reload with SwiftUI task cancellation when the current user becomes available after initial page load."
+        )
+        XCTAssertTrue(
+            source.contains("private func retryLoadData()")
+                && source.contains("reloadToken += 1"),
+            "Manual retry should route through the SwiftUI-managed task id instead of launching an uncancelled unstructured task."
+        )
+        XCTAssertFalse(
+            source.contains("@MainActor\n    private func loadData() async"),
+            "Companion poll service reads should not be forced onto the MainActor; only state access should hop to MainActor."
         )
         XCTAssertTrue(
             source.contains("markCompanionsViewedIfReady()")
@@ -60,7 +69,7 @@ final class PartsCompanionsPageSessionRegressionTests: XCTestCase {
             "Companion poll housekeeping should check cancellation between closeExpiredPolls and purgeExpiredRules writes."
         )
         XCTAssertTrue(
-            source.range(of: "guard let userId = currentUserId else")?.lowerBound ?? source.endIndex
+            source.range(of: "guard let userId = loadContext.userId else")?.lowerBound ?? source.endIndex
                 < source.range(of: "let rules = try service.listCompanionRulesHierarchy()")?.lowerBound ?? source.startIndex,
             "Companion loads should fail closed before doing unused service work when the user session is missing."
         )

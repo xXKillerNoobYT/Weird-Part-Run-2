@@ -34,9 +34,15 @@ struct PartsCompanionsPage: View {
     @State private var pollToLock: Int64?
     @State private var showSkipConfirm = false
     @State private var pollToSkip: Int64?
+    @State private var reloadToken = 0
 
     private var currentUserId: Int64? {
         appCore.currentUser?.id
+    }
+
+    private struct LoadDataTaskID: Equatable {
+        let userId: Int64?
+        let reloadToken: Int
     }
 
     // Single active-sheet enum to avoid multiple .sheet conflicts
@@ -208,7 +214,7 @@ struct PartsCompanionsPage: View {
             Text("This poll will be closed and a -50 point penalty applied. A replacement poll will be created from the next-best suggestion.")
         }
         .background(DS.Background.page)
-        .task(id: currentUserId) {
+        .task(id: LoadDataTaskID(userId: currentUserId, reloadToken: reloadToken)) {
             await loadDataAndMarkViewed()
         }
         .onAppear { postCompanionsContext() }
@@ -884,14 +890,13 @@ struct PartsCompanionsPage: View {
 
     @MainActor
     private func retryLoadData() {
-        Task { await loadDataAndMarkViewed() }
+        reloadToken += 1
     }
 
-    @MainActor
     private func loadDataAndMarkViewed() async {
         await loadData()
         guard !Task.isCancelled else { return }
-        markCompanionsViewedIfReady()
+        await MainActor.run { markCompanionsViewedIfReady() }
     }
 
     @MainActor
@@ -919,18 +924,29 @@ struct PartsCompanionsPage: View {
         )
     }
 
-    @MainActor
     private func loadData() async {
-        isLoading = true
-        loadError = nil
+        await MainActor.run {
+            isLoading = true
+            loadError = nil
+        }
         do {
-            guard let service = appCore.partsService else {
+            let loadContext = await MainActor.run {
+                (
+                    service: appCore.partsService,
+                    userId: currentUserId,
+                    isAdmin: appCore.hasPermission("vote_veto")
+                )
+            }
+
+            guard let service = loadContext.service else {
                 guard !Task.isCancelled else { return }
-                loadError = "Parts service not available"
-                isLoading = false
+                await MainActor.run {
+                    loadError = "Parts service not available"
+                    isLoading = false
+                }
                 return
             }
-            guard let userId = currentUserId else {
+            guard let userId = loadContext.userId else {
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     loadError = "User session unavailable. Sign in again."
@@ -943,11 +959,10 @@ struct PartsCompanionsPage: View {
             let alts = try service.listAllAlternatives()
 
             // Poll data
-            let isAdmin = appCore.hasPermission("vote_veto")
-            let polls = try service.getActivePolls(userId: userId, isAdmin: isAdmin)
+            let polls = try service.getActivePolls(userId: userId, isAdmin: loadContext.isAdmin)
             let results = try service.getLastWeekResults(userId: userId)
             let training = try service.getTrainingQuestion()
-            let preview = isAdmin ? try service.getNextPollPreview() : nil
+            let preview = loadContext.isAdmin ? try service.getNextPollPreview() : nil
 
             // Housekeeping
             guard !Task.isCancelled else { return }
