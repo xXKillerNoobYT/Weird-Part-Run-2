@@ -128,11 +128,38 @@ struct IOSCameraMatchView: View {
         }
         .onChange(of: photoPickerItem) { _, item in
             Task {
-                if let data = try? await item?.loadTransferable(type: Data.self),
-                   let uiImage = UIImage(data: data) {
-                    selectedImage = uiImage
-                }
+                await loadSelectedPhoto(item)
             }
+        }
+    }
+
+    // MARK: - Photo Import
+
+    @MainActor
+    private func loadSelectedPhoto(_ item: PhotosPickerItem?) async {
+        guard let item else { return }
+
+        errorMessage = nil
+        matchResults = []
+
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self) else {
+                selectedImage = nil
+                errorMessage = "Could not load that photo. Try another image or use Camera."
+                return
+            }
+
+            guard let uiImage = UIImage(data: data) else {
+                selectedImage = nil
+                errorMessage = "Could not read that photo. Try another image or use Camera."
+                return
+            }
+
+            selectedImage = uiImage
+            errorMessage = nil
+        } catch {
+            selectedImage = nil
+            errorMessage = "Could not load that photo. Try another image or use Camera."
         }
     }
 
