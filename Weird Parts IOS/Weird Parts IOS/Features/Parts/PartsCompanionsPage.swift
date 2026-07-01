@@ -888,7 +888,6 @@ struct PartsCompanionsPage: View {
 
     // MARK: - Data Loading
 
-    @MainActor
     private func retryLoadData() {
         reloadToken += 1
     }
