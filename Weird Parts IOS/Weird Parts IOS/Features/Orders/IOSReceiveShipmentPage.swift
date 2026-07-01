@@ -18,6 +18,7 @@ struct IOSReceiveShipmentPage: View {
     @State private var sessionItems: [WarehouseService.ReceivingItemInfo] = []
     @State private var receivedQtys: [Int64: Int] = [:]  // itemId -> qty
     @State private var priceVerifications: [Int64: PriceVerification] = [:]  // itemId -> verification
+    @State private var invalidPriceVerificationItemIds = Set<Int64>()
     @State private var isCompleting = false
     @State private var completionMessage: String?
     @State private var activeSheet: ActiveSheet?
@@ -799,6 +800,7 @@ struct IOSReceiveShipmentPage: View {
             HStack(spacing: 8) {
                 Button {
                     priceVerifications[itemId] = .matches
+                    invalidPriceVerificationItemIds.remove(itemId)
                 } label: {
                     Label("Matches", systemImage: currentVerification.isMatches ? "checkmark.circle.fill" : "circle")
                         .font(.caption)
@@ -811,6 +813,7 @@ struct IOSReceiveShipmentPage: View {
 
                 Button {
                     priceVerifications[itemId] = .different(newPrice: 0)
+                    invalidPriceVerificationItemIds.insert(itemId)
                 } label: {
                     Label("Different", systemImage: currentVerification.isDifferent ? "exclamationmark.circle.fill" : "circle")
                         .font(.caption)
@@ -823,6 +826,7 @@ struct IOSReceiveShipmentPage: View {
 
                 Button {
                     priceVerifications[itemId] = .notShown
+                    invalidPriceVerificationItemIds.remove(itemId)
                 } label: {
                     Label("Not Shown", systemImage: currentVerification.isNotShown ? "questionmark.circle.fill" : "circle")
                         .font(.caption)
@@ -847,12 +851,24 @@ struct IOSReceiveShipmentPage: View {
                             return ""
                         },
                         set: { newVal in
-                            priceVerifications[itemId] = .different(newPrice: Double(newVal) ?? 0)
+                            let parsedPrice = Double(newVal) ?? .nan
+                            priceVerifications[itemId] = .different(newPrice: parsedPrice)
+                            if isValidReceiveShipmentDifferentPrice(parsedPrice) {
+                                invalidPriceVerificationItemIds.remove(itemId)
+                            } else {
+                                invalidPriceVerificationItemIds.insert(itemId)
+                            }
                         }
                     ))
                     .keyboardType(.decimalPad)
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: 120)
+                }
+
+                if invalidPriceVerificationItemIds.contains(itemId) {
+                    Label("Enter a valid actual price greater than $0.00 before completing.", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.red)
                 }
             }
         }
@@ -960,6 +976,7 @@ struct IOSReceiveShipmentPage: View {
         sessionItems = []
         receivedQtys = [:]
         priceVerifications = [:]
+        invalidPriceVerificationItemIds = []
         routingResults = [:]
         scannerCountedItemIds = []
         manuallyEditedQuantityItemIds = []
@@ -979,8 +996,28 @@ struct IOSReceiveShipmentPage: View {
             return
         }
 
-        isCompleting = true
         actionError = nil
+
+        if let validationError = receiveShipmentDifferentPriceValidationMessage(
+            for: sessionItems.map { item in
+                ReceiveShipmentPriceValidationItem(id: item.id, partName: item.partName)
+            },
+            priceVerifications: priceVerifications
+        ) {
+            invalidPriceVerificationItemIds = Set(sessionItems.compactMap { item in
+                if case .different(let newPrice) = priceVerifications[item.id],
+                   !isValidReceiveShipmentDifferentPrice(newPrice) {
+                    return item.id
+                }
+                return nil
+            })
+            actionError = validationError
+            return
+        }
+
+        invalidPriceVerificationItemIds = []
+
+        isCompleting = true
 
         do {
             // Update received quantities and any verified invoice cost before completion.
@@ -991,7 +1028,7 @@ struct IOSReceiveShipmentPage: View {
                 case .matches:
                     verifiedCost = item.unitPrice
                 case .different(let newPrice):
-                    verifiedCost = newPrice > 0 ? newPrice : nil
+                    verifiedCost = isValidReceiveShipmentDifferentPrice(newPrice) ? newPrice : nil
                 case .notShown, .none:
                     verifiedCost = nil
                 }
@@ -1029,7 +1066,7 @@ struct IOSReceiveShipmentPage: View {
 
                     case .different(let newPrice):
                         // Use actual receipt price
-                        if newPrice > 0 {
+                        if isValidReceiveShipmentDifferentPrice(newPrice) {
                             _ = try partsService.addCostLayer(
                                 partId: partId,
                                 qty: qty,
@@ -1180,9 +1217,35 @@ func receivingBarcodeScanBaseQuantity(
     return 0
 }
 
+struct ReceiveShipmentPriceValidationItem {
+    let id: Int64
+    let partName: String
+}
+
+func isValidReceiveShipmentDifferentPrice(_ price: Double) -> Bool {
+    price > 0 && price.isFinite
+}
+
+func receiveShipmentDifferentPriceValidationMessage(
+    for items: [ReceiveShipmentPriceValidationItem],
+    priceVerifications: [Int64: PriceVerification]
+) -> String? {
+    let invalidDifferentPriceNames = items.compactMap { item -> String? in
+        guard case .different(let newPrice) = priceVerifications[item.id],
+              !isValidReceiveShipmentDifferentPrice(newPrice) else {
+            return nil
+        }
+        return item.partName
+    }
+
+    guard !invalidDifferentPriceNames.isEmpty else { return nil }
+
+    return "Enter a valid actual price greater than $0.00 for: \(invalidDifferentPriceNames.joined(separator: ", "))."
+}
+
 // MARK: - Price Verification
 
-private enum PriceVerification {
+enum PriceVerification {
     case matches
     case different(newPrice: Double)
     case notShown
