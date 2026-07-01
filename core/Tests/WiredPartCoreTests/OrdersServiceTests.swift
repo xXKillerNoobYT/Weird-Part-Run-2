@@ -2543,18 +2543,21 @@ struct OrdersServiceTests {
         }
     }
 
-    @Test("createJPOWithLines rejects zero-quantity line")
-    func testCreateJPOWithLines_rejectsZeroQuantity() throws {
+    @Test("createJPOWithLines rejects non-positive line quantities")
+    func testCreateJPOWithLines_rejectsNonPositiveQuantities() throws {
         let env = try E2ETestHelpers.setUp()
         let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-ZQ-86", name: "Zero Qty Job")
         let catId = try E2ETestHelpers.seedCategory(env, name: "ZQCAT86")
         let partId = try E2ETestHelpers.seedPart(env, name: "ZQ Part", categoryId: catId)
-        #expect(throws: OrdersService.OrdersError.invalidQuantity(0)) {
-            try env.orders.createJPOWithLines(
-                jobId: jobId, requestedBy: env.adminUserId,
-                priority: "normal", deliveryOption: "standard",
-                notes: nil, lines: [(partId: partId, quantity: 0)]
-            )
+
+        for quantity in [0, -1] {
+            #expect(throws: OrdersService.OrdersError.invalidQuantity(quantity)) {
+                try env.orders.createJPOWithLines(
+                    jobId: jobId, requestedBy: env.adminUserId,
+                    priority: "normal", deliveryOption: "standard",
+                    notes: nil, lines: [(partId: partId, quantity: quantity)]
+                )
+            }
         }
     }
 
