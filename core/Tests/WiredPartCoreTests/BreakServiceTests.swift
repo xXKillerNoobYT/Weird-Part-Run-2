@@ -242,6 +242,66 @@ struct BreakServiceTests {
         #expect(updated.roundingEnabled)
     }
 
+    @Test("Company break settings reject malformed default times")
+    func testCompanyBreakSettingsRejectMalformedDefaultTimes() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+
+        #expect(throws: BreakService.BreakError.invalidDefaultBreakTime(field: "Morning Break", value: "bad")) {
+            try breakService.updateCompanyBreakSettings(
+                stateCode: "CA",
+                defaultMorningBreak: "bad",
+                defaultLunch: "12:00",
+                defaultAfternoonBreak: "14:30"
+            )
+        }
+
+        #expect(throws: BreakService.BreakError.invalidDefaultBreakTime(field: "Lunch", value: "24:00")) {
+            try breakService.updateCompanyBreakSettings(
+                stateCode: "CA",
+                defaultMorningBreak: "10:00",
+                defaultLunch: "24:00",
+                defaultAfternoonBreak: "14:30"
+            )
+        }
+
+        #expect(throws: BreakService.BreakError.invalidDefaultBreakTime(field: "Lunch", value: "+1:00")) {
+            try breakService.updateCompanyBreakSettings(
+                stateCode: "CA",
+                defaultMorningBreak: "10:00",
+                defaultLunch: "+1:00",
+                defaultAfternoonBreak: "14:30"
+            )
+        }
+
+        #expect(throws: BreakService.BreakError.invalidDefaultBreakTime(field: "Afternoon Break", value: "25:99")) {
+            try breakService.updateCompanyBreakSettings(
+                stateCode: "CA",
+                defaultMorningBreak: "10:00",
+                defaultLunch: "12:00",
+                defaultAfternoonBreak: "25:99"
+            )
+        }
+    }
+
+    @Test("Company break settings accept HH:mm boundary defaults")
+    func testCompanyBreakSettingsAcceptBoundaryDefaultTimes() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+
+        try breakService.updateCompanyBreakSettings(
+            stateCode: "CA",
+            defaultMorningBreak: "00:00",
+            defaultLunch: "23:59",
+            defaultAfternoonBreak: nil
+        )
+
+        let settings = try breakService.getCompanyBreakSettings()
+        #expect(settings.defaultMorningBreak == "00:00")
+        #expect(settings.defaultLunch == "23:59")
+        #expect(settings.defaultAfternoonBreak == nil)
+    }
+
     // MARK: - Compliance
 
     @Test("Break compliance reflects completed lunch break duration")
@@ -304,6 +364,52 @@ struct BreakServiceTests {
         // morning break + afternoon break + lunch = 3 auto-filled records
         #expect(records.count == 3)
         #expect(records.allSatisfy { $0.autoFilled == true })
+    }
+
+    @Test("autoFillBreaksForDay ignores malformed persisted default times")
+    func testAutoFillSkipsMalformedPersistedDefaultTimes() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                UPDATE company_break_settings
+                SET auto_fill_breaks = 1,
+                    default_morning_break = 'bad',
+                    default_lunch = '12:00',
+                    default_afternoon_break = '25:99'
+                """)
+        }
+
+        try breakService.autoFillBreaksForDay(userId: env.adminUserId)
+
+        let records = try breakService.getBreakRecordsForDay(userId: env.adminUserId)
+        #expect(records.count == 1)
+        #expect(records.first?.breakType == "lunch_paid")
+        #expect(records.first?.startedAt.hasSuffix("T12:00:00") == true)
+        #expect(records.first?.endedAt?.hasSuffix("T12:30:00") == true)
+    }
+
+    @Test("autoFillBreaksForDay rolls end timestamps to next day when default crosses midnight")
+    func testAutoFillCrossMidnightDefaultEndsNextDay() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+        let testDate = Date(timeIntervalSince1970: 0)
+
+        try breakService.updateCompanyBreakSettings(
+            stateCode: "CA",
+            autoFillBreaks: true,
+            defaultMorningBreak: nil,
+            defaultLunch: "23:59",
+            defaultAfternoonBreak: nil
+        )
+
+        try breakService.autoFillBreaksForDay(userId: env.adminUserId, date: testDate)
+
+        let records = try breakService.getBreakRecordsForDay(userId: env.adminUserId, date: testDate)
+        #expect(records.count == 1)
+        #expect(records.first?.startedAt == "1970-01-01T23:59:00")
+        #expect(records.first?.endedAt == "1970-01-02T00:29:00")
     }
 
     @Test("autoFillBreaksForDay skips if breaks already exist")
