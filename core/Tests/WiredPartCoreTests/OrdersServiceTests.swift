@@ -413,8 +413,8 @@ struct OrdersServiceTests {
             categoryId: catId,
             name: "Consolidated Demand Wire",
             minStockLevel: 5,
-            maxStockLevel: 6,
-            targetStockLevel: 12
+            maxStockLevel: 12,
+            targetStockLevel: 6
         )
         let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Demand Supplier")
         _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: supplierId, costPrice: 2.50)

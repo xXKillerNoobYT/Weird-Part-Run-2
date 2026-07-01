@@ -407,6 +407,26 @@ public final class PartsService: Sendable {
         }
     }
 
+    private func validateStockTargetHierarchy(
+        minStockLevel: Int?,
+        targetStockLevel: Int?,
+        maxStockLevel: Int?
+    ) throws {
+        if let minStockLevel { try Validators.requireNonNegative(minStockLevel, field: "Min stock") }
+        if let targetStockLevel { try Validators.requireNonNegative(targetStockLevel, field: "Target stock") }
+        if let maxStockLevel { try Validators.requireNonNegative(maxStockLevel, field: "Max stock") }
+
+        if let minStockLevel, let targetStockLevel, minStockLevel > targetStockLevel {
+            throw PartsError.invalidInput("Stock targets must be in order: MIN ≤ TARGET ≤ MAX")
+        }
+        if let targetStockLevel, let maxStockLevel, targetStockLevel > maxStockLevel {
+            throw PartsError.invalidInput("Stock targets must be in order: MIN ≤ TARGET ≤ MAX")
+        }
+        if let minStockLevel, let maxStockLevel, minStockLevel > maxStockLevel {
+            throw PartsError.invalidInput("Stock targets must be in order: MIN ≤ TARGET ≤ MAX")
+        }
+    }
+
     // =========================================================================
     // MARK: - 1. Hierarchy (Category / Style / Type / Color) CRUD
     // =========================================================================
@@ -1283,9 +1303,11 @@ public final class PartsService: Sendable {
         try Validators.requireNonNegative(companyCostPrice, field: "Cost price")
         try Validators.requireNonNegative(companyMarkupPercent, field: "Markup percent")
         if let w = weightLbs { try Validators.requireNonNegative(w, field: "Weight") }
-        if let m = minStockLevel { try Validators.requireNonNegative(m, field: "Min stock") }
-        if let m = maxStockLevel { try Validators.requireNonNegative(m, field: "Max stock") }
-        if let t = targetStockLevel { try Validators.requireNonNegative(t, field: "Target stock") }
+        try validateStockTargetHierarchy(
+            minStockLevel: minStockLevel,
+            targetStockLevel: targetStockLevel,
+            maxStockLevel: maxStockLevel
+        )
         if let r = reorderPoint { try Validators.requireNonNegative(r, field: "Reorder point") }
 
         // Guard: all referenced FK parents must exist and not be tombstoned.
@@ -1386,6 +1408,14 @@ public final class PartsService: Sendable {
             try Row.fetchOne(dbConn, sql: "SELECT * FROM parts WHERE id = ?", arguments: [id])
         }
 
+        if minStockLevel != nil || targetStockLevel != nil || maxStockLevel != nil {
+            try validateStockTargetHierarchy(
+                minStockLevel: minStockLevel ?? (currentRow?["min_stock_level"] as Int?),
+                targetStockLevel: targetStockLevel ?? (currentRow?["target_stock_level"] as Int?),
+                maxStockLevel: maxStockLevel ?? (currentRow?["max_stock_level"] as Int?)
+            )
+        }
+
         try db.writer.write { dbConn in
             var setClauses: [String] = []
             var args: [DatabaseValueConvertible?] = []
@@ -1460,6 +1490,7 @@ public final class PartsService: Sendable {
             }
         }
     }
+
 
     public func getAutoAddToWishlistWhenLow(partId: Int64) throws -> Bool {
         try db.writer.read { dbConn in
@@ -6885,6 +6916,15 @@ public final class PartsService: Sendable {
                     try Validators.requireText(row.code, field: "Part code", limit: Validators.Limits.code)
                     try Validators.requireNonNegative(cost, field: "Cost price")
                     try Validators.requireNonNegative(markup, field: "Markup percent")
+                    do {
+                        try validateStockTargetHierarchy(
+                            minStockLevel: minStock,
+                            targetStockLevel: targetStock,
+                            maxStockLevel: maxStock
+                        )
+                    } catch PartsError.invalidInput(let message) {
+                        throw PartsError.invalidInput("Invalid stock targets at row \(row.rowNumber): \(message)")
+                    }
 
                     try dbConn.execute(sql: """
                         INSERT INTO parts (
@@ -6924,6 +6964,23 @@ public final class PartsService: Sendable {
                     let minStock = try parseImportWholeNumber(row.fields["min_stock"], header: "min_stock", rowNumber: row.rowNumber)
                     let targetStock = try parseImportWholeNumber(row.fields["target_stock"], header: "target_stock", rowNumber: row.rowNumber)
                     let maxStock = try parseImportWholeNumber(row.fields["max_stock"], header: "max_stock", rowNumber: row.rowNumber)
+
+                    if minStock != nil || targetStock != nil || maxStock != nil {
+                        let current = try Row.fetchOne(
+                            dbConn,
+                            sql: "SELECT min_stock_level, target_stock_level, max_stock_level FROM parts WHERE id = ? AND deleted_at IS NULL",
+                            arguments: [conflict.existingPartId]
+                        )
+                        do {
+                            try validateStockTargetHierarchy(
+                                minStockLevel: minStock ?? (current?["min_stock_level"] as Int?),
+                                targetStockLevel: targetStock ?? (current?["target_stock_level"] as Int?),
+                                maxStockLevel: maxStock ?? (current?["max_stock_level"] as Int?)
+                            )
+                        } catch PartsError.invalidInput(let message) {
+                            throw PartsError.invalidInput("Invalid stock targets at row \(row.rowNumber): \(message)")
+                        }
+                    }
 
                     var clauses = [
                         "name = ?",
