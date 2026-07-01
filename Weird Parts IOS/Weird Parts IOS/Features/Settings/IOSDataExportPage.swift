@@ -99,17 +99,20 @@ struct IOSDataExportPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .disabled(isExporting)
                 .accessibilityLabel("Help")
             }
         }
-        .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "Data Export Help", sections: [
-                ("What This Page Does", "Exports the local database or specific tables as CSV or JSON files. You can also export the full SQLite database file."),
-                ("How to Use It", "Select a format (CSV or JSON), check the tables you want to export, then tap Export. Use 'Export Full Database' for a complete SQLite backup. Exported files are saved to the app's Documents folder."),
-            ])
-        }
-        .sheet(isPresented: $showShareSheet) {
-            ReportShareSheet(items: exportURLs)
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .help:
+                PageHelpSheet(title: "Data Export Help", sections: [
+                    ("What This Page Does", "Exports the local database or specific tables as CSV or JSON files. You can also export the full SQLite database file."),
+                    ("How to Use It", "Select a format (CSV or JSON), check the tables you want to export, then tap Export. Use 'Export Full Database' for a complete SQLite backup. Exported files are saved to the app's Documents folder."),
+                ])
+            case .share(let urls):
+                ReportShareSheet(items: urls)
+            }
         }
         .task { if canExport { loadData() } }
     }
@@ -134,7 +137,16 @@ struct IOSDataExportPage: View {
 
     private enum ActiveSheet: Identifiable {
         case help
-        var id: String { "help" }
+        case share([URL])
+
+        var id: String {
+            switch self {
+            case .help:
+                return "help"
+            case .share(let urls):
+                return "share-\(urls.map(\.path).joined(separator: "|"))"
+            }
+        }
     }
 
     // MARK: - Database Info
@@ -264,14 +276,11 @@ struct IOSDataExportPage: View {
 
     // MARK: - Export Actions
 
-    @State private var exportURLs: [URL] = []
-    @State private var showShareSheet = false
-
     private func performExport() {
         isExporting = true
         exportSuccess = false
         errorMessage = nil
-        exportURLs = []
+        activeSheet = nil
 
         guard let settingsService = appCore.settingsService else {
             errorMessage = "Settings service not available."
@@ -325,10 +334,9 @@ struct IOSDataExportPage: View {
                 return
             }
 
-            exportURLs = urls
             exportSuccess = true
             isExporting = false
-            showShareSheet = true
+            activeSheet = .share(urls)
         } catch {
             errorMessage = userFriendlyError(error, context: "export data")
             isExporting = false
@@ -366,9 +374,8 @@ struct IOSDataExportPage: View {
                     to: destURL
                 )
                 await MainActor.run {
-                    exportURLs = [destURL]
                     exportSuccess = true
-                    showShareSheet = true
+                    activeSheet = .share([destURL])
                     isExporting = false
                 }
             } catch {
