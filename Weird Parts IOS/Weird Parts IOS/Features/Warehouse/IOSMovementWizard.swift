@@ -239,11 +239,10 @@ struct IOSMovementWizard: View {
     // MARK: - Step 1: Locations
 
     private let locationTypes = [
-        ("warehouse", "Warehouse", "building.2.fill"),
-        ("staging", "Staging", "tray.2.fill"),
-        ("truck", "Truck", "truck.box.fill"),
-        ("trailer", "Trailer", "box.truck.fill"),
-        ("job", "Job Site", "hammer.fill"),
+        (WarehouseService.GuidedMovementLocationType.warehouse.rawValue, "Warehouse", "building.2.fill"),
+        (WarehouseService.GuidedMovementLocationType.truck.rawValue, "Truck", "truck.box.fill"),
+        (WarehouseService.GuidedMovementLocationType.trailer.rawValue, "Trailer", "box.truck.fill"),
+        (WarehouseService.GuidedMovementLocationType.job.rawValue, "Job Site", "hammer.fill"),
     ]
 
     @ViewBuilder
