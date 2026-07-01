@@ -73,9 +73,14 @@ struct JobsListPage: View {
     @State private var activeSheet: ActiveSheet?
     @State private var jobs: [JobsService.JobListItem] = []
     @State private var allJobs: [JobsService.JobListItem] = []
+    @State private var dateFilteredJobCount = 0
+    @State private var continuousJobCount = 0
     @State private var statusCounts: [String: Int] = [:]
     @State private var isLoading = true
     @State private var searchText = ""
+    @State private var dateRange: ReportDateRange = .thisWeek
+    @State private var customStart = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+    @State private var customEnd = Date()
     @State private var statusFilter: JobStatusFilter = .active
     @State private var sortOption: JobSort = .recentActivity
     @State private var loadError: String?
@@ -88,6 +93,7 @@ struct JobsListPage: View {
         VStack(spacing: 0) {
             OnboardingBanner(pageId: "jobs-list")
             SkippedModuleHint(moduleId: "jobs")
+            StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
             smartCards
             jobsList
         }
@@ -181,6 +187,9 @@ struct JobsListPage: View {
             }
         }
         .onChange(of: searchText) { loadJobs() }
+        .onChange(of: dateRange) { applyFilterAndSort() }
+        .onChange(of: customStart) { applyFilterAndSort() }
+        .onChange(of: customEnd) { applyFilterAndSort() }
         .onChange(of: sortOption) { applyFilterAndSort() }
         .refreshable { loadJobs() }
         .task { loadJobs() }
@@ -250,11 +259,10 @@ struct JobsListPage: View {
     }
 
     private func countFor(_ filter: JobStatusFilter) -> Int {
-        if filter == .all { return allJobs.count }
-        if filter == .continuous {
-            return allJobs.filter { $0.jobType == "continuous" || $0.status == "continuous" }.count
-        }
-        return statusCounts[filter.queryValue ?? ""] ?? 0
+        if filter == .all { return dateFilteredJobCount }
+        if filter == .continuous { return continuousJobCount }
+        guard let queryValue = filter.queryValue else { return dateFilteredJobCount }
+        return statusCounts[queryValue] ?? 0
     }
 
     private func colorFor(_ filter: JobStatusFilter) -> Color {
@@ -623,12 +631,6 @@ struct JobsListPage: View {
                 status: nil
             )
             stagesByTemplateId = try loadTemplateStageCache(service: service, jobs: allJobs)
-            // Build status counts
-            var counts: [String: Int] = [:]
-            for j in allJobs {
-                counts[j.status, default: 0] += 1
-            }
-            statusCounts = counts
             refreshJobSummaryCache()
             applyFilterAndSort()
         } catch {
@@ -650,7 +652,16 @@ struct JobsListPage: View {
     }
 
     private func applyFilterAndSort() {
-        var filtered = allJobs
+        let dateFiltered = allJobs.filter { job in
+            StandardDateRangeFilter.contains(
+                job.startDate ?? job.dueDate,
+                selectedRange: dateRange,
+                customStart: customStart,
+                customEnd: customEnd
+            )
+        }
+        refreshDateScopedStatusCounts(from: dateFiltered)
+        var filtered = dateFiltered
 
         // Apply status filter
         if let query = statusFilter.queryValue {
@@ -677,5 +688,12 @@ struct JobsListPage: View {
         }
 
         jobs = filtered
+    }
+
+    private func refreshDateScopedStatusCounts(from dateFilteredJobs: [JobsService.JobListItem]) {
+        dateFilteredJobCount = dateFilteredJobs.count
+        continuousJobCount = dateFilteredJobs.filter { $0.jobType == "continuous" || $0.status == "continuous" }.count
+        statusCounts = Dictionary(grouping: dateFilteredJobs, by: \.status)
+            .mapValues(\.count)
     }
 }
