@@ -774,6 +774,68 @@ struct WarehouseServiceExtTests {
         #expect(pending.count >= 1)
     }
 
+    @Test("Misplaced part increments latest active audit session")
+    func testMisplacedPartIncrementsLatestActiveAuditSession() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+
+        let (olderSessionId, latestSessionId) = try env.db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO warehouse_floor_plans (id, name, width_inches, length_inches) VALUES (1, 'Main', 600, 400)
+                """)
+            try dbConn.execute(sql: """
+                INSERT INTO warehouse_storage_units (id, floor_plan_id, name, unit_type) VALUES (1, 1, 'Shelf A', 'shelf')
+                """)
+            try dbConn.execute(sql: """
+                INSERT INTO warehouse_storage_levels (id, unit_id, level_code, level_order) VALUES (1, 1, 'L1', 1)
+                """)
+            try dbConn.execute(sql: """
+                INSERT INTO warehouse_storage_areas (id, level_id, area_code, area_number) VALUES (1, 1, 'A1', 1)
+                """)
+            try dbConn.execute(sql: """
+                INSERT INTO warehouse_storage_areas (id, level_id, area_code, area_number) VALUES (2, 1, 'A2', 2)
+                """)
+            try dbConn.execute(sql: """
+                INSERT INTO audit_sessions_v2
+                    (session_type, started_by, status, started_at, misplaced_found)
+                VALUES ('count', ?, 'active', '2026-06-01 09:00:00', 0)
+                """, arguments: [env.adminUserId])
+            let olderSessionId = dbConn.lastInsertedRowID
+            try dbConn.execute(sql: """
+                INSERT INTO audit_sessions_v2
+                    (session_type, started_by, status, started_at, misplaced_found)
+                VALUES ('count', ?, 'active', '2026-06-01 10:00:00', 0)
+                """, arguments: [env.adminUserId])
+            return (olderSessionId, dbConn.lastInsertedRowID)
+        }
+
+        _ = try env.warehouse.logMisplacedPart(
+            partId: partId,
+            foundAtAreaId: 1,
+            homeAreaId: 2,
+            qtyFound: 5,
+            foundBy: env.adminUserId
+        )
+
+        let counters = try env.db.writer.read { dbConn in
+            let olderCount = try Int.fetchOne(
+                dbConn,
+                sql: "SELECT misplaced_found FROM audit_sessions_v2 WHERE id = ?",
+                arguments: [olderSessionId]
+            ) ?? -1
+            let latestCount = try Int.fetchOne(
+                dbConn,
+                sql: "SELECT misplaced_found FROM audit_sessions_v2 WHERE id = ?",
+                arguments: [latestSessionId]
+            ) ?? -1
+            return (olderCount, latestCount)
+        }
+
+        #expect(counters.0 == 0)
+        #expect(counters.1 == 1)
+    }
+
     // MARK: - Warehouse Rating
 
     @Test("User warehouse rating")
