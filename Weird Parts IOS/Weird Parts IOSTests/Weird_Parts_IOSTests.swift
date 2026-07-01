@@ -959,6 +959,46 @@ struct Weird_Parts_IOSTests {
         #expect(source.contains("loadError = userFriendlyError(error, context: \"create supplier channel\")"))
     }
 
+    @Test func silentFailureUmbrellaSurfacesRepresentativeErrors() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+
+        let setupURL = repoRoot
+            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Auth/CompanySetupWizard.swift")
+        let setupSource = try String(contentsOf: setupURL, encoding: .utf8)
+        #expect(!setupSource.contains("try? appCore.settingsService?.loadSetupDraft()"), "Setup draft load failures must not be swallowed as no saved progress")
+        #expect(setupSource.contains("saveError = userFriendlyError(error, context: \"load saved setup progress\")"))
+
+        let jobsURL = repoRoot
+            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Jobs/JobsListPage.swift")
+        let jobsSource = try String(contentsOf: jobsURL, encoding: .utf8)
+        #expect(!jobsSource.contains("guard let service = appCore.jobsService else { return }"), "Quick status service failures must not silently no-op")
+        #expect(jobsSource.contains("loadError = userFriendlyError(error, context: \"update job status\")"))
+
+        let scheduleURL = repoRoot
+            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Scheduling/IOSScheduleCalendarPage.swift")
+        let scheduleSource = try String(contentsOf: scheduleURL, encoding: .utf8)
+        #expect(scheduleSource.range(of: #"catch\s*\{\s*dayEntries\s*=\s*\[\]\s*timeOffEntries\s*=\s*\[\]"#, options: .regularExpression) == nil, "Selected-day schedule failures must not become an empty day")
+        #expect(scheduleSource.contains("dayDetailError = \"Scheduling service not available\""), "Selected-day service unavailability should render through the day-detail error surface")
+        #expect(scheduleSource.contains("dayDetailError = userFriendlyError(error, context: \"load selected day schedule\")"))
+        #expect(scheduleSource.contains("ErrorStateView(message: dayDetailError) { loadDayDetail() }"), "Selected-day detail failures should offer a retry")
+
+        let syncURL = repoRoot
+            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Sync/IOSSyncManager.swift")
+        let syncSource = try String(contentsOf: syncURL, encoding: .utf8)
+        #expect(!syncSource.contains("guard let map = try? settingsService?.getSettingsByCategory(\"sync\")"), "Pairing status failures must not silently show unpaired state")
+        #expect(!syncSource.contains("(try? settingsService?.isAutoSyncEnabled()) ?? true"), "Auto-sync setting failures must not default to enabled")
+        #expect(!syncSource.contains("let addr = (try? service.getSettingsByCategory(\"sync\"))?[\"shop_server_address\"]"), "Sync server-address failures must not default to nil silently")
+        #expect(!syncSource.contains("try? ConflictResolver.getConflictStats(db: db)"), "Conflict count failures must not silently show zero conflicts")
+        #expect(syncSource.contains("syncSettingsReadFailed(error, context: \"load auto-sync setting\")"))
+        #expect(syncSource.contains("syncSettingsReadFailed(error, context: \"load sync server address\")"))
+        #expect(syncSource.contains("syncSettingsReadFailed(error, context: \"load pairing status\")"))
+        #expect(syncSource.contains("guard lastSurfacedSyncReadFailure != failureKey else { return }"), "Repeated sync setting read failures should not re-alert on every SwiftUI render")
+        #expect(syncSource.contains("errorMessage = userFriendlyError(error, context: \"load sync conflict count\")"))
+    }
+
     @Test func manualBackupSidecarCopyFailureIsReportedAndCleanedUp() throws {
         let tempRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("IOSBackupFileCopierTests-\(UUID().uuidString)", isDirectory: true)

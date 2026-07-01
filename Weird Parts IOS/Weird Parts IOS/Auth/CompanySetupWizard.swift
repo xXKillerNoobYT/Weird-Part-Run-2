@@ -707,7 +707,21 @@ struct CompanySetupWizard: View {
     // MARK: - Persistence (SQLite draft — no PII in UserDefaults)
 
     private func loadProgress() {
-        guard let draft = try? appCore.settingsService?.loadSetupDraft() else { return }
+        guard let settingsService = appCore.settingsService else {
+            saveError = "Settings are still loading. Please try again in a moment."
+            return
+        }
+
+        let draft: SettingsService.CompanySetupDraft?
+        do {
+            draft = try settingsService.loadSetupDraft()
+        } catch {
+            saveError = userFriendlyError(error, context: "load saved setup progress")
+            logger.error("loadSetupDraft failed; keeping setup wizard in a visible retryable state: \(error.localizedDescription)")
+            return
+        }
+
+        guard let draft else { return }
         completedSteps = draft.completedSteps
         skippedSteps = draft.skippedSteps
         companyName = draft.name

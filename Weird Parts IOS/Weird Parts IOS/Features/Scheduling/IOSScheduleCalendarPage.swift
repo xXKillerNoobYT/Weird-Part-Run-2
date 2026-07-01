@@ -29,6 +29,7 @@ struct IOSScheduleCalendarPage: View {
     @State private var selectedDate = Date()
     @State private var searchText = ""
     @State private var loadError: String?
+    @State private var dayDetailError: String?
     private enum ActiveSheet: String, Identifiable {
         case createEntry
         case help
@@ -231,6 +232,9 @@ struct IOSScheduleCalendarPage: View {
         if isLoading {
             ProgressView("Loading...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let dayDetailError {
+            ErrorStateView(message: dayDetailError) { loadDayDetail() }
+                .padding(.horizontal)
         } else if dayEntries.isEmpty && timeOffEntries.isEmpty {
             VStack(spacing: 8) {
                 Text(selectedDate, format: .dateTime.weekday(.wide).month().day())
@@ -575,17 +579,17 @@ struct IOSScheduleCalendarPage: View {
 
     private func loadDayDetail() {
         guard let service = appCore.schedulingService else {
-            loadError = "Scheduling service not available"
+            dayDetailError = "Scheduling service not available"
             isLoading = false
             return
         }
         let dateStr = selectedDateString
+        dayDetailError = nil
         do {
             dayEntries = try service.getScheduleEntriesForDate(date: dateStr)
             timeOffEntries = try service.getTimeOffForDate(date: dateStr)
         } catch {
-            dayEntries = []
-            timeOffEntries = []
+            dayDetailError = userFriendlyError(error, context: "load selected day schedule")
         }
     }
 }
