@@ -17,6 +17,9 @@ struct IOSPartsOrderManagementPage: View {
     @State private var allRows: [OrdersService.PartsManagementRow] = []
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var dateRange: ReportDateRange = .thisWeek
+    @State private var customStart = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+    @State private var customEnd = Date()
 
     // PO status filters
     @State private var showDraft = true
@@ -79,6 +82,7 @@ struct IOSPartsOrderManagementPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
             supplierPicker
             poStatusFilters
             partStatusFilters
@@ -105,6 +109,9 @@ struct IOSPartsOrderManagementPage: View {
         .navigationTitle("Parts Management")
         .searchable(text: $searchText, prompt: "Search parts by name, code, or job...")
         .onChange(of: searchText) { _, _ in postAIContext() }
+        .onChange(of: dateRange) { _, _ in postAIContext() }
+        .onChange(of: customStart) { _, _ in postAIContext() }
+        .onChange(of: customEnd) { _, _ in postAIContext() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
@@ -272,7 +279,33 @@ struct IOSPartsOrderManagementPage: View {
             }()
 
             return poPass && partPass && searchPass
+                && dateStringFallsInSelectedRange(row.orderDate ?? row.expectedDelivery)
         }
+    }
+
+    private var effectiveStart: Date {
+        dateRange.dateInterval?.start ?? customStart
+    }
+
+    private var effectiveEnd: Date {
+        dateRange.dateInterval?.end ?? customEnd
+    }
+
+    private func dateStringFallsInSelectedRange(_ rawDate: String?) -> Bool {
+        guard let date = parseFilterDate(rawDate) else { return false }
+        return date >= Calendar.current.startOfDay(for: effectiveStart) && date <= endOfDay(for: effectiveEnd)
+    }
+
+    private func endOfDay(for date: Date) -> Date {
+        Calendar.current.dateInterval(of: .day, for: date)?.end.addingTimeInterval(-1) ?? date
+    }
+
+    private func parseFilterDate(_ rawDate: String?) -> Date? {
+        guard let rawDate, !rawDate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return Formatters.sqlDateTimeFormatter.date(from: rawDate)
+            ?? Formatters.iso8601Fractional.date(from: rawDate)
+            ?? Formatters.iso8601Basic.date(from: rawDate)
+            ?? Formatters.localDateFormatter.date(from: String(rawDate.prefix(10)))
     }
 
     /// Group filtered rows by PO.

@@ -15,6 +15,9 @@ struct IOSJPOsPage: View {
     @State private var allJPOs: [OrdersService.JPOListItem] = []
     @State private var isLoading = true
     @State private var searchText = ""
+    @State private var dateRange: ReportDateRange = .thisWeek
+    @State private var customStart = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+    @State private var customEnd = Date()
     @State private var statusFilter = "all"
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
@@ -38,6 +41,7 @@ struct IOSJPOsPage: View {
     var body: some View {
         VStack(spacing: 0) {
             OnboardingBanner(pageId: "orders-jpos")
+            StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
             statusPicker
 
             // Pending KPI line
@@ -209,6 +213,7 @@ struct IOSJPOsPage: View {
         if statusFilter != "all" {
             result = result.filter { $0.status == statusFilter }
         }
+        result = result.filter { dateStringFallsInSelectedRange($0.createdAt ?? $0.dueDate) }
         // Search filter
         if !searchText.isEmpty {
             let query = searchText.lowercased()
@@ -218,6 +223,31 @@ struct IOSJPOsPage: View {
             }
         }
         return result
+    }
+
+    private var effectiveStart: Date {
+        dateRange.dateInterval?.start ?? customStart
+    }
+
+    private var effectiveEnd: Date {
+        dateRange.dateInterval?.end ?? customEnd
+    }
+
+    private func dateStringFallsInSelectedRange(_ rawDate: String?) -> Bool {
+        guard let date = parseFilterDate(rawDate) else { return false }
+        return date >= Calendar.current.startOfDay(for: effectiveStart) && date <= endOfDay(for: effectiveEnd)
+    }
+
+    private func endOfDay(for date: Date) -> Date {
+        Calendar.current.dateInterval(of: .day, for: date)?.end.addingTimeInterval(-1) ?? date
+    }
+
+    private func parseFilterDate(_ rawDate: String?) -> Date? {
+        guard let rawDate, !rawDate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return Formatters.sqlDateTimeFormatter.date(from: rawDate)
+            ?? Formatters.iso8601Fractional.date(from: rawDate)
+            ?? Formatters.iso8601Basic.date(from: rawDate)
+            ?? Formatters.localDateFormatter.date(from: String(rawDate.prefix(10)))
     }
 
     private func jpoRow(_ jpo: OrdersService.JPOListItem) -> some View {

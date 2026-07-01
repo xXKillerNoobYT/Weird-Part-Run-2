@@ -76,6 +76,9 @@ struct JobsListPage: View {
     @State private var statusCounts: [String: Int] = [:]
     @State private var isLoading = true
     @State private var searchText = ""
+    @State private var dateRange: ReportDateRange = .thisWeek
+    @State private var customStart = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+    @State private var customEnd = Date()
     @State private var statusFilter: JobStatusFilter = .active
     @State private var sortOption: JobSort = .recentActivity
     @State private var loadError: String?
@@ -88,6 +91,7 @@ struct JobsListPage: View {
         VStack(spacing: 0) {
             OnboardingBanner(pageId: "jobs-list")
             SkippedModuleHint(moduleId: "jobs")
+            StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
             smartCards
             jobsList
         }
@@ -181,6 +185,9 @@ struct JobsListPage: View {
             }
         }
         .onChange(of: searchText) { loadJobs() }
+        .onChange(of: dateRange) { applyFilterAndSort() }
+        .onChange(of: customStart) { applyFilterAndSort() }
+        .onChange(of: customEnd) { applyFilterAndSort() }
         .onChange(of: sortOption) { applyFilterAndSort() }
         .refreshable { loadJobs() }
         .task { loadJobs() }
@@ -661,6 +668,10 @@ struct JobsListPage: View {
             }
         }
 
+        filtered = filtered.filter { job in
+            dateStringFallsInSelectedRange(job.startDate ?? job.dueDate)
+        }
+
         // Continuous jobs: only show to assigned workers or managers
         // (We don't have assignment info on JobListItem, so we skip this client-side filter
         //  and rely on the server query. Managers see all.)
@@ -677,5 +688,30 @@ struct JobsListPage: View {
         }
 
         jobs = filtered
+    }
+
+    private var effectiveStart: Date {
+        dateRange.dateInterval?.start ?? customStart
+    }
+
+    private var effectiveEnd: Date {
+        dateRange.dateInterval?.end ?? customEnd
+    }
+
+    private func dateStringFallsInSelectedRange(_ rawDate: String?) -> Bool {
+        guard let date = parseFilterDate(rawDate) else { return false }
+        return date >= Calendar.current.startOfDay(for: effectiveStart) && date <= endOfDay(for: effectiveEnd)
+    }
+
+    private func endOfDay(for date: Date) -> Date {
+        Calendar.current.dateInterval(of: .day, for: date)?.end.addingTimeInterval(-1) ?? date
+    }
+
+    private func parseFilterDate(_ rawDate: String?) -> Date? {
+        guard let rawDate, !rawDate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return Formatters.sqlDateTimeFormatter.date(from: rawDate)
+            ?? Formatters.iso8601Fractional.date(from: rawDate)
+            ?? Formatters.iso8601Basic.date(from: rawDate)
+            ?? Formatters.localDateFormatter.date(from: String(rawDate.prefix(10)))
     }
 }
