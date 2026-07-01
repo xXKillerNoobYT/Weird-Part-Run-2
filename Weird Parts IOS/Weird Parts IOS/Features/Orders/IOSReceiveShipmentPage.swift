@@ -1053,10 +1053,11 @@ struct IOSReceiveShipmentPage: View {
             let currentItemIds = Set(sessionItems.map(\.id))
             routingResults = routingResults.filter { currentItemIds.contains($0.key) }
             // Restore saved quantities from DB (PE-041: auto-save draft persistence).
-            // If the item has a saved receivedQty > 0, use it (resumed session).
-            // Otherwise fall back to expectedQty so fresh sessions are pre-filled (61L).
+            // `receivedQty == 0` is a valid saved draft value after Clear All or a
+            // manual zero count. Use scannedAt as the persisted-touch marker so
+            // untouched fresh-session rows still pre-fill from expectedQty.
             for item in sessionItems {
-                let restoredReceivedQty = item.receivedQty > 0 ? item.receivedQty : item.expectedQty
+                let restoredReceivedQty = item.scannedAt == nil ? item.expectedQty : item.receivedQty
                 let currentReceivedQty = receivedQtys[item.id] ?? restoredReceivedQty
                 if receivedQtys[item.id] == nil {
                     receivedQtys[item.id] = restoredReceivedQty
