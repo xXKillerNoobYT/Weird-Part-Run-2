@@ -58,7 +58,7 @@ struct IOSReceiveShipmentPage: View {
         }
 
         private let source: Source
-        private let routedQty: Int?
+        private let routedQty: Int
 
         init(route: WarehouseService.ReceivingRoute, routedQty: Int) {
             self.source = .live(route)
@@ -202,9 +202,13 @@ struct IOSReceiveShipmentPage: View {
         }
 
         func covers(receivedQty: Int) -> Bool {
-            guard let routedQty else { return true }
             return routedQty >= receivedQty
         }
+    }
+
+    private func isFullyRouted(_ item: WarehouseService.ReceivingItemInfo) -> Bool {
+        let qty = receivedQtys[item.id] ?? 0
+        return qty > 0 && (routingResults[item.id]?.covers(receivedQty: qty) ?? false)
     }
 
     /// Items that have been received (qty > 0) but not yet fully routed (62H).
@@ -645,14 +649,14 @@ struct IOSReceiveShipmentPage: View {
             }
             Button("Go Back and Route Items", role: .cancel) { }
         } message: {
-            Text("\(unroutedItems.count) item\(unroutedItems.count == 1 ? " has" : "s have") been received but not routed to a location. Continue anyway?")
+            Text("\(unroutedItems.count) item\(unroutedItems.count == 1 ? " has" : "s have") received quantities that are not fully routed. Continue anyway?")
         }
     }
 
     // MARK: - Routing Progress Summary
 
     private var routingProgressSummary: some View {
-        let routedCount = routingResults.count
+        let routedCount = sessionItems.filter(isFullyRouted).count
         let totalCount = sessionItems.count
         let allRouted = routedCount == totalCount
 
@@ -660,7 +664,7 @@ struct IOSReceiveShipmentPage: View {
             HStack {
                 Image(systemName: allRouted ? "checkmark.circle.fill" : "arrow.triangle.branch")
                     .foregroundStyle(allRouted ? .green : .blue)
-                Text("\(routedCount)/\(totalCount) items routed")
+                Text("\(routedCount)/\(totalCount) items fully routed")
                     .font(.subheadline)
                     .fontWeight(.medium)
                 Spacer()
