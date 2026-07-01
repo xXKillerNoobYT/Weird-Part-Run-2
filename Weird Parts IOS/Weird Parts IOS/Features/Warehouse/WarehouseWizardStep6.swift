@@ -123,6 +123,12 @@ struct WarehouseWizardStep6: View {
                         targetInput("MAX", partId: part.id, keyPath: \.max)
                     }
 
+                    if let values = targetValues[part.id], !isValidTargetHierarchy(values) {
+                        Text("Targets must be non-negative and ordered MIN ≤ TARGET ≤ MAX.")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+
                     let suggestion = aiSuggestion(for: part)
                     Button {
                         targetValues[part.id] = suggestion
@@ -220,6 +226,15 @@ struct WarehouseWizardStep6: View {
     private func saveAllTargets() {
         guard let service = appCore.partsService else { stepError = "Parts service not available"; return }
         saveSuccess = false
+        stepError = nil
+
+        if let invalidPart = assignedParts.first(where: { part in
+            guard let values = targetValues[part.id] else { return false }
+            return !isValidTargetHierarchy(values)
+        }), let values = targetValues[invalidPart.id] {
+            stepError = "\(invalidPart.name) targets must be non-negative and ordered MIN ≤ TARGET ≤ MAX (currently \(values.min)/\(values.target)/\(values.max))."
+            return
+        }
 
         do {
             for (partId, values) in targetValues {
@@ -234,5 +249,10 @@ struct WarehouseWizardStep6: View {
         } catch {
             stepError = userFriendlyError(error, context: "save stock targets")
         }
+    }
+
+    private func isValidTargetHierarchy(_ values: WizardTargetValue) -> Bool {
+        values.min >= 0 && values.target >= 0 && values.max >= 0 &&
+        values.min <= values.target && values.target <= values.max
     }
 }

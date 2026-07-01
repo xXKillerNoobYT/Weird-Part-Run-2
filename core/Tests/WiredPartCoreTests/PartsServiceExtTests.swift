@@ -62,6 +62,55 @@ struct PartsServiceExtTests {
         try env.parts.deletePart(id: partId)
     }
 
+    @Test("updatePart rejects invalid stock target hierarchy")
+    func testUpdatePartRejectsInvalidStockTargetHierarchy() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "Stock Target Validation")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Invalid Target Part", categoryId: catId)
+
+        #expect(throws: PartsService.PartsError.invalidInput("Stock targets must be in order: MIN ≤ TARGET ≤ MAX")) {
+            try env.parts.updatePart(
+                id: partId,
+                minStockLevel: 10,
+                maxStockLevel: 1,
+                targetStockLevel: 2
+            )
+        }
+
+        let unchanged = try env.parts.getPart(id: partId).part
+        #expect(unchanged.minStockLevel == nil)
+        #expect(unchanged.targetStockLevel == nil)
+        #expect(unchanged.maxStockLevel == nil)
+
+        try env.parts.updatePart(
+            id: partId,
+            minStockLevel: 2,
+            maxStockLevel: 10,
+            targetStockLevel: 5
+        )
+
+        let updated = try env.parts.getPart(id: partId).part
+        #expect(updated.minStockLevel == 2)
+        #expect(updated.targetStockLevel == 5)
+        #expect(updated.maxStockLevel == 10)
+    }
+
+    @Test("createPart rejects invalid stock target hierarchy")
+    func testCreatePartRejectsInvalidStockTargetHierarchy() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "Create Stock Target Validation")
+
+        #expect(throws: PartsService.PartsError.invalidInput("Stock targets must be in order: MIN ≤ TARGET ≤ MAX")) {
+            try env.parts.createPart(
+                categoryId: catId,
+                name: "Invalid Create Target Part",
+                minStockLevel: 10,
+                maxStockLevel: 1,
+                targetStockLevel: 2
+            )
+        }
+    }
+
     @Test("auto-add-to-wishlist flag defaults off and can be toggled by catalog editor")
     func testAutoAddToWishlistWhenLowToggle() throws {
         let env = try E2ETestHelpers.setUp()
