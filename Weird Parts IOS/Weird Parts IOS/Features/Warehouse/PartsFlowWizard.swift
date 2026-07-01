@@ -73,6 +73,8 @@ struct PartsFlowWizard: View {
     @State private var isSaving = false
     @State private var savedCount = 0
     @State private var saveErrorMessage: String?
+    @State private var validationMessage: String?
+    @State private var saveSuccessMessage: String?
 
     private let totalSteps = 3
     private let stepLabels = ["Parts List", "Count Entry", "Location Assignment"]
@@ -81,6 +83,16 @@ struct PartsFlowWizard: View {
         NavigationStack {
             VStack(spacing: 0) {
                 progressBar
+
+                if let message = saveSuccessMessage {
+                    Label(message, systemImage: "checkmark.circle.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(.green)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                        .background(Color.green.opacity(0.12))
+                        .accessibilityIdentifier("parts_flow_save_success_message")
+                }
 
                 if isLoading {
                     ProgressView("Loading parts...")
@@ -117,6 +129,14 @@ struct PartsFlowWizard: View {
                 Button("OK") { saveErrorMessage = nil }
             } message: {
                 if let msg = saveErrorMessage { Text(msg) }
+            }
+            .alert("Check Your Entries", isPresented: Binding(
+                get: { validationMessage != nil },
+                set: { if !$0 { validationMessage = nil } }
+            )) {
+                Button("OK") { validationMessage = nil }
+            } message: {
+                if let msg = validationMessage { Text(msg) }
             }
         }
     }
@@ -233,7 +253,7 @@ struct PartsFlowWizard: View {
             }
             .padding()
 
-            let counted = partCounts.values.filter { !$0.isEmpty && Int($0) != nil }.count
+            let counted = partCounts.values.filter { Self.validQuantity(from: $0) != nil }.count
             HStack {
                 Text("\(counted) of \(parts.count) counted")
                     .font(.caption)
@@ -243,6 +263,16 @@ struct PartsFlowWizard: View {
                     .frame(width: 100)
             }
             .padding(.horizontal)
+
+            if let message = countEntryValidationSummary {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+                    .padding(.top, 6)
+                    .accessibilityIdentifier("parts_flow_count_validation_message")
+            }
 
             List {
                 ForEach(parts, id: \.part.id) { item in
@@ -263,14 +293,27 @@ struct PartsFlowWizard: View {
 
                             TextField("Qty", text: Binding(
                                 get: { partCounts[partId] ?? "" },
-                                set: { partCounts[partId] = $0 }
+                                set: { newValue in
+                                    let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    if trimmed.isEmpty {
+                                        partCounts.removeValue(forKey: partId)
+                                    } else {
+                                        partCounts[partId] = trimmed
+                                    }
+                                }
                             ))
                             .textFieldStyle(.roundedBorder)
                             .keyboardType(.numberPad)
                             .frame(width: 80)
+                            .accessibilityIdentifier("parts_flow_qty_\(partId)")
 
-                            if let text = partCounts[partId],
-                               !text.isEmpty, Int(text) != nil {
+                            if isInvalidQuantity(partCounts[partId]) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.red)
+                                    .accessibilityLabel("Invalid quantity")
+                            } else if let text = partCounts[partId],
+                                      !text.isEmpty,
+                                      Self.validQuantity(from: text) != nil {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundStyle(.green)
                                     .accessibilityHidden(true)
@@ -320,7 +363,7 @@ struct PartsFlowWizard: View {
                                     .font(.subheadline)
                                     .fontWeight(.medium)
                                 Spacer()
-                                if let count = partCounts[partId], let qty = Int(count) {
+                                if let qty = Self.validQuantity(from: partCounts[partId]) {
                                     Text("×\(qty)")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
@@ -333,7 +376,14 @@ struct PartsFlowWizard: View {
 
                             TextField("Location (e.g., Shelf A, Back wall)", text: Binding(
                                 get: { partLocations[partId] ?? "" },
-                                set: { partLocations[partId] = $0 }
+                                set: { newValue in
+                                    let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    if trimmed.isEmpty {
+                                        partLocations.removeValue(forKey: partId)
+                                    } else {
+                                        partLocations[partId] = trimmed
+                                    }
+                                }
                             ))
                             .textFieldStyle(.roundedBorder)
                             .font(.subheadline)
@@ -380,7 +430,7 @@ struct PartsFlowWizard: View {
 
             if currentStep < totalSteps {
                 Button {
-                    withAnimation { currentStep += 1 }
+                    validateBeforeAdvancing()
                 } label: {
                     Label("Next", systemImage: "chevron.right")
                         .frame(maxWidth: .infinity)
@@ -443,21 +493,80 @@ struct PartsFlowWizard: View {
         }
     }
 
+    private var invalidQuantityEntries: [String] {
+        parts.compactMap { item in
+            guard let partId = item.part.id, isInvalidQuantity(partCounts[partId]) else { return nil }
+            return item.part.name
+        }
+    }
+
+    private var countEntryValidationSummary: String? {
+        let invalidCount = invalidQuantityEntries.count
+        guard invalidCount > 0 else { return nil }
+        return "\(invalidCount) quantity \(invalidCount == 1 ? "entry" : "entries") must be a whole number greater than zero."
+    }
+
+    private var saveableEntryCount: Int {
+        parts.reduce(0) { total, item in
+            guard let partId = item.part.id else { return total }
+            let hasValidCount = Self.validQuantity(from: partCounts[partId]) != nil
+            let hasLocation = !(partLocations[partId]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+            return total + ((hasValidCount || hasLocation) ? 1 : 0)
+        }
+    }
+
+    private func isInvalidQuantity(_ text: String?) -> Bool {
+        guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        return Self.validQuantity(from: text) == nil
+    }
+
+    private static func validQuantity(from text: String?) -> Int? {
+        guard let text else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let qty = Int(trimmed), qty > 0 else { return nil }
+        return qty
+    }
+
+    private func validateBeforeAdvancing() {
+        // Always allow Step 1 to open Count Entry so invalid restored drafts can be fixed there.
+        guard currentStep == 2 else {
+            withAnimation { currentStep += 1 }
+            return
+        }
+        guard invalidQuantityEntries.isEmpty else {
+            validationMessage = countEntryValidationSummary
+            return
+        }
+        withAnimation { currentStep += 1 }
+    }
+
+    private func validateBeforeSaving() -> Bool {
+        guard invalidQuantityEntries.isEmpty else {
+            validationMessage = countEntryValidationSummary
+            return false
+        }
+        guard saveableEntryCount > 0 else {
+            validationMessage = "Enter at least one positive count or non-empty location before saving the parts flow."
+            return false
+        }
+        return true
+    }
+
     private func saveAllProgress(clearDraft: Bool, andDismiss: Bool) {
         guard !isSaving else { return }
-        isSaving = true
+        saveSuccessMessage = nil
         saveErrorMessage = nil
+        validationMessage = nil
 
         let userId = appCore.currentUser?.id
         PartsFlowDraftStore.save(counts: partCounts, locations: partLocations, userId: userId)
 
+        guard validateBeforeSaving() else { return }
+        isSaving = true
+
         guard let service = appCore.partsService else {
             isSaving = false
-            if andDismiss && !clearDraft {
-                dismiss()
-            } else {
-                saveErrorMessage = "Parts service unavailable. Your draft is still saved on this device."
-            }
+            saveErrorMessage = "Parts service unavailable. Your draft is still saved on this device."
             return
         }
 
@@ -465,43 +574,49 @@ struct PartsFlowWizard: View {
         let counts = partCounts
         let locations = partLocations
 
-        // DB loop runs in a Task so SwiftUI renders isSaving=true before the loop starts
+        // DB loop runs in a detached task so synchronous SQLite writes do not block SwiftUI rendering.
         Task {
-            var count = 0
-            var failedParts: [String] = []
-            for item in snapshot {
-                guard let partId = item.part.id else { continue }
-                var notesParts: [String] = []
-                if let location = locations[partId],
-                   !location.trimmingCharacters(in: .whitespaces).isEmpty {
-                    notesParts.append("Location: \(location)")
-                }
-                if let text = counts[partId], let qty = Int(text) {
-                    notesParts.append("Initial count: \(qty)")
-                }
-                if !notesParts.isEmpty {
-                    let combined = notesParts.joined(separator: " | ")
-                    do {
-                        try service.updatePart(id: partId, notes: combined)
-                        if counts[partId].flatMap(Int.init) != nil {
-                            count += 1
+            let result = await Task.detached(priority: .userInitiated) {
+                var savedEntries = 0
+                var failedParts: [String] = []
+                for item in snapshot {
+                    guard let partId = item.part.id else { continue }
+                    var notesParts: [String] = []
+                    if let location = locations[partId]?.trimmingCharacters(in: .whitespacesAndNewlines),
+                       !location.isEmpty {
+                        notesParts.append("Location: \(location)")
+                    }
+                    if let qty = Self.validQuantity(from: counts[partId]) {
+                        notesParts.append("Initial count: \(qty)")
+                    }
+                    if !notesParts.isEmpty {
+                        let combined = notesParts.joined(separator: " | ")
+                        do {
+                            try service.updatePart(id: partId, notes: combined)
+                            savedEntries += 1
+                        } catch {
+                            failedParts.append(item.part.name)
                         }
-                    } catch {
-                        failedParts.append(item.part.name)
                     }
                 }
-            }
-            savedCount = count
-            if !failedParts.isEmpty {
+                return (savedEntries: savedEntries, failedParts: failedParts)
+            }.value
+
+            savedCount = result.savedEntries
+            if !result.failedParts.isEmpty {
                 PartsFlowDraftStore.save(counts: counts, locations: locations, userId: userId)
-                let preview = failedParts.prefix(3).joined(separator: ", ")
-                let suffix = failedParts.count > 3 ? " and \(failedParts.count - 3) more" : ""
-                saveErrorMessage = "Failed to save \(failedParts.count) part(s): \(preview)\(suffix). Your draft is still saved on this device."
+                let preview = result.failedParts.prefix(3).joined(separator: ", ")
+                let suffix = result.failedParts.count > 3 ? " and \(result.failedParts.count - 3) more" : ""
+                saveErrorMessage = "Failed to save \(result.failedParts.count) part(s): \(preview)\(suffix). Your draft is still saved on this device."
             } else if clearDraft {
                 PartsFlowDraftStore.clear(userId: userId)
             }
             isSaving = false
+            if saveErrorMessage == nil {
+                saveSuccessMessage = "Saved \(result.savedEntries) \(result.savedEntries == 1 ? "part" : "parts")."
+            }
             if andDismiss && saveErrorMessage == nil {
+                try? await Task.sleep(nanoseconds: 500_000_000)
                 dismiss()
             }
         }
