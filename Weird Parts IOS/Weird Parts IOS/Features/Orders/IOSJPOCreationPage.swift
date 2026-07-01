@@ -61,6 +61,7 @@ struct IOSJPOCreationPage: View {
     @State private var confirmOriginalQty: Int = 1
     @State private var confirmSource = ""  // "companion" or "ai"
     @State private var showConfirmDialog = false
+    @State private var confirmValidationMessage: String?
 
     // MARK: - State
 
@@ -197,21 +198,31 @@ struct IOSJPOCreationPage: View {
         ) {
             TextField("Quantity", value: $confirmQty, format: .number)
                 .keyboardType(.numberPad)
+                .onChange(of: confirmQty) {
+                    confirmValidationMessage = Self.cartQuantityValidationMessage(for: confirmQty)
+                }
             Button("Cancel", role: .cancel) { }
             Button("Add to Cart") {
                 if let part = confirmingPart {
-                    addToCart(part: part, quantity: confirmQty)
-                    recordSuggestionFeedback(
-                        partId: part.id ?? 0,
-                        suggestedQty: confirmOriginalQty,
-                        acceptedQty: confirmQty,
-                        source: confirmSource
-                    )
+                    if validateCartQuantity(confirmQty) {
+                        addToCart(part: part, quantity: confirmQty)
+                        recordSuggestionFeedback(
+                            partId: part.id ?? 0,
+                            suggestedQty: confirmOriginalQty,
+                            acceptedQty: confirmQty,
+                            source: confirmSource
+                        )
+                    }
                 }
             }
+            .disabled(confirmQty <= 0)
         } message: {
             let stock = getShopStock(partId: confirmingPart?.id ?? 0)
-            Text("Suggested: \(confirmOriginalQty). Shop stock: \(stock). Adjust if needed.")
+            if let confirmValidationMessage {
+                Text("\(confirmValidationMessage) Suggested: \(confirmOriginalQty). Shop stock: \(stock).")
+            } else {
+                Text("Suggested: \(confirmOriginalQty). Shop stock: \(stock). Adjust if needed.")
+            }
         }
         .alert("Different Job", isPresented: $showJobVerification) {
             // "Yes" intentionally has no body — selectedJobId is already set to the
@@ -789,8 +800,21 @@ struct IOSJPOCreationPage: View {
 
     // MARK: - Cart Logic
 
+    private static func cartQuantityValidationMessage(for quantity: Int) -> String? {
+        quantity > 0 ? nil : "Quantity must be at least 1."
+    }
+
+    private func validateCartQuantity(_ quantity: Int) -> Bool {
+        if let message = Self.cartQuantityValidationMessage(for: quantity) {
+            submitError = message
+            return false
+        }
+        return true
+    }
+
     private func addToCart(part: Part, quantity: Int = 1) {
         guard let partId = part.id else { return }
+        guard validateCartQuantity(quantity) else { return }
 
         // Already in cart — increment
         if let idx = cartItems.firstIndex(where: { $0.partId == partId }) {
@@ -838,6 +862,7 @@ struct IOSJPOCreationPage: View {
     // MARK: - Suggestion Confirm + Feedback
 
     private func prepareSuggestionConfirm(partId: Int64, suggestedQty: Int, source: String) {
+        guard validateCartQuantity(suggestedQty) else { return }
         guard let service = appCore.partsService,
               let details = try? service.getPart(id: partId) else {
             submitError = "Parts service not available"
@@ -846,6 +871,7 @@ struct IOSJPOCreationPage: View {
         confirmingPart = details.part
         confirmQty = suggestedQty
         confirmOriginalQty = suggestedQty
+        confirmValidationMessage = Self.cartQuantityValidationMessage(for: suggestedQty)
         confirmSource = source
         showConfirmDialog = true
     }
@@ -1042,7 +1068,9 @@ struct IOSJPOCreationPage: View {
                     guard parts.count >= 3 else { return nil }
                     let name = parts[0].trimmingCharacters(in: .whitespaces)
                     let reason = parts[1].trimmingCharacters(in: .whitespaces)
-                    let qty = Int(parts[2].trimmingCharacters(in: .whitespaces)) ?? 1
+                    guard let qty = Int(parts[2].trimmingCharacters(in: .whitespaces)), qty > 0 else {
+                        return nil
+                    }
                     // Try to match to a real part in catalog
                     let matchedPart = try? service.searchParts(query: name, limit: 1).first
                     return AISuggestion(
@@ -1072,6 +1100,9 @@ struct IOSJPOCreationPage: View {
         submitError = nil
 
         do {
+            if let invalidLine = cartItems.first(where: { $0.quantity <= 0 }) {
+                throw OrdersService.OrdersError.invalidQuantity(invalidLine.quantity)
+            }
             let lines = cartItems.map { (partId: $0.partId, quantity: $0.quantity) }
             let jpoId = try service.createJPOWithLines(
                 jobId: jobId,

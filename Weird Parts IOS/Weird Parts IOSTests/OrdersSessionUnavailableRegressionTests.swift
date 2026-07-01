@@ -217,6 +217,40 @@ final class OrdersSessionUnavailableRegressionTests: XCTestCase {
         )
     }
 
+    func testJPOSuggestionQuantitiesAreValidatedBeforeCartMutation() throws {
+        let jpoCreationSource = try Self.readOrdersSource(named: "IOSJPOCreationPage.swift")
+
+        XCTAssertTrue(
+            jpoCreationSource.contains("private static func cartQuantityValidationMessage(for quantity: Int) -> String?") &&
+                jpoCreationSource.contains("quantity > 0 ? nil : \"Quantity must be at least 1.\""),
+            "JPO creation should centralize positive quantity validation for search, companion, AI, confirmation, and submit paths."
+        )
+        XCTAssertTrue(
+            jpoCreationSource.contains("guard validateCartQuantity(quantity) else { return }") &&
+                jpoCreationSource.contains("guard validateCartQuantity(suggestedQty) else { return }"),
+            "addToCart and suggestion confirmation should reject zero or negative quantities before mutating cart state."
+        )
+        XCTAssertTrue(
+            jpoCreationSource.contains(".disabled(confirmQty <= 0)") &&
+                jpoCreationSource.contains("confirmValidationMessage = Self.cartQuantityValidationMessage(for: confirmQty)"),
+            "The suggestion confirmation alert should block invalid Add actions and show inline validation feedback."
+        )
+        XCTAssertTrue(
+            jpoCreationSource.contains("guard let qty = Int(parts[2].trimmingCharacters(in: .whitespaces)), qty > 0 else") &&
+                jpoCreationSource.contains("return nil"),
+            "AI suggestion parsing should reject malformed, zero, or negative quantities instead of silently coercing them to one."
+        )
+        XCTAssertFalse(
+            jpoCreationSource.contains("Int(parts[2].trimmingCharacters(in: .whitespaces)) ?? 1"),
+            "Malformed AI quantities must not be silently treated as valid quantity-one suggestions."
+        )
+        XCTAssertTrue(
+            jpoCreationSource.contains("cartItems.first(where: { $0.quantity <= 0 })") &&
+                jpoCreationSource.contains("throw OrdersService.OrdersError.invalidQuantity(invalidLine.quantity)"),
+            "Submit should fail closed if any invalid cart quantity reaches the final order creation path."
+        )
+    }
+
     private static func readOrdersSource(named filename: String, file: StaticString = #filePath) throws -> String {
         let testFileURL = URL(fileURLWithPath: "\(file)")
         let projectRoot = testFileURL
