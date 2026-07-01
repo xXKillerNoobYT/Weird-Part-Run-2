@@ -1212,6 +1212,7 @@ struct IOSClockPage: View {
                             .controlSize(.small)
 
                             Button {
+                                loadTodosForJob(jobId: entry.jobId)
                                 activeSheet = .todoPicker
                             } label: {
                                 Label("Switch", systemImage: "arrow.triangle.swap")
@@ -1223,6 +1224,7 @@ struct IOSClockPage: View {
                 } else {
                     // No to-do selected
                     Button {
+                        loadTodosForJob(jobId: entry.jobId)
                         activeSheet = .todoPicker
                     } label: {
                         Label("Pick a To-Do", systemImage: "checklist")
@@ -1885,9 +1887,12 @@ struct IOSClockPage: View {
     // MARK: - To-Do Actions
 
     private func selectTodo(_ todo: JobsService.ClockTodoItem) {
-        guard let service = appCore.jobsService,
-              let entry = activeEntry else {
+        guard let service = appCore.jobsService else {
             errorMessage = "Jobs service not available"
+            return
+        }
+        guard let entry = activeEntry else {
+            errorMessage = "No active clock entry available"
             return
         }
         do {
@@ -1909,17 +1914,17 @@ struct IOSClockPage: View {
             try notebooksService.completeEntry(entryId: todo.id)
             let remaining = try jobsService.getActiveJobTodos(jobId: entry.jobId)
 
-            var didUnlinkTodo = false
-            await MainActor.run {
+            let didUnlinkTodo = await MainActor.run {
                 activeTodos = remaining
                 do {
                     try jobsService.linkClockEntryToTodo(clockEntryId: entry.id, todoId: nil)
                     currentTodo = nil
                     errorMessage = nil
-                    didUnlinkTodo = true
+                    return true
                 } catch {
                     self.logger.warning("linkClockEntryToTodo failed (unlink): \(error.localizedDescription, privacy: .public)")
                     errorMessage = "The to-do was completed, but the clock entry could not be unlinked from it. Refresh or try again before picking the next to-do."
+                    return false
                 }
             }
 
@@ -2098,9 +2103,6 @@ struct IOSClockPage: View {
                     activeTodos = []
                     currentTodo = nil
                 } else if entry == nil {
-                    activeTodos = []
-                    currentTodo = nil
-                } else if previousActiveJobId != entry?.jobId {
                     activeTodos = []
                     currentTodo = nil
                 }
