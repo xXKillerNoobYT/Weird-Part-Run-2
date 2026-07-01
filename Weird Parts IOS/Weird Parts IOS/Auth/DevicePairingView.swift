@@ -84,6 +84,9 @@ struct DevicePairingView: View {
         .task {
             await scanForShop()
         }
+        .onDisappear {
+            stopOnboardingDiscoveryIfAbandoned()
+        }
     }
 
     // MARK: - Discovery
@@ -248,11 +251,18 @@ struct DevicePairingView: View {
     // MARK: - Actions
 
     private func scanForShop() async {
+        guard !Task.isCancelled else { return }
         // Enable BT and start first-run join discovery. A brand-new device does
         // not have a local company ID yet; the pairing response verifies the
         // selected shop before storing company settings.
         syncManager.setBluetoothEnabled(true, startDiscovery: false)
+        guard !Task.isCancelled else { return }
         syncManager.startOnboardingPeerDiscovery()
+    }
+
+    private func stopOnboardingDiscoveryIfAbandoned() {
+        guard !navigateToSync else { return }
+        syncManager.stopPeerDiscovery()
     }
 
     private func attemptPairing() async {
