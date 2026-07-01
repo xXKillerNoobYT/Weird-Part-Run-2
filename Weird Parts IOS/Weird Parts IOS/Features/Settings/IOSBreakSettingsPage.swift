@@ -411,6 +411,9 @@ struct IOSBreakSettingsPage: View {
                 Spacer()
                 TextField("10:00", text: $defaultMorningBreak)
                     .multilineTextAlignment(.trailing)
+                    .keyboardType(.numbersAndPunctuation)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
                     .frame(width: 80)
                     .font(.system(.body, design: .monospaced))
             }
@@ -420,6 +423,9 @@ struct IOSBreakSettingsPage: View {
                 Spacer()
                 TextField("12:00", text: $defaultLunch)
                     .multilineTextAlignment(.trailing)
+                    .keyboardType(.numbersAndPunctuation)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
                     .frame(width: 80)
                     .font(.system(.body, design: .monospaced))
             }
@@ -429,6 +435,9 @@ struct IOSBreakSettingsPage: View {
                 Spacer()
                 TextField("14:30", text: $defaultAfternoonBreak)
                     .multilineTextAlignment(.trailing)
+                    .keyboardType(.numbersAndPunctuation)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
                     .frame(width: 80)
                     .font(.system(.body, design: .monospaced))
             }
@@ -532,6 +541,8 @@ struct IOSBreakSettingsPage: View {
             return
         }
 
+        guard validateDefaultBreakTimes() else { return }
+
         do {
             // Save company settings
             try breakSvc.updateCompanyBreakSettings(
@@ -610,5 +621,37 @@ struct IOSBreakSettingsPage: View {
     private func resetDirtyTracking() {
         baselineFormSignature = formSignature
         hasUnsavedChanges = false
+    }
+
+    private func validateDefaultBreakTimes() -> Bool {
+        let entries = [
+            (label: "Morning Break", value: defaultMorningBreak),
+            (label: "Lunch", value: defaultLunch),
+            (label: "Afternoon Break", value: defaultAfternoonBreak),
+        ]
+
+        for entry in entries where !isValidDefaultTime(entry.value) {
+            successMessage = nil
+            errorMessage = "\(entry.label) must be a valid 24-hour time in HH:mm format."
+            return false
+        }
+
+        return true
+    }
+
+    private func isValidDefaultTime(_ time: String) -> Bool {
+        let trimmed = time.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return true }
+        let parts = trimmed.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2,
+              parts[0].count == 2,
+              parts[1].count == 2,
+              parts[0].allSatisfy({ $0 >= "0" && $0 <= "9" }),
+              parts[1].allSatisfy({ $0 >= "0" && $0 <= "9" }),
+              let hour = Int(parts[0]),
+              let minute = Int(parts[1])
+        else { return false }
+
+        return (0...23).contains(hour) && (0...59).contains(minute)
     }
 }
