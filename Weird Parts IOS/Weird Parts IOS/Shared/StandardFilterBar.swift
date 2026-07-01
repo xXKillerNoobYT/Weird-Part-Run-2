@@ -2,6 +2,9 @@ import SwiftUI
 
 /// Reusable horizontal date filter bar with quick-pick buttons and custom date range picker.
 ///
+/// Accessibility contract: quick chips keep at least a 44x44pt hit target,
+/// expose stable identifiers, and report selected state to VoiceOver.
+///
 /// Usage:
 /// ```
 /// @State private var dateRange: ReportDateRange = .thisWeek
@@ -25,6 +28,8 @@ import SwiftUI
 /// }
 /// ```
 struct StandardFilterBar: View {
+    static let minimumChipTapTarget: CGFloat = 44
+
     @Binding var selectedRange: ReportDateRange
     @Binding var customStart: Date
     @Binding var customEnd: Date
@@ -51,18 +56,25 @@ struct StandardFilterBar: View {
                     ForEach(quickOptions) { option in
                         Button {
                             selectedRange = option
+                            if option == .custom {
+                                normalizeCustomRange()
+                            }
                         } label: {
                             Text(option.rawValue)
                                 .font(.caption)
                                 .fontWeight(selectedRange == option ? .bold : .regular)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 8)
+                                .frame(minWidth: Self.minimumChipTapTarget, minHeight: Self.minimumChipTapTarget)
                                 .background(
                                     Capsule().fill(selectedRange == option ? Color.accentColor : Color.secondary.opacity(0.15))
                                 )
                                 .foregroundStyle(selectedRange == option ? .white : .primary)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier("dateRangeChip_\(option.accessibilityIdentifier)")
+                        .accessibilityValue(selectedRange == option ? "Selected" : "Not selected")
+                        .accessibilityAddTraits(selectedRange == option ? .isSelected : [])
                     }
                 }
                 .padding(.horizontal)
@@ -72,19 +84,46 @@ struct StandardFilterBar: View {
             // Custom date pickers — only show when Custom is selected
             if selectedRange == .custom {
                 HStack(spacing: 12) {
-                    DatePicker("From", selection: $customStart, displayedComponents: .date)
+                    DatePicker("From", selection: normalizedCustomStart, displayedComponents: .date)
                         .labelsHidden()
                     Image(systemName: "arrow.right")
                         .foregroundStyle(.secondary)
-                    DatePicker("To", selection: $customEnd, displayedComponents: .date)
+                    DatePicker("To", selection: normalizedCustomEnd, displayedComponents: .date)
                         .labelsHidden()
                 }
                 .padding(.horizontal)
                 .padding(.bottom, 8)
                 .transition(.move(edge: .top).combined(with: .opacity))
+                .onAppear(perform: normalizeCustomRange)
             }
         }
         .animation(.easeInOut(duration: 0.2), value: selectedRange)
+    }
+
+    private var normalizedCustomStart: Binding<Date> {
+        Binding(
+            get: { customStart },
+            set: { newStart in
+                customStart = newStart
+                if customEnd < newStart {
+                    customEnd = newStart
+                }
+            }
+        )
+    }
+
+    private var normalizedCustomEnd: Binding<Date> {
+        Binding(
+            get: { customEnd },
+            set: { newEnd in
+                customEnd = max(newEnd, customStart)
+            }
+        )
+    }
+
+    private func normalizeCustomRange() {
+        guard customStart > customEnd else { return }
+        customEnd = customStart
     }
 
     /// Backward-compatible initializer for pages that only track start/end dates.
@@ -93,5 +132,21 @@ struct StandardFilterBar: View {
         self._selectedRange = .constant(.custom)
         self._customStart = startDate
         self._customEnd = endDate
+    }
+}
+
+private extension ReportDateRange {
+    var accessibilityIdentifier: String {
+        switch self {
+        case .thisWeek: return "this_week"
+        case .lastWeek: return "last_week"
+        case .thisPeriod: return "this_period"
+        case .lastPeriod: return "last_period"
+        case .thisMonth: return "this_month"
+        case .lastMonth: return "last_month"
+        case .thisQuarter: return "this_quarter"
+        case .thisYear: return "this_year"
+        case .custom: return "custom"
+        }
     }
 }

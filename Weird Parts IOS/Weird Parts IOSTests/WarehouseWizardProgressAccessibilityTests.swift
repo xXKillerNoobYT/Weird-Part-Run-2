@@ -40,6 +40,80 @@ final class WarehouseWizardProgressAccessibilityTests: XCTestCase {
         )
     }
 
+    func testPartsFlowWizardBlocksInvalidQuantitiesBeforeNavigationAndSave() throws {
+        let source = try Self.readWarehouseSource("PartsFlowWizard.swift")
+
+        XCTAssertTrue(
+            source.contains("private var invalidQuantityEntries"),
+            "Parts flow must collect invalid pasted/hardware-keyboard quantities instead of silently skipping them."
+        )
+        XCTAssertTrue(
+            source.contains("validQuantity(from:") && source.contains("qty > 0"),
+            "Parts flow quantities must be parsed through one positive whole-number validator before display and save."
+        )
+        XCTAssertTrue(
+            source.contains("nonisolated private static func validQuantity"),
+            "Quantity validation must opt out of SwiftUI View MainActor isolation so detached DB writes can reuse it."
+        )
+        XCTAssertTrue(
+            source.contains("validateBeforeAdvancing()") && source.contains("guard currentStep == 2"),
+            "The Next button must validate only when leaving the count step so draft errors do not trap users before Step 2."
+        )
+        XCTAssertTrue(
+            source.contains("guard validateBeforeSaving() else { return }"),
+            "Save & Exit and Finish must validate entries before writing notes or dismissing."
+        )
+        XCTAssertTrue(
+            source.contains("parts_flow_count_validation_message"),
+            "Invalid quantities need a visible, stable validation message for VoiceOver and UI automation."
+        )
+        XCTAssertTrue(
+            source.contains("partCounts.removeValue(forKey: partId)") && source.contains("partCounts[partId] = trimmed"),
+            "Quantity input should be trimmed and whitespace-only entries should clear the draft key instead of looking complete."
+        )
+        let draftSaveRange = try XCTUnwrap(
+            source.range(of: "PartsFlowDraftStore.save(counts: partCounts, locations: partLocations, userId: userId)")
+        )
+        let validationGuardRange = try XCTUnwrap(
+            source.range(of: "guard validateBeforeSaving() else { return }")
+        )
+        XCTAssertLessThan(
+            draftSaveRange.lowerBound,
+            validationGuardRange.lowerBound,
+            "The draft should be persisted before validation blocks DB save/dismiss so in-progress edits are not lost."
+        )
+    }
+
+    func testPartsFlowWizardShowsSaveSuccessOnlyAfterConfirmedWrite() throws {
+        let source = try Self.readWarehouseSource("PartsFlowWizard.swift")
+
+        XCTAssertTrue(
+            source.contains("parts_flow_save_success_message"),
+            "The wizard should show a visible success confirmation after save completes."
+        )
+        XCTAssertTrue(
+            source.contains("shouldDismiss = andDismiss") && source.contains("Task.sleep") && source.contains("await MainActor.run { dismiss() }"),
+            "Finish should dismiss on the MainActor only after the save task confirms no error and gives the success state a render pass."
+        )
+        XCTAssertTrue(
+            source.contains("Task.detached(priority: .userInitiated)"),
+            "The synchronous DB write loop should run off the MainActor so large inventories do not freeze SwiftUI."
+        )
+        XCTAssertTrue(
+            source.contains("savedCount = 0") && source.contains("savedCount = result.savedEntries"),
+            "Partial failures should not switch the save button into a successful saved-count state."
+        )
+        XCTAssertLessThan(
+            source.range(of: "saveErrorMessage = nil")?.lowerBound ?? source.endIndex,
+            source.range(of: "guard validateBeforeSaving() else { return }")?.lowerBound ?? source.startIndex,
+            "Stale save errors should be cleared before validation can show the current validation alert."
+        )
+        XCTAssertTrue(
+            source.contains("await MainActor.run"),
+            "State updates after detached DB work should be explicitly applied on the MainActor."
+        )
+    }
+
     func testWarehouseOnboardingWizardUsesSharedAccessibleProgressStepControl() throws {
         let source = try Self.readWarehouseSource("WarehouseOnboardingWizard.swift")
         let progressSection = try Self.progressBarSection(in: source)
