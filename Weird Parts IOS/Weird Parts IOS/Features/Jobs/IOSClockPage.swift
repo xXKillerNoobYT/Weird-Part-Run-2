@@ -1256,6 +1256,7 @@ struct IOSClockPage: View {
                             .controlSize(.small)
 
                             Button {
+                                loadTodosForJob(jobId: entry.jobId)
                                 activeSheet = .todoPicker
                             } label: {
                                 Label("Switch", systemImage: "arrow.triangle.swap")
@@ -1267,6 +1268,7 @@ struct IOSClockPage: View {
                 } else {
                     // No to-do selected
                     Button {
+                        loadTodosForJob(jobId: entry.jobId)
                         activeSheet = .todoPicker
                     } label: {
                         Label("Pick a To-Do", systemImage: "checklist")
@@ -1928,16 +1930,21 @@ struct IOSClockPage: View {
     // MARK: - To-Do Actions
 
     private func selectTodo(_ todo: JobsService.ClockTodoItem) {
-        guard let service = appCore.jobsService,
-              let entry = activeEntry else {
+        guard let service = appCore.jobsService else {
             errorMessage = "Jobs service not available"
             return
         }
-        currentTodo = todo
+        guard let entry = activeEntry else {
+            errorMessage = "No active clock entry available"
+            return
+        }
         do {
             try service.linkClockEntryToTodo(clockEntryId: entry.id, todoId: todo.id)
+            currentTodo = todo
+            errorMessage = nil
         } catch {
             logger.warning("linkClockEntryToTodo failed (select): \(error.localizedDescription, privacy: .public)")
+            errorMessage = "Could not link this to-do to your clock entry. Your previous to-do selection is still active. Try again."
         }
     }
 
@@ -1950,17 +1957,21 @@ struct IOSClockPage: View {
             try notebooksService.completeEntry(entryId: todo.id)
             let remaining = try jobsService.getActiveJobTodos(jobId: entry.jobId)
 
-            await MainActor.run {
+            let didUnlinkTodo = await MainActor.run {
                 activeTodos = remaining
-                currentTodo = nil
                 do {
                     try jobsService.linkClockEntryToTodo(clockEntryId: entry.id, todoId: nil)
+                    currentTodo = nil
+                    errorMessage = nil
+                    return true
                 } catch {
                     self.logger.warning("linkClockEntryToTodo failed (unlink): \(error.localizedDescription, privacy: .public)")
+                    errorMessage = "The to-do was completed, but the clock entry could not be unlinked from it. Refresh or try again before picking the next to-do."
+                    return false
                 }
             }
 
-            if !remaining.isEmpty {
+            if !remaining.isEmpty, didUnlinkTodo {
                 await MainActor.run {
                     activeSheet = .todoPicker
                 }
@@ -1979,8 +1990,10 @@ struct IOSClockPage: View {
         }
         do {
             activeTodos = try service.getActiveJobTodos(jobId: jobId)
+            errorMessage = nil
         } catch {
-            activeTodos = []
+            logger.warning("getActiveJobTodos failed: \(error.localizedDescription, privacy: .public)")
+            errorMessage = "Could not load this job's to-dos. Keeping the previous list so an app error is not mistaken for no to-dos."
         }
     }
 
@@ -2103,9 +2116,15 @@ struct IOSClockPage: View {
             // Load to-dos for the active job
             var todos: [JobsService.ClockTodoItem] = []
             var linkedTodo: JobsService.ClockTodoItem?
+            var todoLoadError: String?
             var currentWorkType = "new_work"
             if let entry {
-                todos = try service.getActiveJobTodos(jobId: entry.jobId)
+                do {
+                    todos = try service.getActiveJobTodos(jobId: entry.jobId)
+                } catch {
+                    logger.warning("getActiveJobTodos failed while loading clock data: \(error.localizedDescription, privacy: .public)")
+                    todoLoadError = "Could not load this job's to-dos. Keeping the previous list so an app error is not mistaken for no to-dos."
+                }
                 currentWorkType = entry.workType ?? "new_work"
                 if let todoId = entry.linkedTodoId {
                     linkedTodo = todos.first(where: { $0.id == todoId })
@@ -2119,15 +2138,24 @@ struct IOSClockPage: View {
             }
 
             await MainActor.run {
+                let previousActiveJobId = activeEntry?.jobId
                 activeEntry = entry
                 todayHours = todayH
                 todayJobGroups = groups
                 sortedJobs = jobsWithDist
-                activeTodos = todos
-                currentTodo = linkedTodo
+                if entry != nil, todoLoadError == nil {
+                    activeTodos = todos
+                    currentTodo = linkedTodo
+                } else if let entry, previousActiveJobId != entry.jobId {
+                    activeTodos = []
+                    currentTodo = nil
+                } else if entry == nil {
+                    activeTodos = []
+                    currentTodo = nil
+                }
                 workType = currentWorkType
                 isLoading = false
-                errorMessage = nil  // Clear errors on successful load
+                errorMessage = todoLoadError  // Clear errors on successful load unless to-dos failed separately.
 
                 // Apply break state
                 activeBreakRecord = currentBreak
