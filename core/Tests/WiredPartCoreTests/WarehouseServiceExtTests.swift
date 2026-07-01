@@ -1426,6 +1426,35 @@ struct WarehouseServiceExtTests {
         #expect(resumedItem.routedAt != nil)
     }
 
+    @Test("getSessionItems marks an explicitly saved zero receiving quantity as touched")
+    func testSessionItemsPreserveTouchedZeroQuantityForResume() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+        let poId = try env.orders.createPurchaseOrder(
+            poNumber: "PO-ZERO-RESUME",
+            supplierId: supplierId
+        )
+        _ = try env.orders.addPOLineItem(poId: poId, partId: partId, quantity: 4, unitPrice: 2.50)
+
+        let sessionId = try env.warehouse.startReceivingSession(
+            poId: poId,
+            startedBy: env.adminUserId
+        )
+        let item = try #require(try env.warehouse.getSessionItems(sessionId: sessionId).first)
+        #expect(item.expectedQty == 4)
+        #expect(item.receivedQty == 0)
+        #expect(item.scannedAt == nil)
+
+        try env.warehouse.updateSessionItem(itemId: item.id, receivedQty: 0)
+
+        let resumedItem = try #require(try env.warehouse.getSessionItems(sessionId: sessionId).first)
+        #expect(resumedItem.expectedQty == 4)
+        #expect(resumedItem.receivedQty == 0)
+        #expect(resumedItem.scannedAt != nil)
+    }
+
     // MARK: - Audit Sessions
 
     @Test("createAuditSession returns a valid session ID")
