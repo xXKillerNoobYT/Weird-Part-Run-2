@@ -112,8 +112,21 @@ final class IOSSyncManager {
         let failureKey = "\(context): \(message)"
         guard lastSurfacedSyncReadFailure != failureKey else { return }
         lastSurfacedSyncReadFailure = failureKey
+        syncStatus = .error
         errorMessage = message
         logger.error("[IOSSyncManager] \(context) failed: \(error.localizedDescription)")
+    }
+
+    private func syncReadFailed(_ error: Error, context: String, logMessage: String) {
+        syncStatus = .error
+        errorMessage = userFriendlyError(error, context: context)
+        logger.error("[IOSSyncManager] \(logMessage): \(error.localizedDescription)")
+    }
+
+    private func syncReviewActionFailed(_ message: String) {
+        syncStatus = .error
+        errorMessage = message
+        logger.error("[IOSSyncManager] \(message)")
     }
 
     /// Trims a user-entered or persisted shop server address and rejects blank values.
@@ -659,8 +672,11 @@ final class IOSSyncManager {
         do {
             pendingChanges = try ChangeTracker.getPendingChangeCount(db: db)
         } catch {
-            errorMessage = userFriendlyError(error, context: "load pending sync changes")
-            logger.error("[IOSSyncManager] pending change count refresh failed: \(error.localizedDescription)")
+            syncReadFailed(
+                error,
+                context: "load pending sync changes",
+                logMessage: "pending change count refresh failed"
+            )
         }
     }
 
@@ -673,8 +689,11 @@ final class IOSSyncManager {
             unreviewedConflictCount = stats.unreviewed
             return stats.last24h
         } catch {
-            errorMessage = userFriendlyError(error, context: "load sync conflict count")
-            logger.error("[IOSSyncManager] conflict count refresh failed: \(error.localizedDescription)")
+            syncReadFailed(
+                error,
+                context: "load sync conflict count",
+                logMessage: "conflict count refresh failed"
+            )
             return 0
         }
     }
@@ -685,37 +704,65 @@ final class IOSSyncManager {
         do {
             return try ConflictResolver.getUnreviewedConflicts(db: db)
         } catch {
-            errorMessage = userFriendlyError(error, context: "load unreviewed sync conflicts")
-            logger.error("[IOSSyncManager] unreviewed conflict load failed: \(error.localizedDescription)")
+            syncReadFailed(
+                error,
+                context: "load unreviewed sync conflicts",
+                logMessage: "unreviewed conflict load failed"
+            )
             return []
         }
     }
 
     /// Mark a single conflict as reviewed.
-    func markConflictReviewed(conflictId: Int64) {
-        guard let db else { return }
+    @discardableResult
+    func markConflictReviewed(conflictId: Int64) -> Bool {
+        guard let db else {
+            syncReviewActionFailed("Sync conflict could not be marked reviewed because the database is unavailable.")
+            return false
+        }
         do {
             try ConflictResolver.markConflictReviewed(db: db, conflictId: conflictId)
+            refreshConflictCount()
+            return true
         } catch {
-            logger.error("[IOSSyncManager] markConflictReviewed failed for id \(conflictId): \(error.localizedDescription)")
+            syncReadFailed(
+                error,
+                context: "mark sync conflict reviewed",
+                logMessage: "markConflictReviewed failed for id \(conflictId)"
+            )
+            return false
         }
-        refreshConflictCount()
     }
 
     /// Mark all unreviewed conflicts as reviewed.
-    func markAllConflictsReviewed() {
-        guard let db else { return }
+    @discardableResult
+    func markAllConflictsReviewed() -> Bool {
+        guard let db else {
+            syncReviewActionFailed("Sync conflicts could not be marked reviewed because the database is unavailable.")
+            return false
+        }
         let conflicts = getUnreviewedConflicts()
+        var allReviewed = true
         for conflict in conflicts {
-            if let id = conflict.id {
-                do {
-                    try ConflictResolver.markConflictReviewed(db: db, conflictId: id)
-                } catch {
-                    logger.error("[IOSSyncManager] markConflictReviewed failed for id \(id): \(error.localizedDescription)")
-                }
+            guard let id = conflict.id else {
+                allReviewed = false
+                syncReviewActionFailed("A sync conflict could not be marked reviewed because its conflict id is missing. Reload conflicts and try again.")
+                continue
+            }
+
+            do {
+                try ConflictResolver.markConflictReviewed(db: db, conflictId: id)
+            } catch {
+                allReviewed = false
+                syncReadFailed(
+                    error,
+                    context: "mark sync conflicts reviewed",
+                    logMessage: "markConflictReviewed failed for id \(id)"
+                )
             }
         }
         refreshConflictCount()
+        return allReviewed
     }
 
     // MARK: - Device Pairing
