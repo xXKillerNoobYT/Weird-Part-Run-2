@@ -137,9 +137,12 @@ taxonomy instead of flagging every site without help-link parameters.
      `EmptyStateView` and a toolbar `Button` whose label contains
      `questionmark.circle`, instead of inspecting `EmptyStateView`
      parameters.
-4. **EmptyStateView API:** Do NOT add `helpLabel:` / `helpAction:`
-   parameters. The page-level toolbar Help button is the canonical pattern;
-   inline duplicates would dilute it.
+4. **EmptyStateView API:** `helpLabel:` / `helpAction:` are available as an
+   optional GH #82 primitive for pages that intentionally need inline first-use
+   guidance. They are not mandatory for every empty state. The page-level
+   toolbar Help button remains the canonical Category A baseline; only add an
+   inline help action when the page-specific design explicitly calls for a
+   secondary documentation affordance.
 
 ---
 

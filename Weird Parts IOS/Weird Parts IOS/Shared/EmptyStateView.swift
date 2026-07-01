@@ -78,7 +78,9 @@ struct EmptyStateView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, DS.Space.xxxl)
 
-            if actionLabel != nil || secondaryActionLabel != nil || helpLabel != nil {
+            if (actionLabel != nil && action != nil) ||
+                (secondaryActionLabel != nil && secondaryAction != nil) ||
+                (helpLabel != nil && helpAction != nil) {
                 VStack(spacing: DS.Space.xs) {
                     HStack(spacing: DS.Space.md) {
                         if let label = actionLabel, let action = action {

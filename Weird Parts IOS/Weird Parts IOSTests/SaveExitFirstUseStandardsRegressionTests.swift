@@ -29,6 +29,25 @@ final class SaveExitFirstUseStandardsRegressionTests: XCTestCase {
             source.contains(".frame(minHeight: 44)"),
             "Primary, secondary, and help empty-state actions must remain touch-friendly."
         )
+        XCTAssertTrue(
+            source.contains("(actionLabel != nil && action != nil)") &&
+                source.contains("(secondaryActionLabel != nil && secondaryAction != nil)") &&
+                source.contains("(helpLabel != nil && helpAction != nil)"),
+            "The empty-state action container should render only when a label/action pair exists, avoiding blank padded action areas."
+        )
+    }
+
+    func testEmptyStateHelpTaxonomyDocumentsOptionalInlineHelp() throws {
+        let source = try Self.readPlanSource("empty-state-help-link-taxonomy.md")
+
+        XCTAssertTrue(
+            source.contains("optional GH #82 primitive"),
+            "The empty-state taxonomy should describe inline help as optional, not a blanket scanner requirement."
+        )
+        XCTAssertTrue(
+            source.contains("toolbar Help button remains the canonical Category A baseline"),
+            "The taxonomy should keep page toolbar help as the default primary-list pattern."
+        )
     }
 
     func testFormSheetPreservesSaveAndDirtyDismissStandards() throws {
@@ -86,6 +105,19 @@ final class SaveExitFirstUseStandardsRegressionTests: XCTestCase {
         let sourceURL = projectRoot
             .appendingPathComponent("Weird Parts IOS")
             .appendingPathComponent("Shared")
+            .appendingPathComponent(filename)
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    private static func readPlanSource(_ filename: String, file: StaticString = #filePath) throws -> String {
+        let testFileURL = URL(fileURLWithPath: "\(file)")
+        let repoRoot = testFileURL
+            .deletingLastPathComponent() // Weird Parts IOSTests
+            .deletingLastPathComponent() // Weird Parts IOS
+            .deletingLastPathComponent() // repo root
+        let sourceURL = repoRoot
+            .appendingPathComponent("docs")
+            .appendingPathComponent("plans")
             .appendingPathComponent(filename)
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
