@@ -929,15 +929,14 @@ struct PartsCompanionsPage: View {
             isLoading = true
             loadError = nil
         }
+        let loadContext = await MainActor.run {
+            (
+                service: appCore.partsService,
+                userId: currentUserId,
+                isAdmin: appCore.hasPermission("vote_veto")
+            )
+        }
         do {
-            let loadContext = await MainActor.run {
-                (
-                    service: appCore.partsService,
-                    userId: currentUserId,
-                    isAdmin: appCore.hasPermission("vote_veto")
-                )
-            }
-
             guard let service = loadContext.service else {
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
@@ -949,6 +948,7 @@ struct PartsCompanionsPage: View {
             guard let userId = loadContext.userId else {
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
+                    guard currentUserId == nil else { return }
                     loadError = "User session unavailable. Sign in again."
                     isLoading = false
                 }
@@ -972,6 +972,7 @@ struct PartsCompanionsPage: View {
 
             guard !Task.isCancelled else { return }
             await MainActor.run {
+                guard currentUserId == userId else { return }
                 companionRules = rules
                 alternatives = alts
                 activePolls = polls
@@ -983,6 +984,7 @@ struct PartsCompanionsPage: View {
         } catch {
             guard !Task.isCancelled else { return }
             await MainActor.run {
+                guard currentUserId == loadContext.userId else { return }
                 loadError = userFriendlyError(error, context: "load companion parts")
                 isLoading = false
             }

@@ -53,6 +53,11 @@ final class PartsCompanionsPageSessionRegressionTests: XCTestCase {
             source.contains("guard !Task.isCancelled else { return }"),
             "Companion poll loads should not publish stale state or mark onboarding after SwiftUI cancels an old user-id task."
         )
+        XCTAssertTrue(
+            source.contains("guard currentUserId == userId else { return }")
+                && source.contains("guard currentUserId == loadContext.userId else { return }"),
+            "Companion poll loads should only publish results or errors for the still-current user session."
+        )
         let closeExpiredRange = try XCTUnwrap(source.range(of: "try service.closeExpiredPolls()"))
         let purgeExpiredRange = try XCTUnwrap(source.range(of: "try service.purgeExpiredRules()"))
         XCTAssertNotNil(
