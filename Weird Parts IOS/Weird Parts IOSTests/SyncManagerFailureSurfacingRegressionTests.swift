@@ -56,8 +56,14 @@ final class SyncManagerFailureSurfacingRegressionTests: XCTestCase {
         XCTAssertTrue(
             managerSource.contains("syncReviewActionFailed(\"A sync conflict could not be marked reviewed because its conflict id is missing") &&
                 managerSource.contains("context: \"mark sync conflict reviewed\"") &&
-                managerSource.contains("context: \"mark sync conflicts reviewed\""),
+                managerSource.contains("context: \"mark sync conflicts reviewed\"") &&
+                managerSource.contains("surfaceConflictReviewActionFailure"),
             "Manager-level conflict review failures should be promoted into the same visible sync error surface."
+        )
+        XCTAssertTrue(
+            managerSource.contains("conflicts = try ConflictResolver.getUnreviewedConflicts(db: db)") &&
+                managerSource.contains("context: \"load unreviewed sync conflicts before marking reviewed\""),
+            "Accept All must fail visibly if the conflict list cannot be read before writes start."
         )
     }
 

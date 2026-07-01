@@ -45,7 +45,7 @@ struct SyncConflictReviewPage: View {
                         Button("Accept All") {
                             guard conflicts.allSatisfy({ $0.id != nil }) else {
                                 actionError = "One or more sync conflicts cannot be reviewed because their conflict id is missing. Reload conflicts and try again."
-                                syncManager.errorMessage = actionError
+                                syncManager.surfaceConflictReviewActionFailure(actionError ?? "Sync conflict action failed.")
                                 return
                             }
                             if syncManager.markAllConflictsReviewed() {
@@ -284,7 +284,7 @@ struct SyncConflictReviewPage: View {
     private func markReviewed(_ conflict: ConflictLogEntry) {
         guard let id = conflict.id else {
             actionError = "This sync conflict cannot be reviewed because its conflict id is missing. Reload conflicts and try again."
-            syncManager.errorMessage = actionError
+            syncManager.surfaceConflictReviewActionFailure(actionError ?? "Sync conflict action failed.")
             return
         }
         if syncManager.markConflictReviewed(conflictId: id) {
@@ -326,7 +326,7 @@ struct SyncConflictReviewPage: View {
     private func requestAIMerge(_ conflict: ConflictLogEntry) async {
         guard let conflictId = conflict.id else {
             actionError = "AI merge cannot start because this sync conflict id is missing. Reload conflicts and try again."
-            syncManager.errorMessage = actionError
+            syncManager.surfaceConflictReviewActionFailure(actionError ?? "Sync conflict action failed.")
             return
         }
         isRequestingAI = true

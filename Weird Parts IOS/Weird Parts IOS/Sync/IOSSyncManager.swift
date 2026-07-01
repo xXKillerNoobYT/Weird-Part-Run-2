@@ -129,6 +129,10 @@ final class IOSSyncManager {
         logger.error("[IOSSyncManager] \(message)")
     }
 
+    func surfaceConflictReviewActionFailure(_ message: String) {
+        syncReviewActionFailed(message)
+    }
+
     /// Trims a user-entered or persisted shop server address and rejects blank values.
     static func normalizedShopServerAddress(_ address: String?) -> String? {
         let trimmed = address?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -741,7 +745,17 @@ final class IOSSyncManager {
             syncReviewActionFailed("Sync conflicts could not be marked reviewed because the database is unavailable.")
             return false
         }
-        let conflicts = getUnreviewedConflicts()
+        let conflicts: [ConflictLogEntry]
+        do {
+            conflicts = try ConflictResolver.getUnreviewedConflicts(db: db)
+        } catch {
+            syncReadFailed(
+                error,
+                context: "load unreviewed sync conflicts before marking reviewed",
+                logMessage: "unreviewed conflict load failed before markAllConflictsReviewed"
+            )
+            return false
+        }
         var allReviewed = true
         for conflict in conflicts {
             guard let id = conflict.id else {
