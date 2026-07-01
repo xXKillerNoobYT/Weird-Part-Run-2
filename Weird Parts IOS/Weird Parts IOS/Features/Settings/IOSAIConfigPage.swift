@@ -12,6 +12,7 @@ struct IOSAIConfigPage: View {
     @State private var availabilityStatus: AIAvailability?
     @State private var aiLanguage = "en"
     @State private var onboardAIMVPEnabled = false
+    @State private var loadError: String?
     @State private var saveError: String?
     // Fix #192: gate the form behind a loading state so defaults don't flash
     // before loadSettings() populates the actual values.
@@ -33,6 +34,9 @@ struct IOSAIConfigPage: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .navigationTitle("AI Configuration")
                 .task { loadSettings() }
+        } else if let loadError {
+            ErrorStateView(message: loadError)
+                .navigationTitle("AI Configuration")
         } else {
             loadedForm
         }
@@ -148,7 +152,7 @@ struct IOSAIConfigPage: View {
                 }
             }
         }
-        .navigationTitle("AI Config")
+        .navigationTitle("AI Configuration")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { activeSheet = .help } label: {
@@ -202,17 +206,26 @@ struct IOSAIConfigPage: View {
     private func loadSettings() {
         defer { isLoading = false }   // Fix #192: drop the loading gate once load completes
         guard let service = appCore.settingsService else {
-            saveError = "Service not available"
+            loadError = "Service not available"
             return
         }
-        let map = (try? service.getSettingsByCategory("ai")) ?? [:]
-        aiEnabled = (map["ai_enabled"] ?? "true") == "true"
-        selectedModel = map["ai_model"] ?? "foundation"
-        aiLanguage = map["ai_language"] ?? "en"
-        let aiMVPSetting = map[OnboardAIFeatureFlag.onboardingMVP] ?? (UserDefaults.standard.bool(forKey: OnboardAIFeatureFlag.onboardingMVP) ? "true" : "false")
-        onboardAIMVPEnabled = aiMVPSetting == "true"
-        UserDefaults.standard.set(onboardAIMVPEnabled, forKey: OnboardAIFeatureFlag.onboardingMVP)
-        checkAvailability()
+        do {
+            let map = try service.getSettingsByCategory("ai")
+            var parser = SettingsValueParser()
+            aiEnabled = parser.bool(map, key: "ai_enabled", default: true)
+            selectedModel = map["ai_model"] ?? "foundation"
+            aiLanguage = map["ai_language"] ?? "en"
+            onboardAIMVPEnabled = parser.bool(
+                map,
+                key: OnboardAIFeatureFlag.onboardingMVP,
+                default: UserDefaults.standard.bool(forKey: OnboardAIFeatureFlag.onboardingMVP)
+            )
+            try parser.throwIfInvalid()
+            UserDefaults.standard.set(onboardAIMVPEnabled, forKey: OnboardAIFeatureFlag.onboardingMVP)
+            checkAvailability()
+        } catch {
+            loadError = settingsHydrationMessage(error)
+        }
     }
 
     private func saveSetting(_ key: String, value: String) {
