@@ -52,65 +52,149 @@ struct IOSReceiveShipmentPage: View {
 
     /// Summary of a completed routing decision for display.
     private struct RoutingResult {
-        let route: WarehouseService.ReceivingRoute
+        private enum Source {
+            case live(WarehouseService.ReceivingRoute)
+            case persisted(WarehouseService.ReceivingRoutingDisposition)
+        }
+
+        private let source: Source
+
+        init(route: WarehouseService.ReceivingRoute) {
+            self.source = .live(route)
+        }
+
+        init(disposition: WarehouseService.ReceivingRoutingDisposition) {
+            self.source = .persisted(disposition)
+        }
+
         var label: String {
-            switch route {
-            case .stageForJob(_, let jobName, _):
-                "Staged for \(jobName)"
-            case .suggestStaging(let demands):
-                "Staged for \(demands.first?.jobName ?? "job")"
-            case .restockShelf:
-                "Put on shelf"
-            case .recommendReturn:
-                "Return recommended"
-            case .returnOverstock:
-                "Return (overstocked)"
-            case .usedToShelf:
-                "Used - shelved"
-            case .usedWriteOff:
-                "Used - written off"
-            case .damagedReturn:
-                "Damaged - returning"
-            case .wrongPart:
-                "Wrong part"
-            case .jobReturnHolding:
-                "Job return held"
-            case .jobReturnDamagedReview:
-                "Job return damaged review"
-            case .jobReturnSupplierReview:
-                "Job return supplier review"
-            case .jobReturnWrongPartReview:
-                "Job return wrong part review"
+            switch source {
+            case .live(let route):
+                switch route {
+                case .stageForJob(_, let jobName, _):
+                    "Staged for \(jobName)"
+                case .suggestStaging(let demands):
+                    "Staged for \(demands.first?.jobName ?? "job")"
+                case .restockShelf:
+                    "Put on shelf"
+                case .recommendReturn:
+                    "Return recommended"
+                case .returnOverstock:
+                    "Return (overstocked)"
+                case .usedToShelf:
+                    "Used - shelved"
+                case .usedWriteOff:
+                    "Used - written off"
+                case .damagedReturn:
+                    "Damaged - returning"
+                case .wrongPart:
+                    "Wrong part"
+                case .jobReturnHolding:
+                    "Job return held"
+                case .jobReturnDamagedReview:
+                    "Job return damaged review"
+                case .jobReturnSupplierReview:
+                    "Job return supplier review"
+                case .jobReturnWrongPartReview:
+                    "Job return wrong part review"
+                }
+            case .persisted(let disposition):
+                switch disposition {
+                case .staged:
+                    "Routed to staging"
+                case .supplierReturn:
+                    "Return recorded"
+                case .writeOff:
+                    "Written off"
+                case .wrongPart:
+                    "Wrong part"
+                case .review:
+                    "Needs review"
+                }
             }
         }
         var icon: String {
-            switch route {
-            case .stageForJob, .suggestStaging: "tray.and.arrow.down.fill"
-            case .restockShelf, .usedToShelf: "archivebox.fill"
-            case .recommendReturn, .returnOverstock: "arrow.uturn.backward.circle.fill"
-            case .usedWriteOff: "xmark.bin.fill"
-            case .damagedReturn: "exclamationmark.triangle.fill"
-            case .wrongPart: "questionmark.circle.fill"
-            case .jobReturnHolding: "tray.full.fill"
-            case .jobReturnDamagedReview: "exclamationmark.triangle.fill"
-            case .jobReturnSupplierReview: "arrow.uturn.backward.circle.fill"
-            case .jobReturnWrongPartReview: "questionmark.circle.fill"
+            switch source {
+            case .live(let route):
+                switch route {
+                case .stageForJob, .suggestStaging: "tray.and.arrow.down.fill"
+                case .restockShelf, .usedToShelf: "archivebox.fill"
+                case .recommendReturn, .returnOverstock: "arrow.uturn.backward.circle.fill"
+                case .usedWriteOff: "xmark.bin.fill"
+                case .damagedReturn: "exclamationmark.triangle.fill"
+                case .wrongPart: "questionmark.circle.fill"
+                case .jobReturnHolding: "tray.full.fill"
+                case .jobReturnDamagedReview: "exclamationmark.triangle.fill"
+                case .jobReturnSupplierReview: "arrow.uturn.backward.circle.fill"
+                case .jobReturnWrongPartReview: "questionmark.circle.fill"
+                }
+            case .persisted(let disposition):
+                switch disposition {
+                case .staged: "tray.and.arrow.down.fill"
+                case .supplierReturn: "arrow.uturn.backward.circle.fill"
+                case .writeOff: "xmark.bin.fill"
+                case .wrongPart: "questionmark.circle.fill"
+                case .review: "exclamationmark.triangle.fill"
+                }
             }
         }
         var color: Color {
-            switch route {
-            case .stageForJob, .suggestStaging: .purple
-            case .restockShelf: .green
-            case .recommendReturn: .orange
-            case .returnOverstock: .red
-            case .usedToShelf: .green
-            case .usedWriteOff: .orange
-            case .damagedReturn: .red
-            case .wrongPart: .red
-            case .jobReturnHolding: .blue
-            case .jobReturnDamagedReview: .red
-            case .jobReturnSupplierReview: .orange
-            case .jobReturnWrongPartReview: .red
+            switch source {
+            case .live(let route):
+                switch route {
+                case .stageForJob, .suggestStaging: .purple
+                case .restockShelf: .green
+                case .recommendReturn: .orange
+                case .returnOverstock: .red
+                case .usedToShelf: .green
+                case .usedWriteOff: .orange
+                case .damagedReturn: .red
+                case .wrongPart: .red
+                case .jobReturnHolding: .blue
+                case .jobReturnDamagedReview: .red
+                case .jobReturnSupplierReview: .orange
+                case .jobReturnWrongPartReview: .red
+                }
+            case .persisted(let disposition):
+                switch disposition {
+                case .staged: .purple
+                case .supplierReturn: .orange
+                case .writeOff: .orange
+                case .wrongPart: .red
+                case .review: .red
+                }
+            }
+        }
+
+        var isStaged: Bool {
+            switch source {
+            case .live(.stageForJob), .live(.suggestStaging):
+                true
+            case .persisted(.staged):
+                true
+            default:
+                false
+            }
+        }
+
+        var isShelf: Bool {
+            switch source {
+            case .live(.restockShelf), .live(.usedToShelf):
+                true
+            default:
+                false
+            }
+        }
+
+        var isReturn: Bool {
+            switch source {
+            case .live(.recommendReturn), .live(.returnOverstock), .live(.damagedReturn),
+                 .live(.jobReturnDamagedReview), .live(.jobReturnSupplierReview):
+                true
+            case .persisted(.supplierReturn):
+                true
+            default:
+                false
             }
         }
     }
@@ -958,12 +1042,22 @@ struct IOSReceiveShipmentPage: View {
         }
         do {
             sessionItems = try service.getSessionItems(sessionId: sessionId)
+            let currentItemIds = Set(sessionItems.map(\.id))
+            routingResults = routingResults.filter { currentItemIds.contains($0.key) }
             // Restore saved quantities from DB (PE-041: auto-save draft persistence).
             // If the item has a saved receivedQty > 0, use it (resumed session).
             // Otherwise fall back to expectedQty so fresh sessions are pre-filled (61L).
             for item in sessionItems {
+                let restoredReceivedQty = item.receivedQty > 0 ? item.receivedQty : item.expectedQty
+                let currentReceivedQty = receivedQtys[item.id] ?? restoredReceivedQty
                 if receivedQtys[item.id] == nil {
-                    receivedQtys[item.id] = item.receivedQty > 0 ? item.receivedQty : item.expectedQty
+                    receivedQtys[item.id] = restoredReceivedQty
+                }
+                if routingResults[item.id] == nil,
+                   let disposition = item.routingDisposition,
+                   currentReceivedQty > 0,
+                   item.routedQty >= currentReceivedQty {
+                    routingResults[item.id] = RoutingResult(disposition: disposition)
                 }
             }
             postAIContext()
@@ -1093,28 +1187,20 @@ struct IOSReceiveShipmentPage: View {
             let summary: String
             if routedCount > 0 {
                 let stagedCount = routingResults.values.filter { result in
-                    switch result.route {
-                    case .stageForJob, .suggestStaging: return true
-                    default: return false
-                    }
+                    result.isStaged
                 }.count
                 let shelfCount = routingResults.values.filter { result in
-                    switch result.route {
-                    case .restockShelf, .usedToShelf: return true
-                    default: return false
-                    }
+                    result.isShelf
                 }.count
                 let returnCount = routingResults.values.filter { result in
-                    switch result.route {
-                    case .recommendReturn, .returnOverstock, .damagedReturn: return true
-                    case .jobReturnDamagedReview, .jobReturnSupplierReview: return true
-                    default: return false
-                    }
+                    result.isReturn
                 }.count
+                let otherCount = routedCount - stagedCount - shelfCount - returnCount
                 var parts: [String] = []
-                if stagedCount > 0 { parts.append("\(stagedCount) staged for jobs") }
+                if stagedCount > 0 { parts.append("\(stagedCount) routed to staging") }
                 if shelfCount > 0 { parts.append("\(shelfCount) shelved") }
                 if returnCount > 0 { parts.append("\(returnCount) returning") }
+                if otherCount > 0 { parts.append("\(otherCount) routed for review") }
                 summary = "Receiving complete. \(routedCount)/\(totalCount) items routed: \(parts.joined(separator: ", "))."
             } else {
                 summary = "Receiving complete. Stock has been updated."

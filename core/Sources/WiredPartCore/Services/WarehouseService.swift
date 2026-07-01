@@ -1565,6 +1565,10 @@ public final class WarehouseService: Sendable {
         public let unitPrice: Double?
         public let scannedAt: String?
         public let notes: String?
+        public let routingDisposition: ReceivingRoutingDisposition?
+        public let routedQty: Int
+        public let routedBy: Int64?
+        public let routedAt: String?
     }
 
     /// Explicit source for receiving/routing work. Job returns are intentionally
@@ -1783,7 +1787,8 @@ public final class WarehouseService: Sendable {
                     arguments: [sessionId]
                 )
                 return rows.map { row in
-                    ReceivingItemInfo(
+                    let routingDispositionRaw = row["routing_disposition"] as String?
+                    return ReceivingItemInfo(
                         id: row["id"] ?? 0,
                         sessionId: row["session_id"] ?? 0,
                         poLineId: row["po_line_id"] ?? 0,
@@ -1795,7 +1800,11 @@ public final class WarehouseService: Sendable {
                         actualCost: row["actual_cost"] as Double?,
                         unitPrice: row["unit_cost"] as Double?,
                         scannedAt: row["scanned_at"] as String?,
-                        notes: row["notes"] as String?
+                        notes: row["notes"] as String?,
+                        routingDisposition: routingDispositionRaw.flatMap(ReceivingRoutingDisposition.init(rawValue:)),
+                        routedQty: row["routed_qty"] ?? 0,
+                        routedBy: row["routed_by"] as Int64?,
+                        routedAt: row["routed_at"] as String?
                     )
                 }
             }
