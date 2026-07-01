@@ -129,7 +129,7 @@ struct IOSPeerBrowser: View {
 
                         Spacer()
 
-                        if peer.state == "found" || peer.state == "multipeer" || peer.state == "lan" {
+                        if peer.isManuallySyncable {
                             Button("Sync") {
                                 Task { await syncManager.syncWithPeer(peerDeviceId: peer.id) }
                             }
@@ -138,6 +138,10 @@ struct IOSPeerBrowser: View {
                         } else if peer.state == "connecting" {
                             ProgressView()
                                 .scaleEffect(0.7)
+                        } else if peer.state == "multipeer" {
+                            Text("Waiting")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         } else {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(.green)

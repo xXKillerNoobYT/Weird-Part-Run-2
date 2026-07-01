@@ -5,12 +5,24 @@ final class PeerBrowserTargetedSyncRegressionTests: XCTestCase {
         let source = try Self.readPeerBrowserSource()
 
         XCTAssertTrue(
+            source.contains("if peer.isManuallySyncable"),
+            "The row-level Sync button should be gated by an explicit peer sync capability, not display state strings."
+        )
+        XCTAssertTrue(
             source.contains("syncManager.syncWithPeer(peerDeviceId: peer.id)"),
             "Each peer row's Sync button must pass the selected peer ID into IOSSyncManager."
         )
         XCTAssertFalse(
             source.contains("Task { await syncManager.syncNow() }"),
             "A row-level Sync button must not dispatch the global syncNow fan-out path."
+        )
+        XCTAssertFalse(
+            source.contains("peer.state == \"found\" || peer.state == \"multipeer\" || peer.state == \"lan\""),
+            "Unconnected Multipeer rows must not expose an impossible Sync button."
+        )
+        XCTAssertTrue(
+            source.contains("if peer.isManuallySyncable") && source.contains("Text(\"Waiting\")"),
+            "Connected peers and addressable LAN/found rows should stay syncable while unconnected Multipeer rows show a waiting state."
         )
     }
 
@@ -41,6 +53,35 @@ final class PeerBrowserTargetedSyncRegressionTests: XCTestCase {
         )
     }
 
+    func testPeerBrowserOnlyShowsManualSyncForSyncablePeers() throws {
+        let source = try Self.readPeerBrowserSource()
+
+        XCTAssertTrue(
+            source.contains("if peer.isManuallySyncable"),
+            "The row-level Sync button should be gated by explicit sync capability, not by display state strings."
+        )
+        XCTAssertFalse(
+            source.contains("peer.state == \"found\" || peer.state == \"multipeer\" || peer.state == \"lan\""),
+            "Unconnected Multipeer rows must not be grouped with LAN/addressable rows as syncable."
+        )
+        let syncManagerSource = try Self.readSyncManagerSource()
+        XCTAssertTrue(
+            syncManagerSource.contains("let isManuallySyncable: Bool"),
+            "PeerInfo should carry the capability used by the view instead of deriving behavior from presentation state."
+        )
+        XCTAssertTrue(
+            syncManagerSource.contains("isManuallySyncablePeer(") &&
+                syncManagerSource.contains("if transport == \"multipeer\"") &&
+                syncManagerSource.contains("return multipeerState == \"connected\"") &&
+                syncManagerSource.contains("return transport == \"lan\" && address != nil"),
+            "PeerInfo syncability should be derived from transport, Multipeer connection state, and endpoint availability."
+        )
+        XCTAssertTrue(
+            syncManagerSource.contains("isManuallySyncable: Self.isManuallySyncablePeer("),
+            "PeerInfo construction should store a capability boolean for the view instead of making the view switch on presentation state."
+        )
+    }
+
     private static func readPeerBrowserSource(
         file: StaticString = #filePath
     ) throws -> String {
@@ -68,8 +109,8 @@ final class PeerBrowserTargetedSyncRegressionTests: XCTestCase {
     }
 
     private static func methodBody(named methodName: String, in source: String) throws -> String {
-        guard let nameRange = source.range(of: "func \(methodName)(peerDeviceId: String) async") else {
-            throw XCTSkip("Expected method \(methodName)(peerDeviceId: String) async in source")
+        guard let nameRange = source.range(of: "func \(methodName)(") else {
+            throw XCTSkip("Expected method \(methodName) in source")
         }
         guard let openBrace = source[nameRange.upperBound...].firstIndex(of: "{") else {
             throw XCTSkip("Expected opening brace for \(methodName)")
