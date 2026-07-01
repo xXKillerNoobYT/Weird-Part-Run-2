@@ -14,9 +14,9 @@ final class PreTripInspectionInputValidatorTests: XCTestCase {
     }
 
     func testOdometerParserRejectsMalformedNonEmptyInput() throws {
-        assertMalformedOdometerReading("12O34")
-        assertMalformedOdometerReading("12,345")
-        assertMalformedOdometerReading("-1")
+        assertInvalidOdometerReading("12O34")
+        assertInvalidOdometerReading("12,345")
+        assertInvalidOdometerReading("-1")
     }
 
     func testOdometerParserRejectsNonPositiveMileage() throws {
@@ -50,22 +50,4 @@ final class PreTripInspectionInputValidatorTests: XCTestCase {
         }
     }
 
-    private func assertMalformedOdometerReading(
-        _ rawValue: String,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) {
-        XCTAssertThrowsError(
-            try PreTripInspectionInputValidator.parseOdometerReading(rawValue),
-            file: file,
-            line: line
-        ) { error in
-            XCTAssertEqual(
-                error as? FleetNumericFieldParser.ValidationError,
-                FleetNumericFieldParser.ValidationError(fieldName: "Odometer"),
-                file: file,
-                line: line
-            )
-        }
-    }
 }
