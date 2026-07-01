@@ -58,6 +58,8 @@ final class IOSSyncManager {
     private var peerManager: PeerManager?
     private var multipeerManager: MultipeerManager?
     private var multipeerDiscoveryMode: PeerDiscoveryMode?
+    private var peerDiscoveryStartupTask: Task<Void, Never>?
+    private var peerDiscoveryGeneration = 0
     private var lastSurfacedSyncReadFailure: String?
 
     struct PeerInfo: Identifiable, Sendable {
@@ -338,6 +340,11 @@ final class IOSSyncManager {
             return
         }
 
+        peerDiscoveryStartupTask?.cancel()
+        peerDiscoveryStartupTask = nil
+        peerDiscoveryGeneration += 1
+        let startupGeneration = peerDiscoveryGeneration
+
         if mode == .existingCompanySync {
             multipeerManager?.stop()
             multipeerManager = nil
@@ -401,13 +408,16 @@ final class IOSSyncManager {
         // so a fresh device can discover a shop HTTP address before the pairing
         // response verifies and persists the real company ID.
         if let pm = peerManager {
-            Task {
+            peerDiscoveryStartupTask = Task {
                 let deviceId = DeviceIdentity.current
                 let deviceName = UIDevice.current.name
                 do {
+                    guard isCurrentPeerDiscoveryStartup(startupGeneration) else { return }
                     if await pm.getState().running {
+                        guard isCurrentPeerDiscoveryStartup(startupGeneration) else { return }
                         await pm.stopPeerSync()
                     }
+                    guard isCurrentPeerDiscoveryStartup(startupGeneration) else { return }
                     try await pm.startPeerSync(
                         deviceId: deviceId,
                         deviceName: deviceName,
@@ -416,7 +426,11 @@ final class IOSSyncManager {
                         startMultipeer: bluetoothDiscoveryEnabled && mode == .existingCompanySync,
                         startSyncServer: mode == .existingCompanySync
                     )
+                    if !isScanning {
+                        await pm.stopPeerSync()
+                    }
                 } catch {
+                    guard isCurrentPeerDiscoveryStartup(startupGeneration) else { return }
                     handleLanPeerDiscoveryStartupFailure(
                         error,
                         hasActiveMultipeerDiscovery: bluetoothDiscoveryEnabled && mode == .onboardingJoin
@@ -424,6 +438,10 @@ final class IOSSyncManager {
                 }
             }
         }
+    }
+
+    private func isCurrentPeerDiscoveryStartup(_ generation: Int) -> Bool {
+        !Task.isCancelled && isScanning && peerDiscoveryGeneration == generation
     }
 
     func handleLanPeerDiscoveryStartupFailure(
@@ -440,6 +458,9 @@ final class IOSSyncManager {
 
     /// Stop scanning for peers.
     func stopPeerDiscovery() {
+        peerDiscoveryGeneration += 1
+        peerDiscoveryStartupTask?.cancel()
+        peerDiscoveryStartupTask = nil
         isScanning = false
         multipeerManager?.stop()
         multipeerManager = nil
