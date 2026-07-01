@@ -7,11 +7,14 @@ public final class BreakService: Sendable {
 
     public enum BreakError: Error, LocalizedError, Sendable, Equatable {
         case activeBreakAlreadyInProgress(userId: Int64, activeBreakId: Int64?)
+        case invalidDefaultBreakTime(field: String, value: String)
 
         public var errorDescription: String? {
             switch self {
             case .activeBreakAlreadyInProgress:
                 return "An active break is already in progress. End the current break before starting another."
+            case .invalidDefaultBreakTime(let field, _):
+                return "\(field) must be a valid 24-hour time in HH:mm format."
             }
         }
     }
@@ -304,11 +307,12 @@ public final class BreakService: Sendable {
                     $0.breakType == "break" && $0.startedAt.hasPrefix(scheduledMinutePrefix)
                 }
                 guard !alreadyExists else { return }
+                guard let endDateTime = Self.endDateTimeString(dateStr: dateStr, startTime: time, durationMinutes: 15) else { return }
 
                 var record = BreakRecord(
                     id: nil, userId: userId, laborEntryId: laborEntryId,
                     breakType: "break", startedAt: startStr,
-                    endedAt: "\(dateStr)T\(Self.addMinutes(time, 15)):00",
+                    endedAt: endDateTime,
                     durationMinutes: 15, isPaid: true,
                     autoFilled: true, timerDurationMinutes: 15,
                     createdAt: nil, deletedAt: nil
@@ -318,23 +322,24 @@ public final class BreakService: Sendable {
 
             // Auto-fill each scheduled break independently so one existing break
             // does not suppress the other configured default break.
-            if let morningTime = settings.defaultMorningBreak {
+            if let morningTime = Self.validatedDefaultTime(settings.defaultMorningBreak) {
                 try insertScheduledBreakIfMissing(at: morningTime)
             }
 
-            if let afternoonTime = settings.defaultAfternoonBreak {
+            if let afternoonTime = Self.validatedDefaultTime(settings.defaultAfternoonBreak) {
                 try insertScheduledBreakIfMissing(at: afternoonTime)
             }
 
             // Auto-fill lunch if missing
             let hasLunch = existing.contains { $0.breakType.hasPrefix("lunch") }
             if !hasLunch {
-                if let lunchTime = settings.defaultLunch {
+                if let lunchTime = Self.validatedDefaultTime(settings.defaultLunch),
+                   let lunchEndDateTime = Self.endDateTimeString(dateStr: dateStr, startTime: lunchTime, durationMinutes: 30) {
                     let startStr = "\(dateStr)T\(lunchTime):00"
                     var record = BreakRecord(
                         id: nil, userId: userId, laborEntryId: laborEntryId,
                         breakType: "lunch_paid", startedAt: startStr,
-                        endedAt: "\(dateStr)T\(Self.addMinutes(lunchTime, 30)):00",
+                        endedAt: lunchEndDateTime,
                         durationMinutes: 30, isPaid: true,
                         autoFilled: true, timerDurationMinutes: 30,
                         createdAt: nil, deletedAt: nil
@@ -390,6 +395,10 @@ public final class BreakService: Sendable {
         defaultLunch: String? = "12:00",
         defaultAfternoonBreak: String? = "14:30"
     ) throws {
+        let normalizedMorningBreak = try Self.normalizedDefaultTime(defaultMorningBreak, field: "Morning Break")
+        let normalizedLunch = try Self.normalizedDefaultTime(defaultLunch, field: "Lunch")
+        let normalizedAfternoonBreak = try Self.normalizedDefaultTime(defaultAfternoonBreak, field: "Afternoon Break")
+
         do {
             try db.writer.write { dbConn in
                 try dbConn.execute(sql: """
@@ -401,8 +410,8 @@ public final class BreakService: Sendable {
                     WHERE id = (SELECT id FROM company_break_settings LIMIT 1)
                     """, arguments: [
                         stateCode, roundingMinutes, roundingEnabled,
-                        autoFillBreaks, defaultMorningBreak,
-                        defaultLunch, defaultAfternoonBreak
+                        autoFillBreaks, normalizedMorningBreak,
+                        normalizedLunch, normalizedAfternoonBreak
                     ])
             }
         } catch {
@@ -492,12 +501,52 @@ public final class BreakService: Sendable {
             .fetchOne(dbConn)
     }
 
-    /// Add minutes to a time string like "10:00" → "10:15".
-    private static func addMinutes(_ timeStr: String, _ minutes: Int) -> String {
-        let parts = timeStr.split(separator: ":")
-        guard parts.count == 2, let hour = Int(parts[0]), let min = Int(parts[1]) else { return timeStr }
-        let total = hour * 60 + min + minutes
-        return String(format: "%02d:%02d", total / 60, total % 60)
+    private static func normalizedDefaultTime(_ timeStr: String?, field: String) throws -> String? {
+        guard let timeStr else { return nil }
+        let trimmed = timeStr.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard let validated = validatedDefaultTime(trimmed) else {
+            throw BreakError.invalidDefaultBreakTime(field: field, value: timeStr)
+        }
+        return validated
+    }
+
+    private static func validatedDefaultTime(_ timeStr: String?) -> String? {
+        guard let timeStr else { return nil }
+        let trimmed = timeStr.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parts = trimmed.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2,
+              parts[0].count == 2,
+              parts[1].count == 2,
+              parts[0].allSatisfy({ $0 >= "0" && $0 <= "9" }),
+              parts[1].allSatisfy({ $0 >= "0" && $0 <= "9" }),
+              let hour = Int(parts[0]),
+              let min = Int(parts[1]),
+              (0...23).contains(hour),
+              (0...59).contains(min)
+        else { return nil }
+        return String(format: "%02d:%02d", hour, min)
+    }
+
+    private static func endDateTimeString(dateStr: String, startTime timeStr: String, durationMinutes: Int) -> String? {
+        guard let validTime = validatedDefaultTime(timeStr),
+              let startDate = CoreFormatters.yearMonthDay.date(from: dateStr)
+        else { return nil }
+
+        let parts = validTime.split(separator: ":")
+        guard parts.count == 2, let hour = Int(parts[0]), let min = Int(parts[1]) else { return nil }
+        let total = hour * 60 + min + durationMinutes
+        guard total >= 0 else { return nil }
+
+        let dayOffset = total / 1440
+        let minuteOfDay = total % 1440
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC") ?? TimeZone(secondsFromGMT: 0)!
+        guard let endDate = calendar.date(byAdding: .day, value: dayOffset, to: startDate) else { return nil }
+
+        let endDateStr = CoreFormatters.yearMonthDay.string(from: endDate)
+        let endTime = String(format: "%02d:%02d", minuteOfDay / 60, minuteOfDay % 60)
+        return "\(endDateStr)T\(endTime):00"
     }
 
     private func isTableNotFoundError(_ error: Error) -> Bool {
