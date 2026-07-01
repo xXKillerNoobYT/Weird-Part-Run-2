@@ -592,13 +592,17 @@ struct JobsListPage: View {
     // MARK: - Status Change
 
     private func updateJobStatus(job: JobsService.JobListItem, newStatus: String) {
-        guard let service = appCore.jobsService else { return }
+        guard let service = appCore.jobsService else {
+            loadError = "Jobs service is not available. Please try again in a moment."
+            quickStatusTarget = nil
+            return
+        }
         do {
             try service.updateJob(id: job.id, status: newStatus)
             quickStatusTarget = nil
             loadJobs()
         } catch {
-            loadError = "Could not update status: \(error.localizedDescription)"
+            loadError = userFriendlyError(error, context: "update job status")
             quickStatusTarget = nil
         }
     }
