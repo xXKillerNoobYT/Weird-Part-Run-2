@@ -150,12 +150,16 @@ struct IOSJPOsPage: View {
     // MARK: - Counts
 
     private var pendingCount: Int {
-        allJPOs.filter { $0.status == "pending" }.count
+        dateFilteredJPOs.filter { $0.status == "pending" }.count
     }
 
     private func countForStatus(_ status: String) -> Int {
-        if status == "all" { return allJPOs.count }
-        return allJPOs.filter { $0.status == status }.count
+        if status == "all" { return dateFilteredJPOs.count }
+        return dateFilteredJPOs.filter { $0.status == status }.count
+    }
+
+    private var dateFilteredJPOs: [OrdersService.JPOListItem] {
+        allJPOs.filter { dateStringFallsInSelectedRange($0.createdAt ?? $0.dueDate) }
     }
 
     // MARK: - Status Picker
@@ -234,7 +238,7 @@ struct IOSJPOsPage: View {
     }
 
     private func dateStringFallsInSelectedRange(_ rawDate: String?) -> Bool {
-        guard let date = parseFilterDate(rawDate) else { return false }
+        guard let date = parseFilterDate(rawDate) else { return true }
         return date >= Calendar.current.startOfDay(for: effectiveStart) && date <= endOfDay(for: effectiveEnd)
     }
 

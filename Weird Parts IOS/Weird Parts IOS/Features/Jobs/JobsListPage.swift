@@ -257,11 +257,13 @@ struct JobsListPage: View {
     }
 
     private func countFor(_ filter: JobStatusFilter) -> Int {
-        if filter == .all { return allJobs.count }
+        let dateFilteredJobs = allJobs.filter { dateStringFallsInSelectedRange($0.startDate ?? $0.dueDate) }
+        if filter == .all { return dateFilteredJobs.count }
         if filter == .continuous {
-            return allJobs.filter { $0.jobType == "continuous" || $0.status == "continuous" }.count
+            return dateFilteredJobs.filter { $0.jobType == "continuous" || $0.status == "continuous" }.count
         }
-        return statusCounts[filter.queryValue ?? ""] ?? 0
+        guard let queryValue = filter.queryValue else { return dateFilteredJobs.count }
+        return dateFilteredJobs.filter { $0.status == queryValue }.count
     }
 
     private func colorFor(_ filter: JobStatusFilter) -> Color {
@@ -699,7 +701,7 @@ struct JobsListPage: View {
     }
 
     private func dateStringFallsInSelectedRange(_ rawDate: String?) -> Bool {
-        guard let date = parseFilterDate(rawDate) else { return false }
+        guard let date = parseFilterDate(rawDate) else { return true }
         return date >= Calendar.current.startOfDay(for: effectiveStart) && date <= endOfDay(for: effectiveEnd)
     }
 

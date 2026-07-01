@@ -104,6 +104,27 @@ final class StandardFilterBarRegressionTests: XCTestCase {
         XCTAssertTrue(partsManagementSource.contains("dateStringFallsInSelectedRange(row.orderDate ?? row.expectedDelivery)"))
     }
 
+    func testCoreJobsAndOrdersDateFiltersKeepRowsWithoutFilterableDates() throws {
+        let jobsSource = try Self.readFeatureSource(pathComponents: ["Jobs", "JobsListPage.swift"])
+        let jposSource = try Self.readFeatureSource(pathComponents: ["Orders", "IOSJPOsPage.swift"])
+        let partsManagementSource = try Self.readFeatureSource(pathComponents: ["Orders", "IOSPartsOrderManagementPage.swift"])
+
+        let includeUndatedRows = "guard let date = parseFilterDate(rawDate) else { return true }"
+        XCTAssertTrue(jobsSource.contains(includeUndatedRows))
+        XCTAssertTrue(jposSource.contains(includeUndatedRows))
+        XCTAssertTrue(partsManagementSource.contains(includeUndatedRows))
+    }
+
+    func testCoreJobsAndJPOStatusCountsUseSelectedDateRange() throws {
+        let jobsSource = try Self.readFeatureSource(pathComponents: ["Jobs", "JobsListPage.swift"])
+        let jposSource = try Self.readFeatureSource(pathComponents: ["Orders", "IOSJPOsPage.swift"])
+
+        XCTAssertTrue(jobsSource.contains("let dateFilteredJobs = allJobs.filter { dateStringFallsInSelectedRange($0.startDate ?? $0.dueDate) }"))
+        XCTAssertTrue(jposSource.contains("private var dateFilteredJPOs: [OrdersService.JPOListItem]"))
+        XCTAssertTrue(jposSource.contains("dateFilteredJPOs.filter { $0.status == \"pending\" }.count"))
+        XCTAssertTrue(jposSource.contains("return dateFilteredJPOs.filter { $0.status == status }.count"))
+    }
+
     @MainActor
     func testPayPeriodRangesUseInjectedAnchorAndLength() throws {
         var calendar = Calendar(identifier: .gregorian)

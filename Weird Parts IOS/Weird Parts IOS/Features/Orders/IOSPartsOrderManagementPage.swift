@@ -292,7 +292,7 @@ struct IOSPartsOrderManagementPage: View {
     }
 
     private func dateStringFallsInSelectedRange(_ rawDate: String?) -> Bool {
-        guard let date = parseFilterDate(rawDate) else { return false }
+        guard let date = parseFilterDate(rawDate) else { return true }
         return date >= Calendar.current.startOfDay(for: effectiveStart) && date <= endOfDay(for: effectiveEnd)
     }
 
