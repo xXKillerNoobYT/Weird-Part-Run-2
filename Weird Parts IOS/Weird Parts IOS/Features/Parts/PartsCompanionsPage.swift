@@ -887,9 +887,8 @@ struct PartsCompanionsPage: View {
     }
 
     // MARK: - Data Loading
-
     private func retryLoadData() {
-        reloadToken += 1
+        Task { @MainActor in reloadToken += 1 }
     }
 
     private func loadDataAndMarkViewed() async {
