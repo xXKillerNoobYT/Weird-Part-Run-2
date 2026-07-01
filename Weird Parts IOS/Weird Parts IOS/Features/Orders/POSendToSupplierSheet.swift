@@ -110,18 +110,39 @@ struct POSendToSupplierSheet: View {
         return siblingPOs.filter { includedSiblingIds.contains($0.id) }
     }
 
+    private var relatedJobSummary: String? {
+        var seen = Set<String>()
+        let jobNames = po.lines.compactMap { line -> String? in
+            guard let name = line.jobName?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !name.isEmpty,
+                  !seen.contains(name)
+            else { return nil }
+            seen.insert(name)
+            return name
+        }
+
+        guard !jobNames.isEmpty else { return nil }
+        return jobNames.joined(separator: ", ")
+    }
+
     private var emailSubject: String {
         let type = selectedRequestType == .pricing ? "Pricing Request" : "Purchase Order"
+        let jobSuffix = relatedJobSummary.map { " — Job: \($0)" } ?? ""
         if groupEnabled && !includedSiblingIds.isEmpty {
-            return "\(type) — \(po.supplierName) (\(includedPOs.count) orders)"
+            return "\(type) — \(po.supplierName) (\(includedPOs.count) orders)\(jobSuffix)"
         }
-        return "\(type) \(po.poNumber) — \(po.supplierName)"
+        return "\(type) \(po.poNumber) — \(po.supplierName)\(jobSuffix)"
     }
 
     private var emailBody: String {
         var lines: [String] = []
         lines.append("Dear \(po.supplierName),")
         lines.append("")
+
+        if let relatedJobSummary {
+            lines.append("Re: \(relatedJobSummary)")
+            lines.append("")
+        }
 
         if selectedRequestType == .pricing {
             lines.append("Please find attached our pricing request\(groupEnabled && !includedSiblingIds.isEmpty ? "s" : "") for the following items.")

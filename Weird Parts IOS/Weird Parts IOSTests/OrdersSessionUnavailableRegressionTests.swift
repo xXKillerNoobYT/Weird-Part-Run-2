@@ -192,6 +192,28 @@ final class OrdersSessionUnavailableRegressionTests: XCTestCase {
         )
     }
 
+    func testSupplierEmailElevatesRelatedJobContext() throws {
+        let sendSheetSource = try Self.readOrdersSource(named: "POSendToSupplierSheet.swift")
+        let pdfGeneratorSource = try Self.readOrdersSource(named: "POPDFGenerator.swift")
+
+        XCTAssertTrue(
+            sendSheetSource.contains("private var relatedJobSummary: String?") &&
+            sendSheetSource.contains("line.jobName?.trimmingCharacters(in: .whitespacesAndNewlines)") &&
+            sendSheetSource.contains("return jobNames.joined(separator: \", \")"),
+            "Supplier email content should derive a stable, deduplicated related-job summary from PO line job names."
+        )
+        XCTAssertTrue(
+            sendSheetSource.contains("let jobSuffix = relatedJobSummary.map { \" — Job: \\($0)\" } ?? \"\"") &&
+            sendSheetSource.contains("lines.append(\"Re: \\(relatedJobSummary)\")"),
+            "Supplier email subject and body should surface related job context before supplier triage."
+        )
+        XCTAssertTrue(
+            pdfGeneratorSource.contains("private var relatedJobSummary: String?") &&
+            pdfGeneratorSource.contains("if let relatedJobSummary { metaRow(\"Related Job(s):\", relatedJobSummary) }"),
+            "Supplier PDF meta block should include a Related Job(s) row when PO lines are job-linked."
+        )
+    }
+
     private static func readOrdersSource(named filename: String, file: StaticString = #filePath) throws -> String {
         let testFileURL = URL(fileURLWithPath: "\(file)")
         let projectRoot = testFileURL
