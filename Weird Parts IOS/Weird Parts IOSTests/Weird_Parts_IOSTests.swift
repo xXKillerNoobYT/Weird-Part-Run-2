@@ -728,6 +728,40 @@ struct Weird_Parts_IOSTests {
         #expect(ReceivingRoutingValidation.missingLinkedPartError(partId: 6) == nil)
     }
 
+    @Test func receiveShipmentBarcodeCountStartsFromZeroForFreshExpectedQuantity() throws {
+        let base = receivingBarcodeScanBaseQuantity(
+            displayedQty: 10,
+            persistedReceivedQty: 0,
+            hasScannerCount: false,
+            hasManualQuantityEdit: false
+        )
+
+        #expect(base + 1 == 1)
+    }
+
+    @Test func receiveShipmentBarcodeCountContinuesAfterScannerOrManualQuantity() throws {
+        #expect(receivingBarcodeScanBaseQuantity(
+            displayedQty: 1,
+            persistedReceivedQty: 0,
+            hasScannerCount: true,
+            hasManualQuantityEdit: false
+        ) + 1 == 2)
+
+        #expect(receivingBarcodeScanBaseQuantity(
+            displayedQty: 10,
+            persistedReceivedQty: 0,
+            hasScannerCount: false,
+            hasManualQuantityEdit: true
+        ) + 1 == 11)
+
+        #expect(receivingBarcodeScanBaseQuantity(
+            displayedQty: 4,
+            persistedReceivedQty: 4,
+            hasScannerCount: false,
+            hasManualQuantityEdit: false
+        ) + 1 == 5)
+    }
+
     @Test func subSchedulePageExposesExplicitSoftDeleteCancellationAction() throws {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
