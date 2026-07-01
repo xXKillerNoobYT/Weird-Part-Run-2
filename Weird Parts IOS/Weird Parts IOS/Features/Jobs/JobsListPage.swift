@@ -73,6 +73,8 @@ struct JobsListPage: View {
     @State private var activeSheet: ActiveSheet?
     @State private var jobs: [JobsService.JobListItem] = []
     @State private var allJobs: [JobsService.JobListItem] = []
+    @State private var dateFilteredJobCount = 0
+    @State private var continuousJobCount = 0
     @State private var statusCounts: [String: Int] = [:]
     @State private var isLoading = true
     @State private var searchText = ""
@@ -257,13 +259,10 @@ struct JobsListPage: View {
     }
 
     private func countFor(_ filter: JobStatusFilter) -> Int {
-        let dateFilteredJobs = allJobs.filter { dateStringFallsInSelectedRange($0.startDate ?? $0.dueDate) }
-        if filter == .all { return dateFilteredJobs.count }
-        if filter == .continuous {
-            return dateFilteredJobs.filter { $0.jobType == "continuous" || $0.status == "continuous" }.count
-        }
-        guard let queryValue = filter.queryValue else { return dateFilteredJobs.count }
-        return dateFilteredJobs.filter { $0.status == queryValue }.count
+        if filter == .all { return dateFilteredJobCount }
+        if filter == .continuous { return continuousJobCount }
+        guard let queryValue = filter.queryValue else { return dateFilteredJobCount }
+        return statusCounts[queryValue] ?? 0
     }
 
     private func colorFor(_ filter: JobStatusFilter) -> Color {
@@ -632,12 +631,6 @@ struct JobsListPage: View {
                 status: nil
             )
             stagesByTemplateId = try loadTemplateStageCache(service: service, jobs: allJobs)
-            // Build status counts
-            var counts: [String: Int] = [:]
-            for j in allJobs {
-                counts[j.status, default: 0] += 1
-            }
-            statusCounts = counts
             refreshJobSummaryCache()
             applyFilterAndSort()
         } catch {
@@ -659,7 +652,16 @@ struct JobsListPage: View {
     }
 
     private func applyFilterAndSort() {
-        var filtered = allJobs
+        let dateFiltered = allJobs.filter { job in
+            StandardDateRangeFilter.contains(
+                job.startDate ?? job.dueDate,
+                selectedRange: dateRange,
+                customStart: customStart,
+                customEnd: customEnd
+            )
+        }
+        refreshDateScopedStatusCounts(from: dateFiltered)
+        var filtered = dateFiltered
 
         // Apply status filter
         if let query = statusFilter.queryValue {
@@ -668,10 +670,6 @@ struct JobsListPage: View {
             } else {
                 filtered = filtered.filter { $0.status == query }
             }
-        }
-
-        filtered = filtered.filter { job in
-            dateStringFallsInSelectedRange(job.startDate ?? job.dueDate)
         }
 
         // Continuous jobs: only show to assigned workers or managers
@@ -692,28 +690,10 @@ struct JobsListPage: View {
         jobs = filtered
     }
 
-    private var effectiveStart: Date {
-        dateRange.dateInterval?.start ?? customStart
-    }
-
-    private var effectiveEnd: Date {
-        dateRange.dateInterval?.end ?? customEnd
-    }
-
-    private func dateStringFallsInSelectedRange(_ rawDate: String?) -> Bool {
-        guard let date = parseFilterDate(rawDate) else { return true }
-        return date >= Calendar.current.startOfDay(for: effectiveStart) && date < exclusiveEndOfDay(for: effectiveEnd)
-    }
-
-    private func exclusiveEndOfDay(for date: Date) -> Date {
-        Calendar.current.dateInterval(of: .day, for: date)?.end ?? date
-    }
-
-    private func parseFilterDate(_ rawDate: String?) -> Date? {
-        guard let rawDate, !rawDate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        return Formatters.sqlDateTimeFormatter.date(from: rawDate)
-            ?? Formatters.iso8601Fractional.date(from: rawDate)
-            ?? Formatters.iso8601Basic.date(from: rawDate)
-            ?? Formatters.localDateFormatter.date(from: String(rawDate.prefix(10)))
+    private func refreshDateScopedStatusCounts(from dateFilteredJobs: [JobsService.JobListItem]) {
+        dateFilteredJobCount = dateFilteredJobs.count
+        continuousJobCount = dateFilteredJobs.filter { $0.jobType == "continuous" || $0.status == "continuous" }.count
+        statusCounts = Dictionary(grouping: dateFilteredJobs, by: \.status)
+            .mapValues(\.count)
     }
 }

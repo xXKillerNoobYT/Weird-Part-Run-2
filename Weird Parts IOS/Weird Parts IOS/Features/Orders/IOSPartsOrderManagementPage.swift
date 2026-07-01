@@ -279,33 +279,13 @@ struct IOSPartsOrderManagementPage: View {
             }()
 
             return poPass && partPass && searchPass
-                && dateStringFallsInSelectedRange(row.orderDate ?? row.expectedDelivery)
+                && StandardDateRangeFilter.contains(
+                    row.orderDate ?? row.expectedDelivery,
+                    selectedRange: dateRange,
+                    customStart: customStart,
+                    customEnd: customEnd
+                )
         }
-    }
-
-    private var effectiveStart: Date {
-        dateRange.dateInterval?.start ?? customStart
-    }
-
-    private var effectiveEnd: Date {
-        dateRange.dateInterval?.end ?? customEnd
-    }
-
-    private func dateStringFallsInSelectedRange(_ rawDate: String?) -> Bool {
-        guard let date = parseFilterDate(rawDate) else { return true }
-        return date >= Calendar.current.startOfDay(for: effectiveStart) && date < exclusiveEndOfDay(for: effectiveEnd)
-    }
-
-    private func exclusiveEndOfDay(for date: Date) -> Date {
-        Calendar.current.dateInterval(of: .day, for: date)?.end ?? date
-    }
-
-    private func parseFilterDate(_ rawDate: String?) -> Date? {
-        guard let rawDate, !rawDate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        return Formatters.sqlDateTimeFormatter.date(from: rawDate)
-            ?? Formatters.iso8601Fractional.date(from: rawDate)
-            ?? Formatters.iso8601Basic.date(from: rawDate)
-            ?? Formatters.localDateFormatter.date(from: String(rawDate.prefix(10)))
     }
 
     /// Group filtered rows by PO.

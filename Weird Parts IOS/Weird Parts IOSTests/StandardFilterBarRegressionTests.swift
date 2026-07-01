@@ -99,44 +99,38 @@ final class StandardFilterBarRegressionTests: XCTestCase {
         let jposSource = try Self.readFeatureSource(pathComponents: ["Orders", "IOSJPOsPage.swift"])
         let partsManagementSource = try Self.readFeatureSource(pathComponents: ["Orders", "IOSPartsOrderManagementPage.swift"])
 
-        XCTAssertTrue(jobsSource.contains("dateStringFallsInSelectedRange(job.startDate ?? job.dueDate)"))
-        XCTAssertTrue(jposSource.contains("dateStringFallsInSelectedRange($0.createdAt ?? $0.dueDate)"))
-        XCTAssertTrue(partsManagementSource.contains("dateStringFallsInSelectedRange(row.orderDate ?? row.expectedDelivery)"))
+        XCTAssertTrue(jobsSource.contains("StandardDateRangeFilter.contains("))
+        XCTAssertTrue(jobsSource.contains("job.startDate ?? job.dueDate"))
+        XCTAssertTrue(jposSource.contains("StandardDateRangeFilter.contains("))
+        XCTAssertTrue(jposSource.contains("$0.createdAt ?? $0.dueDate"))
+        XCTAssertTrue(partsManagementSource.contains("StandardDateRangeFilter.contains("))
+        XCTAssertTrue(partsManagementSource.contains("row.orderDate ?? row.expectedDelivery"))
     }
 
-    func testCoreJobsAndOrdersDateFiltersKeepRowsWithoutFilterableDates() throws {
-        let jobsSource = try Self.readFeatureSource(pathComponents: ["Jobs", "JobsListPage.swift"])
-        let jposSource = try Self.readFeatureSource(pathComponents: ["Orders", "IOSJPOsPage.swift"])
-        let partsManagementSource = try Self.readFeatureSource(pathComponents: ["Orders", "IOSPartsOrderManagementPage.swift"])
+    func testStandardDateRangeFilterKeepsRowsWithoutFilterableDates() throws {
+        let sharedSource = try Self.readSharedSource(named: "ReportDateRange.swift")
 
-        let includeUndatedRows = "guard let date = parseFilterDate(rawDate) else { return true }"
-        XCTAssertTrue(jobsSource.contains(includeUndatedRows))
-        XCTAssertTrue(jposSource.contains(includeUndatedRows))
-        XCTAssertTrue(partsManagementSource.contains(includeUndatedRows))
+        XCTAssertTrue(sharedSource.contains("enum StandardDateRangeFilter"))
+        XCTAssertTrue(sharedSource.contains("guard let date = parse(rawDate) else { return true }"))
     }
 
-    func testCoreJobsAndJPOStatusCountsUseSelectedDateRange() throws {
+    func testCoreJobsAndJPOStatusCountsUsePrecomputedSelectedDateRangeCounts() throws {
         let jobsSource = try Self.readFeatureSource(pathComponents: ["Jobs", "JobsListPage.swift"])
         let jposSource = try Self.readFeatureSource(pathComponents: ["Orders", "IOSJPOsPage.swift"])
 
-        XCTAssertTrue(jobsSource.contains("let dateFilteredJobs = allJobs.filter { dateStringFallsInSelectedRange($0.startDate ?? $0.dueDate) }"))
-        XCTAssertTrue(jposSource.contains("private var dateFilteredJPOs: [OrdersService.JPOListItem]"))
-        XCTAssertTrue(jposSource.contains("dateFilteredJPOs.filter { $0.status == \"pending\" }.count"))
-        XCTAssertTrue(jposSource.contains("return dateFilteredJPOs.filter { $0.status == status }.count"))
+        XCTAssertTrue(jobsSource.contains("refreshDateScopedStatusCounts(from: dateFiltered)"))
+        XCTAssertTrue(jobsSource.contains("statusCounts = Dictionary(grouping: dateFilteredJobs, by: \\.status)"))
+        XCTAssertTrue(jposSource.contains("@State private var dateFilteredJPOs: [OrdersService.JPOListItem] = []"))
+        XCTAssertTrue(jposSource.contains("dateScopedStatusCounts = Dictionary(grouping: dateFilteredJPOs, by: \\.status)"))
+        XCTAssertTrue(jposSource.contains("dateScopedStatusCounts[\"pending\"] ?? 0"))
+        XCTAssertTrue(jposSource.contains("return dateScopedStatusCounts[status] ?? 0"))
     }
 
-    func testCoreJobsAndOrdersDateFiltersUseExclusiveEndOfDay() throws {
-        let jobsSource = try Self.readFeatureSource(pathComponents: ["Jobs", "JobsListPage.swift"])
-        let jposSource = try Self.readFeatureSource(pathComponents: ["Orders", "IOSJPOsPage.swift"])
-        let partsManagementSource = try Self.readFeatureSource(pathComponents: ["Orders", "IOSPartsOrderManagementPage.swift"])
+    func testStandardDateRangeFilterUsesExclusiveEndOfDay() throws {
+        let sharedSource = try Self.readSharedSource(named: "ReportDateRange.swift")
 
-        let exclusiveRangeCheck = "date < exclusiveEndOfDay(for: effectiveEnd)"
-        XCTAssertTrue(jobsSource.contains(exclusiveRangeCheck))
-        XCTAssertTrue(jposSource.contains(exclusiveRangeCheck))
-        XCTAssertTrue(partsManagementSource.contains(exclusiveRangeCheck))
-        XCTAssertFalse(jobsSource.contains(".end.addingTimeInterval(-1)"))
-        XCTAssertFalse(jposSource.contains(".end.addingTimeInterval(-1)"))
-        XCTAssertFalse(partsManagementSource.contains(".end.addingTimeInterval(-1)"))
+        XCTAssertTrue(sharedSource.contains("date < exclusiveEndOfDay(for: interval.end, calendar: calendar)"))
+        XCTAssertFalse(sharedSource.contains(".end.addingTimeInterval(-1) ?? date"))
     }
 
     @MainActor

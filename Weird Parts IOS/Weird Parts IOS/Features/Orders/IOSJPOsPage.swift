@@ -13,6 +13,8 @@ struct IOSJPOsPage: View {
     // MARK: - State
 
     @State private var allJPOs: [OrdersService.JPOListItem] = []
+    @State private var dateFilteredJPOs: [OrdersService.JPOListItem] = []
+    @State private var dateScopedStatusCounts: [String: Int] = [:]
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var dateRange: ReportDateRange = .thisWeek
@@ -90,6 +92,9 @@ struct IOSJPOsPage: View {
             loadData()
             appCore.onboardingManager?.markCompleted("jpo-view-list")
         }
+        .onChange(of: dateRange) { refreshDateScopedJPOs() }
+        .onChange(of: customStart) { refreshDateScopedJPOs() }
+        .onChange(of: customEnd) { refreshDateScopedJPOs() }
         .onAppear {
             NotificationCenter.default.post(
                 name: .jposPageActive,
@@ -150,16 +155,12 @@ struct IOSJPOsPage: View {
     // MARK: - Counts
 
     private var pendingCount: Int {
-        dateFilteredJPOs.filter { $0.status == "pending" }.count
+        dateScopedStatusCounts["pending"] ?? 0
     }
 
     private func countForStatus(_ status: String) -> Int {
         if status == "all" { return dateFilteredJPOs.count }
-        return dateFilteredJPOs.filter { $0.status == status }.count
-    }
-
-    private var dateFilteredJPOs: [OrdersService.JPOListItem] {
-        allJPOs.filter { dateStringFallsInSelectedRange($0.createdAt ?? $0.dueDate) }
+        return dateScopedStatusCounts[status] ?? 0
     }
 
     // MARK: - Status Picker
@@ -212,12 +213,11 @@ struct IOSJPOsPage: View {
 
     /// JPOs filtered by status and search text.
     private var displayedJPOs: [OrdersService.JPOListItem] {
-        var result = allJPOs
+        var result = dateFilteredJPOs
         // Status filter
         if statusFilter != "all" {
             result = result.filter { $0.status == statusFilter }
         }
-        result = result.filter { dateStringFallsInSelectedRange($0.createdAt ?? $0.dueDate) }
         // Search filter
         if !searchText.isEmpty {
             let query = searchText.lowercased()
@@ -227,31 +227,6 @@ struct IOSJPOsPage: View {
             }
         }
         return result
-    }
-
-    private var effectiveStart: Date {
-        dateRange.dateInterval?.start ?? customStart
-    }
-
-    private var effectiveEnd: Date {
-        dateRange.dateInterval?.end ?? customEnd
-    }
-
-    private func dateStringFallsInSelectedRange(_ rawDate: String?) -> Bool {
-        guard let date = parseFilterDate(rawDate) else { return true }
-        return date >= Calendar.current.startOfDay(for: effectiveStart) && date < exclusiveEndOfDay(for: effectiveEnd)
-    }
-
-    private func exclusiveEndOfDay(for date: Date) -> Date {
-        Calendar.current.dateInterval(of: .day, for: date)?.end ?? date
-    }
-
-    private func parseFilterDate(_ rawDate: String?) -> Date? {
-        guard let rawDate, !rawDate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        return Formatters.sqlDateTimeFormatter.date(from: rawDate)
-            ?? Formatters.iso8601Fractional.date(from: rawDate)
-            ?? Formatters.iso8601Basic.date(from: rawDate)
-            ?? Formatters.localDateFormatter.date(from: String(rawDate.prefix(10)))
     }
 
     private func jpoRow(_ jpo: OrdersService.JPOListItem) -> some View {
@@ -334,9 +309,23 @@ struct IOSJPOsPage: View {
         do {
             // Load all JPOs for counts, then filter in-memory
             allJPOs = try service.listJPOs(status: nil, limit: 500)
+            refreshDateScopedJPOs()
         } catch {
             loadError = userFriendlyError(error, context: "load job parts orders")
         }
         isLoading = false
+    }
+
+    private func refreshDateScopedJPOs() {
+        dateFilteredJPOs = allJPOs.filter {
+            StandardDateRangeFilter.contains(
+                $0.createdAt ?? $0.dueDate,
+                selectedRange: dateRange,
+                customStart: customStart,
+                customEnd: customEnd
+            )
+        }
+        dateScopedStatusCounts = Dictionary(grouping: dateFilteredJPOs, by: \.status)
+            .mapValues(\.count)
     }
 }
