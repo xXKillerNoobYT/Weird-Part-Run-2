@@ -112,6 +112,8 @@ final class StandardFilterBarRegressionTests: XCTestCase {
 
         XCTAssertTrue(sharedSource.contains("enum StandardDateRangeFilter"))
         XCTAssertTrue(sharedSource.contains("guard let date = parse(rawDate) else { return true }"))
+        XCTAssertTrue(sharedSource.contains("guard let trimmed = rawDate?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }"))
+        XCTAssertTrue(sharedSource.contains("Formatters.sqlDateTimeFormatter.date(from: trimmed)"))
     }
 
     func testCoreJobsAndJPOStatusCountsUsePrecomputedSelectedDateRangeCounts() throws {

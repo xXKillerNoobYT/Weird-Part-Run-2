@@ -134,10 +134,10 @@ enum StandardDateRangeFilter {
     }
 
     private static func parse(_ rawDate: String?) -> Date? {
-        guard let rawDate, !rawDate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        return Formatters.sqlDateTimeFormatter.date(from: rawDate)
-            ?? Formatters.iso8601Fractional.date(from: rawDate)
-            ?? Formatters.iso8601Basic.date(from: rawDate)
-            ?? Formatters.localDateFormatter.date(from: String(rawDate.prefix(10)))
+        guard let trimmed = rawDate?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
+        return Formatters.sqlDateTimeFormatter.date(from: trimmed)
+            ?? Formatters.iso8601Fractional.date(from: trimmed)
+            ?? Formatters.iso8601Basic.date(from: trimmed)
+            ?? Formatters.localDateFormatter.date(from: String(trimmed.prefix(10)))
     }
 }
