@@ -58,6 +58,7 @@ final class IOSSyncManager {
     private var peerManager: PeerManager?
     private var multipeerManager: MultipeerManager?
     private var multipeerDiscoveryMode: PeerDiscoveryMode?
+    private var lastSurfacedSyncReadFailure: String?
 
     struct PeerInfo: Identifiable, Sendable {
         let id: String
@@ -105,6 +106,9 @@ final class IOSSyncManager {
 
     private func syncSettingsReadFailed(_ error: Error, context: String) {
         let message = userFriendlyError(error, context: context)
+        let failureKey = "\(context): \(message)"
+        guard lastSurfacedSyncReadFailure != failureKey else { return }
+        lastSurfacedSyncReadFailure = failureKey
         errorMessage = message
         logger.error("[IOSSyncManager] \(context) failed: \(error.localizedDescription)")
     }

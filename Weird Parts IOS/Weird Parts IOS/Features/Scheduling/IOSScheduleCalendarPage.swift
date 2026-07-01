@@ -579,7 +579,7 @@ struct IOSScheduleCalendarPage: View {
 
     private func loadDayDetail() {
         guard let service = appCore.schedulingService else {
-            loadError = "Scheduling service not available"
+            dayDetailError = "Scheduling service not available"
             isLoading = false
             return
         }

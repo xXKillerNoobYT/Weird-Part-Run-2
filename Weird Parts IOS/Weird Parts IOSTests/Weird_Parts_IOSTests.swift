@@ -980,7 +980,8 @@ struct Weird_Parts_IOSTests {
         let scheduleURL = repoRoot
             .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Scheduling/IOSScheduleCalendarPage.swift")
         let scheduleSource = try String(contentsOf: scheduleURL, encoding: .utf8)
-        #expect(!scheduleSource.contains("dayEntries = []\n            timeOffEntries = []"), "Selected-day schedule failures must not become an empty day")
+        #expect(scheduleSource.range(of: #"catch\s*\{\s*dayEntries\s*=\s*\[\]\s*timeOffEntries\s*=\s*\[\]"#, options: .regularExpression) == nil, "Selected-day schedule failures must not become an empty day")
+        #expect(scheduleSource.contains("dayDetailError = \"Scheduling service not available\""), "Selected-day service unavailability should render through the day-detail error surface")
         #expect(scheduleSource.contains("dayDetailError = userFriendlyError(error, context: \"load selected day schedule\")"))
         #expect(scheduleSource.contains("ErrorStateView(message: dayDetailError) { loadDayDetail() }"), "Selected-day detail failures should offer a retry")
 
@@ -994,6 +995,7 @@ struct Weird_Parts_IOSTests {
         #expect(syncSource.contains("syncSettingsReadFailed(error, context: \"load auto-sync setting\")"))
         #expect(syncSource.contains("syncSettingsReadFailed(error, context: \"load sync server address\")"))
         #expect(syncSource.contains("syncSettingsReadFailed(error, context: \"load pairing status\")"))
+        #expect(syncSource.contains("guard lastSurfacedSyncReadFailure != failureKey else { return }"), "Repeated sync setting read failures should not re-alert on every SwiftUI render")
         #expect(syncSource.contains("errorMessage = userFriendlyError(error, context: \"load sync conflict count\")"))
     }
 
