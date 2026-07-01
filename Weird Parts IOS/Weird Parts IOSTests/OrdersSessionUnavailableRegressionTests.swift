@@ -203,9 +203,11 @@ final class OrdersSessionUnavailableRegressionTests: XCTestCase {
             "Supplier email content should derive a stable, deduplicated related-job summary from PO line job names."
         )
         XCTAssertTrue(
-            sendSheetSource.contains("let jobSuffix = relatedJobSummary.map { \" — Job: \\($0)\" } ?? \"\"") &&
+            sendSheetSource.contains("let isGroupedSend = groupEnabled && !includedSiblingIds.isEmpty") &&
+            sendSheetSource.contains("let jobSuffix = isGroupedSend ? \"\" : (relatedJobSummary.map { \" — Job: \\($0)\" } ?? \"\")") &&
+            sendSheetSource.contains("if !isGroupedSend, let relatedJobSummary") &&
             sendSheetSource.contains("lines.append(\"Re: \\(relatedJobSummary)\")"),
-            "Supplier email subject and body should surface related job context before supplier triage."
+            "Supplier email subject and body should surface related job context for single-PO sends without implying primary-only jobs apply to grouped sibling POs."
         )
         XCTAssertTrue(
             pdfGeneratorSource.contains("private var relatedJobSummary: String?") &&

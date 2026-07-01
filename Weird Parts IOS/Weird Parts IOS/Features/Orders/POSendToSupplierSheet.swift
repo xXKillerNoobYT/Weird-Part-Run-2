@@ -127,19 +127,21 @@ struct POSendToSupplierSheet: View {
 
     private var emailSubject: String {
         let type = selectedRequestType == .pricing ? "Pricing Request" : "Purchase Order"
-        let jobSuffix = relatedJobSummary.map { " — Job: \($0)" } ?? ""
-        if groupEnabled && !includedSiblingIds.isEmpty {
-            return "\(type) — \(po.supplierName) (\(includedPOs.count) orders)\(jobSuffix)"
+        let isGroupedSend = groupEnabled && !includedSiblingIds.isEmpty
+        let jobSuffix = isGroupedSend ? "" : (relatedJobSummary.map { " — Job: \($0)" } ?? "")
+        if isGroupedSend {
+            return "\(type) — \(po.supplierName) (\(includedPOs.count) orders)"
         }
         return "\(type) \(po.poNumber) — \(po.supplierName)\(jobSuffix)"
     }
 
     private var emailBody: String {
         var lines: [String] = []
+        let isGroupedSend = groupEnabled && !includedSiblingIds.isEmpty
         lines.append("Dear \(po.supplierName),")
         lines.append("")
 
-        if let relatedJobSummary {
+        if !isGroupedSend, let relatedJobSummary {
             lines.append("Re: \(relatedJobSummary)")
             lines.append("")
         }
