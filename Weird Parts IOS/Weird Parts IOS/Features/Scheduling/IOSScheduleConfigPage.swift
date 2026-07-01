@@ -482,6 +482,7 @@ struct IOSScheduleConfigPage: View {
         guard let svc = appCore.schedulingService else {
             saveError = "Scheduling service not available"
             return false
+
         }
         saveError = nil
         do {
@@ -491,9 +492,10 @@ struct IOSScheduleConfigPage: View {
                 breakMinutes: data.breakMinutes, breakPaid: data.breakPaid,
                 overtimeRule: data.overtimeRule
             )
-            shiftTemplates = (try? svc.getShiftTemplates()) ?? []
+            shiftTemplates = try svc.getShiftTemplates()
             activeSheet = nil
             return true
+
         } catch {
             saveError = userFriendlyError(error, context: "save shift template")
             return false
@@ -504,13 +506,15 @@ struct IOSScheduleConfigPage: View {
         guard let svc = appCore.schedulingService else {
             saveError = "Scheduling service not available"
             return false
+
         }
         saveError = nil
         do {
             try svc.deleteShiftTemplate(id: id)
-            shiftTemplates = (try? svc.getShiftTemplates()) ?? []
+            shiftTemplates = try svc.getShiftTemplates()
             activeSheet = nil
             return true
+
         } catch {
             saveError = userFriendlyError(error, context: "delete shift template")
             return false
@@ -521,6 +525,7 @@ struct IOSScheduleConfigPage: View {
         guard let svc = appCore.schedulingService else {
             saveError = "Scheduling service not available"
             return false
+
         }
         saveError = nil
         do {
@@ -528,9 +533,10 @@ struct IOSScheduleConfigPage: View {
                 id: data.existingId, name: data.name, date: data.date,
                 isPaid: data.isPaid, isRecurring: data.isRecurring
             )
-            holidays = (try? svc.getHolidays()) ?? []
+            holidays = try svc.getHolidays()
             activeSheet = nil
             return true
+
         } catch {
             saveError = userFriendlyError(error, context: "save holiday")
             return false
@@ -541,13 +547,15 @@ struct IOSScheduleConfigPage: View {
         guard let svc = appCore.schedulingService else {
             saveError = "Scheduling service not available"
             return false
+
         }
         saveError = nil
         do {
             try svc.deleteHoliday(id: id)
-            holidays = (try? svc.getHolidays()) ?? []
+            holidays = try svc.getHolidays()
             activeSheet = nil
             return true
+
         } catch {
             saveError = userFriendlyError(error, context: "delete holiday")
             return false
@@ -756,6 +764,7 @@ struct ShiftTemplateEditSheet: View {
                     if onDelete?() == true {
                         dismiss()
                     }
+
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
@@ -881,6 +890,7 @@ struct HolidayEditSheet: View {
                     if onDelete?() == true {
                         dismiss()
                     }
+
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
