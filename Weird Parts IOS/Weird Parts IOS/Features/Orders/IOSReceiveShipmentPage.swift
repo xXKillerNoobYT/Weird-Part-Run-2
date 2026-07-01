@@ -60,9 +60,9 @@ struct IOSReceiveShipmentPage: View {
         private let source: Source
         private let routedQty: Int?
 
-        init(route: WarehouseService.ReceivingRoute) {
+        init(route: WarehouseService.ReceivingRoute, routedQty: Int) {
             self.source = .live(route)
-            self.routedQty = nil
+            self.routedQty = routedQty
         }
 
         init(disposition: WarehouseService.ReceivingRoutingDisposition, routedQty: Int) {
@@ -305,7 +305,8 @@ struct IOSReceiveShipmentPage: View {
                         poLineId: item.poLineId,
                         receivedQty: receivedQtys[item.id] ?? item.expectedQty,
                         onRouteComplete: { route in
-                            routingResults[item.id] = RoutingResult(route: route)
+                            let routedQty = receivedQtys[item.id] ?? item.expectedQty
+                            routingResults[item.id] = RoutingResult(route: route, routedQty: routedQty)
                         },
                         onDismiss: {
                             activeSheet = nil
