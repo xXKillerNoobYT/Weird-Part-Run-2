@@ -167,10 +167,7 @@ struct IOSReceiveShipmentPage: View {
             Button("OK") {
                 completionMessage = nil
                 activeSessionId = nil
-                sessionItems = []
-                priceVerifications = [:]
-                receivedQtys = [:]
-                routingResults = [:]
+                resetReceivingSessionState()
                 loadData()
             }
         } message: {
@@ -334,6 +331,7 @@ struct IOSReceiveShipmentPage: View {
                             let svc = appCore.warehouseService
                             let items = sessionItems
                             for item in items { receivedQtys[item.id] = item.expectedQty }
+                            manuallyEditedQuantityItemIds.formUnion(items.map(\.id))
                             Task {
                                 guard let svc else { return }
                                 var failed = 0
@@ -353,6 +351,7 @@ struct IOSReceiveShipmentPage: View {
                             let svc = appCore.warehouseService
                             let items = sessionItems
                             for item in items { receivedQtys[item.id] = 0 }
+                            manuallyEditedQuantityItemIds.formUnion(items.map(\.id))
                             Task {
                                 guard let svc else { return }
                                 var failed = 0
@@ -479,10 +478,7 @@ struct IOSReceiveShipmentPage: View {
                 Section {
                     Button(role: .destructive) {
                         activeSessionId = nil
-                        sessionItems = []
-                        priceVerifications = [:]
-                        receivedQtys = [:]
-                        routingResults = [:]
+                        resetReceivingSessionState()
                         loadData()
                     } label: {
                         HStack {
@@ -517,10 +513,7 @@ struct IOSReceiveShipmentPage: View {
                 // Quantities are auto-saved — no discard dialog needed (PE-041)
                 Button {
                     activeSessionId = nil
-                    sessionItems = []
-                    priceVerifications = [:]
-                    receivedQtys = [:]
-                    routingResults = [:]
+                    resetReceivingSessionState()
                     loadData()
                 } label: {
                     HStack(spacing: 4) {
