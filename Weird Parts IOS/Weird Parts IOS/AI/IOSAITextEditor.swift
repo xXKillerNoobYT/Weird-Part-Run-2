@@ -258,8 +258,7 @@ struct IOSAITextEditor: View {
     }
 
     private func enhance(mode: EnhanceMode) async {
-        debounceTask?.cancel()
-        suggestion = ""
+        cancelSuggestionRequest()
         isEnhancing = true
         aiErrorMessage = nil
         defer { isEnhancing = false }
@@ -284,8 +283,7 @@ struct IOSAITextEditor: View {
     }
 
     private func preFill() async {
-        debounceTask?.cancel()
-        suggestion = ""
+        cancelSuggestionRequest()
         isEnhancing = true
         aiErrorMessage = nil
         defer { isEnhancing = false }
@@ -306,6 +304,13 @@ struct IOSAITextEditor: View {
             )
             showAIErrorAlert = true
         }
+    }
+
+    private func cancelSuggestionRequest() {
+        debounceTask?.cancel()
+        debounceTask = nil
+        suggestion = ""
+        isLoadingSuggestion = false
     }
 
     private func failureMessage(for operation: String, result: AIResult, fallback: String) -> String {

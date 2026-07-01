@@ -67,7 +67,7 @@ final class IOSAITextEditorFailureRegressionTests: XCTestCase {
         let preFillSection = try Self.section(
             named: "private func preFill",
             in: source,
-            endingBefore: "private func failureMessage"
+            endingBefore: "private func cancelSuggestionRequest"
         )
 
         XCTAssertTrue(
@@ -76,10 +76,8 @@ final class IOSAITextEditorFailureRegressionTests: XCTestCase {
             "Enhance and pre-fill should reset loading with defer so failure branches cannot leave stale spinner state."
         )
         XCTAssertTrue(
-            enhanceSection.contains("debounceTask?.cancel()") &&
-                preFillSection.contains("debounceTask?.cancel()") &&
-                enhanceSection.contains("suggestion = \"\"") &&
-                preFillSection.contains("suggestion = \"\""),
+            enhanceSection.contains("cancelSuggestionRequest()") &&
+                preFillSection.contains("cancelSuggestionRequest()"),
             "User-triggered AI actions should cancel pending autocomplete work so stale suggestion failures cannot overwrite their feedback."
         )
         XCTAssertTrue(
@@ -88,6 +86,42 @@ final class IOSAITextEditorFailureRegressionTests: XCTestCase {
                 enhanceSection.contains("guard !Task.isCancelled else { return }") &&
                 preFillSection.contains("guard !Task.isCancelled else { return }"),
             "Enhance and pre-fill should ignore cancelled AI results before mutating visible UI state."
+        )
+    }
+
+    func testUserTriggeredAIRequestsCancelAutocompleteAndIgnoreCancellation() throws {
+        let source = try Self.readAITextEditorSource()
+        let enhanceSection = try Self.section(
+            named: "private func enhance",
+            in: source,
+            endingBefore: "private func preFill"
+        )
+        let preFillSection = try Self.section(
+            named: "private func preFill",
+            in: source,
+            endingBefore: "private func cancelSuggestionRequest"
+        )
+        let cancelSuggestionSection = try Self.section(
+            named: "private func cancelSuggestionRequest",
+            in: source,
+            endingBefore: "private func failureMessage"
+        )
+
+        XCTAssertTrue(
+            enhanceSection.contains("cancelSuggestionRequest()") &&
+                preFillSection.contains("cancelSuggestionRequest()"),
+            "User-triggered AI actions should cancel pending autocomplete so stale suggestion failures cannot overwrite the active alert."
+        )
+        XCTAssertTrue(
+            enhanceSection.contains("guard !Task.isCancelled else { return }") &&
+                preFillSection.contains("guard !Task.isCancelled else { return }"),
+            "Enhance and pre-fill should ignore cancellation results before setting error state or showing alerts."
+        )
+        XCTAssertTrue(
+            cancelSuggestionSection.contains("debounceTask?.cancel()") &&
+                cancelSuggestionSection.contains("suggestion = \"\"") &&
+                cancelSuggestionSection.contains("isLoadingSuggestion = false"),
+            "Cancelling autocomplete should clear pending task, visible suggestion, and loading state together."
         )
     }
 
