@@ -30,8 +30,8 @@ struct IOSFlexPoolPage: View {
     @State private var claimedJobId: Int64?
     @State private var pendingApprovalIds: Set<Int64> = []
 
-    private var currentUserId: Int64 {
-        appCore.currentUser?.id ?? 0
+    private var currentUserId: Int64? {
+        appCore.currentUser?.id
     }
 
     var body: some View {
@@ -197,9 +197,13 @@ struct IOSFlexPoolPage: View {
             claimError = "Scheduling service not available"
             return
         }
+        guard let userId = currentUserId else {
+            claimError = "User session unavailable. Sign in again."
+            return
+        }
 
         do {
-            try service.claimFlexJob(jobId: job.id, userId: currentUserId)
+            try service.claimFlexJob(jobId: job.id, userId: userId)
 
             if job.isApprovalRequired {
                 // Show "Pending Approval" state instead of removing
@@ -222,11 +226,18 @@ struct IOSFlexPoolPage: View {
             loadError = "Scheduling service not available."
             return
         }
+        guard let userId = currentUserId else {
+            flexJobs = []
+            pendingApprovalIds = []
+            isLoading = false
+            loadError = "User session unavailable. Sign in again."
+            return
+        }
         isLoading = flexJobs.isEmpty
         loadError = nil
 
         do {
-            flexJobs = try service.fetchFlexPool(userId: currentUserId)
+            flexJobs = try service.fetchFlexPool(userId: userId)
         } catch {
             loadError = userFriendlyError(error, context: "load flex pool")
         }
