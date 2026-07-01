@@ -1000,7 +1000,7 @@ struct Weird_Parts_IOSTests {
 
         try IOSBackupFileCopier.pruneBackups(in: tempRoot)
 
-        let retained = try IOSBackupFileCopier.retainedBackupFiles(in: tempRoot)
+        let retained = try IOSBackupFileCopier.manualBackupSnapshotFiles(in: tempRoot)
         #expect(retained.map(\.lastPathComponent) == (3...9).reversed().map { String(format: "wiredpart-backup-2026-06-%02d-120000.sqlite", $0) })
         #expect(FileManager.default.fileExists(atPath: unrelatedSQLite.path), "Retention should only manage wiredpart manual backup snapshots")
         for day in 1...2 {
@@ -1008,6 +1008,17 @@ struct Weird_Parts_IOSTests {
             #expect(!FileManager.default.fileExists(atPath: removedBackupURL.path))
             #expect(!FileManager.default.fileExists(atPath: removedBackupURL.path + "-wal"))
             #expect(!FileManager.default.fileExists(atPath: removedBackupURL.path + "-shm"))
+        }
+    }
+
+    @Test func manualBackupRetentionRejectsInvalidLimits() throws {
+        let tempRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("IOSBackupRetentionLimitTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        #expect(throws: IOSBackupFileCopier.InvalidRetentionLimit.self) {
+            try IOSBackupFileCopier.pruneBackups(in: tempRoot, retaining: -1)
         }
     }
 

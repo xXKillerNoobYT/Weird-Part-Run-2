@@ -13,6 +13,14 @@ enum IOSBackupFileCopier {
         }
     }
 
+    struct InvalidRetentionLimit: LocalizedError {
+        let limit: Int
+
+        var errorDescription: String? {
+            "Backup retention limit must be zero or greater, got \(limit)."
+        }
+    }
+
     nonisolated static func copySQLiteSnapshot(from sourceURL: URL, to destURL: URL) throws {
         var createdURLs: [URL] = []
 
@@ -45,7 +53,7 @@ enum IOSBackupFileCopier {
         }
     }
 
-    nonisolated static func retainedBackupFiles(in directoryURL: URL) throws -> [URL] {
+    nonisolated static func manualBackupSnapshotFiles(in directoryURL: URL) throws -> [URL] {
         try FileManager.default.contentsOfDirectory(at: directoryURL, includingPropertiesForKeys: nil)
             .filter { url in
                 url.lastPathComponent.hasPrefix("wiredpart-backup-") && url.pathExtension == "sqlite"
@@ -54,9 +62,9 @@ enum IOSBackupFileCopier {
     }
 
     nonisolated static func pruneBackups(in directoryURL: URL, retaining maxCount: Int = retainedBackupLimit) throws {
-        guard maxCount >= 0 else { return }
+        guard maxCount >= 0 else { throw InvalidRetentionLimit(limit: maxCount) }
 
-        let backupsToRemove = try retainedBackupFiles(in: directoryURL).dropFirst(maxCount)
+        let backupsToRemove = try manualBackupSnapshotFiles(in: directoryURL).dropFirst(maxCount)
         for backupURL in backupsToRemove {
             for url in [backupURL, URL(fileURLWithPath: backupURL.path + "-wal"), URL(fileURLWithPath: backupURL.path + "-shm")] {
                 if FileManager.default.fileExists(atPath: url.path) {
@@ -256,7 +264,7 @@ struct IOSBackupsPage: View {
 
         // Scan backups
         if let dir = backupDir,
-           let backups = try? IOSBackupFileCopier.retainedBackupFiles(in: dir) {
+           let backups = try? IOSBackupFileCopier.manualBackupSnapshotFiles(in: dir) {
             backupCount = backups.count
             if let newest = backups.first {
                 lastBackupTime = newest.lastPathComponent
