@@ -4944,7 +4944,7 @@ public final class WarehouseService: Sendable {
         let rowNumber = String(format: "R%02d", 1)
         let unitNumber = String(format: "U%02d", unitIndex)
 
-        let unit = try addStorageUnit(
+        var unit = try addStorageUnit(
             floorPlanId: floorPlanId,
             name: name,
             unitType: unitType,
@@ -4972,6 +4972,7 @@ public final class WarehouseService: Sendable {
         }
 
         try updateStorageUnit(id: unitId, isConfigured: true)
+        unit.isConfigured = true
 
         return unit
     }

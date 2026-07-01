@@ -1770,10 +1770,14 @@ struct WarehouseServiceExtTests {
             areasPerLevel: 4
         )
         #expect(unit.id != nil)
+        #expect(unit.isConfigured)
 
         // Verify levels were created
         let levels = try env.warehouse.listLevelsForUnit(unitId: unit.id!)
         #expect(levels.count == 3)
+
+        let persistedUnit = try #require(try env.warehouse.listStorageUnits(floorPlanId: plan.id!).first { $0.id == unit.id })
+        #expect(persistedUnit.isConfigured)
 
         // Verify areas under the first level
         let areas = try env.warehouse.listAreasForLevel(levelId: levels[0].id!)
