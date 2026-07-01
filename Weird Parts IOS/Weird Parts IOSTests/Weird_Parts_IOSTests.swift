@@ -497,6 +497,10 @@ struct Weird_Parts_IOSTests {
         #expect(source.contains("startMultipeer: bluetoothDiscoveryEnabled && mode == .existingCompanySync"))
         #expect(source.contains("startSyncServer: mode == .existingCompanySync"))
         #expect(source.contains("if await pm.getState().running"))
+        #expect(source.contains("peerDiscoveryStartupTask?.cancel()"))
+        #expect(source.contains("let startupGeneration = peerDiscoveryGeneration"))
+        #expect(source.contains("guard isCurrentPeerDiscoveryStartup(startupGeneration) else { return }"))
+        #expect(source.contains("if !isScanning"))
         #expect(source.contains("await pm.stopPeerSync()"))
         #expect(source.contains("state: peer.multipeerState == \"connected\" ? \"connected\" : peer.transport"))
         #expect(source.contains("peer.state == \"multipeer\" || (peer.state == \"connected\" && peer.address == nil)"))
@@ -506,6 +510,10 @@ struct Weird_Parts_IOSTests {
         #expect(source.contains("let multipeerOnly = mpPeers.filter { !nonMultipeerIds.contains($0.id) }"))
         #expect(pairingSource.contains("guard let address = peer.address else"))
         #expect(pairingSource.contains("syncManager.stopPeerDiscovery()"))
+        #expect(pairingSource.contains(".onDisappear"))
+        #expect(pairingSource.contains("stopOnboardingDiscoveryIfAbandoned()"))
+        #expect(pairingSource.contains("guard !Task.isCancelled else { return }"))
+        #expect(pairingSource.contains("guard !navigateToSync else { return }"))
         #expect(pairingSource.contains("shop.address"))
     }
 
