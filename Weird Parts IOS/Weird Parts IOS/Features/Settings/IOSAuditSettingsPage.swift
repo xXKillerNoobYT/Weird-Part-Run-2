@@ -193,20 +193,20 @@ struct IOSAuditSettingsPage: View {
         do {
             let map = try service.getSettingsByCategory("audit")
 
-            enableAutoScheduling = (map["audit_auto_scheduling"] ?? "true") == "true"
+            enableAutoScheduling = try SettingsValueParser.bool(map, key: "audit_auto_scheduling", default: true)
             defaultAuditType = map["audit_default_type"] ?? "cycle_count"
-            maxConcurrentAudits = Int(map["audit_max_concurrent"] ?? "") ?? 1
+            maxConcurrentAudits = try SettingsValueParser.int(map, key: "audit_max_concurrent", default: 1)
 
-            allowSpeedMode = (map["audit_allow_speed_mode"] ?? "true") == "true"
-            speedModeRequiresQR = (map["audit_speed_requires_qr"] ?? "true") == "true"
-            speedModeTimeLimit = Int(map["audit_speed_time_limit"] ?? "") ?? 10
+            allowSpeedMode = try SettingsValueParser.bool(map, key: "audit_allow_speed_mode", default: true)
+            speedModeRequiresQR = try SettingsValueParser.bool(map, key: "audit_speed_requires_qr", default: true)
+            speedModeTimeLimit = try SettingsValueParser.int(map, key: "audit_speed_time_limit", default: 10)
 
-            verificationThreshold = Int(map["audit_verification_threshold"] ?? "") ?? 2
-            misplacementPenalty = Double(map["audit_misplacement_penalty"] ?? "") ?? 1.5
+            verificationThreshold = try SettingsValueParser.int(map, key: "audit_verification_threshold", default: 2)
+            misplacementPenalty = try SettingsValueParser.double(map, key: "audit_misplacement_penalty", default: 1.5)
 
-            keepHistoryMonths = Int(map["audit_keep_history_months"] ?? "") ?? 12
-            autoArchive = (map["audit_auto_archive"] ?? "true") == "true"
-            includeInDailyReport = (map["audit_include_in_daily_report"] ?? "false") == "true"
+            keepHistoryMonths = try SettingsValueParser.int(map, key: "audit_keep_history_months", default: 12)
+            autoArchive = try SettingsValueParser.bool(map, key: "audit_auto_archive", default: true)
+            includeInDailyReport = try SettingsValueParser.bool(map, key: "audit_include_in_daily_report", default: false)
         } catch {
             loadError = userFriendlyError(error, context: "load")
         }
