@@ -130,6 +130,17 @@ struct IOSCreateVehicleSheet: View {
             errorMessage = "Not signed in."
             return
         }
+        let parsedYear: Int?
+        do {
+            parsedYear = try FleetNumericFieldParser.optionalWholeNumber(
+                yearText,
+                fieldName: "Year"
+            )
+        } catch {
+            errorMessage = error.localizedDescription
+            return
+        }
+
         isSaving = true
         errorMessage = nil
 
@@ -141,7 +152,7 @@ struct IOSCreateVehicleSheet: View {
                 vehicleType: vehicleType,
                 make: make.isEmpty ? nil : make,
                 model: model.isEmpty ? nil : model,
-                year: Int(yearText),
+                year: parsedYear,
                 color: color.isEmpty ? nil : color,
                 vin: vin.isEmpty ? nil : vin,
                 licensePlate: licensePlate.isEmpty ? nil : licensePlate,

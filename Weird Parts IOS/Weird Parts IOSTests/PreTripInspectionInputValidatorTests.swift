@@ -14,17 +14,58 @@ final class PreTripInspectionInputValidatorTests: XCTestCase {
     }
 
     func testOdometerParserRejectsMalformedNonEmptyInput() throws {
-        XCTAssertThrowsError(try PreTripInspectionInputValidator.parseOdometerReading("12O34"))
-        XCTAssertThrowsError(try PreTripInspectionInputValidator.parseOdometerReading("12,345"))
-        XCTAssertThrowsError(try PreTripInspectionInputValidator.parseOdometerReading("-1"))
-        XCTAssertThrowsError(try PreTripInspectionInputValidator.parseOdometerReading("0"))
-        XCTAssertThrowsError(try PreTripInspectionInputValidator.parseOdometerReading("0000"))
+        assertMalformedOdometerReading("12O34")
+        assertMalformedOdometerReading("12,345")
+        assertMalformedOdometerReading("-1")
+    }
+
+    func testOdometerParserRejectsNonPositiveMileage() throws {
+        assertInvalidOdometerReading("0")
+        assertInvalidOdometerReading("0000")
     }
 
     func testInvalidOdometerErrorShowsActionableValidationCopy() throws {
         XCTAssertEqual(
-            PreTripInspectionInputValidator.ValidationError.invalidOdometerReading.localizedDescription,
+            PreTripInspectionInputValidator.ValidationError.invalidOdometerReading.errorDescription,
             "Enter the odometer as positive whole miles using digits only, or leave it blank."
         )
+    }
+
+    private func assertInvalidOdometerReading(
+        _ rawValue: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertThrowsError(
+            try PreTripInspectionInputValidator.parseOdometerReading(rawValue),
+            file: file,
+            line: line
+        ) { error in
+            XCTAssertEqual(
+                error as? PreTripInspectionInputValidator.ValidationError,
+                .invalidOdometerReading,
+                file: file,
+                line: line
+            )
+        }
+    }
+
+    private func assertMalformedOdometerReading(
+        _ rawValue: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertThrowsError(
+            try PreTripInspectionInputValidator.parseOdometerReading(rawValue),
+            file: file,
+            line: line
+        ) { error in
+            XCTAssertEqual(
+                error as? FleetNumericFieldParser.ValidationError,
+                FleetNumericFieldParser.ValidationError(fieldName: "Odometer"),
+                file: file,
+                line: line
+            )
+        }
     }
 }

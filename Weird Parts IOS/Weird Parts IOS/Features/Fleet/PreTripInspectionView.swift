@@ -360,7 +360,7 @@ struct PreTripInspectionView: View {
         do {
             parsedOdometerReading = try PreTripInspectionInputValidator.parseOdometerReading(odometerReading)
         } catch {
-            saveError = PreTripInspectionInputValidator.ValidationError.invalidOdometerReading.localizedDescription
+            saveError = error.localizedDescription
             return
         }
 
@@ -410,12 +410,12 @@ enum PreTripInspectionInputValidator {
     }
 
     static func parseOdometerReading(_ rawValue: String) throws -> Int? {
-        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
+        guard let miles = try FleetNumericFieldParser.optionalWholeNumber(
+            rawValue,
+            fieldName: "Odometer"
+        ) else { return nil }
 
-        guard trimmed.allSatisfy({ $0 >= "0" && $0 <= "9" }),
-              let miles = Int(trimmed),
-              miles > 0 else {
+        guard miles > 0 else {
             throw ValidationError.invalidOdometerReading
         }
 
