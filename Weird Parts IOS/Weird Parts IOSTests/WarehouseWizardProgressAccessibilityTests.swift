@@ -99,6 +99,10 @@ final class WarehouseWizardProgressAccessibilityTests: XCTestCase {
             source.contains("Task.detached(priority: .userInitiated)"),
             "The synchronous DB write loop should run off the MainActor so large inventories do not freeze SwiftUI."
         )
+        XCTAssertTrue(
+            source.contains("savedCount = 0") && source.contains("savedCount = result.savedEntries"),
+            "Partial failures should not switch the save button into a successful saved-count state."
+        )
         XCTAssertLessThan(
             source.range(of: "saveErrorMessage = nil")?.lowerBound ?? source.endIndex,
             source.range(of: "guard validateBeforeSaving() else { return }")?.lowerBound ?? source.startIndex,
