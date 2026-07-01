@@ -9,6 +9,7 @@ import WiredPartCore
 /// - **Join Existing Business** → DevicePairingView
 struct OnboardingWelcomeView: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     enum OnboardingPath {
         case createNew
@@ -17,109 +18,85 @@ struct OnboardingWelcomeView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                Spacer()
-
-                // Logo & Branding
-                VStack(spacing: 12) {
-                    Image(systemName: "wrench.and.screwdriver.fill")
-                        .decorativeIconFont(72)
-                        .foregroundStyle(Color.accentColor)
-                        .symbolRenderingMode(.hierarchical)
-
-                    Text("WiredPart")
-                        .font(.largeTitle)
-                        .fontWeight(.bold)
-
-                    Text("The all-in-one platform for your trade business")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 40)
-                }
-
-                Spacer()
-
-                // Path Selection
-                VStack(spacing: 16) {
-                    Text("Get Started")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-
-                    // Create New Business
-                    NavigationLink(value: OnboardingPath.createNew) {
-                        HStack(spacing: 16) {
-                            Image(systemName: "building.2.fill")
-                                .font(.title2)
-                                .foregroundStyle(Color.accentColor)
-                                .frame(width: 44, height: 44)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .fill(Color.accentColor.opacity(0.15))
-                                )
-
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Create New Business")
-                                    .font(.headline)
-                                    .foregroundStyle(.primary)
-                                Text("Set up a new company from scratch")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Spacer()
-
-                            Image(systemName: "chevron.right")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
+            GeometryReader { proxy in
+                ScrollView {
+                    VStack(spacing: dynamicTypeSize.isAccessibilitySize ? 28 : 0) {
+                        if !dynamicTypeSize.isAccessibilitySize {
+                            Spacer(minLength: 24)
                         }
-                        .padding(16)
-                        .dsCard()
-                    }
-                    .buttonStyle(.plain)
 
-                    // Join Existing Business
-                    NavigationLink(value: OnboardingPath.joinExisting) {
-                        HStack(spacing: 16) {
-                            Image(systemName: "link.circle.fill")
-                                .font(.title2)
+                        // Logo & Branding
+                        VStack(spacing: 12) {
+                            Image(systemName: "wrench.and.screwdriver.fill")
+                                .decorativeIconFont(dynamicTypeSize.isAccessibilitySize ? 56 : 72)
                                 .foregroundStyle(Color.accentColor)
-                                .frame(width: 44, height: 44)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .fill(Color.accentColor.opacity(0.15))
-                                )
+                                .symbolRenderingMode(.hierarchical)
+                                .accessibilityHidden(true)
 
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Join Existing Business")
-                                    .font(.headline)
-                                    .foregroundStyle(.primary)
-                                Text("Connect to a shop computer on your network")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
+                            Text("WiredPart")
+                                .font(.largeTitle)
+                                .fontWeight(.bold)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
 
-                            Spacer()
-
-                            Image(systemName: "chevron.right")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
+                            Text("The all-in-one platform for your trade business")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.horizontal, dynamicTypeSize.isAccessibilitySize ? 24 : 40)
                         }
-                        .padding(16)
-                        .dsCard()
+                        .padding(.top, dynamicTypeSize.isAccessibilitySize ? 24 : 0)
+
+                        if !dynamicTypeSize.isAccessibilitySize {
+                            Spacer(minLength: 24)
+                        }
+
+                        // Path Selection
+                        VStack(spacing: 16) {
+                            Text("Get Started")
+                                .font(.title2)
+                                .fontWeight(.semibold)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+
+                            NavigationLink(value: OnboardingPath.createNew) {
+                                onboardingPathRow(
+                                    icon: "building.2.fill",
+                                    title: "Create New Business",
+                                    subtitle: "Set up a new company from scratch"
+                                )
+                            }
+                            .buttonStyle(.plain)
+
+                            NavigationLink(value: OnboardingPath.joinExisting) {
+                                onboardingPathRow(
+                                    icon: "link.circle.fill",
+                                    title: "Join Existing Business",
+                                    subtitle: "Connect to a shop computer on your network"
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, dynamicTypeSize.isAccessibilitySize ? 16 : 24)
+
+                        if !dynamicTypeSize.isAccessibilitySize {
+                            Spacer(minLength: 24)
+                        }
+
+                        Text("Your data stays on your devices. No cloud account required.")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, dynamicTypeSize.isAccessibilitySize ? 24 : 32)
+                            .padding(.bottom, dynamicTypeSize.isAccessibilitySize ? 32 : 24)
                     }
-                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: proxy.size.height)
                 }
-                .padding(.horizontal, 24)
-
-                Spacer()
-
-                Text("Your data stays on your devices. No cloud account required.")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
-                    .padding(.bottom, 24)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(.systemBackground))
@@ -134,6 +111,45 @@ struct OnboardingWelcomeView: View {
                 }
             }
         }
+    }
+
+    private func onboardingPathRow(icon: String, title: String, subtitle: String) -> some View {
+        HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center, spacing: 16) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 44, height: 44)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.accentColor.opacity(0.15))
+                )
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .layoutPriority(1)
+
+            if !dynamicTypeSize.isAccessibilitySize {
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+            }
+        }
+        .padding(16)
+        .dsCard()
     }
 }
 
