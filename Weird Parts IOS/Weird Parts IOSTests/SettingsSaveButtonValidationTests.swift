@@ -226,45 +226,43 @@ final class SettingsSaveButtonValidationTests: XCTestCase {
         )
     }
 
-    // MARK: - Settings persisted value parsing
+    // MARK: - Settings Hydration
 
-    func testSettingsPagesUseStrictPersistedValueParser() throws {
+    func testSettingsPagesSurfaceMalformedStoredValuesBeforeSaveableFormLoads() throws {
+        let helper = try Self.readSettingsSource("SettingsValueParser.swift")
+        XCTAssertTrue(helper.contains("struct SettingsValueParser"))
+        XCTAssertTrue(helper.contains("throw SettingsHydrationError"))
+        XCTAssertTrue(helper.contains("Saved settings contain invalid values and were not overwritten"))
+
         let pages = [
+            "IOSAIConfigPage.swift",
+            "IOSOrganizationThresholdsPage.swift",
+            "IOSForecastSettingsPage.swift",
+            "IOSToolPoliciesPage.swift",
             "IOSAuditSettingsPage.swift",
             "IOSDispatchPreferencesPage.swift",
-            "IOSForecastSettingsPage.swift",
-            "IOSOrganizationThresholdsPage.swift",
-            "IOSToolPoliciesPage.swift",
         ]
 
         for page in pages {
             let source = try Self.readSettingsSource(page)
+
             XCTAssertTrue(
-                source.contains("try SettingsValueParser."),
-                "\(page) must parse persisted numeric and boolean settings through SettingsValueParser so malformed saved values surface as load errors."
+                source.contains("var parser = SettingsValueParser()"),
+                "\(page) should hydrate persisted settings through the typed settings parser."
+            )
+            XCTAssertTrue(
+                source.contains("try parser.throwIfInvalid()"),
+                "\(page) should validate malformed persisted settings before showing a saveable form."
+            )
+            XCTAssertTrue(
+                source.contains("loadError = settingsHydrationMessage(error)"),
+                "\(page) should route malformed saved settings into the visible loadError state."
             )
             XCTAssertFalse(
-                source.contains("Int(map[") || source.contains("Double(map[") || source.contains("] ?? \"true\") == \"true\"") || source.contains("] ?? \"false\") == \"true\""),
-                "\(page) must not silently coerce malformed persisted settings to fallback defaults."
+                source.contains("Int(map[") || source.contains("Double(map[") || source.contains(") == \"true\""),
+                "\(page) must not silently default malformed stored numeric or boolean settings."
             )
         }
-    }
-
-    func testSettingsValueParserDistinguishesMissingFromMalformedValues() throws {
-        let source = try Self.readSettingsSource("SettingsValueParser.swift")
-
-        XCTAssertTrue(
-            source.contains("guard let rawValue = map[key] else { return defaultValue }"),
-            "SettingsValueParser must continue allowing missing values to use page defaults."
-        )
-        XCTAssertTrue(
-            source.contains("throw ParseError.invalidValue") && source.contains("Saved setting") && source.contains("Fix or reset this setting before saving"),
-            "SettingsValueParser must throw a visible validation error for present-but-malformed values before a page can overwrite them."
-        )
-        XCTAssertTrue(
-            source.contains("case \"true\"") && source.contains("case \"false\"") && source.contains("expectedType: \"true/false\""),
-            "SettingsValueParser must validate persisted booleans instead of treating every non-true value as false."
-        )
     }
 
     // MARK: - Helpers
