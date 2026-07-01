@@ -520,7 +520,7 @@ struct PartsFlowWizard: View {
         return Self.validQuantity(from: text) == nil
     }
 
-    private static func validQuantity(from text: String?) -> Int? {
+    nonisolated private static func validQuantity(from text: String?) -> Int? {
         guard let text else { return nil }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let qty = Int(trimmed), qty > 0 else { return nil }

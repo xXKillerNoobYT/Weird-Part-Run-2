@@ -51,9 +51,9 @@ final class WarehouseWizardProgressAccessibilityTests: XCTestCase {
             source.contains("validQuantity(from:") && source.contains("qty > 0"),
             "Parts flow quantities must be parsed through one positive whole-number validator before display and save."
         )
-        XCTAssertFalse(
+        XCTAssertTrue(
             source.contains("nonisolated private static func validQuantity"),
-            "Quantity validation should remain a plain static helper; the view is not actor-isolated."
+            "Quantity validation must opt out of SwiftUI View MainActor isolation so detached DB writes can reuse it."
         )
         XCTAssertTrue(
             source.contains("validateBeforeAdvancing()") && source.contains("guard currentStep == 2"),
