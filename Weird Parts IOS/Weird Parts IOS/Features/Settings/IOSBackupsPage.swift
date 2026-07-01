@@ -74,11 +74,7 @@ enum IOSBackupFileCopier {
 
         let backupsToRemove = try manualBackupSnapshotFiles(in: directoryURL).dropFirst(maxCount)
         for backupURL in backupsToRemove {
-            for url in [backupURL, URL(fileURLWithPath: backupURL.path + "-wal"), URL(fileURLWithPath: backupURL.path + "-shm")] {
-                if FileManager.default.fileExists(atPath: url.path) {
-                    try FileManager.default.removeItem(at: url)
-                }
-            }
+            try removeSQLiteSnapshot(at: backupURL)
         }
     }
 }
