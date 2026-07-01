@@ -35,6 +35,10 @@ struct PartsCompanionsPage: View {
     @State private var showSkipConfirm = false
     @State private var pollToSkip: Int64?
 
+    private var currentUserId: Int64? {
+        appCore.currentUser?.id
+    }
+
     // Single active-sheet enum to avoid multiple .sheet conflicts
     enum ActiveSheet: Identifiable {
         case addRule
@@ -94,7 +98,7 @@ struct PartsCompanionsPage: View {
                 ProgressView("Loading...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = loadError {
-                ErrorStateView(message: error) { Task { await loadData() } }
+                ErrorStateView(message: error, retryAction: retryLoadData)
             } else {
                 switch activeTab {
                 case .rules:
@@ -205,8 +209,10 @@ struct PartsCompanionsPage: View {
         }
         .background(DS.Background.page)
         .task {
-            await loadData()
-            appCore.onboardingManager?.markCompleted("companions-view")
+            await loadDataAndMarkViewed()
+        }
+        .onChange(of: currentUserId) { _, _ in
+            reloadForCurrentUserChange()
         }
         .onAppear { postCompanionsContext() }
         .onDisappear {
@@ -879,6 +885,24 @@ struct PartsCompanionsPage: View {
 
     // MARK: - Data Loading
 
+    private func retryLoadData() {
+        Task { await loadDataAndMarkViewed() }
+    }
+
+    private func loadDataAndMarkViewed() async {
+        await loadData()
+        markCompanionsViewedIfReady()
+    }
+
+    private func markCompanionsViewedIfReady() {
+        guard currentUserId != nil, loadError == nil else { return }
+        appCore.onboardingManager?.markCompleted("companions-view")
+    }
+
+    private func reloadForCurrentUserChange() {
+        Task { await loadDataAndMarkViewed() }
+    }
+
     private func postCompanionsContext() {
         var context = "Page: Companion Rules\n"
         context += "Rules: \(companionRules.count), Alternatives: \(alternatives.count)\n"
@@ -911,7 +935,13 @@ struct PartsCompanionsPage: View {
             let alts = try service.listAllAlternatives()
 
             // Poll data
-            let userId = appCore.currentUser?.id ?? 0
+            guard let userId = currentUserId else {
+                await MainActor.run {
+                    loadError = "User session unavailable. Sign in again."
+                    isLoading = false
+                }
+                return
+            }
             let isAdmin = appCore.hasPermission("vote_veto")
             let polls = try service.getActivePolls(userId: userId, isAdmin: isAdmin)
             let results = try service.getLastWeekResults(userId: userId)
