@@ -1393,6 +1393,39 @@ struct WarehouseServiceExtTests {
         }
     }
 
+    @Test("getSessionItems restores persisted routing state for resumed receiving sessions")
+    func testSessionItemsIncludePersistedRoutingState() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+        let poId = try env.orders.createPurchaseOrder(
+            poNumber: "PO-ROUTE-RESUME",
+            supplierId: supplierId
+        )
+        _ = try env.orders.addPOLineItem(poId: poId, partId: partId, quantity: 4, unitPrice: 2.50)
+
+        let sessionId = try env.warehouse.startReceivingSession(
+            poId: poId,
+            startedBy: env.adminUserId
+        )
+        let item = try #require(try env.warehouse.getSessionItems(sessionId: sessionId).first)
+        try env.warehouse.updateSessionItem(itemId: item.id, receivedQty: 3)
+        try env.warehouse.markReceivingSessionItemRouted(
+            itemId: item.id,
+            disposition: .staged,
+            routedQty: 3,
+            routedBy: env.adminUserId
+        )
+
+        let resumedItem = try #require(try env.warehouse.getSessionItems(sessionId: sessionId).first)
+        #expect(resumedItem.receivedQty == 3)
+        #expect(resumedItem.routingDisposition == .staged)
+        #expect(resumedItem.routedQty == 3)
+        #expect(resumedItem.routedBy == env.adminUserId)
+        #expect(resumedItem.routedAt != nil)
+    }
+
     // MARK: - Audit Sessions
 
     @Test("createAuditSession returns a valid session ID")
