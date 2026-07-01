@@ -1161,6 +1161,28 @@ struct Weird_Parts_IOSTests {
         #expect(snapshotCall.lowerBound < successState.lowerBound, "Success state must only be set after the GRDB snapshot is complete")
     }
 
+    @Test func dataExportCompletionPresentsShareSheetAndHandlesEmptyTables() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let exportPageURL = repoRoot
+            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSDataExportPage.swift")
+        let source = try String(contentsOf: exportPageURL, encoding: .utf8)
+
+        #expect(source.contains(".sheet(isPresented: $showShareSheet)"), "Data export completion should present the share sheet")
+        #expect(source.contains("ReportShareSheet(items: exportURLs)"), "The share sheet should receive the generated export file URLs")
+        #expect(source.contains("guard !urls.isEmpty else"), "Selected-table exports with no rows should not claim a transferable export completed")
+        #expect(source.contains("No rows were exported from the selected tables"), "Empty selected-table exports should show a clear user-facing message")
+        let emptyExportGuard = try #require(source.range(of: "guard !urls.isEmpty else"))
+        let selectedExportSuccess = try #require(source.range(of: "exportSuccess = true", range: emptyExportGuard.upperBound..<source.endIndex))
+        let selectedSharePresentation = try #require(source.range(of: "showShareSheet = true", range: selectedExportSuccess.upperBound..<source.endIndex))
+        #expect(selectedExportSuccess.lowerBound < selectedSharePresentation.lowerBound, "Selected-table exports should present sharing only after success is recorded")
+        let fullDatabaseExport = try #require(source.range(of: "private func exportFullDatabase()"))
+        let fullDatabaseSharePresentation = try #require(source.range(of: "showShareSheet = true", range: fullDatabaseExport.lowerBound..<source.endIndex))
+        #expect(fullDatabaseExport.lowerBound < fullDatabaseSharePresentation.lowerBound, "Full database export should also present the generated SQLite snapshot")
+    }
+
     @MainActor
     @Test func shortTermPipelineCallbackFailurePreservesSheetAndFormatsActionError() {
         var reloadCount = 0

@@ -108,6 +108,9 @@ struct IOSDataExportPage: View {
                 ("How to Use It", "Select a format (CSV or JSON), check the tables you want to export, then tap Export. Use 'Export Full Database' for a complete SQLite backup. Exported files are saved to the app's Documents folder."),
             ])
         }
+        .sheet(isPresented: $showShareSheet) {
+            ReportShareSheet(items: exportURLs)
+        }
         .task { if canExport { loadData() } }
     }
 
@@ -315,13 +318,17 @@ struct IOSDataExportPage: View {
                 urls.append(fileURL)
             }
 
+            guard !urls.isEmpty else {
+                exportSuccess = false
+                errorMessage = "No rows were exported from the selected tables. Choose tables with data or export the full database."
+                isExporting = false
+                return
+            }
+
             exportURLs = urls
             exportSuccess = true
             isExporting = false
-
-            if !urls.isEmpty {
-                showShareSheet = true
-            }
+            showShareSheet = true
         } catch {
             errorMessage = userFriendlyError(error, context: "export data")
             isExporting = false
