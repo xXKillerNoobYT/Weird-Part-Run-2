@@ -762,6 +762,32 @@ struct Weird_Parts_IOSTests {
         ) + 1 == 5)
     }
 
+    @Test func receiveShipmentDifferentPriceValidationBlocksBlankOrZeroActualPrices() throws {
+        let items = [
+            ReceiveShipmentPriceValidationItem(id: 10, partName: "Breaker"),
+            ReceiveShipmentPriceValidationItem(id: 11, partName: "Panel")
+        ]
+
+        let message = receiveShipmentDifferentPriceValidationMessage(
+            for: items,
+            priceVerifications: [
+                10: .different(newPrice: 0),
+                11: .matches
+            ]
+        )
+
+        #expect(message == "Enter a valid actual price greater than $0.00 for: Breaker.")
+    }
+
+    @Test func receiveShipmentDifferentPriceValidationAllowsPositiveActualPrices() throws {
+        let message = receiveShipmentDifferentPriceValidationMessage(
+            for: [ReceiveShipmentPriceValidationItem(id: 10, partName: "Breaker")],
+            priceVerifications: [10: .different(newPrice: 12.50)]
+        )
+
+        #expect(message == nil)
+    }
+
     @Test func subSchedulePageExposesExplicitSoftDeleteCancellationAction() throws {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
