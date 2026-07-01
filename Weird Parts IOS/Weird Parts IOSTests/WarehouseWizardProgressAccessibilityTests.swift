@@ -75,22 +75,22 @@ final class WarehouseWizardProgressAccessibilityTests: XCTestCase {
         )
     }
 
-    func testMovementWizardLocationTilesComeFromCoreSupportedMovementTypes() throws {
+    func testMovementWizardSelectableLocationTilesUseEnumBackedSupportedEndpoints() throws {
         let source = try Self.readWarehouseSource("IOSMovementWizard.swift")
         let locationTypes = try Self.movementWizardLocationTypesSection(in: source)
 
-        for coreLocationType in ["warehouse", "truck", "trailer", "job"] {
+        for supportedEndpoint in ["warehouse", "truck", "trailer", "job"] {
             XCTAssertTrue(
-                locationTypes.contains("WarehouseService.GuidedMovementLocationType.\(coreLocationType).rawValue"),
-                "Movement wizard \(coreLocationType) choices should use the core movement location topology instead of ad hoc strings."
-            )
-            XCTAssertFalse(
-                locationTypes.contains("\"\(coreLocationType)\""),
-                "Movement wizard \(coreLocationType) choices should not fall back to ad hoc string literals."
+                locationTypes.contains("WarehouseService.GuidedMovementLocationType.\(supportedEndpoint).rawValue"),
+                "Movement wizard \(supportedEndpoint) tile should use the core movement location topology instead of ad hoc strings."
             )
         }
         XCTAssertNil(
-            locationTypes.range(of: #"\(\s*"staging"\s*,\s*"Staging""#, options: .regularExpression),
+            locationTypes.range(of: #"(?m)^\s*\(\s*""#, options: .regularExpression),
+            "Movement wizard location tiles should not use string literals as tuple endpoints."
+        )
+        XCTAssertNil(
+            locationTypes.range(of: #"\bstaging\b"#, options: [.regularExpression, .caseInsensitive]),
             "Movement wizard must not offer Staging as a generic movement endpoint until WarehouseService accepts staging paths."
         )
     }
