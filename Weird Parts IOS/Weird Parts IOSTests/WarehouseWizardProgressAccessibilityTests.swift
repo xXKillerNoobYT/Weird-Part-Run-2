@@ -92,8 +92,8 @@ final class WarehouseWizardProgressAccessibilityTests: XCTestCase {
             "The wizard should show a visible success confirmation after save completes."
         )
         XCTAssertTrue(
-            source.contains("if andDismiss && saveErrorMessage == nil") && source.contains("Task.sleep"),
-            "Finish should dismiss only after the save task confirms no error and gives the success state a render pass."
+            source.contains("shouldDismiss = andDismiss") && source.contains("Task.sleep") && source.contains("await MainActor.run { dismiss() }"),
+            "Finish should dismiss on the MainActor only after the save task confirms no error and gives the success state a render pass."
         )
         XCTAssertTrue(
             source.contains("Task.detached(priority: .userInitiated)"),
@@ -103,6 +103,10 @@ final class WarehouseWizardProgressAccessibilityTests: XCTestCase {
             source.range(of: "saveErrorMessage = nil")?.lowerBound ?? source.endIndex,
             source.range(of: "guard validateBeforeSaving() else { return }")?.lowerBound ?? source.startIndex,
             "Stale save errors should be cleared before validation can show the current validation alert."
+        )
+        XCTAssertTrue(
+            source.contains("await MainActor.run"),
+            "State updates after detached DB work should be explicitly applied on the MainActor."
         )
     }
 
