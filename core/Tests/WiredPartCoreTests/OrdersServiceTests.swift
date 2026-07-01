@@ -413,7 +413,7 @@ struct OrdersServiceTests {
             categoryId: catId,
             name: "Consolidated Demand Wire",
             minStockLevel: 5,
-            maxStockLevel: 6,
+            maxStockLevel: 12,
             targetStockLevel: 12
         )
         let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Demand Supplier")

@@ -180,6 +180,7 @@ struct WarehouseWizardStep6: View {
             // Collect unique assigned parts across all areas
             var seenPartIds: Set<Int64> = []
             var parts: [PartForTargets] = []
+            targetValues = [:]
 
             for area in areas {
                 let contents = try service.getAreaContents(areaId: area.id)
@@ -217,20 +218,38 @@ struct WarehouseWizardStep6: View {
         }
     }
 
+    private func validateTargetHierarchy(_ values: WizardTargetValue, partName: String) throws {
+        guard values.min <= values.target else {
+            throw PartsService.PartsError.invalidInput("\(partName): MIN must be less than or equal to TARGET.")
+        }
+        guard values.target <= values.max else {
+            throw PartsService.PartsError.invalidInput("\(partName): TARGET must be less than or equal to MAX.")
+        }
+    }
+
     private func saveAllTargets() {
         guard let service = appCore.partsService else { stepError = "Parts service not available"; return }
         saveSuccess = false
 
         do {
-            for (partId, values) in targetValues {
+            for part in assignedParts {
+                if let values = targetValues[part.id] {
+                    try validateTargetHierarchy(values, partName: part.name)
+                }
+            }
+
+            for part in assignedParts {
+                guard let values = targetValues[part.id] else { continue }
                 try service.updatePart(
-                    id: partId,
+                    id: part.id,
                     minStockLevel: values.min,
                     maxStockLevel: values.max,
                     targetStockLevel: values.target
                 )
             }
             saveSuccess = true
+        } catch PartsService.PartsError.invalidInput(let message) {
+            stepError = message
         } catch {
             stepError = userFriendlyError(error, context: "save stock targets")
         }

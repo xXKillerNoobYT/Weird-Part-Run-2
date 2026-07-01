@@ -62,6 +62,58 @@ struct PartsServiceExtTests {
         try env.parts.deletePart(id: partId)
     }
 
+    @Test("Part stock targets require MIN <= TARGET <= MAX")
+    func testPartStockTargetHierarchyValidation() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "StockTargetValidation")
+
+        #expect(throws: PartsService.PartsError.invalidInput("Minimum stock must be less than or equal to target stock.")) {
+            _ = try env.parts.createPart(
+                categoryId: catId,
+                name: "Invalid New Stock Targets",
+                code: "INV-STOCK-NEW",
+                minStockLevel: 10,
+                maxStockLevel: 20,
+                targetStockLevel: 5
+            )
+        }
+
+        let partId = try env.parts.createPart(
+            categoryId: catId,
+            name: "Valid Stock Targets",
+            code: "VALID-STOCK",
+            minStockLevel: 2,
+            maxStockLevel: 10,
+            targetStockLevel: 5
+        )
+
+        #expect(throws: PartsService.PartsError.invalidInput("Target stock must be less than or equal to maximum stock.")) {
+            try env.parts.updatePart(id: partId, targetStockLevel: 12)
+        }
+
+        let unchanged = try env.parts.getPart(id: partId).part
+        #expect(unchanged.minStockLevel == 2)
+        #expect(unchanged.targetStockLevel == 5)
+        #expect(unchanged.maxStockLevel == 10)
+
+        try env.parts.updatePart(id: partId, minStockLevel: 4, maxStockLevel: 12, targetStockLevel: 8)
+        let updated = try env.parts.getPart(id: partId).part
+        #expect(updated.minStockLevel == 4)
+        #expect(updated.targetStockLevel == 8)
+        #expect(updated.maxStockLevel == 12)
+
+        let minMaxOnlyPartId = try env.parts.createPart(
+            categoryId: catId,
+            name: "Min Max Only Stock Targets",
+            code: "MIN-MAX-ONLY",
+            minStockLevel: 2,
+            maxStockLevel: 10
+        )
+        #expect(throws: PartsService.PartsError.invalidInput("Minimum stock must be less than or equal to maximum stock.")) {
+            try env.parts.updatePart(id: minMaxOnlyPartId, minStockLevel: 12)
+        }
+    }
+
     @Test("auto-add-to-wishlist flag defaults off and can be toggled by catalog editor")
     func testAutoAddToWishlistWhenLowToggle() throws {
         let env = try E2ETestHelpers.setUp()
