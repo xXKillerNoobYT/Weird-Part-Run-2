@@ -60,10 +60,19 @@ struct SettingsHydrationError: LocalizedError, Equatable {
     var errorDescription: String? {
         let listedEntries = invalidEntries
             .prefix(5)
-            .map { "\($0.key)=\"\($0.value)\" (expected \($0.expectedType))" }
+            .map { "\($0.key)=\"\(Self.displayValue($0.value))\" (expected \($0.expectedType))" }
             .joined(separator: ", ")
         let extraCount = max(0, invalidEntries.count - 5)
         let suffix = extraCount > 0 ? ", and \(extraCount) more" : ""
         return "Saved settings contain invalid values and were not overwritten. Fix these stored values before saving: \(listedEntries)\(suffix)."
+    }
+
+    private static func displayValue(_ value: String) -> String {
+        let sanitized = value
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+        let maxLength = 80
+        guard sanitized.count > maxLength else { return sanitized }
+        return "\(sanitized.prefix(maxLength))…"
     }
 }

@@ -234,6 +234,8 @@ final class SettingsSaveButtonValidationTests: XCTestCase {
         XCTAssertTrue(helper.contains("throw SettingsHydrationError"))
         XCTAssertTrue(helper.contains("Saved settings contain invalid values and were not overwritten"))
         XCTAssertTrue(helper.contains(".lowercased()"))
+        XCTAssertTrue(helper.contains("displayValue"))
+        XCTAssertTrue(helper.contains("maxLength = 80"))
 
         let pages = [
             "IOSAIConfigPage.swift",
