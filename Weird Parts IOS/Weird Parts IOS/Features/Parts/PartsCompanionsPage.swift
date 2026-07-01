@@ -104,7 +104,7 @@ struct PartsCompanionsPage: View {
                 ProgressView("Loading...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = loadError {
-                ErrorStateView(message: error, retryAction: retryLoadData)
+                ErrorStateView(message: error) { retryLoadData() }
             } else {
                 switch activeTab {
                 case .rules:
@@ -887,8 +887,10 @@ struct PartsCompanionsPage: View {
     }
 
     // MARK: - Data Loading
+
+    @MainActor
     private func retryLoadData() {
-        Task { @MainActor in reloadToken += 1 }
+        reloadToken += 1
     }
 
     private func loadDataAndMarkViewed() async {
