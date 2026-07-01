@@ -258,6 +258,8 @@ struct IOSAITextEditor: View {
     }
 
     private func enhance(mode: EnhanceMode) async {
+        debounceTask?.cancel()
+        suggestion = ""
         isEnhancing = true
         aiErrorMessage = nil
         defer { isEnhancing = false }
@@ -267,6 +269,7 @@ struct IOSAITextEditor: View {
             mode: mode,
             fieldType: fieldType
         )
+        guard !Task.isCancelled else { return }
 
         if result.success, let enhanced = result.text, !enhanced.isEmpty {
             text = enhanced
@@ -281,6 +284,8 @@ struct IOSAITextEditor: View {
     }
 
     private func preFill() async {
+        debounceTask?.cancel()
+        suggestion = ""
         isEnhancing = true
         aiErrorMessage = nil
         defer { isEnhancing = false }
@@ -289,6 +294,7 @@ struct IOSAITextEditor: View {
             fieldType: fieldType,
             contextData: contextData
         )
+        guard !Task.isCancelled else { return }
 
         if result.success, let draft = result.text, !draft.isEmpty {
             text = draft

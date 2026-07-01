@@ -75,6 +75,20 @@ final class IOSAITextEditorFailureRegressionTests: XCTestCase {
                 preFillSection.contains("defer { isEnhancing = false }"),
             "Enhance and pre-fill should reset loading with defer so failure branches cannot leave stale spinner state."
         )
+        XCTAssertTrue(
+            enhanceSection.contains("debounceTask?.cancel()") &&
+                preFillSection.contains("debounceTask?.cancel()") &&
+                enhanceSection.contains("suggestion = \"\"") &&
+                preFillSection.contains("suggestion = \"\""),
+            "User-triggered AI actions should cancel pending autocomplete work so stale suggestion failures cannot overwrite their feedback."
+        )
+        XCTAssertTrue(
+            enhanceSection.contains("let result = await aiService.enhanceText") &&
+                preFillSection.contains("let result = await aiService.generatePreFill") &&
+                enhanceSection.contains("guard !Task.isCancelled else { return }") &&
+                preFillSection.contains("guard !Task.isCancelled else { return }"),
+            "Enhance and pre-fill should ignore cancelled AI results before mutating visible UI state."
+        )
     }
 
     func testAITextEditorDoesNotExposeRawAIServiceErrorsToUsers() throws {
