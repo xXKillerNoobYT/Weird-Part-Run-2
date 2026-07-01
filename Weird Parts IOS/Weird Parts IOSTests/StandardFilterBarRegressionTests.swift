@@ -125,6 +125,20 @@ final class StandardFilterBarRegressionTests: XCTestCase {
         XCTAssertTrue(jposSource.contains("return dateFilteredJPOs.filter { $0.status == status }.count"))
     }
 
+    func testCoreJobsAndOrdersDateFiltersUseExclusiveEndOfDay() throws {
+        let jobsSource = try Self.readFeatureSource(pathComponents: ["Jobs", "JobsListPage.swift"])
+        let jposSource = try Self.readFeatureSource(pathComponents: ["Orders", "IOSJPOsPage.swift"])
+        let partsManagementSource = try Self.readFeatureSource(pathComponents: ["Orders", "IOSPartsOrderManagementPage.swift"])
+
+        let exclusiveRangeCheck = "date < exclusiveEndOfDay(for: effectiveEnd)"
+        XCTAssertTrue(jobsSource.contains(exclusiveRangeCheck))
+        XCTAssertTrue(jposSource.contains(exclusiveRangeCheck))
+        XCTAssertTrue(partsManagementSource.contains(exclusiveRangeCheck))
+        XCTAssertFalse(jobsSource.contains(".end.addingTimeInterval(-1)"))
+        XCTAssertFalse(jposSource.contains(".end.addingTimeInterval(-1)"))
+        XCTAssertFalse(partsManagementSource.contains(".end.addingTimeInterval(-1)"))
+    }
+
     @MainActor
     func testPayPeriodRangesUseInjectedAnchorAndLength() throws {
         var calendar = Calendar(identifier: .gregorian)

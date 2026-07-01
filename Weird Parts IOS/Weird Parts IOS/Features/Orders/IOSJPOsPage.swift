@@ -239,11 +239,11 @@ struct IOSJPOsPage: View {
 
     private func dateStringFallsInSelectedRange(_ rawDate: String?) -> Bool {
         guard let date = parseFilterDate(rawDate) else { return true }
-        return date >= Calendar.current.startOfDay(for: effectiveStart) && date <= endOfDay(for: effectiveEnd)
+        return date >= Calendar.current.startOfDay(for: effectiveStart) && date < exclusiveEndOfDay(for: effectiveEnd)
     }
 
-    private func endOfDay(for date: Date) -> Date {
-        Calendar.current.dateInterval(of: .day, for: date)?.end.addingTimeInterval(-1) ?? date
+    private func exclusiveEndOfDay(for date: Date) -> Date {
+        Calendar.current.dateInterval(of: .day, for: date)?.end ?? date
     }
 
     private func parseFilterDate(_ rawDate: String?) -> Date? {
