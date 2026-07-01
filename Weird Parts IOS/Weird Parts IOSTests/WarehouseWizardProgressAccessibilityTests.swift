@@ -75,6 +75,26 @@ final class WarehouseWizardProgressAccessibilityTests: XCTestCase {
         )
     }
 
+    func testMovementWizardSelectableLocationTilesUseEnumBackedSupportedEndpoints() throws {
+        let source = try Self.readWarehouseSource("IOSMovementWizard.swift")
+        let locationTypes = try Self.movementWizardLocationTypesSection(in: source)
+
+        for supportedEndpoint in ["warehouse", "truck", "trailer", "job"] {
+            XCTAssertTrue(
+                locationTypes.contains("WarehouseService.GuidedMovementLocationType.\(supportedEndpoint).rawValue"),
+                "Movement wizard \(supportedEndpoint) tile should use the core movement location topology instead of ad hoc strings."
+            )
+        }
+        XCTAssertNil(
+            locationTypes.range(of: #"(?m)^\s*\(\s*""#, options: .regularExpression),
+            "Movement wizard location tiles should not use string literals as tuple endpoints."
+        )
+        XCTAssertNil(
+            locationTypes.range(of: #"\bstaging\b"#, options: [.regularExpression, .caseInsensitive]),
+            "Movement wizard must not offer Staging as a generic movement endpoint until WarehouseService accepts staging paths."
+        )
+    }
+
     func testMovementWizardPartSelectionDismissesKeyboardBeforeNextNavigation() throws {
         let source = try Self.readWarehouseSource("IOSMovementWizard.swift")
 
@@ -140,6 +160,16 @@ final class WarehouseWizardProgressAccessibilityTests: XCTestCase {
         }
         let afterStart = source[start.lowerBound...]
         let end = afterStart.range(of: "// MARK: - Step 1")?.lowerBound ?? afterStart.endIndex
+        return String(afterStart[..<end])
+    }
+
+    private static func movementWizardLocationTypesSection(in source: String) throws -> String {
+        guard let start = source.range(of: "private let locationTypes = [") else {
+            XCTFail("Missing movement wizard locationTypes list")
+            return source
+        }
+        let afterStart = source[start.lowerBound...]
+        let end = afterStart.range(of: "]")?.upperBound ?? afterStart.endIndex
         return String(afterStart[..<end])
     }
 
