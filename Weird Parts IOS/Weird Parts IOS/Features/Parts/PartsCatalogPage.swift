@@ -1402,8 +1402,8 @@ private struct QuickEditSheet: View {
                 companyCostPrice: cost,
                 companyMarkupPercent: markup
             )
-            await onSave()
             await MainActor.run { dismiss() }
+            await onSave()
         } catch {
             await MainActor.run {
                 saveError = userFriendlyError(error, context: "save data")
