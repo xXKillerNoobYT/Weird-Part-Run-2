@@ -60,6 +60,26 @@ struct EmptyStateView: View {
 
     @ScaledMetric(relativeTo: .largeTitle) private var iconSize: CGFloat = 48
 
+    private var hasPrimaryAction: Bool {
+        actionLabel != nil && action != nil
+    }
+
+    private var hasSecondaryAction: Bool {
+        secondaryActionLabel != nil && secondaryAction != nil
+    }
+
+    private var hasHelpAction: Bool {
+        helpLabel != nil && helpAction != nil
+    }
+
+    private var hasPrimaryOrSecondaryAction: Bool {
+        hasPrimaryAction || hasSecondaryAction
+    }
+
+    private var hasAnyAction: Bool {
+        hasPrimaryOrSecondaryAction || hasHelpAction
+    }
+
     var body: some View {
         VStack(spacing: DS.Space.lg) {
             Spacer()
@@ -78,41 +98,41 @@ struct EmptyStateView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, DS.Space.xxxl)
 
-            if (actionLabel != nil && action != nil) ||
-                (secondaryActionLabel != nil && secondaryAction != nil) ||
-                (helpLabel != nil && helpAction != nil) {
-                VStack(spacing: DS.Space.xs) {
-                    HStack(spacing: DS.Space.md) {
-                        if let label = actionLabel, let action = action {
-                            Button(action: action) {
-                                if let icon = actionIcon {
-                                    Label(label, systemImage: icon)
-                                        .fontWeight(.medium)
-                                        .frame(minHeight: 44)
-                                } else {
-                                    Text(label)
-                                        .fontWeight(.medium)
-                                        .frame(minHeight: 44)
+            if hasAnyAction {
+                VStack(spacing: 0) {
+                    if hasPrimaryOrSecondaryAction {
+                        HStack(spacing: DS.Space.md) {
+                            if let label = actionLabel, let action = action {
+                                Button(action: action) {
+                                    if let icon = actionIcon {
+                                        Label(label, systemImage: icon)
+                                            .fontWeight(.medium)
+                                            .frame(minHeight: 44)
+                                    } else {
+                                        Text(label)
+                                            .fontWeight(.medium)
+                                            .frame(minHeight: 44)
+                                    }
                                 }
+                                .buttonStyle(.borderedProminent)
+                                .accessibilityIdentifierIfPresent(actionAccessibilityIdentifier)
                             }
-                            .buttonStyle(.borderedProminent)
-                            .accessibilityIdentifierIfPresent(actionAccessibilityIdentifier)
-                        }
 
-                        if let label = secondaryActionLabel, let action = secondaryAction {
-                            Button(action: action) {
-                                if let icon = secondaryActionIcon {
-                                    Label(label, systemImage: icon)
-                                        .fontWeight(.medium)
-                                        .frame(minHeight: 44)
-                                } else {
-                                    Text(label)
-                                        .fontWeight(.medium)
-                                        .frame(minHeight: 44)
+                            if let label = secondaryActionLabel, let action = secondaryAction {
+                                Button(action: action) {
+                                    if let icon = secondaryActionIcon {
+                                        Label(label, systemImage: icon)
+                                            .fontWeight(.medium)
+                                            .frame(minHeight: 44)
+                                    } else {
+                                        Text(label)
+                                            .fontWeight(.medium)
+                                            .frame(minHeight: 44)
+                                    }
                                 }
+                                .buttonStyle(.bordered)
+                                .accessibilityIdentifierIfPresent(secondaryActionAccessibilityIdentifier)
                             }
-                            .buttonStyle(.bordered)
-                            .accessibilityIdentifierIfPresent(secondaryActionAccessibilityIdentifier)
                         }
                     }
 
@@ -124,6 +144,7 @@ struct EmptyStateView: View {
                         }
                         .buttonStyle(.borderless)
                         .accessibilityIdentifier("emptyStateHelpButton")
+                        .padding(.top, hasPrimaryOrSecondaryAction ? DS.Space.xs : 0)
                     }
                 }
                 .padding(.top, DS.Space.xxs)
