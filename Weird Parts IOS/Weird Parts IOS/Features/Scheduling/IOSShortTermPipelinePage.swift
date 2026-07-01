@@ -346,17 +346,12 @@ struct IOSShortTermPipelinePage: View {
             loadError = "Service not available"
             return
         }
-        let result = IOSShortTermPipelineCallbackActionHandler.perform(
-            context: "complete callback",
-            operation: {
-                try service.markCallbackComplete(jobId: jobId, notes: notes)
-            },
-            reload: loadData,
-            errorFormatter: userFriendlyError
-        )
-        loadError = result.errorMessage
-        if result.shouldDismissSheet {
+        do {
+            try service.markCallbackComplete(jobId: jobId, notes: notes)
+            try refreshPipelineData()
             activeSheet = nil
+        } catch {
+            loadError = userFriendlyError(error, context: "complete callback")
         }
     }
 
@@ -366,17 +361,12 @@ struct IOSShortTermPipelinePage: View {
             return
         }
         let target = Calendar.current.date(byAdding: .day, value: days, to: Date()) ?? Date()
-        let result = IOSShortTermPipelineCallbackActionHandler.perform(
-            context: "snooze callback",
-            operation: {
-                try service.snoozeCallback(jobId: jobId, until: Formatters.localDateFormatter.string(from: target))
-            },
-            reload: loadData,
-            errorFormatter: userFriendlyError
-        )
-        loadError = result.errorMessage
-        if result.shouldDismissSheet {
+        do {
+            try service.snoozeCallback(jobId: jobId, until: Formatters.localDateFormatter.string(from: target))
+            try refreshPipelineData()
             activeSheet = nil
+        } catch {
+            loadError = userFriendlyError(error, context: "snooze callback")
         }
     }
 
@@ -426,6 +416,18 @@ struct IOSShortTermPipelinePage: View {
             loadError = userFriendlyError(error, context: "load pipeline data")
         }
         isLoading = false
+    }
+
+    private func refreshPipelineData() throws {
+        guard let service = appCore.schedulingService else {
+            throw NSError(
+                domain: "IOSShortTermPipelinePage",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Scheduling service not available."]
+            )
+        }
+        pipelineItems = try service.getShortTermPipeline()
+        loadError = nil
     }
 
     // MARK: - AI Dispatch
@@ -702,23 +704,19 @@ private struct CallbackSheet: View {
                 Section {
                     Button("Mark Complete") {
                         onComplete(notes.isEmpty ? nil : notes)
-                        dismiss()
                     }
                     .fontWeight(.semibold)
 
                     Button("Snooze 1 Day") {
                         onSnooze(1)
-                        dismiss()
                     }
 
                     Button("Snooze 3 Days") {
                         onSnooze(3)
-                        dismiss()
                     }
 
                     Button("Snooze 1 Week") {
                         onSnooze(7)
-                        dismiss()
                     }
                 }
             }
