@@ -356,6 +356,17 @@ struct PreTripInspectionView: View {
             return
         }
 
+        let parsedOdometer: Int?
+        do {
+            parsedOdometer = try FleetNumericFieldParser.optionalWholeNumber(
+                odometerReading,
+                fieldName: "Odometer"
+            )
+        } catch {
+            saveError = error.localizedDescription
+            return
+        }
+
         isSaving = true
         saveError = nil
 
@@ -375,7 +386,7 @@ struct PreTripInspectionView: View {
                     )
                 },
                 notes: generalNotes.isEmpty ? nil : generalNotes,
-                odometerReading: Int(odometerReading),
+                odometerReading: parsedOdometer,
                 fuelLevel: fuelLevel
             )
 
