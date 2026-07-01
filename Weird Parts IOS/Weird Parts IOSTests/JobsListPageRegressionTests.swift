@@ -89,6 +89,38 @@ final class JobsListPageRegressionTests: XCTestCase {
         )
     }
 
+    func testJobDetailQuickActionsRouteToRealJobScopedFlows() throws {
+        let source = try Self.readJobDetailPageSource()
+
+        XCTAssertFalse(
+            source.contains("case quickAction")
+                || source.contains("activeSheet = .quickAction")
+                || source.contains("quickActionMessage("),
+            "Job detail quick actions must not route to the old dead-end informational placeholder sheet."
+        )
+        XCTAssertTrue(
+            source.contains("private var jobQuickActions: [JobQuickAction]")
+                && source.contains("private func performQuickAction(_ action: JobQuickAction)"),
+            "Quick actions should be modeled as explicit destinations instead of free-form placeholder strings."
+        )
+        XCTAssertTrue(
+            source.contains("selectedTab = tab")
+                && source.contains("prepareJobEdit()")
+                && source.contains("prepareMaterialAction(.pull)")
+                && source.contains("activeSheet = .weeklyReview"),
+            "Quick actions should route to real tabs, edit/status, material pull, and weekly review flows."
+        )
+        XCTAssertFalse(
+            source.contains("title: \"Create JPO\"") || source.contains("title: \"Job QR\""),
+            "Unimplemented job-scoped JPO and QR flows should stay hidden from the quick-action grid until they can launch real workflows."
+        )
+        XCTAssertTrue(
+            source.contains("Label(\"Pull Material\", systemImage: \"shippingbox.and.arrow.backward\")")
+                && source.contains("accessibilityHint(\"Opens the job-scoped material pull workflow\")"),
+            "The empty staged-material CTA label, route, and accessibility hint should all point to the same material pull workflow."
+        )
+    }
+
     func testJobDetailShowsStableIdentityMetadataAndAccessibleEditControls() throws {
         let source = try Self.readJobDetailPageSource()
 
