@@ -1378,6 +1378,57 @@ struct Weird_Parts_IOSTests {
         #expect(!PricingBulkEditSheet.isValidNonNegativePercent("not a number"))
     }
 
+    @Test func manualPricingMarginPreviewUsesVisibleMarginInput() throws {
+        let source = try Self.readPartsSource("PartsPricingPage.swift")
+
+        #expect(source.contains("parseMarginPercent(marginText, fieldName: \"Margin\")"))
+        #expect(source.contains("return Self.sellPrice(weightedAvgCost: row.weightedAvgCost, marginPercent: margin)"))
+        #expect(source.contains("return Self.sellPrice(weightedAvgCost: row.weightedAvgCost, markupPercent: markup)"))
+
+        let marginSellPrice = PricingEditSheet.sellPrice(weightedAvgCost: 100, marginPercent: 25)
+        let staleMarkupSellPrice = PricingEditSheet.sellPrice(weightedAvgCost: 100, markupPercent: 80)
+
+        #expect(abs(marginSellPrice - 133.3333333333) < 0.0001)
+        #expect(marginSellPrice != staleMarkupSellPrice)
+    }
+
+    @Test func manualPricingMarginHistoryLogsMarginValues() throws {
+        let fields = try PricingEditSheet.priceChangeLogFields(
+            pricingMode: "margin",
+            useFixedPrice: false,
+            fixedSellPrice: 0,
+            markupText: "80",
+            marginText: "25",
+            currentMarkup: 80,
+            currentMargin: 10,
+            currentSellPrice: 110
+        )
+
+        #expect(fields.changeType == "margin_change")
+        #expect(fields.oldValue == 10)
+        #expect(fields.newValue == 25)
+        #expect(PricingEditSheet.formatPriceHistoryValues(changeType: fields.changeType, oldValue: fields.oldValue, newValue: fields.newValue) == "10.0% → 25.0%")
+    }
+
+    @Test func manualPricingRejectsImpossibleMarginPercent() {
+        #expect(throws: ManualPricingInputValidator.ValidationError.percentTooHigh(fieldName: "Margin", maxExclusive: 100)) {
+            try ManualPricingInputValidator.parseMarginPercent("100", fieldName: "Margin")
+        }
+    }
+
+    static func readPartsSource(_ filename: String, file: StaticString = #filePath) throws -> String {
+        let testFileURL = URL(fileURLWithPath: "\(file)")
+        let projectRoot = testFileURL
+            .deletingLastPathComponent() // Weird Parts IOSTests
+            .deletingLastPathComponent() // Weird Parts IOS
+        let sourceURL = projectRoot
+            .appendingPathComponent("Weird Parts IOS")
+            .appendingPathComponent("Features")
+            .appendingPathComponent("Parts")
+            .appendingPathComponent(filename)
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
     static func warehouseMovement(id: Int64, reason: String, createdAt: String?) -> WarehouseService.MovementRow {
         WarehouseService.MovementRow(
             id: id,

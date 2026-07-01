@@ -1089,7 +1089,7 @@ struct PricingEditSheet: View {
             } else if pricingMode == "markup" {
                 _ = try ManualPricingInputValidator.parsePercent(markupText, fieldName: "Markup")
             } else {
-                _ = try ManualPricingInputValidator.parsePercent(marginText, fieldName: "Margin")
+                _ = try ManualPricingInputValidator.parseMarginPercent(marginText, fieldName: "Margin")
             }
             return nil
         } catch {
@@ -1101,8 +1101,12 @@ struct PricingEditSheet: View {
         if useFixedPrice, let fixed = try? ManualPricingInputValidator.parseMoney(fixedPriceText, fieldName: "Fixed Price") {
             return max(fixed, row.weightedAvgCost) // never below cost
         }
+        if pricingMode != "markup" {
+            let margin = (try? ManualPricingInputValidator.parseMarginPercent(marginText, fieldName: "Margin")) ?? row.effectiveMargin
+            return Self.sellPrice(weightedAvgCost: row.weightedAvgCost, marginPercent: margin)
+        }
         let markup = (try? ManualPricingInputValidator.parsePercent(markupText, fieldName: "Markup")) ?? row.effectiveMarkup
-        return row.weightedAvgCost * (1 + max(markup, 0) / 100)
+        return Self.sellPrice(weightedAvgCost: row.weightedAvgCost, markupPercent: markup)
     }
 
     private var previewMargin: Double {
@@ -1114,6 +1118,35 @@ struct PricingEditSheet: View {
     private var previewMarkup: Double {
         guard row.weightedAvgCost > 0 else { return 0 }
         return ((previewSellPrice - row.weightedAvgCost) / row.weightedAvgCost) * 100
+    }
+
+    static func sellPrice(weightedAvgCost: Double, markupPercent: Double) -> Double {
+        weightedAvgCost * (1 + max(markupPercent, 0) / 100)
+    }
+
+    static func sellPrice(weightedAvgCost: Double, marginPercent: Double) -> Double {
+        let safeMargin = max(marginPercent, 0)
+        guard safeMargin < 100 else { return weightedAvgCost }
+        return weightedAvgCost / (1 - safeMargin / 100)
+    }
+
+    static func priceChangeLogFields(
+        pricingMode: String,
+        useFixedPrice: Bool,
+        fixedSellPrice: Double,
+        markupText: String,
+        marginText: String,
+        currentMarkup: Double,
+        currentMargin: Double,
+        currentSellPrice: Double
+    ) throws -> (changeType: String, oldValue: Double, newValue: Double) {
+        if useFixedPrice {
+            return ("fixed_price_change", currentSellPrice, fixedSellPrice)
+        }
+        if pricingMode == "markup" {
+            return ("markup_change", currentMarkup, try ManualPricingInputValidator.parsePercent(markupText, fieldName: "Markup"))
+        }
+        return ("margin_change", currentMargin, try ManualPricingInputValidator.parseMarginPercent(marginText, fieldName: "Margin"))
     }
 
     var body: some View {
@@ -1286,7 +1319,7 @@ struct PricingEditSheet: View {
                                 }
                                 Spacer()
                                 if let oldVal = entry.oldValue, let newVal = entry.newValue {
-                                    Text(String(format: "$%.2f → $%.2f", oldVal, newVal))
+                                    Text(Self.formatPriceHistoryValues(changeType: entry.changeType, oldValue: oldVal, newValue: newVal))
                                         .font(.caption)
                                         .monospaced()
                                 }
@@ -1375,16 +1408,27 @@ struct PricingEditSheet: View {
                 let markup = try ManualPricingInputValidator.parsePercent(markupText, fieldName: "Markup")
                 _ = try service.setPricingTier(partId: row.id, markupPercent: markup)
             } else {
-                let margin = try ManualPricingInputValidator.parsePercent(marginText, fieldName: "Margin")
+                let margin = try ManualPricingInputValidator.parseMarginPercent(marginText, fieldName: "Margin")
                 _ = try service.setPricingTier(partId: row.id, marginPercent: margin)
             }
+
+            let logFields = try Self.priceChangeLogFields(
+                pricingMode: pricingMode,
+                useFixedPrice: useFixedPrice,
+                fixedSellPrice: previewSellPrice,
+                markupText: markupText,
+                marginText: marginText,
+                currentMarkup: row.effectiveMarkup,
+                currentMargin: row.effectiveMargin,
+                currentSellPrice: row.sellPrice
+            )
 
             // Log the change
             try service.logPriceChange(
                 partId: row.id,
-                changeType: "markup_change",
-                oldValue: row.effectiveMarkup,
-                newValue: Double(markupText) ?? row.effectiveMarkup,
+                changeType: logFields.changeType,
+                oldValue: logFields.oldValue,
+                newValue: logFields.newValue,
                 oldSellPrice: row.sellPrice,
                 newSellPrice: previewSellPrice,
                 source: "manual"
@@ -1396,5 +1440,12 @@ struct PricingEditSheet: View {
             saveError = userFriendlyError(error, context: "save data")
         }
         isSaving = false
+    }
+
+    static func formatPriceHistoryValues(changeType: String, oldValue: Double, newValue: Double) -> String {
+        if changeType == "markup_change" || changeType == "margin_change" {
+            return String(format: "%.1f%% → %.1f%%", oldValue, newValue)
+        }
+        return String(format: "$%.2f → $%.2f", oldValue, newValue)
     }
 }
