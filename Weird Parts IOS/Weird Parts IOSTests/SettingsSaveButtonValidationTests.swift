@@ -234,6 +234,9 @@ final class SettingsSaveButtonValidationTests: XCTestCase {
         XCTAssertTrue(helper.contains("throw SettingsHydrationError"))
         XCTAssertTrue(helper.contains("Saved settings contain invalid values and were not overwritten"))
         XCTAssertTrue(helper.contains(".lowercased()"))
+        XCTAssertTrue(helper.contains("guard let rawValue = settings[key] else { return defaultValue }"))
+        XCTAssertTrue(helper.contains("recordInvalid(key: key, value: rawValue"))
+        XCTAssertTrue(helper.contains("parsed.isFinite"))
         XCTAssertTrue(helper.contains("displayValue"))
         XCTAssertTrue(helper.contains("maxLength = 80"))
 
@@ -262,9 +265,9 @@ final class SettingsSaveButtonValidationTests: XCTestCase {
                 "\(page) should route malformed saved settings into the visible loadError state."
             )
             XCTAssertFalse(
-                source.contains("Int(map[") ||
+                (source.contains("Int(map[") ||
                     source.contains("Double(map[") ||
-                    (source.contains("(map[") && source.contains("] ??") && source.contains(") == \"true\"")),
+                    (source.contains("(map[") && source.contains("] ??") && source.contains(") == \"true\""))),
                 "\(page) must not silently default malformed stored numeric or boolean settings."
             )
         }
