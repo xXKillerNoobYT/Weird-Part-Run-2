@@ -602,22 +602,26 @@ struct PartsFlowWizard: View {
                 return (savedEntries: savedEntries, failedParts: failedParts)
             }.value
 
-            savedCount = result.savedEntries
-            if !result.failedParts.isEmpty {
-                PartsFlowDraftStore.save(counts: counts, locations: locations, userId: userId)
-                let preview = result.failedParts.prefix(3).joined(separator: ", ")
-                let suffix = result.failedParts.count > 3 ? " and \(result.failedParts.count - 3) more" : ""
-                saveErrorMessage = "Failed to save \(result.failedParts.count) part(s): \(preview)\(suffix). Your draft is still saved on this device."
-            } else if clearDraft {
-                PartsFlowDraftStore.clear(userId: userId)
+            var shouldDismiss = false
+            await MainActor.run {
+                savedCount = result.savedEntries
+                if !result.failedParts.isEmpty {
+                    PartsFlowDraftStore.save(counts: counts, locations: locations, userId: userId)
+                    let preview = result.failedParts.prefix(3).joined(separator: ", ")
+                    let suffix = result.failedParts.count > 3 ? " and \(result.failedParts.count - 3) more" : ""
+                    saveErrorMessage = "Failed to save \(result.failedParts.count) part(s): \(preview)\(suffix). Your draft is still saved on this device."
+                } else if clearDraft {
+                    PartsFlowDraftStore.clear(userId: userId)
+                }
+                isSaving = false
+                if saveErrorMessage == nil {
+                    saveSuccessMessage = "Saved \(result.savedEntries) \(result.savedEntries == 1 ? "part" : "parts")."
+                    shouldDismiss = andDismiss
+                }
             }
-            isSaving = false
-            if saveErrorMessage == nil {
-                saveSuccessMessage = "Saved \(result.savedEntries) \(result.savedEntries == 1 ? "part" : "parts")."
-            }
-            if andDismiss && saveErrorMessage == nil {
+            if shouldDismiss {
                 try? await Task.sleep(nanoseconds: 500_000_000)
-                dismiss()
+                await MainActor.run { dismiss() }
             }
         }
     }
