@@ -192,6 +192,8 @@ public enum QRLabelLayout: String, CaseIterable, Codable, Sendable {
 
 public struct QRLabelPDFGenerator {
 
+    typealias QRImageProvider = (QREntityType, Int64, String, CGFloat) -> CGImage?
+
     /// Positions on a sticker sheet that can receive labels after already-used slots are skipped.
     /// Invalid position indexes are ignored so callers cannot accidentally reduce the first page to
     /// zero printable labels by carrying stale state between different paper grids.
@@ -224,9 +226,38 @@ public struct QRLabelPDFGenerator {
         paperSize: QRPaperSize,
         usedPositions: Set<Int> = []
     ) -> Data? {
+        generatePDF(
+            items: items,
+            labelSize: labelSize,
+            layout: layout,
+            paperSize: paperSize,
+            usedPositions: usedPositions,
+            qrImageProvider: { type, id, code, size in
+                QRGenerator.generate(type: type, id: id, code: code, size: size)
+            }
+        )
+    }
+
+    static func generatePDF(
+        items: [QRLabelContent],
+        labelSize: QRLabelSize,
+        layout: QRLabelLayout,
+        paperSize: QRPaperSize,
+        usedPositions: Set<Int> = [],
+        qrImageProvider: QRImageProvider
+    ) -> Data? {
         if let grid = paperSize.labelGrid,
            !items.isEmpty,
            availableStickerPositions(grid: grid, usedPositions: usedPositions).isEmpty {
+            return nil
+        }
+
+        guard canRenderAllLabelQRCodes(
+            items: items,
+            labelSize: labelSize,
+            paperSize: paperSize,
+            qrImageProvider: qrImageProvider
+        ) else {
             return nil
         }
 
@@ -234,23 +265,50 @@ public struct QRLabelPDFGenerator {
         let pdfRenderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero,
                                                                 size: paperSize.pageSizePoints))
 
+        var renderedAllLabels = true
+
         let data = pdfRenderer.pdfData { context in
             if let grid = paperSize.labelGrid {
                 // Sticker sheet mode: lay out labels in grid, skip used positions
-                renderStickerSheet(context: context, items: items, grid: grid,
-                                   layout: layout, paperSize: paperSize,
-                                   usedPositions: usedPositions)
+                renderedAllLabels = renderStickerSheet(context: context, items: items, grid: grid,
+                                                       layout: layout, paperSize: paperSize,
+                                                       usedPositions: usedPositions)
             } else {
                 // Plain paper mode: tile labels with auto-calculated grid
-                renderPlainPaper(context: context, items: items,
-                                 labelSize: labelSize, layout: layout,
-                                 paperSize: paperSize)
+                renderedAllLabels = renderPlainPaper(context: context, items: items,
+                                                     labelSize: labelSize, layout: layout,
+                                                     paperSize: paperSize)
             }
         }
-        return data
+        return renderedAllLabels ? data : nil
         #else
         return nil
         #endif
+    }
+
+    static func canRenderAllLabelQRCodes(
+        items: [QRLabelContent],
+        labelSize: QRLabelSize,
+        paperSize: QRPaperSize,
+        qrImageProvider: QRImageProvider = { type, id, code, size in
+            QRGenerator.generate(type: type, id: id, code: code, size: size)
+        }
+    ) -> Bool {
+        let qrSide = qrSideForValidation(labelSize: labelSize, paperSize: paperSize)
+        guard qrSide > 0 else { return false }
+
+        return items.allSatisfy { item in
+            qrImageProvider(item.entityType, item.entityId, item.code, qrSide) != nil
+        }
+    }
+
+    private static func qrSideForValidation(labelSize: QRLabelSize, paperSize: QRPaperSize) -> CGFloat {
+        let padding: CGFloat = 4
+        if let grid = paperSize.labelGrid {
+            return min(grid.labelWidth, grid.labelHeight) - padding * 2
+        }
+        let labelDim = labelSize.sizePoints
+        return min(labelDim.width, labelDim.height) - padding * 2
     }
 
     #if canImport(UIKit)
@@ -264,10 +322,10 @@ public struct QRLabelPDFGenerator {
         layout: QRLabelLayout,
         paperSize: QRPaperSize,
         usedPositions: Set<Int>
-    ) {
+    ) -> Bool {
         // Build list of available positions (skip used ones)
         var availablePositions = availableStickerPositions(grid: grid, usedPositions: usedPositions)
-        guard !availablePositions.isEmpty else { return }
+        guard !availablePositions.isEmpty else { return false }
 
         var itemIndex = 0
         var posIndex = 0
@@ -283,10 +341,12 @@ public struct QRLabelPDFGenerator {
                 let labelRect = CGRect(x: origin.x, y: origin.y,
                                        width: grid.labelWidth, height: grid.labelHeight)
 
-                renderSingleLabel(in: context.cgContext,
-                                  rect: labelRect,
-                                  content: items[itemIndex],
-                                  layout: layout)
+                guard renderSingleLabel(in: context.cgContext,
+                                        rect: labelRect,
+                                        content: items[itemIndex],
+                                        layout: layout) else {
+                    return false
+                }
                 itemIndex += 1
                 posIndex += 1
             }
@@ -300,6 +360,8 @@ public struct QRLabelPDFGenerator {
                 }
             }
         }
+
+        return true
     }
 
     // MARK: - Plain Paper Rendering
@@ -310,7 +372,7 @@ public struct QRLabelPDFGenerator {
         labelSize: QRLabelSize,
         layout: QRLabelLayout,
         paperSize: QRPaperSize
-    ) {
+    ) -> Bool {
         let pageSize = paperSize.pageSizePoints
         let labelDim = labelSize.sizePoints
         let margin: CGFloat = 36 // 0.5" margin
@@ -336,13 +398,17 @@ public struct QRLabelPDFGenerator {
                 let y = margin + CGFloat(row) * (labelDim.height + spacing)
                 let labelRect = CGRect(x: x, y: y, width: labelDim.width, height: labelDim.height)
 
-                renderSingleLabel(in: context.cgContext,
-                                  rect: labelRect,
-                                  content: items[itemIndex],
-                                  layout: layout)
+                guard renderSingleLabel(in: context.cgContext,
+                                        rect: labelRect,
+                                        content: items[itemIndex],
+                                        layout: layout) else {
+                    return false
+                }
                 itemIndex += 1
             }
         }
+
+        return true
     }
 
     // MARK: - Single Label Rendering
@@ -352,7 +418,7 @@ public struct QRLabelPDFGenerator {
         rect: CGRect,
         content: QRLabelContent,
         layout: QRLabelLayout
-    ) {
+    ) -> Bool {
         let padding: CGFloat = 4
 
         // Generate QR code image — use the smaller dimension for square QR
@@ -362,7 +428,7 @@ public struct QRLabelPDFGenerator {
             id: content.entityId,
             code: content.code,
             size: qrSide
-        ) else { return }
+        ) else { return false }
 
         switch layout {
         case .qrLeft:
@@ -440,6 +506,8 @@ public struct QRLabelPDFGenerator {
                                 width: scaledQR, height: scaledQR)
             cgContext.draw(qrImage, in: qrRect)
         }
+
+        return true
     }
 
     private static func drawTextBlock(

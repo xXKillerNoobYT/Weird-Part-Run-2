@@ -57,4 +57,40 @@ struct QRLabelGeneratorTests {
 
         #expect(QRLabelPDFGenerator.availableStickerPositionCount(grid: grid, usedPositions: usedPositions) == grid.totalPositions)
     }
+
+    @Test("QR label PDF generation fails closed when any label QR image cannot render")
+    func testQRCodePreflightFailsWhenAnyLabelImageCannotRender() {
+        let items = [
+            QRLabelContent(entityType: .part, entityId: 1, code: "PART-001", title: "Part 001"),
+            QRLabelContent(entityType: .part, entityId: 2, code: "PART-002", title: "Part 002")
+        ]
+
+        let canRender = QRLabelPDFGenerator.canRenderAllLabelQRCodes(
+            items: items,
+            labelSize: .standard,
+            paperSize: .avery5160,
+            qrImageProvider: { type, id, code, size in
+                guard id != 2 else { return nil }
+                return QRGenerator.generate(type: type, id: id, code: code, size: size)
+            }
+        )
+
+        #expect(canRender == false)
+
+        var requestedIds: [Int64] = []
+        let pdfData = QRLabelPDFGenerator.generatePDF(
+            items: items,
+            labelSize: .standard,
+            layout: .qrLeft,
+            paperSize: .avery5160,
+            qrImageProvider: { type, id, code, size in
+                requestedIds.append(id)
+                guard id != 2 else { return nil }
+                return QRGenerator.generate(type: type, id: id, code: code, size: size)
+            }
+        )
+
+        #expect(pdfData == nil)
+        #expect(requestedIds == [1, 2])
+    }
 }
