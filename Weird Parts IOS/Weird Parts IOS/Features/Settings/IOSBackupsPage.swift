@@ -2,12 +2,22 @@ import SwiftUI
 import WiredPartCore
 
 enum IOSBackupFileCopier {
+    nonisolated static let retainedBackupLimit = 7
+
     struct CleanupFailure: LocalizedError {
-        let copyError: Error
+        let originalError: Error
         let cleanupError: Error
 
         var errorDescription: String? {
-            "Backup failed and the partial backup could not be cleaned up: \(cleanupError.localizedDescription). Original backup error: \(copyError.localizedDescription)"
+            "Backup failed and the partial backup could not be cleaned up: \(cleanupError.localizedDescription). Original backup error: \(originalError.localizedDescription)"
+        }
+    }
+
+    struct InvalidRetentionLimit: LocalizedError {
+        let limit: Int
+
+        var errorDescription: String? {
+            "Backup retention limit must be zero or greater, got \(limit)."
         }
     }
 
@@ -37,9 +47,34 @@ enum IOSBackupFileCopier {
             }
 
             if let cleanupError {
-                throw CleanupFailure(copyError: error, cleanupError: cleanupError)
+                throw CleanupFailure(originalError: error, cleanupError: cleanupError)
             }
             throw error
+        }
+    }
+
+    nonisolated static func removeSQLiteSnapshot(at snapshotURL: URL) throws {
+        for url in [snapshotURL, URL(fileURLWithPath: snapshotURL.path + "-wal"), URL(fileURLWithPath: snapshotURL.path + "-shm")] {
+            if FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.removeItem(at: url)
+            }
+        }
+    }
+
+    nonisolated static func manualBackupSnapshotFiles(in directoryURL: URL) throws -> [URL] {
+        try FileManager.default.contentsOfDirectory(at: directoryURL, includingPropertiesForKeys: nil)
+            .filter { url in
+                url.lastPathComponent.hasPrefix("wiredpart-backup-") && url.pathExtension == "sqlite"
+            }
+            .sorted { $0.lastPathComponent > $1.lastPathComponent }
+    }
+
+    nonisolated static func pruneBackups(in directoryURL: URL, retaining maxCount: Int = retainedBackupLimit) throws {
+        guard maxCount >= 0 else { throw InvalidRetentionLimit(limit: maxCount) }
+
+        let backupsToRemove = try manualBackupSnapshotFiles(in: directoryURL).dropFirst(maxCount)
+        for backupURL in backupsToRemove {
+            try removeSQLiteSnapshot(at: backupURL)
         }
     }
 }
@@ -233,9 +268,7 @@ struct IOSBackupsPage: View {
 
         // Scan backups
         if let dir = backupDir,
-           let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.fileSizeKey, .creationDateKey]) {
-            let backups = files.filter { $0.pathExtension == "sqlite" }
-                .sorted { $0.lastPathComponent > $1.lastPathComponent }
+           let backups = try? IOSBackupFileCopier.manualBackupSnapshotFiles(in: dir) {
             backupCount = backups.count
             if let newest = backups.first {
                 lastBackupTime = newest.lastPathComponent
@@ -280,6 +313,16 @@ struct IOSBackupsPage: View {
         do {
             let sourceURL = URL(fileURLWithPath: sourcePath)
             try IOSBackupFileCopier.copySQLiteSnapshot(from: sourceURL, to: destURL)
+            do {
+                try IOSBackupFileCopier.pruneBackups(in: dir)
+            } catch {
+                do {
+                    try IOSBackupFileCopier.removeSQLiteSnapshot(at: destURL)
+                } catch let cleanupError {
+                    throw IOSBackupFileCopier.CleanupFailure(originalError: error, cleanupError: cleanupError)
+                }
+                throw error
+            }
 
             backupSuccess = true
             loadData()

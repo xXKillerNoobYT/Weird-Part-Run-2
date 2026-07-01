@@ -983,6 +983,63 @@ struct Weird_Parts_IOSTests {
         }
     }
 
+    @Test func manualBackupPrunesOldestBackupsAndSidecars() throws {
+        let tempRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("IOSBackupRetentionTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        for day in 1...9 {
+            let backupURL = tempRoot.appendingPathComponent(String(format: "wiredpart-backup-2026-06-%02d-120000.sqlite", day))
+            try Data("backup \(day)".utf8).write(to: backupURL)
+            try Data("wal \(day)".utf8).write(to: URL(fileURLWithPath: backupURL.path + "-wal"))
+            try Data("shm \(day)".utf8).write(to: URL(fileURLWithPath: backupURL.path + "-shm"))
+        }
+        let unrelatedSQLite = tempRoot.appendingPathComponent("operator-notes.sqlite")
+        try Data("not a wiredpart manual backup".utf8).write(to: unrelatedSQLite)
+
+        try IOSBackupFileCopier.pruneBackups(in: tempRoot)
+
+        let retained = try IOSBackupFileCopier.manualBackupSnapshotFiles(in: tempRoot)
+        #expect(retained.map(\.lastPathComponent) == (3...9).reversed().map { String(format: "wiredpart-backup-2026-06-%02d-120000.sqlite", $0) })
+        #expect(FileManager.default.fileExists(atPath: unrelatedSQLite.path), "Retention should only manage wiredpart manual backup snapshots")
+        for day in 1...2 {
+            let removedBackupURL = tempRoot.appendingPathComponent(String(format: "wiredpart-backup-2026-06-%02d-120000.sqlite", day))
+            #expect(!FileManager.default.fileExists(atPath: removedBackupURL.path))
+            #expect(!FileManager.default.fileExists(atPath: removedBackupURL.path + "-wal"))
+            #expect(!FileManager.default.fileExists(atPath: removedBackupURL.path + "-shm"))
+        }
+    }
+
+    @Test func manualBackupRetentionRejectsInvalidLimits() throws {
+        let tempRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("IOSBackupRetentionLimitTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        #expect(throws: IOSBackupFileCopier.InvalidRetentionLimit.self) {
+            try IOSBackupFileCopier.pruneBackups(in: tempRoot, retaining: -1)
+        }
+    }
+
+    @Test func manualBackupSnapshotRemovalDeletesSidecars() throws {
+        let tempRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("IOSBackupSnapshotRemovalTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let backupURL = tempRoot.appendingPathComponent("wiredpart-backup-2026-06-10-120000.sqlite")
+        try Data("backup".utf8).write(to: backupURL)
+        try Data("wal".utf8).write(to: URL(fileURLWithPath: backupURL.path + "-wal"))
+        try Data("shm".utf8).write(to: URL(fileURLWithPath: backupURL.path + "-shm"))
+
+        try IOSBackupFileCopier.removeSQLiteSnapshot(at: backupURL)
+
+        #expect(!FileManager.default.fileExists(atPath: backupURL.path))
+        #expect(!FileManager.default.fileExists(atPath: backupURL.path + "-wal"))
+        #expect(!FileManager.default.fileExists(atPath: backupURL.path + "-shm"))
+    }
+
     @Test func manualBackupSidecarCopiesAreNotSwallowedBeforeSuccessState() throws {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -995,10 +1052,14 @@ struct Weird_Parts_IOSTests {
         #expect(!source.contains("try? FileManager.default.copyItem"), "Manual backup WAL/SHM copy failures must not be swallowed")
         #expect(!source.contains("try? FileManager.default.removeItem"), "Failed manual backups must not swallow cleanup failures")
         #expect(source.contains("try IOSBackupFileCopier.copySQLiteSnapshot"), "Manual backup creation should use the throwing SQLite snapshot copier")
+        #expect(source.contains("try IOSBackupFileCopier.pruneBackups"), "Successful manual backup creation should enforce the rolling retention limit")
         #expect(source.contains("createdURLs.reversed()"), "Partial backup cleanup should remove sidecars before the main database")
+        #expect(source.contains("try IOSBackupFileCopier.removeSQLiteSnapshot(at: destURL)"), "A backup copied before retention failure should be rolled back instead of being left on disk")
         let snapshotCall = try #require(source.range(of: "try IOSBackupFileCopier.copySQLiteSnapshot"))
+        let pruneCall = try #require(source.range(of: "try IOSBackupFileCopier.pruneBackups"))
         let successState = try #require(source.range(of: "backupSuccess = true"))
-        #expect(snapshotCall.lowerBound < successState.lowerBound, "Success state must only be set after all database sidecars are copied")
+        #expect(snapshotCall.lowerBound < pruneCall.lowerBound, "Retention should run after the full SQLite snapshot is copied")
+        #expect(pruneCall.lowerBound < successState.lowerBound, "Success state must only be set after retention succeeds")
     }
 
     @Test func fullDatabaseExportCheckpointsAndIncludesWALChanges() throws {
