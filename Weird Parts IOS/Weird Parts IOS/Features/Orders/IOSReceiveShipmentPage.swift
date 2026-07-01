@@ -854,6 +854,12 @@ struct IOSReceiveShipmentPage: View {
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: 120)
                 }
+
+                if case .different(let newPrice) = currentVerification, newPrice <= 0 {
+                    Label("Enter a valid price greater than $0 before completing receiving.", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                }
             }
         }
     }
@@ -976,6 +982,24 @@ struct IOSReceiveShipmentPage: View {
         }
         guard let userId = appCore.currentUser?.id else {
             actionError = "Not logged in. Please log in and try again."
+            return
+        }
+
+        let itemNamesById = Dictionary(uniqueKeysWithValues: sessionItems.map { ($0.id, $0.partName) })
+        let invalidDifferentPriceItemNames = ReceiveShipmentPriceVerificationValidation.invalidDifferentPriceItemNames(
+            itemNamesById: itemNamesById,
+            verifications: priceVerifications
+        )
+        if let message = ReceiveShipmentPriceVerificationValidation.completionErrorMessage(
+            invalidItemNames: invalidDifferentPriceItemNames
+        ) {
+            highlightedItemId = sessionItems.first { item in
+                if case .different(let newPrice) = priceVerifications[item.id] {
+                    return newPrice <= 0
+                }
+                return false
+            }?.id
+            actionError = message
             return
         }
 
@@ -1182,10 +1206,34 @@ func receivingBarcodeScanBaseQuantity(
 
 // MARK: - Price Verification
 
-private enum PriceVerification {
+enum PriceVerification {
     case matches
     case different(newPrice: Double)
     case notShown
+}
+
+enum ReceiveShipmentPriceVerificationValidation {
+    nonisolated static func invalidDifferentPriceItemNames(
+        itemNamesById: [Int64: String],
+        verifications: [Int64: PriceVerification]
+    ) -> [String] {
+        itemNamesById
+            .compactMap { itemId, partName -> String? in
+                if case .different(let newPrice) = verifications[itemId], newPrice <= 0 {
+                    return partName
+                }
+                return nil
+            }
+            .sorted()
+    }
+
+    nonisolated static func completionErrorMessage(invalidItemNames: [String]) -> String? {
+        guard !invalidItemNames.isEmpty else { return nil }
+
+        let listedNames = invalidItemNames.prefix(3).joined(separator: ", ")
+        let suffix = invalidItemNames.count > 3 ? " and \(invalidItemNames.count - 3) more" : ""
+        return "Enter a valid actual price greater than $0 for: \(listedNames)\(suffix)."
+    }
 }
 
 extension Optional where Wrapped == PriceVerification {

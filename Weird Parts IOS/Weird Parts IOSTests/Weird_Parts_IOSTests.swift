@@ -762,6 +762,42 @@ struct Weird_Parts_IOSTests {
         ) + 1 == 5)
     }
 
+    @Test func receiveShipmentDifferentPriceValidationBlocksMissingOrZeroActualPrices() throws {
+        let invalidNames = ReceiveShipmentPriceVerificationValidation.invalidDifferentPriceItemNames(
+            itemNamesById: [
+                10: "Breaker",
+                11: "Conduit",
+                12: "Outlet"
+            ],
+            verifications: [
+                10: .different(newPrice: 0),
+                11: .different(newPrice: -1),
+                12: .different(newPrice: 4.25)
+            ]
+        )
+
+        #expect(invalidNames == ["Breaker", "Conduit"])
+        #expect(ReceiveShipmentPriceVerificationValidation.completionErrorMessage(invalidItemNames: invalidNames) == "Enter a valid actual price greater than $0 for: Breaker, Conduit.")
+    }
+
+    @Test func receiveShipmentDifferentPriceValidationAllowsPositiveActualPrices() throws {
+        let invalidNames = ReceiveShipmentPriceVerificationValidation.invalidDifferentPriceItemNames(
+            itemNamesById: [
+                10: "Breaker",
+                11: "Conduit",
+                12: "Outlet"
+            ],
+            verifications: [
+                10: .different(newPrice: 1.25),
+                11: .matches,
+                12: .notShown
+            ]
+        )
+
+        #expect(invalidNames.isEmpty)
+        #expect(ReceiveShipmentPriceVerificationValidation.completionErrorMessage(invalidItemNames: invalidNames) == nil)
+    }
+
     @Test func subSchedulePageExposesExplicitSoftDeleteCancellationAction() throws {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
