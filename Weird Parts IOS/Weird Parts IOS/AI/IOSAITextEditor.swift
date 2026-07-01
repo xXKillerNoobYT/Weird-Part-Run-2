@@ -21,6 +21,8 @@ struct IOSAITextEditor: View {
     @State private var isEnhancing = false
     @State private var showEnhanceSheet = false
     @State private var showUnavailableAlert = false
+    @State private var aiErrorMessage: String?
+    @State private var showAIErrorAlert = false
     @State private var aiAvailability: AIAvailability = .notSupported
     @State private var debounceTask: Task<Void, Never>?
 
@@ -93,6 +95,33 @@ struct IOSAITextEditor: View {
                 }
                 .buttonStyle(.plain)
             }
+
+            if let aiErrorMessage {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .accessibilityHidden(true)
+
+                    Text(aiErrorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Spacer(minLength: 8)
+
+                    Button("Dismiss") {
+                        self.aiErrorMessage = nil
+                    }
+                    .font(.caption)
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Dismiss AI error")
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(Color.orange.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("aiTextEditorErrorMessage")
+            }
         }
         .task {
             aiAvailability = aiService.checkAvailability()
@@ -104,6 +133,11 @@ struct IOSAITextEditor: View {
             Button("OK", role: .cancel) { }
         } message: {
             Text(unavailableMessage)
+        }
+        .alert("AI Request Failed", isPresented: $showAIErrorAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(aiErrorMessage ?? "AI could not finish that request. Please try again.")
         }
     }
 
@@ -186,6 +220,7 @@ struct IOSAITextEditor: View {
 
     private func onTextChange(_ newText: String) {
         suggestion = ""
+        aiErrorMessage = nil
         debounceTask?.cancel()
 
         guard aiAvailable, newText.count >= 10 else { return }
@@ -195,15 +230,23 @@ struct IOSAITextEditor: View {
             guard !Task.isCancelled else { return }
 
             isLoadingSuggestion = true
+            defer { isLoadingSuggestion = false }
+
             let result = await aiService.generateCompletion(
                 partialText: newText,
                 fieldType: fieldType,
                 contextData: contextData.isEmpty ? nil : contextData
             )
-            isLoadingSuggestion = false
+            guard !Task.isCancelled else { return }
 
-            if result.success, let completionText = result.text {
+            if result.success, let completionText = result.text, !completionText.isEmpty {
                 suggestion = completionText
+            } else {
+                aiErrorMessage = failureMessage(
+                    for: "AI suggestion",
+                    result: result,
+                    fallback: "AI suggestion failed. Keep typing or try again in a moment."
+                )
             }
         }
     }
@@ -211,32 +254,59 @@ struct IOSAITextEditor: View {
     private func acceptSuggestion() {
         text += suggestion
         suggestion = ""
+        aiErrorMessage = nil
     }
 
     private func enhance(mode: EnhanceMode) async {
         isEnhancing = true
+        aiErrorMessage = nil
+        defer { isEnhancing = false }
+
         let result = await aiService.enhanceText(
             text: text,
             mode: mode,
             fieldType: fieldType
         )
-        isEnhancing = false
 
-        if result.success, let enhanced = result.text {
+        if result.success, let enhanced = result.text, !enhanced.isEmpty {
             text = enhanced
+        } else {
+            aiErrorMessage = failureMessage(
+                for: "AI enhancement",
+                result: result,
+                fallback: "AI enhancement failed. Your original text was kept. Please try again."
+            )
+            showAIErrorAlert = true
         }
     }
 
     private func preFill() async {
         isEnhancing = true
+        aiErrorMessage = nil
+        defer { isEnhancing = false }
+
         let result = await aiService.generatePreFill(
             fieldType: fieldType,
             contextData: contextData
         )
-        isEnhancing = false
 
-        if result.success, let draft = result.text {
+        if result.success, let draft = result.text, !draft.isEmpty {
             text = draft
+        } else {
+            aiErrorMessage = failureMessage(
+                for: "AI pre-fill",
+                result: result,
+                fallback: "AI pre-fill failed. Please try again or enter the text manually."
+            )
+            showAIErrorAlert = true
         }
+    }
+
+    private func failureMessage(for operation: String, result: AIResult, fallback: String) -> String {
+        if result.success {
+            return "\(operation) returned no text. Please try again."
+        }
+
+        return fallback
     }
 }
