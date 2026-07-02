@@ -708,10 +708,30 @@ private struct ReferencePickerSheet: View {
     @State private var parts: [PartsService.PartWithDetails] = []
     @State private var pos: [OrdersService.POListItem] = []
     @State private var jobs: [JobsService.JobListItem] = []
+    /// Picker-level load error (#1178) — a failed part/PO/job lookup must
+    /// never render as an empty result list. Cleared on each successful load.
+    @State private var loadError: String?
 
     var body: some View {
         NavigationStack {
             List {
+                if let error = loadError {
+                    // Inline lookup error with retry (#1178) — distinguishes
+                    // "the lookup failed" from a genuine zero-result search.
+                    HStack(spacing: 8) {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                        Spacer()
+                        Button {
+                            loadData()
+                        } label: {
+                            Label("Retry", systemImage: "arrow.clockwise")
+                                .font(.caption)
+                        }
+                        .accessibilityLabel("Retry loading references")
+                    }
+                }
                 switch type {
                 case .part:
                     ForEach(parts, id: \.part.id) { item in
@@ -798,17 +818,53 @@ private struct ReferencePickerSheet: View {
         let query = searchText.trimmingCharacters(in: .whitespaces)
         let search: String? = query.isEmpty ? nil : query
 
+        // Explicit do/catch per attachment type (#1178): a DB/service failure
+        // must set a visible, retryable loadError instead of rendering the
+        // same empty list as a genuine zero-result search.
         switch type {
         case .part:
-            parts = (try? appCore.partsService?.listParts(search: search, limit: 50)) ?? []
+            guard let service = appCore.partsService else {
+                parts = []
+                loadError = "Parts service not available"
+                return
+            }
+            do {
+                parts = try service.listParts(search: search, limit: 50)
+                loadError = nil
+            } catch {
+                parts = []
+                loadError = userFriendlyError(error, context: "load parts")
+            }
         case .po:
-            pos = (try? appCore.ordersService?.listPurchaseOrders(limit: 50)) ?? []
-            if let search {
-                let lower = search.lowercased()
-                pos = pos.filter { $0.poNumber.lowercased().contains(lower) || $0.supplierName.lowercased().contains(lower) }
+            guard let service = appCore.ordersService else {
+                pos = []
+                loadError = "Orders service not available"
+                return
+            }
+            do {
+                pos = try service.listPurchaseOrders(limit: 50)
+                if let search {
+                    let lower = search.lowercased()
+                    pos = pos.filter { $0.poNumber.lowercased().contains(lower) || $0.supplierName.lowercased().contains(lower) }
+                }
+                loadError = nil
+            } catch {
+                pos = []
+                loadError = userFriendlyError(error, context: "load purchase orders")
             }
         case .job:
-            jobs = (try? appCore.jobsService?.listJobs(search: search, limit: 50)) ?? []
+            guard let service = appCore.jobsService else {
+                jobs = []
+                loadError = "Jobs service not available"
+                return
+            }
+            do {
+                jobs = try service.listJobs(search: search, limit: 50)
+                loadError = nil
+            } catch {
+                jobs = []
+                loadError = userFriendlyError(error, context: "load jobs")
+            }
         }
     }
 }
