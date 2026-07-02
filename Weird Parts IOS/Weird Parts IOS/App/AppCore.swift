@@ -777,7 +777,9 @@ final class AppCore: ObservableObject {
     func changePin(userId: Int64, oldPin: String, newPin: String) async -> String? {
         guard let authService else { return "App not ready. Please wait." }
         do {
-            try await Task.detached(priority: .userInitiated) {
+            // changePin returns Bool; success is signaled by not throwing, so the
+            // returned value is intentionally discarded.
+            _ = try await Task.detached(priority: .userInitiated) {
                 try authService.changePin(userId: userId, oldPin: oldPin, newPin: newPin)
             }.value
             return nil

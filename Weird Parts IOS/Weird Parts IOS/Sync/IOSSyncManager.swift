@@ -49,7 +49,9 @@ final class IOSSyncManager {
 
     private let logger = Logger(subsystem: "com.wiredpart.ios", category: "IOSSyncManager")
 
-    nonisolated(unsafe) private var syncTimer: Timer?
+    // @ObservationIgnored keeps this a plain stored property so nonisolated(unsafe)
+    // takes effect (deinit needs synchronous access); no view observes the timer.
+    @ObservationIgnored nonisolated(unsafe) private var syncTimer: Timer?
     private var syncIntervalSeconds: TimeInterval = 60
 
     private var db: AppDatabase?
@@ -987,7 +989,9 @@ final class IOSSyncManager {
     }
 
     /// Observer token returned by addObserver. Retained so deinit can remove it.
-    nonisolated(unsafe) private var foregroundObserver: NSObjectProtocol?
+    /// @ObservationIgnored keeps this a plain stored property so nonisolated(unsafe)
+    /// takes effect (deinit needs synchronous access); no view observes the token.
+    @ObservationIgnored nonisolated(unsafe) private var foregroundObserver: NSObjectProtocol?
 
     deinit {
         // Fix #215: invalidate timer and remove notification observer so logout /
