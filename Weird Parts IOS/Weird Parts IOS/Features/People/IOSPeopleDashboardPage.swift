@@ -12,6 +12,9 @@ struct IOSPeopleDashboardPage: View {
     @State private var teamAssignments: [PeopleService.TeamAssignment] = []
     @State private var overdueCustomers: [PeopleService.CustomerPaymentAlert] = []
     @State private var paymentTrackingEnabled = false
+    /// Degraded-state error for the payment-alerts section — a failed financial
+    /// lookup must not silently hide overdue customers (#1335).
+    @State private var paymentAlertsError: String?
     @State private var canManagePeople = false
     @State private var isLoading = true
     @State private var loadError: String?
@@ -237,7 +240,22 @@ struct IOSPeopleDashboardPage: View {
             }
 
             // Payment Alerts (when tracking enabled)
-            if paymentTrackingEnabled && !overdueCustomers.isEmpty {
+            if let error = paymentAlertsError {
+                // Degraded payment-alerts row (#1335): the lookup failed, so we can't
+                // know whether customers are overdue — say so instead of hiding it.
+                Section {
+                    HStack(spacing: 8) {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .font(.callout)
+                            .foregroundStyle(.red)
+                        Spacer()
+                        Button("Retry") { loadData() }
+                            .font(.callout)
+                    }
+                } header: {
+                    Text("Payment Alerts")
+                }
+            } else if paymentTrackingEnabled && !overdueCustomers.isEmpty {
                 Section {
                     ForEach(overdueCustomers) { alert in
                         HStack {
@@ -301,10 +319,16 @@ struct IOSPeopleDashboardPage: View {
             expiringCerts = try service.getExpiringCertifications(withinDays: 30)
             teamAssignments = try service.getTodaysTeamAssignments()
 
-            // Payment alerts
-            paymentTrackingEnabled = (try? service.isPaymentTrackingEnabled()) ?? false
-            if paymentTrackingEnabled {
-                overdueCustomers = (try? service.getOverdueCustomers()) ?? []
+            // Payment alerts — distinguish "tracking disabled" from "lookup failed"
+            // so a DB error never hides overdue receivables (#1335).
+            do {
+                paymentTrackingEnabled = try service.isPaymentTrackingEnabled()
+                if paymentTrackingEnabled {
+                    overdueCustomers = try service.getOverdueCustomers()
+                }
+                paymentAlertsError = nil
+            } catch {
+                paymentAlertsError = userFriendlyError(error, context: "load payment alerts")
             }
 
             canManagePeople = appCore.hasPermission("manage_people")

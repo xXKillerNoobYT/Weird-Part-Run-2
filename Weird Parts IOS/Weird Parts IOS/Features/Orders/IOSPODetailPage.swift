@@ -45,6 +45,9 @@ struct IOSPODetailPage: View {
     @State private var expandedReceiptEntryIds: Set<Int64> = []
     @State private var receiptEntryItems: [Int64: [OrdersService.ReceiptHistoryItem]] = [:]
     @State private var isReceiptHistoryExpanded = false
+    /// Section-level error for the receiving audit trail — a failed history read
+    /// must not render as "no receipts" on a PO that has been received (#1335).
+    @State private var receiptHistoryError: String?
 
     // Update ETA
     @State private var etaDate = Date()
@@ -668,7 +671,10 @@ struct IOSPODetailPage: View {
     private func receiptHistorySheet() -> some View {
         NavigationStack {
             Group {
-                if receiptBatches.isEmpty {
+                if let error = receiptHistoryError {
+                    // A failed history read must not present as an empty timeline (#1335).
+                    ErrorStateView(message: error) { loadData() }
+                } else if receiptBatches.isEmpty {
                     VStack(spacing: 16) {
                         Spacer()
                         Image(systemName: "shippingbox")
@@ -1528,8 +1534,26 @@ struct IOSPODetailPage: View {
         let hasEntries = !receiptHistoryEntries.isEmpty
         let hasBatches = !receiptBatches.isEmpty
 
-        if hasEntries || hasBatches {
+        if hasEntries || hasBatches || receiptHistoryError != nil {
             VStack(alignment: .leading, spacing: 8) {
+                // Section-level load failure (#1335) — shown even when both lists are
+                // empty so a failed read never masquerades as "no receipts".
+                if let error = receiptHistoryError {
+                    HStack(spacing: 8) {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                        Spacer()
+                        Button {
+                            loadData()
+                        } label: {
+                            Label("Retry", systemImage: "arrow.clockwise")
+                                .font(.caption)
+                        }
+                        .accessibilityLabel("Retry loading receipt history")
+                    }
+                }
+
                 // Collapsible header
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
@@ -2217,7 +2241,13 @@ struct IOSPODetailPage: View {
     /// Load per-item details for a specific receipt session.
     private func loadReceiptEntryItems(sessionId: Int64) {
         guard let service = appCore.ordersService else { loadError = "Service not available"; return }
-        receiptEntryItems[sessionId] = (try? service.getReceiptHistoryItems(sessionId: sessionId)) ?? []
+        do {
+            receiptEntryItems[sessionId] = try service.getReceiptHistoryItems(sessionId: sessionId)
+        } catch {
+            // Leave the entry un-cached so expanding it again retries, and surface
+            // the failure in the section instead of showing an empty item list (#1335).
+            receiptHistoryError = userFriendlyError(error, context: "load receipt details")
+        }
     }
 
     /// Format a session date string for display (e.g. "Mar 15, 2026 2:30 PM").
@@ -2308,11 +2338,16 @@ struct IOSPODetailPage: View {
                 supplierNotes = []
             }
 
-            // Load receipt history (legacy batches)
-            receiptBatches = (try? service.getReceiptHistory(poId: poId)) ?? []
-
-            // Load receipt history entries from receiving_sessions (62P)
-            receiptHistoryEntries = (try? service.getReceiptHistoryEntries(poId: poId)) ?? []
+            // Load receipt history (legacy batches + receiving_sessions entries, 62P).
+            // Failures surface as a section-level error instead of silently blanking
+            // the receiving audit trail (#1335).
+            do {
+                receiptBatches = try service.getReceiptHistory(poId: poId)
+                receiptHistoryEntries = try service.getReceiptHistoryEntries(poId: poId)
+                receiptHistoryError = nil
+            } catch {
+                receiptHistoryError = userFriendlyError(error, context: "load receipt history")
+            }
             postAIContext(detail)
         } catch {
             loadError = userFriendlyError(error, context: "load PO details")

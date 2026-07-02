@@ -464,15 +464,24 @@ struct IOSScheduleConfigPage: View {
             loadErrorMsg = userFriendlyError(error, context: "load settings")
         }
 
-        // Load shift templates
+        // Load shift templates + holidays — surface failures via loadErrorMsg so an
+        // admin can tell "load failed" apart from "no templates configured" (#1335).
         if let svc = appCore.schedulingService {
-            shiftTemplates = (try? svc.getShiftTemplates()) ?? []
-            holidays = (try? svc.getHolidays()) ?? []
+            do {
+                shiftTemplates = try svc.getShiftTemplates()
+                holidays = try svc.getHolidays()
+            } catch {
+                loadErrorMsg = userFriendlyError(error, context: "load shift templates and holidays")
+            }
         }
 
-        // Load hats for supervisor picker
+        // Load hats for supervisor picker — same error surfacing (#1335).
         if let people = appCore.peopleService {
-            allHats = (try? people.listHats()) ?? []
+            do {
+                allHats = try people.listHats()
+            } catch {
+                loadErrorMsg = userFriendlyError(error, context: "load supervisor hats")
+            }
         }
     }
 

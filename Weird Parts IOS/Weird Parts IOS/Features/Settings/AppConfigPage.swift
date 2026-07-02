@@ -21,6 +21,11 @@ struct AppConfigPage: View {
     @State private var loadError: String?
     @State private var actionError: String?
     @State private var didLoadConfig = false
+    /// True when the last loadConfig() attempt failed (#1335). While set, Save is
+    /// disabled and saveConfig() refuses to run: the form is showing built-in
+    /// defaults, and persisting them would overwrite the company's real settings
+    /// (including silently disabling payment tracking). Cleared by a successful load.
+    @State private var configLoadFailed = false
     @State private var hasUnsavedChanges = false
     @State private var showDiscardConfirmation = false
     @State private var baselineFormSignature = ""
@@ -114,6 +119,19 @@ struct AppConfigPage: View {
                 }
             }
 
+            if configLoadFailed {
+                Section {
+                    Label("Settings couldn't load, so the values shown are defaults. Saving is disabled to protect your saved configuration.", systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.red)
+                        .font(.callout)
+                    Button {
+                        loadConfig()
+                    } label: {
+                        Label("Retry Load", systemImage: "arrow.clockwise")
+                    }
+                }
+            }
+
             Section {
                 Button {
                     saveConfig()
@@ -126,7 +144,10 @@ struct AppConfigPage: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(!isFormValid)   // Fix #150: prevent save with empty/invalid numeric inputs
+                // Fix #150: prevent save with empty/invalid numeric inputs.
+                // Fix #1335: prevent save after a failed load — the form holds
+                // defaults, not the user's real configuration.
+                .disabled(!isFormValid || configLoadFailed)
             }
         }
         // Fix #149: dismiss keyboard on scroll to free space when keyboard covers field
@@ -197,6 +218,7 @@ struct AppConfigPage: View {
         didLoadConfig = false
         guard let service = appCore.settingsService else {
             loadError = "Settings service unavailable"
+            configLoadFailed = true
             didLoadConfig = true
             postAIContext()
             return
@@ -208,19 +230,24 @@ struct AppConfigPage: View {
             let warranty = try service.getWarrantyLengthDays()
             warrantyDays = String(warranty)
 
-            // Payment tracking settings
+            // Payment tracking settings — a read failure must NOT fall back to
+            // defaults: Save would then persist those defaults over the company's
+            // real payment terms (#1335). A throw routes to the catch below, which
+            // marks the load failed and keeps Save disabled.
             if let peopleService = appCore.peopleService {
-                paymentTrackingEnabled = (try? peopleService.isPaymentTrackingEnabled()) ?? false
-                let paySettings = try? peopleService.getPaymentSettings()
-                paymentTermsDays = paySettings?.termsDays ?? 30
-                overdueWarningDays = paySettings?.warningDays ?? 7
-                autoPaymentHold = paySettings?.autoHold ?? false
+                paymentTrackingEnabled = try peopleService.isPaymentTrackingEnabled()
+                let paySettings = try peopleService.getPaymentSettings()
+                paymentTermsDays = paySettings.termsDays
+                overdueWarningDays = paySettings.warningDays
+                autoPaymentHold = paySettings.autoHold
             }
+            configLoadFailed = false
             didLoadConfig = true
             resetDirtyTracking()
             postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load settings")
+            configLoadFailed = true
             didLoadConfig = true
             resetDirtyTracking()
             postAIContext()
@@ -228,6 +255,12 @@ struct AppConfigPage: View {
     }
 
     private func saveConfig() {
+        // #1335 data-loss guard: after a failed load the form holds defaults, not
+        // the user's real settings — saving would overwrite good values in the DB.
+        guard !configLoadFailed else {
+            actionError = "Settings couldn't load, so saving is disabled to protect your saved configuration. Tap Retry Load first."
+            return
+        }
         guard let service = appCore.settingsService else {
             actionError = "Settings service unavailable"
             return
