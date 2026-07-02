@@ -89,7 +89,7 @@ struct IOSWarehouseExecPage: View {
                             NotificationCenter.default.post(
                                 name: .navigateToModule,
                                 object: nil,
-                                userInfo: ["moduleId": "warehouse", "tabId": "movements"]
+                                userInfo: ["moduleId": "warehouse", "tabId": "warehouse-movements"]
                             )
                         } label: {
                             QuickActionRow(icon: "arrow.left.arrow.right", title: "New Movement", subtitle: "Transfer parts between locations")
@@ -101,7 +101,7 @@ struct IOSWarehouseExecPage: View {
                             NotificationCenter.default.post(
                                 name: .navigateToModule,
                                 object: nil,
-                                userInfo: ["moduleId": "orders", "tabId": "receiving"]
+                                userInfo: ["moduleId": "warehouse", "tabId": "warehouse-receiving"]
                             )
                         } label: {
                             QuickActionRow(icon: "shippingbox.fill", title: "Start Receiving", subtitle: "Receive incoming shipments")
@@ -113,7 +113,7 @@ struct IOSWarehouseExecPage: View {
                             NotificationCenter.default.post(
                                 name: .navigateToModule,
                                 object: nil,
-                                userInfo: ["moduleId": "warehouse", "tabId": "audit"]
+                                userInfo: ["moduleId": "warehouse", "tabId": "warehouse-audit"]
                             )
                         } label: {
                             QuickActionRow(icon: "checkmark.shield.fill", title: "Start Audit", subtitle: "Begin a stock count audit")

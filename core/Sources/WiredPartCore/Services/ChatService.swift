@@ -1431,6 +1431,10 @@ public final class ChatService: Sendable {
 
     /// Push a Q&A thread back down one level with feedback.
     public func pushBackThread(threadId: Int64, pushedBackBy: Int64, reason: String) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: pushedBackBy, permissionKey: "moderate_chat")
+        }
+
         try db.writer.write { dbConn in
             guard let row = try Row.fetchOne(dbConn, sql: """
                 SELECT current_level FROM qa_threads WHERE id = ? AND deleted_at IS NULL
@@ -1465,6 +1469,38 @@ public final class ChatService: Sendable {
                 WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [resolvedBy, threadId])
         }
+    }
+
+    /// Resolve the id of the newest Q&A thread linked to a channel.
+    /// Returns nil when the channel has no Q&A thread.
+    public func qaThreadId(forChannelId channelId: Int64) throws -> Int64? {
+        try db.writer.read { dbConn in
+            try Int64.fetchOne(dbConn, sql: """
+                SELECT id FROM qa_threads
+                WHERE channel_id = ? AND deleted_at IS NULL
+                ORDER BY created_at DESC LIMIT 1
+                """, arguments: [channelId])
+        }
+    }
+
+    /// Escalate the Q&A thread linked to a specific channel.
+    /// Uses `channel_id` to find the correct thread — same pattern as `resolveQAThreadByChannel`.
+    /// Throws `ChatError.threadNotFound` (carrying the channel id) when the channel has no Q&A thread.
+    public func escalateThreadByChannel(channelId: Int64, escalatedBy: Int64, notes: String?) throws {
+        guard let threadId = try qaThreadId(forChannelId: channelId) else {
+            throw ChatError.threadNotFound(channelId)
+        }
+        try escalateThread(threadId: threadId, escalatedBy: escalatedBy, notes: notes)
+    }
+
+    /// Push back the Q&A thread linked to a specific channel.
+    /// Uses `channel_id` to find the correct thread — same pattern as `resolveQAThreadByChannel`.
+    /// Throws `ChatError.threadNotFound` (carrying the channel id) when the channel has no Q&A thread.
+    public func pushBackThreadByChannel(channelId: Int64, pushedBackBy: Int64, reason: String) throws {
+        guard let threadId = try qaThreadId(forChannelId: channelId) else {
+            throw ChatError.threadNotFound(channelId)
+        }
+        try pushBackThread(threadId: threadId, pushedBackBy: pushedBackBy, reason: reason)
     }
 
     /// Resolve the Q&A thread linked to a specific channel.
