@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import WiredPartCore
 
 /// Interactive panel schedule builder for documenting circuit breaker assignments.
@@ -8,14 +9,21 @@ struct PanelScheduleBuilder: View {
 
     @State private var selectedCircuit: CircuitEntry?
     @State private var showHiddenCircuitPruneConfirmation = false
+    @State private var exportOptions = PanelScheduleExportOptions()
+    @State private var exportURL: URL?
+    @State private var exportMessage: String?
 
     private enum ActiveSheet: Identifiable {
         case circuitEditor
         case panelSettings
+        case headerSettings
+        case share(URL)
         var id: String {
             switch self {
             case .circuitEditor: return "circuitEditor"
             case .panelSettings: return "panelSettings"
+            case .headerSettings: return "headerSettings"
+            case .share: return "share"
             }
         }
     }
@@ -41,6 +49,10 @@ struct PanelScheduleBuilder: View {
                 }
             case .panelSettings:
                 PanelSettingsSheet(schedule: $schedule)
+            case .headerSettings:
+                PanelScheduleHeaderSheet(options: $exportOptions)
+            case .share(let url):
+                PanelScheduleShareSheet(items: [url])
             }
         }
         .alert("Remove Hidden Circuits?", isPresented: $showHiddenCircuitPruneConfirmation) {
@@ -50,6 +62,14 @@ struct PanelScheduleBuilder: View {
             }
         } message: {
             Text("Saving will permanently remove \(schedule.circuitsOutsideTotalSpaces.count) hidden circuit\(schedule.circuitsOutsideTotalSpaces.count == 1 ? "" : "s") outside the visible 1–\(schedule.totalSpaces) panel range.")
+        }
+        .alert("Panel schedule export", isPresented: Binding(
+            get: { exportMessage != nil },
+            set: { if !$0 { exportMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { exportMessage = nil }
+        } message: {
+            Text(exportMessage ?? "")
         }
     }
 
@@ -240,6 +260,30 @@ struct PanelScheduleBuilder: View {
 
             Spacer()
 
+            Menu {
+                Button {
+                    activeSheet = .headerSettings
+                } label: {
+                    Label("Custom Header", systemImage: "text.badge.plus")
+                }
+
+                Button {
+                    exportPanelScheduleForShare()
+                } label: {
+                    Label("Export PDF", systemImage: "doc.fill")
+                }
+
+                Button {
+                    printPanelSchedule()
+                } label: {
+                    Label("Print PDF", systemImage: "printer")
+                }
+            } label: {
+                Label("Export", systemImage: "square.and.arrow.up")
+                    .font(.caption)
+            }
+            .buttonStyle(.bordered)
+
             Button {
                 if schedule.circuitsOutsideTotalSpaces.isEmpty {
                     saveNormalizedSchedule()
@@ -278,6 +322,39 @@ struct PanelScheduleBuilder: View {
         let normalized = schedule.normalizedForPersistence()
         schedule = normalized
         onSave(normalized)
+    }
+
+    // MARK: - Export
+
+    private func exportPanelScheduleForShare() {
+        do {
+            let url = try PanelSchedulePDFExporter(schedule: schedule, options: exportOptions).writeToTemporaryFile()
+            exportURL = url
+            activeSheet = .share(url)
+        } catch {
+            exportMessage = userFriendlyError(error, context: "export panel schedule")
+        }
+    }
+
+    private func printPanelSchedule() {
+        do {
+            let url = try PanelSchedulePDFExporter(schedule: schedule, options: exportOptions).writeToTemporaryFile()
+            exportURL = url
+
+            let printController = UIPrintInteractionController.shared
+            let printInfo = UIPrintInfo(dictionary: nil)
+            printInfo.jobName = "\(schedule.panelName) Panel Schedule"
+            printInfo.outputType = .general
+            printController.printInfo = printInfo
+            printController.printingItem = url
+            printController.present(animated: true) { _, _, error in
+                if let error {
+                    exportMessage = userFriendlyError(error, context: "print panel schedule")
+                }
+            }
+        } catch {
+            exportMessage = userFriendlyError(error, context: "print panel schedule")
+        }
     }
 }
 
