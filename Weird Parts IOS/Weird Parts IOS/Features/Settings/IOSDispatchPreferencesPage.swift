@@ -223,20 +223,21 @@ struct IOSDispatchPreferencesPage: View {
         }
 
         do {
-            let data: [String: String] = [
-                "dispatch_ai_suggestions_enabled": enableAISuggestions ? "true" : "false",
-                "dispatch_ai_learning_enabled": enableAILearning ? "true" : "false",
-                "dispatch_show_confidence_scores": showConfidenceScores ? "true" : "false",
-                "dispatch_flex_self_assign_enabled": enableFlexSelfAssign ? "true" : "false",
-                "dispatch_flex_require_approval": requireManagerApproval ? "true" : "false",
-                "dispatch_pipeline_start_anytime_target": "\(startAnytimeTarget)",
-                "dispatch_pipeline_schedule_needed_target": "\(scheduleNeededTarget)",
-                "dispatch_pipeline_favorite_gc_target": "\(favoriteGCTarget)",
-                "dispatch_default_view": defaultView,
-                "dispatch_crew_history_months": "\(crewHistoryMonths)",
-                "dispatch_crew_continuity_weight": crewContinuityWeight,
-            ]
-            try service.upsertSettingsMap(data, category: "dispatch")
+            let preferences = SettingsService.DispatchPreferenceSettings(
+                aiSuggestionsEnabled: enableAISuggestions,
+                aiLearningEnabled: enableAILearning,
+                showConfidenceScores: showConfidenceScores,
+                aiSuggestionCount: SettingsService.DispatchPreferenceSettings.defaults.aiSuggestionCount,
+                flexSelfAssignEnabled: enableFlexSelfAssign,
+                flexRequireApproval: requireManagerApproval,
+                pipelineStartAnytimeTarget: startAnytimeTarget,
+                pipelineScheduleNeededTarget: scheduleNeededTarget,
+                pipelineFavoriteGCTarget: favoriteGCTarget,
+                defaultView: defaultView,
+                crewHistoryMonths: crewHistoryMonths,
+                crewContinuityWeight: crewContinuityWeight
+            )
+            try service.updateDispatchPreferences(preferences)
             saveError = nil
             isDirty = false
             saveSuccessMessage = "Dispatch preferences saved."
