@@ -564,4 +564,58 @@ struct BadgeCountServiceTests {
         let counts = BadgeCountService.BadgeCounts(oldestPendingDate: "2020-01-01 00:00:00")
         #expect(counts.hasOldItems == true)
     }
+
+    // MARK: - SQLite timestamps must parse as UTC, not device-local (#708 / PR #1354 review)
+    //
+    // SQLite's datetime('now') / CURRENT_TIMESTAMP defaults are always UTC but
+    // carry no zone marker. Parsing them with a zone-less local formatter skews
+    // every age comparison by the device's UTC offset.
+
+    @Test("parseDateTimeUTC maps zone-less SQLite timestamps to exact UTC instants")
+    func testParseDateTimeUTCIsDeterministic() throws {
+        // 2020-01-01T00:00:00Z == epoch 1577836800. Device-local parsing only
+        // yields this instant when the device happens to be in UTC, so this
+        // assertion fails under local-tz parsing on any offset device
+        // (e.g. a +6 device would produce epoch 1577815200 instead).
+        let space = try #require(CoreFormatters.parseDateTimeUTC("2020-01-01 00:00:00"))
+        #expect(space.timeIntervalSince1970 == 1_577_836_800)
+
+        let tSeparated = try #require(CoreFormatters.parseDateTimeUTC("2020-01-01T00:00:00"))
+        #expect(tSeparated.timeIntervalSince1970 == 1_577_836_800)
+
+        // Zone-carrying ISO input parses identically to parseDateTime.
+        let iso = try #require(CoreFormatters.parseDateTimeUTC("2020-01-01T00:00:00Z"))
+        #expect(iso.timeIntervalSince1970 == 1_577_836_800)
+    }
+
+    @Test("hasOldItems 7-day threshold is exact for UTC SQLite timestamps on any device zone")
+    func testHasOldItemsThresholdImmuneToDeviceZone() {
+        // Format timestamps exactly how SQLite defaults store them: UTC,
+        // space-separated, no zone marker.
+        let sqliteUTC = DateFormatter()
+        sqliteUTC.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        sqliteUTC.timeZone = TimeZone(identifier: "UTC")
+        sqliteUTC.locale = Locale(identifier: "en_US_POSIX")
+
+        // 7 days + 2 hours old: must be aged. Under device-local parsing on a
+        // west-of-UTC device (e.g. UTC-6) the item would look only ~6d20h old
+        // and this expectation fails.
+        let justOverThreshold = Date().addingTimeInterval(-(7 * 86400 + 2 * 3600))
+        let overCounts = BadgeCountService.BadgeCounts(
+            oldestPendingDate: sqliteUTC.string(from: justOverThreshold)
+        )
+        #expect(overCounts.hasOldItems == true,
+            "A 7d2h-old UTC timestamp must trip the 7-day threshold regardless of device time zone")
+
+        // 6 days + 22 hours old: must NOT be aged. Under device-local parsing
+        // on an east-of-UTC device (e.g. UTC+6) the item would look ~7d4h old
+        // and this expectation fails. Together the two cases catch local-tz
+        // parsing on any non-UTC device.
+        let justUnderThreshold = Date().addingTimeInterval(-(6 * 86400 + 22 * 3600))
+        let underCounts = BadgeCountService.BadgeCounts(
+            oldestPendingDate: sqliteUTC.string(from: justUnderThreshold)
+        )
+        #expect(underCounts.hasOldItems == false,
+            "A 6d22h-old UTC timestamp must stay under the 7-day threshold regardless of device time zone")
+    }
 }

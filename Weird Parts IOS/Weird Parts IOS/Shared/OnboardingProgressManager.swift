@@ -29,9 +29,14 @@ class OnboardingProgressManager: ObservableObject {
         completedTasks.contains(taskId)
     }
 
+    /// Clears all completed-task progress and persists the cleared state.
+    /// Does NOT touch `isOnboardingActive` — tour activation is owned by
+    /// `startTour()`/`endTour()`, so restart call sites pair this with
+    /// `startTour()`. Keeping activation out of here avoids a redundant
+    /// `isOnboardingActive` publish and duplicate UserDefaults write when
+    /// the two methods run back-to-back.
     func resetProgress() {
         completedTasks.removeAll()
-        isOnboardingActive = true
         saveProgress()
     }
 

@@ -77,13 +77,14 @@ public final class BadgeCountService: Sendable {
 
         /// True if any item has been pending for more than 7 days.
         ///
-        /// Uses `parseDateTime` (not `parseISO`) because the pending queues mix
-        /// timestamp formats: service-written rows carry ISO 8601 strings while
-        /// rows created via SQLite column defaults carry `datetime('now')`
-        /// space-separated strings (#708).
+        /// Uses `parseDateTimeUTC` (not `parseISO`/`parseDateTime`) because the
+        /// pending queues mix timestamp formats: service-written rows carry
+        /// ISO 8601 strings while rows created via SQLite column defaults carry
+        /// zone-less `datetime('now')` strings that are always UTC — parsing
+        /// those as device-local time would skew aging by the UTC offset (#708).
         public var hasOldItems: Bool {
             guard let dateStr = oldestPendingDate else { return false }
-            guard let date = CoreFormatters.parseDateTime(dateStr) else { return false }
+            guard let date = CoreFormatters.parseDateTimeUTC(dateStr) else { return false }
             return Date().timeIntervalSince(date) > 7 * 86400
         }
 
@@ -275,9 +276,12 @@ public final class BadgeCountService: Sendable {
         // Pick the overall oldest by PARSED date, not by string comparison —
         // the queues mix ISO 8601 ("...T...Z") and SQLite datetime('now')
         // ("YYYY-MM-DD HH:MM:SS") formats, which do not sort lexicographically.
+        // parseDateTimeUTC: SQLite's zone-less defaults are always UTC, so
+        // parsing them as device-local time could pick the wrong "oldest" when
+        // ISO and SQLite timestamps are hours apart (#708).
         counts.oldestPendingDate = try pendingAgeQueries
             .compactMap { try safeString(sql: $0) }
-            .compactMap { raw in CoreFormatters.parseDateTime(raw).map { (raw: raw, date: $0) } }
+            .compactMap { raw in CoreFormatters.parseDateTimeUTC(raw).map { (raw: raw, date: $0) } }
             .min { $0.date < $1.date }?
             .raw
 
