@@ -35,6 +35,9 @@ struct PartsCatalogPage: View {
     @State private var selectedBrandId: Int64?
     @State private var lowStockOnly = false
 
+    // Smart-card filter facet counts (GH#67)
+    @State private var filterCounts: PartsService.CatalogFilterCounts?
+
     // MARK: - Sorting
     @State private var sortField: SortField = .name
     @State private var sortAscending = true
@@ -100,7 +103,7 @@ struct PartsCatalogPage: View {
             // Smart search banner
             nlFilterBanner
 
-            // Filter chips bar — always visible
+            // Smart-card stat filter bar — always visible
             filterBar
 
             // Sort header
@@ -228,7 +231,7 @@ struct PartsCatalogPage: View {
                 PageHelpSheet(
                     title: "Parts Catalog Help",
                     sections: [
-                        ("Overview", "Browse all parts in your inventory. Search by name or code, filter by category, brand, or stock status using the chips."),
+                        ("Overview", "Browse all parts in your inventory. Search by name or code, or use the smart filter cards to narrow by category, style, type, color, brand, or low stock. Each card shows how many parts match."),
                         ("Actions", "Tap the + button to add a new part. Use the QR scanner to find parts by code. The printer icon lets you print QR labels."),
                         ("Pricing", "Toggle the $ icon to show pricing overlays on each part. Tap a part for full details, long-press for quick edit.")
                     ]
@@ -362,18 +365,26 @@ struct PartsCatalogPage: View {
         .padding(.bottom, DS.Space.xs)
     }
 
-    // MARK: - Filter Bar
+    // MARK: - Filter Bar (smart-card stat filters — GH#67)
 
     @ViewBuilder
     private var filterBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
+                // All Parts — clears every filter; badge = parts matching the search only
+                SmartFilterCard(
+                    title: "All Parts",
+                    count: filterCounts?.allParts ?? totalCount,
+                    isSelected: !hasActiveFilters,
+                    action: { clearAllFilters() }
+                )
+
                 // Category
-                filterMenu(
+                smartFilterMenuCard(
                     label: "Category",
-                    icon: "folder.fill",
                     selection: selectedCategoryId,
-                    options: categories.compactMap { ($0.id, $0.name) }
+                    options: categories.compactMap { cat in cat.id.map { ($0, cat.name) } },
+                    counts: filterCounts?.byCategory ?? [:]
                 ) { newValue in
                     selectedCategoryId = newValue
                     // Clear dependent filters
@@ -383,11 +394,11 @@ struct PartsCatalogPage: View {
                 }
 
                 // Style (cascaded from category)
-                filterMenu(
+                smartFilterMenuCard(
                     label: "Style",
-                    icon: "paintpalette.fill",
                     selection: selectedStyleId,
-                    options: filteredStyles.compactMap { ($0.id, $0.name) }
+                    options: filteredStyles.compactMap { style in style.id.map { ($0, style.name) } },
+                    counts: filterCounts?.byStyle ?? [:]
                 ) { newValue in
                     selectedStyleId = newValue
                     selectedTypeId = nil
@@ -395,78 +406,116 @@ struct PartsCatalogPage: View {
                 }
 
                 // Type (cascaded from style)
-                filterMenu(
+                smartFilterMenuCard(
                     label: "Type",
-                    icon: "square.grid.2x2.fill",
                     selection: selectedTypeId,
-                    options: filteredTypes.compactMap { ($0.id, $0.name) }
+                    options: filteredTypes.compactMap { type in type.id.map { ($0, type.name) } },
+                    counts: filterCounts?.byType ?? [:]
                 ) { newValue in
                     selectedTypeId = newValue
                     resetAndLoad()
                 }
 
                 // Color
-                filterMenu(
+                smartFilterMenuCard(
                     label: "Color",
-                    icon: "drop.fill",
                     selection: selectedColorId,
-                    options: colors.compactMap { ($0.id, $0.name) }
+                    options: colors.compactMap { color in color.id.map { ($0, color.name) } },
+                    counts: filterCounts?.byColor ?? [:]
                 ) { newValue in
                     selectedColorId = newValue
                     resetAndLoad()
                 }
 
                 // Brand
-                filterMenu(
+                smartFilterMenuCard(
                     label: "Brand",
-                    icon: "tag.fill",
                     selection: selectedBrandId,
-                    options: brands.compactMap { ($0.id, $0.name) }
+                    options: brands.compactMap { brand in brand.id.map { ($0, brand.name) } },
+                    counts: filterCounts?.byBrand ?? [:]
                 ) { newValue in
                     selectedBrandId = newValue
                     resetAndLoad()
                 }
 
-                // Low stock toggle
-                Button {
-                    lowStockOnly.toggle()
-                    resetAndLoad()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.caption)
-                        Text("Low Stock")
-                            .font(.subheadline)
+                // Low stock toggle — badge = low-stock parts under current filters
+                SmartFilterCard(
+                    title: "Low Stock",
+                    count: filterCounts?.lowStock ?? 0,
+                    isSelected: lowStockOnly,
+                    action: {
+                        lowStockOnly.toggle()
+                        resetAndLoad()
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(lowStockOnly ? Color.orange.opacity(0.15) : Color.clear)
-                    .clipShape(Capsule())
-                    .overlay(Capsule().stroke(lowStockOnly ? Color.orange.opacity(0.5) : Color.accentColor.opacity(0.3), lineWidth: 1))
-                }
-
-                // Clear all
-                if hasActiveFilters {
-                    Button {
-                        clearAllFilters()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "xmark")
-                                .font(.caption2)
-                            Text("Clear")
-                                .font(.caption)
-                        }
-                        .foregroundStyle(.red)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .background(Capsule().fill(Color.red.opacity(0.08)))
-                    }
-                }
+                )
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
         }
         .background(Color(.secondarySystemGroupedBackground))
+    }
+
+    /// A SmartFilterCard-styled menu for a filter dimension with per-option
+    /// part counts. Badge shows the matching-part count for the current
+    /// selection, or the number of available options when unselected.
+    /// Choosing "All <label>s" from the menu clears the dimension.
+    @ViewBuilder
+    private func smartFilterMenuCard(
+        label: String,
+        selection: Int64?,
+        options: [(Int64, String)],
+        counts: [Int64: Int],
+        onChange: @escaping (Int64?) -> Void
+    ) -> some View {
+        let selectedName = selection.flatMap { sel in options.first { $0.0 == sel }?.1 }
+        let badgeCount = selection.map { counts[$0] ?? 0 }
+            ?? options.filter { counts[$0.0] != nil }.count
+        let isSelected = selection != nil
+
+        Menu {
+            Button("All \(label)s") { onChange(nil) }
+            Divider()
+            ForEach(options, id: \.0) { id, name in
+                Button {
+                    onChange(id)
+                } label: {
+                    let title = "\(name) (\(counts[id] ?? 0))"
+                    if selection == id {
+                        Label(title, systemImage: "checkmark")
+                    } else {
+                        Text(title)
+                    }
+                }
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 4) {
+                    Text(selectedName ?? label)
+                        .font(.subheadline)
+                        .fontWeight(isSelected ? .semibold : .regular)
+                        .lineLimit(1)
+                    Image(systemName: "chevron.down")
+                        .font(.caption2).bold()
+                        .accessibilityHidden(true)
+                }
+                Text("\(badgeCount)")
+                    .font(.title2)
+                    .fontWeight(.bold)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .frame(minWidth: 100, minHeight: 44)
+            .background(isSelected ? Color.accentColor.opacity(0.15) : Color(.systemGray6))
+            .foregroundColor(isSelected ? .accentColor : .primary)
+            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
+            )
+        }
+        .accessibilityLabel(isSelected
+            ? "\(label) filter: \(selectedName ?? ""), \(badgeCount) matching parts"
+            : "\(label) filter, \(badgeCount) options")
     }
 
     private var hasActiveFilters: Bool {
@@ -483,56 +532,6 @@ struct PartsCatalogPage: View {
         selectedBrandId = nil
         lowStockOnly = false
         resetAndLoad()
-    }
-
-    @ViewBuilder
-    private func filterMenu(
-        label: String,
-        icon: String,
-        selection: Int64?,
-        options: [(Int64?, String)],
-        onChange: @escaping (Int64?) -> Void
-    ) -> some View {
-        Menu {
-            Button("All \(label)s") { onChange(nil) }
-            Divider()
-            ForEach(options, id: \.0) { id, name in
-                Button {
-                    onChange(id)
-                } label: {
-                    if selection == id {
-                        Label(name, systemImage: "checkmark")
-                    } else {
-                        Text(name)
-                    }
-                }
-            }
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.caption2)
-                    .accessibilityHidden(true)
-                Text(selection.flatMap { sel in options.first { $0.0 == sel }?.1 } ?? label)
-                    .font(.caption)
-                    .fontWeight(selection != nil ? .semibold : .regular)
-                    .lineLimit(1)
-                Image(systemName: "chevron.down")
-                    .font(.caption2).bold()
-                    .accessibilityHidden(true)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(
-                Capsule().fill(selection != nil
-                    ? Color.accentColor.opacity(0.15)
-                    : Color(.tertiarySystemGroupedBackground))
-            )
-            .overlay(
-                Capsule().stroke(selection != nil
-                    ? Color.accentColor.opacity(0.4)
-                    : Color.clear, lineWidth: 1)
-            )
-        }
     }
 
     // MARK: - Sort Header
@@ -1121,6 +1120,16 @@ struct PartsCatalogPage: View {
                 offset: offset
             )
 
+            // Facet counts for the smart-card filter bar (same filter state)
+            let counts = try service.getCatalogFilterCounts(
+                search: effectiveSearchText.isEmpty ? nil : effectiveSearchText,
+                categoryId: selectedCategoryId,
+                styleId: selectedStyleId,
+                typeId: selectedTypeId,
+                colorId: selectedColorId,
+                brandId: selectedBrandId
+            )
+
             let prows = result.parts.map { pwd -> CatalogPartRow in
                 let stock = pwd.totalStock
                 let minStock = pwd.part.minStockLevel
@@ -1151,6 +1160,7 @@ struct PartsCatalogPage: View {
             await MainActor.run {
                 totalCount = result.totalCount
                 parts = prows
+                filterCounts = counts
                 isLoading = false
             }
         } catch {

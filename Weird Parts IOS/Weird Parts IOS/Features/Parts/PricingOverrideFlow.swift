@@ -4,11 +4,14 @@ import WiredPartCore
 /// Flow for setting pricing at a hierarchy level with override confirmation.
 ///
 /// Presents a multi-step sheet:
-/// 1. Pick the hierarchy level (Category, Style, Type, Brand)
-/// 2. Pick the specific entity at that level
+/// 1. Pick the hierarchy level (Category, Style, Type, Brand, Part)
+/// 2. Pick the specific entity at that level (parts are searchable)
 /// 3. Enter the new markup/margin/fixed price
 /// 4. Preview up to 15 random affected parts (read-only)
 /// 5. If overrides exist, step through them ONE AT A TIME (Replace or Keep)
+///
+/// Part is the most specific level: setting a part target replaces any
+/// existing part-level tier for that part and overrides all inherited tiers.
 struct PricingTierSetSheet: View {
     let onComplete: () async -> Void
     @EnvironmentObject private var appCore: AppCore
@@ -28,6 +31,8 @@ struct PricingTierSetSheet: View {
     @State private var styles: [PartStyle] = []
     @State private var types: [PartType] = []
     @State private var brands: [Brand] = []
+    @State private var partOptions: [(id: Int64, name: String)] = []
+    @State private var partSearchText = ""
 
     // Price input
     @State private var markupText = ""
@@ -61,6 +66,7 @@ struct PricingTierSetSheet: View {
         case style = "Style"
         case type = "Type"
         case brand = "Brand"
+        case part = "Part"
     }
 
     var body: some View {
@@ -143,6 +149,23 @@ struct PricingTierSetSheet: View {
     @ViewBuilder
     private var selectEntityView: some View {
         List {
+            if selectedLevel == .part {
+                Section {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                        TextField("Search parts by name or code", text: $partSearchText)
+                            .textFieldStyle(.plain)
+                            .autocorrectionDisabled()
+                            .frame(minHeight: 44)
+                            .onChange(of: partSearchText) { _, _ in
+                                Task { await loadPartOptions() }
+                            }
+                    }
+                }
+            }
+
             Section("Select a \(selectedLevel.rawValue)") {
                 switch selectedLevel {
                 case .category:
@@ -160,6 +183,18 @@ struct PricingTierSetSheet: View {
                 case .brand:
                     ForEach(brands, id: \.id) { brand in
                         entityButton(name: brand.name, id: brand.id ?? 0)
+                    }
+                case .part:
+                    if partOptions.isEmpty {
+                        Text(partSearchText.isEmpty
+                             ? "No parts in the catalog yet."
+                             : "No parts match \"\(partSearchText)\".")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(partOptions, id: \.id) { part in
+                            entityButton(name: part.name, id: part.id)
+                        }
                     }
                 }
             }
@@ -513,6 +548,7 @@ struct PricingTierSetSheet: View {
         case .style: return "paintbrush"
         case .type: return "cube"
         case .brand: return "tag"
+        case .part: return "wrench.and.screwdriver"
         }
     }
 
@@ -532,9 +568,38 @@ struct PricingTierSetSheet: View {
             case .brand:
                 let results = try service.listBrands()
                 brands = results.map(\.brand)
+            case .part:
+                partSearchText = ""
+                await loadPartOptions()
             }
         } catch {
             loadError = userFriendlyError(error, context: "load pricing overrides")
+        }
+    }
+
+    /// Load the part picker options, filtered by the current search text.
+    private func loadPartOptions() async {
+        guard let service = appCore.partsService else {
+            loadError = "Service not available"
+            return
+        }
+        do {
+            let query = partSearchText.trimmingCharacters(in: .whitespaces)
+            let result = try service.listCatalogParts(
+                search: query.isEmpty ? nil : query,
+                sortField: .name,
+                sortAscending: true,
+                limit: 100,
+                offset: 0
+            )
+            partOptions = result.parts.compactMap { pwd in
+                guard let id = pwd.part.id else { return nil }
+                let code = pwd.part.code
+                let name = (code?.isEmpty == false) ? "\(pwd.part.name) (\(code ?? ""))" : pwd.part.name
+                return (id: id, name: name)
+            }
+        } catch {
+            loadError = userFriendlyError(error, context: "load parts")
         }
     }
 
@@ -549,18 +614,19 @@ struct PricingTierSetSheet: View {
             let styId = selectedLevel == .style ? selectedEntityId : nil
             let typId = selectedLevel == .type ? selectedEntityId : nil
             let brnId = selectedLevel == .brand ? selectedEntityId : nil
+            let prtId = selectedLevel == .part ? selectedEntityId : nil
 
             let markup = pricingMode == "markup" ? Double(markupText) : nil
             let margin = pricingMode == "margin" ? Double(marginText) : nil
             let fixed = useFixedPrice ? Double(fixedPriceText) : nil
 
             previewParts = try service.getPreviewParts(
-                categoryId: catId, styleId: styId, typeId: typId, brandId: brnId,
+                categoryId: catId, styleId: styId, typeId: typId, brandId: brnId, partId: prtId,
                 newMarkupPercent: markup, newMarginPercent: margin, newFixedPrice: fixed
             )
 
             conflicts = try service.findOverrideConflicts(
-                categoryId: catId, styleId: styId, typeId: typId, brandId: brnId,
+                categoryId: catId, styleId: styId, typeId: typId, brandId: brnId, partId: prtId,
                 newMarkupPercent: markup, newMarginPercent: margin, newFixedPrice: fixed
             )
 
@@ -593,6 +659,7 @@ struct PricingTierSetSheet: View {
             let styId = selectedLevel == .style ? selectedEntityId : nil
             let typId = selectedLevel == .type ? selectedEntityId : nil
             let brnId = selectedLevel == .brand ? selectedEntityId : nil
+            let prtId = selectedLevel == .part ? selectedEntityId : nil
 
             let markup = pricingMode == "markup" ? Double(markupText) : nil
             let margin = pricingMode == "margin" ? Double(marginText) : nil
@@ -600,7 +667,7 @@ struct PricingTierSetSheet: View {
 
             // Set the tier
             _ = try service.setPricingTier(
-                categoryId: catId, styleId: styId, typeId: typId, brandId: brnId,
+                categoryId: catId, styleId: styId, typeId: typId, brandId: brnId, partId: prtId,
                 markupPercent: markup, marginPercent: margin, fixedSellPrice: fixed
             )
 

@@ -1163,7 +1163,8 @@ struct ReceivingRoutingFlow: View {
                 qty: receivedQty,
                 returnType: action.rawValue.lowercased(),
                 performedBy: userId,
-                notes: "Damaged on arrival, requesting \(action.rawValue.lowercased())"
+                notes: "Damaged on arrival, requesting \(action.rawValue.lowercased())",
+                receivingSessionId: item.sessionId
             )
             try service.markReceivingSessionItemRouted(
                 itemId: item.id,

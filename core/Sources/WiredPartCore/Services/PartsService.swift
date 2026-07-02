@@ -2967,6 +2967,26 @@ public final class PartsService: Sendable {
         styleId: Int64? = nil,
         typeId: Int64? = nil,
         brandId: Int64? = nil,
+        partId: Int64? = nil,
+        newMarkupPercent: Double? = nil,
+        newMarginPercent: Double? = nil,
+        newFixedPrice: Double? = nil
+    ) throws -> [OverrideConflict] {
+        // Part is the MOST specific pricing level: nothing below it can
+        // conflict, and an existing tier on the same part is replaced by
+        // the setPricingTier upsert. No overrides to review.
+        if partId != nil { return [] }
+        return try findScopedOverrideConflicts(
+            categoryId: categoryId, styleId: styleId, typeId: typeId, brandId: brandId,
+            newMarkupPercent: newMarkupPercent, newMarginPercent: newMarginPercent, newFixedPrice: newFixedPrice
+        )
+    }
+
+    private func findScopedOverrideConflicts(
+        categoryId: Int64? = nil,
+        styleId: Int64? = nil,
+        typeId: Int64? = nil,
+        brandId: Int64? = nil,
         newMarkupPercent: Double? = nil,
         newMarginPercent: Double? = nil,
         newFixedPrice: Double? = nil
@@ -3082,6 +3102,7 @@ public final class PartsService: Sendable {
         styleId: Int64? = nil,
         typeId: Int64? = nil,
         brandId: Int64? = nil,
+        partId: Int64? = nil,
         newMarkupPercent: Double? = nil,
         newMarginPercent: Double? = nil,
         newFixedPrice: Double? = nil,
@@ -3099,6 +3120,7 @@ public final class PartsService: Sendable {
             if let id = styleId { conditions.append("p.style_id = ?"); args.append(id) }
             if let id = typeId { conditions.append("p.type_id = ?"); args.append(id) }
             if let id = brandId { conditions.append("p.brand_id = ?"); args.append(id) }
+            if let id = partId { conditions.append("p.id = ?"); args.append(id) }
 
             let whereClause = conditions.joined(separator: " AND ")
 
@@ -7675,21 +7697,40 @@ public final class PartsService: Sendable {
                 """, arguments: [supplierId])
             let totalPOs: Int = poRow?["total_pos"] ?? 0
 
-            // Total units received from this supplier
+            // Total units received from this supplier.
+            // Receiving writers persist the canonical receive family
+            // ('receive', 'receiving', 'receipt') — count all of them so the
+            // quality denominator matches what the receiving flow writes.
             let receivedRow = try Row.fetchOne(dbConn, sql: """
                 SELECT COALESCE(SUM(qty), 0) AS total_received
                 FROM stock_movements
-                WHERE supplier_id = ? AND movement_type = '\(StockMovement.MovementType.receipt.rawValue)' AND deleted_at IS NULL
+                WHERE supplier_id = ?
+                AND movement_type IN (
+                    '\(StockMovement.MovementType.receipt.rawValue)',
+                    '\(StockMovement.MovementType.receive.rawValue)',
+                    '\(StockMovement.MovementType.receiving.rawValue)'
+                )
+                AND deleted_at IS NULL
                 """, arguments: [supplierId])
             let totalReceived: Int = receivedRow?["total_received"] ?? 0
 
-            // Total units returned TO this supplier
+            // Total units returned TO this supplier.
+            // The supplier-return flow writes movement_type 'return_to_supplier'
+            // (WarehouseService.returnDamagedToSupplier) with no location endpoints,
+            // so those rows are attributed purely by supplier_id. Legacy 'return'
+            // rows only count when they are actually supplier-bound.
             let returnedRow = try Row.fetchOne(dbConn, sql: """
                 SELECT COALESCE(SUM(qty), 0) AS total_returned
                 FROM stock_movements
-                WHERE supplier_id = ? AND movement_type = '\(StockMovement.MovementType.stockReturn.rawValue)' AND deleted_at IS NULL
-                AND from_location_type IN ('warehouse', 'staging')
-                AND to_location_type = 'supplier'
+                WHERE supplier_id = ? AND deleted_at IS NULL
+                AND (
+                    movement_type = '\(StockMovement.MovementType.returnToSupplier.rawValue)'
+                    OR (
+                        movement_type = '\(StockMovement.MovementType.stockReturn.rawValue)'
+                        AND from_location_type IN ('warehouse', 'staging')
+                        AND to_location_type = 'supplier'
+                    )
+                )
                 """, arguments: [supplierId])
             let totalReturned: Int = returnedRow?["total_returned"] ?? 0
 
@@ -8048,6 +8089,8 @@ public final class PartsService: Sendable {
     /// A single step in a part's journey from supplier to job.
     public struct TraceStep: Sendable {
         public let movementId: Int64
+        public let partId: Int64
+        public let partName: String?
         public let date: String
         public let movementType: String     // "receipt", "transfer", "consumption", "return"
         public let fromLocation: String     // e.g. "Supplier: ABC Supply"
@@ -8064,30 +8107,14 @@ public final class PartsService: Sendable {
     public func tracePartMovements(partId: Int64) throws -> [TraceStep] {
         try db.writer.read { dbConn in
             let rows = try Row.fetchAll(dbConn, sql: """
-                SELECT sm.*, u.display_name AS performer_name
+                SELECT sm.*, u.display_name AS performer_name, p.name AS part_name
                 FROM stock_movements sm
                 LEFT JOIN users u ON u.id = sm.performed_by AND u.deleted_at IS NULL
+                LEFT JOIN parts p ON p.id = sm.part_id
                 WHERE sm.part_id = ? AND sm.deleted_at IS NULL
                 ORDER BY sm.created_at ASC
                 """, arguments: [partId])
-
-            return rows.map { row in
-                let fromType: String? = row["from_location_type"]
-                let toType: String? = row["to_location_type"]
-
-                return TraceStep(
-                    movementId: row["id"],
-                    date: row["created_at"] ?? "",
-                    movementType: row["movement_type"] ?? StockMovement.MovementType.transfer.rawValue,
-                    fromLocation: describeLocation(type: fromType),
-                    toLocation: describeLocation(type: toType),
-                    qty: row["qty"],
-                    unitCost: row["unit_cost_at_move"],
-                    performedByName: row["performer_name"],
-                    referenceNumber: row["reference_number"],
-                    notes: row["notes"]
-                )
-            }
+            return try rows.map { try self.traceStep(from: $0, dbConn: dbConn) }
         }
     }
 
@@ -8095,31 +8122,52 @@ public final class PartsService: Sendable {
     public func tracePartFromSupplier(partId: Int64, supplierId: Int64) throws -> [TraceStep] {
         try db.writer.read { dbConn in
             let rows = try Row.fetchAll(dbConn, sql: """
-                SELECT sm.*, u.display_name AS performer_name
+                SELECT sm.*, u.display_name AS performer_name, p.name AS part_name
                 FROM stock_movements sm
                 LEFT JOIN users u ON u.id = sm.performed_by AND u.deleted_at IS NULL
+                LEFT JOIN parts p ON p.id = sm.part_id
                 WHERE sm.part_id = ? AND sm.supplier_id = ? AND sm.deleted_at IS NULL
                 ORDER BY sm.created_at ASC
                 """, arguments: [partId, supplierId])
-
-            return rows.map { row in
-                let fromType: String? = row["from_location_type"]
-                let toType: String? = row["to_location_type"]
-
-                return TraceStep(
-                    movementId: row["id"],
-                    date: row["created_at"] ?? "",
-                    movementType: row["movement_type"] ?? StockMovement.MovementType.transfer.rawValue,
-                    fromLocation: describeLocation(type: fromType),
-                    toLocation: describeLocation(type: toType),
-                    qty: row["qty"],
-                    unitCost: row["unit_cost_at_move"],
-                    performedByName: row["performer_name"],
-                    referenceNumber: row["reference_number"],
-                    notes: row["notes"]
-                )
-            }
+            return try rows.map { try self.traceStep(from: $0, dbConn: dbConn) }
         }
+    }
+
+    /// Recent movements attributed to a supplier across ALL parts — receipts
+    /// from the supplier and returns back to them. Newest first. Backs the
+    /// Traceability section on Supplier detail.
+    public func getSupplierTrace(supplierId: Int64, limit: Int = 10) throws -> [TraceStep] {
+        try db.writer.read { dbConn in
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT sm.*, u.display_name AS performer_name, p.name AS part_name
+                FROM stock_movements sm
+                LEFT JOIN users u ON u.id = sm.performed_by AND u.deleted_at IS NULL
+                LEFT JOIN parts p ON p.id = sm.part_id
+                WHERE sm.supplier_id = ? AND sm.deleted_at IS NULL
+                ORDER BY sm.created_at DESC
+                LIMIT ?
+                """, arguments: [supplierId, limit])
+            return try rows.map { try self.traceStep(from: $0, dbConn: dbConn) }
+        }
+    }
+
+    /// Build a TraceStep from a stock_movements row, resolving location
+    /// endpoints to specific entity names (warehouse/job/truck/staging).
+    private func traceStep(from row: Row, dbConn: Database) throws -> TraceStep {
+        TraceStep(
+            movementId: row["id"],
+            partId: row["part_id"],
+            partName: row["part_name"],
+            date: row["created_at"] ?? "",
+            movementType: row["movement_type"] ?? StockMovement.MovementType.transfer.rawValue,
+            fromLocation: try describeLocation(type: row["from_location_type"], id: row["from_location_id"], dbConn: dbConn),
+            toLocation: try describeLocation(type: row["to_location_type"], id: row["to_location_id"], dbConn: dbConn),
+            qty: row["qty"],
+            unitCost: row["unit_cost_at_move"],
+            performedByName: row["performer_name"],
+            referenceNumber: row["reference_number"],
+            notes: row["notes"]
+        )
     }
 
     /// Get the current location of a part's stock — where is it right now?
@@ -8140,17 +8188,47 @@ public final class PartsService: Sendable {
         }
     }
 
-    /// Describe a location type as a human-readable string
-    private func describeLocation(type: String?) -> String {
+    /// Describe a location endpoint as a human-readable string, resolving the
+    /// specific warehouse/job/truck/staging entity name when an id is present
+    /// (movement-location fidelity — GH#84 traceability).
+    private func describeLocation(type: String?, id: Int64? = nil, dbConn: Database? = nil) throws -> String {
         guard let type = type else { return "Unknown" }
+
+        let genericLabel: String
         switch type.lowercased() {
-        case "supplier": return "Supplier"
-        case "warehouse": return "Warehouse"
-        case "staging": return "Staging Area"
-        case "job": return "Job Site"
-        case "truck", "vehicle": return "Truck"
-        default: return type.capitalized
+        case "supplier": genericLabel = "Supplier"
+        case "warehouse", "shop": genericLabel = "Warehouse"
+        case "staging": genericLabel = "Staging Area"
+        case "job", "pulled": genericLabel = "Job Site"
+        case "truck", "vehicle": genericLabel = "Truck"
+        case "job_return_holding": genericLabel = "Job Return Holding"
+        default: genericLabel = type.capitalized
         }
+
+        guard let id, let dbConn else { return genericLabel }
+
+        // Resolve the concrete entity name; a missing row falls back to the
+        // generic label (movements can outlive their location entities).
+        let nameSQL: String?
+        switch type.lowercased() {
+        case "warehouse", "shop":
+            nameSQL = "SELECT name FROM warehouse_locations WHERE id = ?"
+        case "staging":
+            nameSQL = "SELECT name FROM staging_zones WHERE id = ?"
+        case "truck", "vehicle":
+            nameSQL = "SELECT vehicle_name FROM vehicles WHERE id = ?"
+        case "job", "pulled":
+            nameSQL = "SELECT job_name FROM jobs WHERE id = ?"
+        case "supplier":
+            nameSQL = "SELECT name FROM suppliers WHERE id = ?"
+        default:
+            nameSQL = nil
+        }
+
+        guard let nameSQL else { return genericLabel }
+        guard let name = try String.fetchOne(dbConn, sql: nameSQL, arguments: [id]),
+              !name.isEmpty else { return genericLabel }
+        return "\(genericLabel): \(name)"
     }
 
     // =========================================================================
@@ -8666,6 +8744,124 @@ public final class PartsService: Sendable {
         }
         } catch {
             if isTableNotFoundError(error) { return CatalogSearchResult(parts: [], totalCount: 0) }
+            throw error
+        }
+    }
+
+    // MARK: - Catalog Filter Facet Counts (GH#67 smart-card stat filters)
+
+    /// Per-dimension part counts backing the catalog smart-card filters.
+    ///
+    /// Facet semantics: each dimension's counts are computed with every OTHER
+    /// active filter applied but that dimension's own selection excluded, so a
+    /// filter card can show how many parts each option would match.
+    public struct CatalogFilterCounts: Sendable {
+        /// Parts matching the search text only (no dimension filters) — the "All Parts" card.
+        public let allParts: Int
+        /// Parts matching all active dimension filters AND currently below min stock — the "Low Stock" card.
+        public let lowStock: Int
+        public let byCategory: [Int64: Int]
+        public let byStyle: [Int64: Int]
+        public let byType: [Int64: Int]
+        public let byColor: [Int64: Int]
+        public let byBrand: [Int64: Int]
+
+        public init(allParts: Int, lowStock: Int, byCategory: [Int64: Int], byStyle: [Int64: Int], byType: [Int64: Int], byColor: [Int64: Int], byBrand: [Int64: Int]) {
+            self.allParts = allParts
+            self.lowStock = lowStock
+            self.byCategory = byCategory
+            self.byStyle = byStyle
+            self.byType = byType
+            self.byColor = byColor
+            self.byBrand = byBrand
+        }
+    }
+
+    /// Compute smart-card facet counts for the catalog filter bar.
+    public func getCatalogFilterCounts(
+        search: String? = nil,
+        categoryId: Int64? = nil,
+        styleId: Int64? = nil,
+        typeId: Int64? = nil,
+        colorId: Int64? = nil,
+        brandId: Int64? = nil
+    ) throws -> CatalogFilterCounts {
+        do { return try db.writer.read { dbConn in
+            let lowStockSQL = """
+                p.min_stock_level IS NOT NULL AND \
+                COALESCE((SELECT SUM(s.qty) FROM stock s WHERE s.part_id = p.id AND s.deleted_at IS NULL), 0) < p.min_stock_level
+                """
+
+            /// Build WHERE clauses for the active filters, optionally excluding
+            /// one dimension (the one being faceted).
+            func buildWhere(excluding dimension: String?) -> (sql: String, args: [DatabaseValueConvertible?]) {
+                var clauses = ["p.deleted_at IS NULL"]
+                var args: [DatabaseValueConvertible?] = []
+                if let categoryId, dimension != "category" { clauses.append("p.category_id = ?"); args.append(categoryId) }
+                if let styleId, dimension != "style" { clauses.append("p.style_id = ?"); args.append(styleId) }
+                if let typeId, dimension != "type" { clauses.append("p.type_id = ?"); args.append(typeId) }
+                if let colorId, dimension != "color" { clauses.append("p.color_id = ?"); args.append(colorId) }
+                if let brandId, dimension != "brand" { clauses.append("p.brand_id = ?"); args.append(brandId) }
+                if let search, !search.isEmpty {
+                    clauses.append("(p.name LIKE ? OR p.code LIKE ? OR COALESCE(b.name, '') LIKE ?)")
+                    let like = "%\(search)%"
+                    args.append(like); args.append(like); args.append(like)
+                }
+                return (clauses.joined(separator: " AND "), args)
+            }
+
+            func facetCounts(column: String, dimension: String) throws -> [Int64: Int] {
+                let (whereSQL, args) = buildWhere(excluding: dimension)
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT p.\(column) AS facet_id, COUNT(*) AS cnt
+                    FROM parts p
+                    LEFT JOIN brands b ON b.id = p.brand_id AND b.deleted_at IS NULL
+                    WHERE \(whereSQL) AND p.\(column) IS NOT NULL
+                    GROUP BY p.\(column)
+                    """, arguments: StatementArguments(args))
+                var counts: [Int64: Int] = [:]
+                for row in rows {
+                    if let id: Int64 = row["facet_id"] { counts[id] = row["cnt"] }
+                }
+                return counts
+            }
+
+            // "All Parts": search text only, no dimension filters.
+            var allWhere = ["p.deleted_at IS NULL"]
+            var allArgs: [DatabaseValueConvertible?] = []
+            if let search, !search.isEmpty {
+                allWhere.append("(p.name LIKE ? OR p.code LIKE ? OR COALESCE(b.name, '') LIKE ?)")
+                let like = "%\(search)%"
+                allArgs.append(like); allArgs.append(like); allArgs.append(like)
+            }
+            let allParts = try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM parts p
+                LEFT JOIN brands b ON b.id = p.brand_id AND b.deleted_at IS NULL
+                WHERE \(allWhere.joined(separator: " AND "))
+                """, arguments: StatementArguments(allArgs)) ?? 0
+
+            // "Low Stock": all active dimension filters + below-min condition.
+            let (filteredWhere, filteredArgs) = buildWhere(excluding: nil)
+            let lowStock = try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM parts p
+                LEFT JOIN brands b ON b.id = p.brand_id AND b.deleted_at IS NULL
+                WHERE \(filteredWhere) AND \(lowStockSQL)
+                """, arguments: StatementArguments(filteredArgs)) ?? 0
+
+            return CatalogFilterCounts(
+                allParts: allParts,
+                lowStock: lowStock,
+                byCategory: try facetCounts(column: "category_id", dimension: "category"),
+                byStyle: try facetCounts(column: "style_id", dimension: "style"),
+                byType: try facetCounts(column: "type_id", dimension: "type"),
+                byColor: try facetCounts(column: "color_id", dimension: "color"),
+                byBrand: try facetCounts(column: "brand_id", dimension: "brand")
+            )
+        }
+        } catch {
+            if isTableNotFoundError(error) {
+                return CatalogFilterCounts(allParts: 0, lowStock: 0, byCategory: [:], byStyle: [:], byType: [:], byColor: [:], byBrand: [:])
+            }
             throw error
         }
     }
