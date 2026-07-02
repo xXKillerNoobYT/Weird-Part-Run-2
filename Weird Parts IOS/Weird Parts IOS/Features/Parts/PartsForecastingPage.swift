@@ -827,7 +827,6 @@ private struct ForecastDetailSheet: View {
     @State private var editMaxStock: String = ""
 
     // Toast
-    @State private var showComingSoon = false
     @State private var toastMessage: String?
 
     var body: some View {
@@ -866,21 +865,6 @@ private struct ForecastDetailSheet: View {
                 Text(editError ?? "")
             }
             .overlay(alignment: .bottom) {
-                if showComingSoon {
-                    Text("Coming in a future update")
-                        .font(.subheadline)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(.ultraThinMaterial)
-                        .cornerRadius(8)
-                        .padding(.bottom, 20)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .onAppear {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                withAnimation { showComingSoon = false }
-                            }
-                        }
-                }
                 if let message = toastMessage {
                     Text(message)
                         .font(.subheadline)

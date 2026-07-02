@@ -1174,4 +1174,54 @@ struct ChatServiceTests {
         #expect(adminChannels.contains { $0.channelId == channelId },
                 "Active members should still see their job-linked supplier channels")
     }
+
+    // MARK: - #1191: channel-scoped escalate / push back
+
+    @Test("escalateThreadByChannel and pushBackThreadByChannel act on the channel's thread")
+    func testEscalateAndPushBackByChannel() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-CHAN-ESC-01")
+        let channelId = try env.chat.createChannel(
+            name: "QA By Channel", channelType: "qa", jobId: jobId, createdBy: env.adminUserId
+        )
+        let threadId = try env.chat.createSupplierQuestion(
+            channelId: channelId, jobId: jobId, askedBy: env.adminUserId,
+            subject: "Escalate me via my channel"
+        )
+
+        #expect(try env.chat.qaThreadId(forChannelId: channelId) == threadId)
+
+        try env.chat.escalateThreadByChannel(channelId: channelId, escalatedBy: env.adminUserId, notes: "bump")
+        var thread = try env.chat.listQAThreads(jobId: jobId, status: nil).first(where: { $0.id == threadId })
+        #expect(thread?.currentLevel == "lead", "Escalating by channel must move the linked thread up one level")
+
+        try env.chat.pushBackThreadByChannel(channelId: channelId, pushedBackBy: env.adminUserId, reason: "wrong level")
+        thread = try env.chat.listQAThreads(jobId: jobId, status: nil).first(where: { $0.id == threadId })
+        #expect(thread?.currentLevel == "worker", "Pushing back by channel must move the linked thread down one level")
+        #expect(thread?.status == "open", "Push back must reopen the thread")
+    }
+
+    @Test("escalateThreadByChannel throws threadNotFound for a channel with no QA thread")
+    func testEscalateByChannelThrowsWithoutThread() throws {
+        let env = try E2ETestHelpers.setUp()
+        let channelId = try env.chat.createChannel(name: "No QA Here", createdBy: env.adminUserId)
+
+        #expect(try env.chat.qaThreadId(forChannelId: channelId) == nil)
+
+        var threw = false
+        do {
+            try env.chat.escalateThreadByChannel(channelId: channelId, escalatedBy: env.adminUserId, notes: nil)
+        } catch ChatService.ChatError.threadNotFound {
+            threw = true
+        } catch {}
+        #expect(threw, "escalateThreadByChannel must throw threadNotFound when the channel has no Q&A thread")
+
+        threw = false
+        do {
+            try env.chat.pushBackThreadByChannel(channelId: channelId, pushedBackBy: env.adminUserId, reason: "n/a")
+        } catch ChatService.ChatError.threadNotFound {
+            threw = true
+        } catch {}
+        #expect(threw, "pushBackThreadByChannel must throw threadNotFound when the channel has no Q&A thread")
+    }
 }

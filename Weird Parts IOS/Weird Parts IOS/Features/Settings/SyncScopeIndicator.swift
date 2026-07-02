@@ -45,7 +45,6 @@ enum SyncScope: String, CaseIterable {
         case "settings-company",
              "settings-billing",
              "settings-pdf",
-             "settings-payment-tracking",
              "settings-breaks", "settings-break-lunch",
              "settings-tool-policies",
              "settings-pretrip-checklists",

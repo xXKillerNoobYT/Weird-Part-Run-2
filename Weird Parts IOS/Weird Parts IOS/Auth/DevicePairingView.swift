@@ -216,6 +216,14 @@ struct DevicePairingView: View {
                 .fontWeight(.medium)
                 .foregroundStyle(.secondary)
 
+            // #1338: tell the user where a code actually comes from so this
+            // flow is no longer an unexplained dead end.
+            Text("Get a code on the shop device: Settings → Device Management → Pair New Device.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+
             TextField("e.g. ABCD-1234", text: $pairingCode)
                 .textFieldStyle(.roundedBorder)
                 .multilineTextAlignment(.center)

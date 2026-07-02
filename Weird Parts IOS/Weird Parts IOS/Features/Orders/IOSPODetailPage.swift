@@ -1410,6 +1410,24 @@ struct IOSPODetailPage: View {
                         .font(.subheadline)
                         .fontWeight(.medium)
 
+                    // Resolved-brand pill: this line was ordered in General mode and
+                    // the brand was auto-resolved against the supplier at PO creation. (#243)
+                    if line.brandSelectionMode == "general", let brandName = line.brandName {
+                        HStack(spacing: 4) {
+                            Image(systemName: "info.circle.fill")
+                                .font(.caption2)
+                                .accessibilityHidden(true)
+                            Text("Resolved: \(brandName)")
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(Color.teal.opacity(0.15)))
+                        .foregroundStyle(.teal)
+                        .accessibilityLabel("Brand auto-resolved to \(brandName)")
+                    }
+
                     // Stale price warning
                     if let partId = line.partId,
                        let service = appCore.partsService,

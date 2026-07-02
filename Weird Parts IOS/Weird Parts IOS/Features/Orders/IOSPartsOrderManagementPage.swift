@@ -4,8 +4,9 @@ import WiredPartCore
 /// Supplier-centric parts view across all POs.
 ///
 /// Shows all parts ordered from a supplier across all active POs,
-/// grouped by PO then by job. Supports multi-select for part-level
-/// actions: move to different PO, change qty, remove + hold.
+/// grouped by PO then by job. Read-only for beta: bulk part-level
+/// actions (move to PO / change qty / remove + hold) were removed
+/// until their service flows exist (#1188).
 struct IOSPartsOrderManagementPage: View {
     @EnvironmentObject private var appCore: AppCore
 
@@ -36,14 +37,8 @@ struct IOSPartsOrderManagementPage: View {
     // Search
     @State private var searchText = ""
 
-    // Multi-selection
-    @State private var selectedPartIds: Set<Int64> = []
-
     // Help
     @State private var activeSheet: ActiveSheet?
-
-    // Toast
-    @State private var showComingSoon = false
 
     private enum ActiveSheet: Identifiable {
         case help
@@ -101,10 +96,6 @@ struct IOSPartsOrderManagementPage: View {
             } else {
                 partsList
             }
-
-            if !selectedPartIds.isEmpty {
-                selectionActionBar
-            }
         }
         .navigationTitle("Parts Management")
         .searchable(text: $searchText, prompt: "Search parts by name, code, or job...")
@@ -126,27 +117,10 @@ struct IOSPartsOrderManagementPage: View {
                 sections: [
                     ("What This Page Does", "Shows all parts ordered from a specific supplier across all active purchase orders. This is the supplier-centric view -- see everything you've ordered from one supplier in one place."),
                     ("How to Use It", "Pick a supplier from the cards at the top. Use PO status filters (Draft, Active, Partial, etc.) and part status filters (Waiting, Backorder, Received) to narrow the list. Search by part name, code, job name, or PO number."),
-                    ("Multi-Select Actions", "Tap the circle next to parts to select them. The action bar at the bottom lets you move selected parts to a different PO, change quantities, or remove and hold them for a different supplier."),
+                    ("Editing Orders", "To change quantities or move parts between orders, open the purchase order itself from the Purchase Orders tab. Draft POs can be edited line by line there."),
                     ("Tips", "Parts are grouped by PO number with the PO status and ETA shown in each section header. This view is great for checking what's outstanding with a specific supplier before calling them.")
                 ]
             )
-        }
-        .overlay(alignment: .bottom) {
-            if showComingSoon {
-                Text("Coming in a future update")
-                    .font(.subheadline)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(.ultraThinMaterial)
-                    .cornerRadius(8)
-                    .padding(.bottom, 20)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .onAppear {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                            withAnimation { showComingSoon = false }
-                        }
-                    }
-            }
         }
         .task {
             loadSuppliers()
@@ -170,7 +144,6 @@ struct IOSPartsOrderManagementPage: View {
                 ForEach(suppliers, id: \.id) { supplier in
                     Button {
                         selectedSupplierId = supplier.id
-                        selectedPartIds.removeAll()
                         loadData()
                     } label: {
                         VStack(spacing: 2) {
@@ -327,21 +300,6 @@ struct IOSPartsOrderManagementPage: View {
     @ViewBuilder
     private func partRow(_ row: OrdersService.PartsManagementRow) -> some View {
         HStack(spacing: 10) {
-            // Checkbox
-            Button {
-                if selectedPartIds.contains(row.id) {
-                    selectedPartIds.remove(row.id)
-                } else {
-                    selectedPartIds.insert(row.id)
-                }
-            } label: {
-                Image(systemName: selectedPartIds.contains(row.id) ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(selectedPartIds.contains(row.id) ? Color.accentColor : .secondary)
-                    .font(.title3)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(selectedPartIds.contains(row.id) ? "Deselect part" : "Select part")
-
             // Status icon
             statusIcon(row.lineStatus)
 
@@ -413,42 +371,6 @@ struct IOSPartsOrderManagementPage: View {
         }
     }
 
-    // MARK: - Selection Action Bar
-
-    private var selectionActionBar: some View {
-        VStack(spacing: 0) {
-            Divider()
-            HStack(spacing: 12) {
-                Text("\(selectedPartIds.count) selected")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                Spacer()
-                Button("Move to PO") {
-                    withAnimation { showComingSoon = true }
-                }
-                .font(.caption)
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("partsManagementMoveToPOButton")
-                Button("Change Qty") {
-                    withAnimation { showComingSoon = true }
-                }
-                .font(.caption)
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("partsManagementChangeQtyButton")
-                Button("Remove + Hold") {
-                    withAnimation { showComingSoon = true }
-                }
-                .font(.caption)
-                .buttonStyle(.bordered)
-                .tint(.red)
-                .accessibilityIdentifier("partsManagementRemoveHoldButton")
-            }
-            .padding(.horizontal)
-            .padding(.vertical, 10)
-            .background(.ultraThinMaterial)
-        }
-    }
-
     // MARK: - Helpers
 
     private func statusColor(_ status: String) -> Color {
@@ -508,16 +430,13 @@ struct IOSPartsOrderManagementPage: View {
 
     private func postAIContext() {
         let supplierName = suppliers.first(where: { $0.id == selectedSupplierId })?.name ?? "none"
-        let selectedQuantity = allRows
-            .filter { selectedPartIds.contains($0.id) }
-            .reduce(0) { $0 + $1.quantityOrdered }
         let context = [
             "Parts order management page is open.",
             "Selected supplier: \(supplierName). Suppliers with active POs: \(suppliers.count).",
-            "Rows loaded: \(allRows.count), filtered rows: \(filteredRows.count), selected rows: \(selectedPartIds.count), selected quantity: \(selectedQuantity).",
+            "Rows loaded: \(allRows.count), filtered rows: \(filteredRows.count).",
             "PO filters draft/active/partial/received/cancelled: \(showDraft)/\(showActive)/\(showPartial)/\(showReceived)/\(showCancelled).",
             "Part filters waiting/backorder/received: \(showWaiting)/\(showBackorder)/\(showReceivedParts). Search text is \(searchText.isEmpty ? "empty" : "active").",
-            "This context is read-only; explain supplier-centric PO parts, filters, outstanding quantities, and selection options without moving or editing parts."
+            "This context is read-only; explain supplier-centric PO parts, filters, and outstanding quantities without moving or editing parts."
         ].joined(separator: " ")
         NotificationCenter.default.post(
             name: .partsOrderManagementPageActive,

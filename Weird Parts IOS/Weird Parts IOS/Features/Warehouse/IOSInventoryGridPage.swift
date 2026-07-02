@@ -257,10 +257,8 @@ struct IOSInventoryGridPage: View {
                             name: .navigateToModule,
                             object: nil,
                             userInfo: [
-                                "moduleId": "warehouse-movements",
-                                "sourceLocationType": selectedLocationType,
-                                "sourceLocationId": selectedLocationId,
-                                "partId": item.partId
+                                "moduleId": "warehouse",
+                                "tabId": "warehouse-movements"
                             ]
                         )
                     } label: {

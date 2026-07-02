@@ -261,6 +261,111 @@ struct WarehouseFloorPlanTests {
         #expect(units[0].name == "Original Name")
     }
 
+    // MARK: - Storage Unit Dimension Validation (#1165)
+
+    @Test("addStorageUnit rejects non-positive physical dimensions")
+    func testAddStorageUnitRejectsNonPositivePhysicalDimensions() throws {
+        let env = try freshEnv()
+        let plan = try env.warehouse.createFloorPlan(name: "WH", widthInches: 200, lengthInches: 200)
+
+        let invalidInputs: [(width: Int?, depth: Int?, height: Int?)] = [
+            (0, 24, 72), (-6, 24, 72),
+            (48, 0, 72), (48, -1, 72),
+            (48, 24, 0), (48, 24, -12),
+        ]
+        for input in invalidInputs {
+            #expect(throws: WarehouseService.WarehouseError.invalidDimension) {
+                _ = try env.warehouse.addStorageUnit(
+                    floorPlanId: plan.id!, name: "Invalid Unit", unitType: "rack",
+                    widthInches: input.width, depthInches: input.depth, heightInches: input.height
+                )
+            }
+        }
+        #expect(try env.warehouse.listStorageUnits(floorPlanId: plan.id!).isEmpty)
+    }
+
+    @Test("addStorageUnit rejects non-positive grid dimensions and negative coordinates")
+    func testAddStorageUnitRejectsInvalidGridGeometry() throws {
+        let env = try freshEnv()
+        let plan = try env.warehouse.createFloorPlan(name: "WH", widthInches: 200, lengthInches: 200)
+
+        #expect(throws: WarehouseService.WarehouseError.invalidDimension) {
+            _ = try env.warehouse.addStorageUnit(
+                floorPlanId: plan.id!, name: "Bad Grid", unitType: "rack",
+                gridWidth: 0, gridHeight: 1
+            )
+        }
+        #expect(throws: WarehouseService.WarehouseError.invalidDimension) {
+            _ = try env.warehouse.addStorageUnit(
+                floorPlanId: plan.id!, name: "Bad Grid", unitType: "rack",
+                gridWidth: 2, gridHeight: -1
+            )
+        }
+        #expect(throws: WarehouseService.WarehouseError.invalidDimension) {
+            _ = try env.warehouse.addStorageUnit(
+                floorPlanId: plan.id!, name: "Bad Coord", unitType: "rack",
+                gridX: -1, gridY: 0
+            )
+        }
+        #expect(throws: WarehouseService.WarehouseError.invalidDimension) {
+            _ = try env.warehouse.addStorageUnit(
+                floorPlanId: plan.id!, name: "Bad Coord", unitType: "rack",
+                gridX: 0, gridY: -3
+            )
+        }
+        #expect(try env.warehouse.listStorageUnits(floorPlanId: plan.id!).isEmpty)
+    }
+
+    @Test("addStorageUnit rejects placement outside saved floor-plan grid bounds")
+    func testAddStorageUnitRejectsOutOfBoundsPlacement() throws {
+        let env = try freshEnv()
+        let plan = try env.warehouse.createFloorPlan(name: "WH", widthInches: 200, lengthInches: 200)
+        try env.warehouse.updateFloorPlanGrid(floorPlanId: plan.id!, rows: 4, cols: 5)
+
+        // 2-wide unit starting at column 4 of a 5-column grid → off the edge.
+        #expect(throws: WarehouseService.WarehouseError.invalidDimension) {
+            _ = try env.warehouse.addStorageUnit(
+                floorPlanId: plan.id!, name: "Off Grid", unitType: "rack",
+                gridX: 4, gridY: 0, gridWidth: 2, gridHeight: 1
+            )
+        }
+
+        // Same footprint inside the bounds succeeds.
+        let unit = try env.warehouse.addStorageUnit(
+            floorPlanId: plan.id!, name: "On Grid", unitType: "rack",
+            widthInches: 48, depthInches: 24, heightInches: 72,
+            gridX: 3, gridY: 0, gridWidth: 2, gridHeight: 1
+        )
+        #expect(unit.gridX == 3)
+    }
+
+    @Test("updateStorageUnit rejects invalid grid geometry and out-of-bounds moves")
+    func testUpdateStorageUnitRejectsInvalidGridGeometry() throws {
+        let env = try freshEnv()
+        let plan = try env.warehouse.createFloorPlan(name: "WH", widthInches: 200, lengthInches: 200)
+        try env.warehouse.updateFloorPlanGrid(floorPlanId: plan.id!, rows: 4, cols: 5)
+        let unit = try env.warehouse.addStorageUnit(
+            floorPlanId: plan.id!, name: "Unit", unitType: "rack",
+            gridX: 0, gridY: 0, gridWidth: 2, gridHeight: 1
+        )
+
+        #expect(throws: WarehouseService.WarehouseError.invalidDimension) {
+            try env.warehouse.updateStorageUnit(id: unit.id!, gridWidth: 0)
+        }
+        #expect(throws: WarehouseService.WarehouseError.invalidDimension) {
+            try env.warehouse.updateStorageUnit(id: unit.id!, gridX: -2)
+        }
+        // Moving the 2-wide unit to column 4 of a 5-column grid → off the edge.
+        #expect(throws: WarehouseService.WarehouseError.invalidDimension) {
+            try env.warehouse.updateStorageUnit(id: unit.id!, gridX: 4)
+        }
+        // Non-placement updates still succeed.
+        try env.warehouse.updateStorageUnit(id: unit.id!, name: "Renamed")
+        let units = try env.warehouse.listStorageUnits(floorPlanId: plan.id!)
+        #expect(units[0].name == "Renamed")
+        #expect(units[0].gridX == 0)
+    }
+
     @Test("Delete cascades through storage hierarchy")
     func testDeleteStorageUnit() throws {
         let env = try freshEnv()
