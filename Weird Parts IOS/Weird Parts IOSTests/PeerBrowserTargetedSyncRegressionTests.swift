@@ -110,6 +110,14 @@ final class PeerBrowserTargetedSyncRegressionTests: XCTestCase {
             browserSource.contains("peer.state == \"connecting\""),
             "The peer browser should keep a distinct in-progress branch for connecting peers."
         )
+        XCTAssertTrue(
+            browserSource.contains("else if peer.state == \"connected\""),
+            "The connected checkmark must be gated on the explicit connected state, not shown as a fallback for arbitrary unsyncable states."
+        )
+        XCTAssertTrue(
+            browserSource.contains("Text(\"Unavailable\")"),
+            "Unsyncable states that are neither connecting, waiting, nor connected need a neutral fallback row."
+        )
     }
 
     func testBluetoothPageRowsUseTargetedSyncAndConnectingState() throws {
@@ -130,6 +138,14 @@ final class PeerBrowserTargetedSyncRegressionTests: XCTestCase {
         XCTAssertTrue(
             source.contains("case \"connecting\": return \"Connecting\""),
             "Bluetooth page should label the connecting display state explicitly."
+        )
+        XCTAssertTrue(
+            source.contains("else if peer.state == \"connected\""),
+            "The connected checkmark must be gated on the explicit connected state, not shown as a fallback for arbitrary unsyncable states."
+        )
+        XCTAssertTrue(
+            source.contains("accessibilityLabel(\"Status: Connecting\")"),
+            "The in-progress spinner needs an accessibility label so VoiceOver users can read the row status."
         )
     }
 

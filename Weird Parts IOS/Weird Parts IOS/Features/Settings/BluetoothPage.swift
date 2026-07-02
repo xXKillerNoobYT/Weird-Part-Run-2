@@ -81,14 +81,21 @@ struct BluetoothPage: View {
                             } else if peer.state == "connecting" {
                                 ProgressView()
                                     .controlSize(.small)
+                                    .accessibilityLabel("Status: Connecting")
                             } else if peer.state == "multipeer" {
                                 Text("Waiting")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
-                            } else {
+                            } else if peer.state == "connected" {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundStyle(.green)
                                     .accessibilityLabel("Status: Connected")
+                            } else {
+                                // Neutral fallback for other unsyncable states
+                                // (e.g. a LAN peer without a usable address).
+                                Text("Unavailable")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
                         }
                         .frame(minHeight: 48)
