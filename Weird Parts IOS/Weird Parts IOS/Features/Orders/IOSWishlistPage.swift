@@ -972,10 +972,10 @@ private struct AddWishlistItemSheet: View {
                 Section("Part Information") {
                     TextField("Part Name", text: $partName)
                         .textContentType(.none)
-                        .onChange(of: partName) { _ in isDirty = true }
+                        .onChange(of: partName) { isDirty = true }
 
                     Stepper("Quantity: \(qtySuggested)", value: $qtySuggested, in: 1...9999)
-                        .onChange(of: qtySuggested) { _ in isDirty = true }
+                        .onChange(of: qtySuggested) { isDirty = true }
                 }
 
                 Section("Priority") {
@@ -986,17 +986,17 @@ private struct AddWishlistItemSheet: View {
                         }
                     }
                     .pickerStyle(.segmented)
-                    .onChange(of: priority) { _ in isDirty = true }
+                    .onChange(of: priority) { isDirty = true }
                 }
 
                 Section("Details") {
                     TextField("Reason (optional)", text: $reason, axis: .vertical)
                         .lineLimit(2...4)
-                        .onChange(of: reason) { _ in isDirty = true }
+                        .onChange(of: reason) { isDirty = true }
 
                     TextField("Notes (optional)", text: $notes, axis: .vertical)
                         .lineLimit(2...4)
-                        .onChange(of: notes) { _ in isDirty = true }
+                        .onChange(of: notes) { isDirty = true }
                 }
 
                 if let error = saveError {
