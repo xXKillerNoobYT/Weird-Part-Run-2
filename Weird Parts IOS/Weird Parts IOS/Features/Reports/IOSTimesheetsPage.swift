@@ -53,7 +53,9 @@ struct IOSTimesheetsPage: View {
         .reportExportToolbar(
             title: "Timesheets",
             columns: ["Employee", "Job", "Clock In", "Clock Out", "Paid Break", "Paid Lunch", "Unpaid Lunch", "Regular", "Overtime", "Status"],
-            rows: segments.map {
+            // Export exactly what's visible — an active employee search must
+            // filter the exported segments too (issue #1243).
+            rows: filteredSegments.map {
                 [
                     $0.userName, jobLabel($0), formatTimestamp($0.clockIn),
                     $0.clockOut.map(formatTimestamp) ?? "Open",
@@ -78,7 +80,8 @@ struct IOSTimesheetsPage: View {
                 PageHelpSheet(title: "Timesheets Help", sections: [
                     ("What This Page Does", "Lists every employee's timesheet totals for the selected date range. Shows regular hours, overtime hours, total hours, and how many days each person worked."),
                     ("How to Use It", "Set the start and end dates to match the period you want to review. Use the search bar to find a specific employee. Each row shows their name, hours breakdown, and days worked. Export to PDF or CSV using the toolbar button."),
-                    ("Tips", "Run this for each pay period before submitting payroll. If someone's hours seem too low, they may have forgotten to clock in. Compare against daily reports to catch missing entries.")
+                    ("Tips", "Run this for each pay period before submitting payroll. If someone's hours seem too low, they may have forgotten to clock in. Compare against daily reports to catch missing entries."),
+                    ("Exporting", "Exports include exactly the rows currently visible. If a search is active, only that employee's segments are exported — clear the search to export everyone.")
                 ])
             case .correction(let segment):
                 TimesheetCorrectionSheet(
@@ -148,6 +151,16 @@ struct IOSTimesheetsPage: View {
         guard !searchText.isEmpty else { return rows }
         let query = searchText.lowercased()
         return rows.filter {
+            $0.userName.lowercased().contains(query)
+        }
+    }
+
+    /// Export segments filtered by the same employee search that drives the
+    /// visible list, so exports never include hidden employees (issue #1243).
+    private var filteredSegments: [ReportsService.TimesheetSegmentRow] {
+        guard !searchText.isEmpty else { return segments }
+        let query = searchText.lowercased()
+        return segments.filter {
             $0.userName.lowercased().contains(query)
         }
     }
