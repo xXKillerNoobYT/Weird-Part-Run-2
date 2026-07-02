@@ -545,6 +545,49 @@ struct FleetServiceTests {
         #expect(tools.isEmpty)
     }
 
+    @Test("Tool counts and vehicle tool lists exclude soft-deleted checkouts")
+    func testToolCountsExcludeSoftDeletedCheckouts() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
+            vehicleNumber: "V-TCDEL", vehicleName: "Checkout Truck", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        try env.fleet.assignDriver(
+            actorId: env.adminUserId,
+            vehicleId: vehicleId, userId: env.adminUserId,
+            assignmentType: "primary", isTakeHome: true
+        )
+
+        // Seed a tool with an open (never checked-in) checkout by the admin
+        let checkoutId: Int64 = try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO tools (tool_number, name, category, status, created_at, updated_at)
+                VALUES ('T-TCDEL', 'Hammer Drill', 'power_tools', 'checked_out', datetime('now'), datetime('now'))
+                """)
+            let toolId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO tool_checkouts (tool_id, checked_out_by, checked_out_at, checkout_condition, created_at)
+                VALUES (?, ?, datetime('now'), 'Good', datetime('now'))
+                """, arguments: [toolId, env.adminUserId])
+            return db.lastInsertedRowID
+        }
+
+        // Live checkout is visible through all three read paths
+        #expect(try env.fleet.getMyVehicleStats(userId: env.adminUserId)?.toolCount == 1)
+        #expect(try env.fleet.getMyTruckDashboard(userId: env.adminUserId)?.stats.toolCount == 1)
+        #expect(try env.fleet.getVehicleTools(vehicleId: vehicleId).count == 1)
+
+        // Soft-delete the checkout (e.g. created in error): it must stop counting as "out"
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE tool_checkouts SET deleted_at = datetime('now') WHERE id = ?", arguments: [checkoutId])
+        }
+
+        #expect(try env.fleet.getMyVehicleStats(userId: env.adminUserId)?.toolCount == 0)
+        #expect(try env.fleet.getMyTruckDashboard(userId: env.adminUserId)?.stats.toolCount == 0)
+        #expect(try env.fleet.getVehicleTools(vehicleId: vehicleId).isEmpty)
+    }
+
     // MARK: - Fuel Level
 
     @Test("Log fuel level updates vehicle fuel_level via MyVehicleStats")

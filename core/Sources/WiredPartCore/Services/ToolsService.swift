@@ -634,6 +634,7 @@ public final class ToolsService: Sendable {
                         FROM kit_verification_items kvi2
                         INNER JOIN kit_verification_sessions kvs2
                             ON kvs2.id = kvi2.session_id AND kvs2.tool_id = ?
+                            AND kvs2.deleted_at IS NULL
                         WHERE kvi2.deleted_at IS NULL
                         ORDER BY kvs2.created_at DESC
                         LIMIT 1
