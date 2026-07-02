@@ -315,11 +315,42 @@ struct ReportBuilderView: View {
 
     // MARK: - Step 3: Filters
 
+    /// Inverted ranges silently generate empty reports, which reads as
+    /// "no data" instead of "invalid input" (issue #1213). Compared at day
+    /// granularity to match generateCustomReport's yyyy-MM-dd truncation —
+    /// a same-calendar-day range is valid regardless of time-of-day.
+    private var hasValidDateRange: Bool {
+        Calendar.current.startOfDay(for: startDate) <= Calendar.current.startOfDay(for: endDate)
+    }
+
+    /// Picker limits at day granularity so a same-calendar-day range stays
+    /// selectable regardless of each value's time-of-day component.
+    private var startPickerLimit: PartialRangeThrough<Date> {
+        let endOfEndDay = Calendar.current.date(
+            byAdding: DateComponents(day: 1, second: -1),
+            to: Calendar.current.startOfDay(for: endDate)
+        ) ?? endDate
+        return ...endOfEndDay
+    }
+
+    private var endPickerLimit: PartialRangeFrom<Date> {
+        Calendar.current.startOfDay(for: startDate)...
+    }
+
     @ViewBuilder
     private var filtersStep: some View {
         Section("Date Range") {
-            DatePicker("Start Date", selection: $startDate, displayedComponents: .date)
-            DatePicker("End Date", selection: $endDate, displayedComponents: .date)
+            // Constrained pickers make an inverted range unreachable from
+            // the UI; the validation below is defense in depth.
+            DatePicker("Start Date", selection: $startDate, in: startPickerLimit, displayedComponents: .date)
+            DatePicker("End Date", selection: $endDate, in: endPickerLimit, displayedComponents: .date)
+
+            if !hasValidDateRange {
+                Label("Start date must be on or before the end date.", systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .accessibilityIdentifier("reportBuilderDateRangeError")
+            }
         }
 
         Section("Quick Ranges") {
@@ -350,7 +381,7 @@ struct ReportBuilderView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.indigo)
-                .disabled(isGenerating)
+                .disabled(isGenerating || !hasValidDateRange)
             }
             .listRowBackground(Color.clear)
         }
@@ -474,6 +505,13 @@ struct ReportBuilderView: View {
     // MARK: - Actions
 
     private func generateReport() {
+        // Final guard — an inverted range must surface as invalid input,
+        // never as a plausible-looking empty report (issue #1213).
+        guard hasValidDateRange else {
+            generateError = "Start date must be on or before the end date. Adjust the date range and try again."
+            step = .results
+            return
+        }
         isGenerating = true
         generateError = nil
         step = .results

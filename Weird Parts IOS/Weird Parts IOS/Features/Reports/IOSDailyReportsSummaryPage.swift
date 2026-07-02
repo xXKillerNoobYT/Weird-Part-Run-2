@@ -49,8 +49,10 @@ struct IOSDailyReportsSummaryPage: View {
         .reportExportToolbar(
             title: "Daily_Summary",
             columns: ["Job", "Workers", "Hours", "Status"],
-            rows: rows.map { [$0.jobName, "\($0.workerCount)",
-                              String(format: "%.1f", $0.totalHours), $0.status] }
+            // Export exactly what's visible — an active search filter must
+            // filter the export too (issue #1243).
+            rows: filteredRows.map { [$0.jobName, "\($0.workerCount)",
+                                      String(format: "%.1f", $0.totalHours), $0.status] }
         )
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -64,7 +66,8 @@ struct IOSDailyReportsSummaryPage: View {
             PageHelpSheet(title: "Daily Reports Summary Help", sections: [
                 ("What This Page Does", "Shows a quick snapshot of all daily reports across every active job for a single day. You can see how many workers were on each job, total hours logged, and the job status."),
                 ("How to Use It", "Use the left and right arrows to move between days, or tap the date to pick a specific day. Each row shows a job with worker count, hours, and status. The top KPIs give you totals at a glance."),
-                ("Tips", "Check this page at the end of each workday to make sure all jobs have reports filed. If a job shows zero workers, the foreman may not have submitted the daily report yet.")
+                ("Tips", "Check this page at the end of each workday to make sure all jobs have reports filed. If a job shows zero workers, the foreman may not have submitted the daily report yet."),
+                ("Exporting", "Exports include exactly the rows currently visible. If a search is active, only matching rows are exported — clear the search to export everything.")
             ])
         }
         .refreshable { loadData() }
