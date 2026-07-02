@@ -444,7 +444,7 @@ private struct SharedReportsView: View {
                 }
             }
 
-            // NOTE (#1206): the "View Public Report" row was removed for beta.
+            // NOTE (#1206): the public-report viewer row was removed for beta.
             // IOSPublicReportView is a stub that always errors, so navigating to
             // it with an empty token was a guaranteed dead end. Re-add a token
             // entry/viewer flow here once public report sharing ships.
