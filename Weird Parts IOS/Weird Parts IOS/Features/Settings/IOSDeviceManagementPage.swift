@@ -1,10 +1,18 @@
 import SwiftUI
 import WiredPartCore
 
-/// Device management page showing paired devices and their sync status.
+/// Device management page showing this device's identity and the host-side
+/// pairing entry point.
+///
+/// "Pair New Device" issues a one-time pairing code from this device's sync
+/// server (#1338). The field device enters that code on the
+/// "Join Existing Business" screen (`DevicePairingView`) to pair and download
+/// the company database.
 struct IOSDeviceManagementPage: View {
     @EnvironmentObject private var appCore: AppCore
     @State private var activeSheet: ActiveSheet?
+    @State private var isIssuingCode = false
+    @State private var pairingError: String?
 
     var body: some View {
         List {
@@ -31,17 +39,33 @@ struct IOSDeviceManagementPage: View {
                 EmptyStateView(
                     icon: "desktopcomputer",
                     title: "No Paired Devices",
-                    message: "Device pairing will be available when sync infrastructure is enabled in a future update."
+                    message: "Devices that pair with this one sync over the local network. Tap Pair New Device below to issue a pairing code."
                 )
             }
 
             Section("Actions") {
                 Button {
-                    // Pair new device
+                    issuePairingCode()
                 } label: {
-                    Label("Pair New Device", systemImage: "plus.circle.fill")
+                    if isIssuingCode {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Generating Code...")
+                        }
+                        .frame(minHeight: 44)
+                    } else {
+                        Label("Pair New Device", systemImage: "plus.circle.fill")
+                            .frame(minHeight: 44)
+                    }
                 }
-                .disabled(true) // Enabled in Phase 16
+                .disabled(isIssuingCode)
+
+                if let error = pairingError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
             }
         }
         .listStyle(.insetGrouped)
@@ -54,16 +78,93 @@ struct IOSDeviceManagementPage: View {
                 .accessibilityLabel("Help")
             }
         }
-        .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "Device Management Help", sections: [
-                ("What This Page Does", "Shows this device's identity and lists all paired devices in your shop network. Paired devices can sync data with each other."),
-                ("How to Use It", "View your current device info at the top. Device pairing will be available when multi-device sync infrastructure is enabled in a future update."),
-            ])
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .help:
+                PageHelpSheet(title: "Device Management Help", sections: [
+                    ("What This Page Does", "Shows this device's identity and lets you pair new devices into your shop network. Paired devices sync data with each other over the local network."),
+                    ("Pairing a New Device", "Tap Pair New Device to generate a one-time pairing code. On the new device, choose Join Existing Business during setup and enter the code when prompted. Keep both devices on the same Wi-Fi network."),
+                ])
+            case .pairingCode(let code):
+                PairingCodeSheet(code: code)
+                    .presentationDetents([.medium, .large])
+            }
         }
     }
 
     private enum ActiveSheet: Identifiable {
         case help
-        var id: String { "help" }
+        case pairingCode(String)
+
+        var id: String {
+            switch self {
+            case .help: return "help"
+            case .pairingCode: return "pairingCode"
+            }
+        }
+    }
+
+    private func issuePairingCode() {
+        isIssuingCode = true
+        pairingError = nil
+        Task {
+            do {
+                let code = try await appCore.syncManager.issueShopPairingCode()
+                activeSheet = .pairingCode(code)
+            } catch {
+                pairingError = userFriendlyError(error, context: "issue pairing code")
+            }
+            isIssuingCode = false
+        }
+    }
+}
+
+// MARK: - Pairing Code Sheet
+
+/// Displays a freshly issued one-time pairing code with join instructions.
+private struct PairingCodeSheet: View {
+    let code: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 20) {
+                Spacer()
+
+                Image(systemName: "antenna.radiowaves.left.and.right")
+                    .font(.system(size: 44))
+                    .foregroundStyle(Color.accentColor)
+                    .symbolRenderingMode(.hierarchical)
+                    .accessibilityHidden(true)
+
+                Text("Pairing Code")
+                    .font(.headline)
+
+                Text(code)
+                    .font(.system(size: 40, weight: .bold, design: .monospaced))
+                    .kerning(2)
+                    .textSelection(.enabled)
+                    .accessibilityLabel("Pairing code: \(code)")
+
+                Text("On the new device, choose \"Join Existing Business\" during setup, connect to this device, and enter this code. The code is one-time use.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+
+                Text("Keep both devices on the same Wi-Fi network.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+
+                Spacer()
+            }
+            .navigationTitle("Pair New Device")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
     }
 }

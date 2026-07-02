@@ -340,8 +340,6 @@ struct IOSContentRouter: View {
             SettingsRouter(tabId: "settings-job-estimation-questions")
         case "/settings/report-templates":
             SettingsRouter(tabId: "settings-report-templates")
-        case "/settings/payment-tracking":
-            SettingsRouter(tabId: "settings-payment-tracking")
 
         // Everything else — placeholder for future native views
         default:

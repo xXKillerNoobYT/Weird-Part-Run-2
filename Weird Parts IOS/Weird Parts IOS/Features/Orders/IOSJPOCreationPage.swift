@@ -90,11 +90,29 @@ struct IOSJPOCreationPage: View {
         let unitPrice: Double?
         let shopStock: Int
         let stockStatus: StockStatus
+        var brandSelectionMode: BrandSelectionMode = .specific
 
         enum StockStatus: String {
             case inStock
             case lowStock
             case outOfStock
+        }
+
+        /// Per-line brand mode (#242): 'Specific brand' keeps the part's brand;
+        /// 'General' defers the brand choice to PO creation, where it is resolved
+        /// against the selected supplier.
+        enum BrandSelectionMode: String, CaseIterable, Identifiable {
+            case specific
+            case general
+
+            var id: String { rawValue }
+
+            var title: String {
+                switch self {
+                case .specific: "Specific brand"
+                case .general: "General"
+                }
+            }
         }
     }
 
@@ -602,7 +620,19 @@ struct IOSJPOCreationPage: View {
                     Text("\(item.shopStock) in stock")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                    if item.brandSelectionMode == .general {
+                        generalModeBadge
+                    }
                 }
+                Picker("Brand mode", selection: $cartItems[index].brandSelectionMode) {
+                    ForEach(CartItem.BrandSelectionMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .controlSize(.mini)
+                .frame(maxWidth: 220)
+                .accessibilityLabel("Brand selection mode for \(item.partName)")
             }
 
             Spacer()
@@ -660,6 +690,13 @@ struct IOSJPOCreationPage: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private var generalModeBadge: some View {
+        Label("General", systemImage: "circle.dashed")
+            .font(.caption2)
+            .foregroundStyle(.teal)
+            .labelStyle(.titleAndIcon)
     }
 
     private func stockStatusBadge(_ status: CartItem.StockStatus) -> some View {
@@ -1136,13 +1173,15 @@ struct IOSJPOCreationPage: View {
                 throw OrdersService.OrdersError.invalidQuantity(invalidLine.quantity)
             }
             let lines = cartItems.map { (partId: $0.partId, quantity: $0.quantity) }
+            let brandSelectionModes = cartItems.map(\.brandSelectionMode.rawValue)
             let jpoId = try service.createJPOWithLines(
                 jobId: jobId,
                 requestedBy: userId,
                 priority: priority,
                 deliveryOption: deliveryOption,
                 notes: notes.isEmpty ? nil : notes,
-                lines: lines
+                lines: lines,
+                brandSelectionModes: brandSelectionModes
             )
 
             appCore.onboardingManager?.markCompleted("jpo-create")
