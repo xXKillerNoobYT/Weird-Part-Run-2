@@ -131,6 +131,121 @@ public final class SettingsService: Sendable {
         public static let defaults = PurchaseOrderSettings(groupingMode: .perSupplierMixed)
     }
 
+    public struct DispatchPreferenceSettings: Codable, Equatable, Sendable {
+        public var aiSuggestionsEnabled: Bool
+        public var aiLearningEnabled: Bool
+        public var showConfidenceScores: Bool
+        public var aiSuggestionCount: Int
+        public var flexSelfAssignEnabled: Bool
+        public var flexRequireApproval: Bool
+        public var pipelineStartAnytimeTarget: Int
+        public var pipelineScheduleNeededTarget: Int
+        public var pipelineFavoriteGCTarget: Int
+        public var defaultView: String
+        public var crewHistoryMonths: Int
+        public var crewContinuityWeight: String
+
+        public init(
+            aiSuggestionsEnabled: Bool,
+            aiLearningEnabled: Bool,
+            showConfidenceScores: Bool,
+            aiSuggestionCount: Int,
+            flexSelfAssignEnabled: Bool,
+            flexRequireApproval: Bool,
+            pipelineStartAnytimeTarget: Int,
+            pipelineScheduleNeededTarget: Int,
+            pipelineFavoriteGCTarget: Int,
+            defaultView: String,
+            crewHistoryMonths: Int,
+            crewContinuityWeight: String
+        ) {
+            self.aiSuggestionsEnabled = aiSuggestionsEnabled
+            self.aiLearningEnabled = aiLearningEnabled
+            self.showConfidenceScores = showConfidenceScores
+            self.aiSuggestionCount = aiSuggestionCount
+            self.flexSelfAssignEnabled = flexSelfAssignEnabled
+            self.flexRequireApproval = flexRequireApproval
+            self.pipelineStartAnytimeTarget = pipelineStartAnytimeTarget
+            self.pipelineScheduleNeededTarget = pipelineScheduleNeededTarget
+            self.pipelineFavoriteGCTarget = pipelineFavoriteGCTarget
+            self.defaultView = defaultView
+            self.crewHistoryMonths = crewHistoryMonths
+            self.crewContinuityWeight = crewContinuityWeight
+        }
+
+        public static let defaults = DispatchPreferenceSettings(
+            aiSuggestionsEnabled: true,
+            aiLearningEnabled: true,
+            showConfidenceScores: false,
+            aiSuggestionCount: 3,
+            flexSelfAssignEnabled: true,
+            flexRequireApproval: false,
+            pipelineStartAnytimeTarget: 3,
+            pipelineScheduleNeededTarget: 2,
+            pipelineFavoriteGCTarget: 1,
+            defaultView: "week",
+            crewHistoryMonths: 3,
+            crewContinuityWeight: "medium"
+        )
+
+        public static func fromMap(_ map: [String: String]) -> DispatchPreferenceSettings {
+            let defaults = DispatchPreferenceSettings.defaults
+            return DispatchPreferenceSettings(
+                aiSuggestionsEnabled: bool(map["dispatch_ai_suggestions_enabled"], defaultValue: defaults.aiSuggestionsEnabled),
+                aiLearningEnabled: bool(map["dispatch_ai_learning_enabled"], defaultValue: defaults.aiLearningEnabled),
+                showConfidenceScores: bool(map["dispatch_show_confidence_scores"], defaultValue: defaults.showConfidenceScores),
+                aiSuggestionCount: clampedInt(map["dispatch_ai_suggestion_count"], defaultValue: defaults.aiSuggestionCount, min: 1, max: 3),
+                flexSelfAssignEnabled: bool(map["dispatch_flex_self_assign_enabled"], defaultValue: defaults.flexSelfAssignEnabled),
+                flexRequireApproval: bool(
+                    map["dispatch_flex_require_approval"] ?? map["flex_pool_requires_approval"],
+                    defaultValue: defaults.flexRequireApproval
+                ),
+                pipelineStartAnytimeTarget: clampedInt(map["dispatch_pipeline_start_anytime_target"], defaultValue: defaults.pipelineStartAnytimeTarget, min: 0, max: 20),
+                pipelineScheduleNeededTarget: clampedInt(map["dispatch_pipeline_schedule_needed_target"], defaultValue: defaults.pipelineScheduleNeededTarget, min: 0, max: 20),
+                pipelineFavoriteGCTarget: clampedInt(map["dispatch_pipeline_favorite_gc_target"], defaultValue: defaults.pipelineFavoriteGCTarget, min: 0, max: 20),
+                defaultView: allowed(map["dispatch_default_view"], defaultValue: defaults.defaultView, allowedValues: Set(["day", "week", "month"])),
+                crewHistoryMonths: clampedInt(map["dispatch_crew_history_months"], defaultValue: defaults.crewHistoryMonths, min: 1, max: 12),
+                crewContinuityWeight: allowed(map["dispatch_crew_continuity_weight"], defaultValue: defaults.crewContinuityWeight, allowedValues: Set(["low", "medium", "high"]))
+            )
+        }
+
+        public var storageMap: [String: String] {
+            [
+                "dispatch_ai_suggestions_enabled": aiSuggestionsEnabled ? "true" : "false",
+                "dispatch_ai_learning_enabled": aiLearningEnabled ? "true" : "false",
+                "dispatch_show_confidence_scores": showConfidenceScores ? "true" : "false",
+                "dispatch_ai_suggestion_count": String(aiSuggestionCount),
+                "dispatch_flex_self_assign_enabled": flexSelfAssignEnabled ? "true" : "false",
+                "dispatch_flex_require_approval": flexRequireApproval ? "true" : "false",
+                "dispatch_pipeline_start_anytime_target": String(pipelineStartAnytimeTarget),
+                "dispatch_pipeline_schedule_needed_target": String(pipelineScheduleNeededTarget),
+                "dispatch_pipeline_favorite_gc_target": String(pipelineFavoriteGCTarget),
+                "dispatch_default_view": defaultView,
+                "dispatch_crew_history_months": String(crewHistoryMonths),
+                "dispatch_crew_continuity_weight": crewContinuityWeight,
+            ]
+        }
+
+        private static func bool(_ raw: String?, defaultValue: Bool) -> Bool {
+            guard let raw else { return defaultValue }
+            switch raw.lowercased() {
+            case "true", "1", "yes": return true
+            case "false", "0", "no": return false
+            default: return defaultValue
+            }
+        }
+
+        private static func clampedInt(_ raw: String?, defaultValue: Int, min: Int, max: Int) -> Int {
+            guard let raw, let value = Int(raw) else { return defaultValue }
+            return Swift.max(min, Swift.min(max, value))
+        }
+
+        private static func allowed(_ raw: String?, defaultValue: String, allowedValues: Set<String>) -> String {
+            guard let raw, allowedValues.contains(raw) else { return defaultValue }
+            return raw
+        }
+    }
+
     // MARK: - Helpers
 
     /// Read a single setting value by key. Returns nil when not found.
@@ -278,6 +393,28 @@ public final class SettingsService: Sendable {
             "font_family": theme.fontFamily,
         ], category: "theme")
         return try getTheme()
+    }
+
+    // MARK: - Dispatch Preferences
+
+    /// Get dispatch preferences, filling in defaults for any missing keys.
+    ///
+    /// Falls back to the legacy `flex_pool_requires_approval` key (stored outside
+    /// the `dispatch` category by older builds) when the typed key is absent, so
+    /// upgrading installs keep their previously saved approval requirement.
+    public func getDispatchPreferences() throws -> DispatchPreferenceSettings {
+        var map = try getSettingsByCategory("dispatch")
+        if map["dispatch_flex_require_approval"] == nil,
+           let legacyApproval = try getSettingValue("flex_pool_requires_approval") {
+            map["flex_pool_requires_approval"] = legacyApproval
+        }
+        return DispatchPreferenceSettings.fromMap(map)
+    }
+
+    /// Update dispatch preferences.
+    public func updateDispatchPreferences(_ preferences: DispatchPreferenceSettings) throws -> DispatchPreferenceSettings {
+        try upsertSettingsMap(preferences.storageMap, category: "dispatch")
+        return try getDispatchPreferences()
     }
 
     // MARK: - Generic Settings
