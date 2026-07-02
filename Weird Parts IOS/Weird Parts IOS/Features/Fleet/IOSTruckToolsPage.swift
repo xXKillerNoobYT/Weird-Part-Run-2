@@ -8,7 +8,9 @@ struct IOSTruckToolsPage: View {
     @EnvironmentObject private var appCore: AppCore
 
     @State private var checkouts: [ToolsService.CheckoutRow] = []
-    @State private var isLoading = true
+    @State private var isInitialLoading = true
+    @State private var isRefreshing = false
+    @State private var hasLoadedOnce = false
     @State private var searchText = ""
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
@@ -20,19 +22,24 @@ struct IOSTruckToolsPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if isLoading {
-                ProgressView("Loading truck tools...")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let error = loadError {
-                ErrorStateView(message: error) { loadData() }
-            } else if filteredCheckouts.isEmpty {
-                EmptyStateView(
-                    icon: "wrench.and.screwdriver",
-                    title: "No Tools on Trucks",
-                    message: searchText.isEmpty ? "No tools are currently checked out to vehicles." : "No tools match your search."
-                )
-            } else {
-                toolsList
+            Group {
+                if isInitialLoading {
+                    ProgressView("Loading truck tools...")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let error = loadError {
+                    ErrorStateView(message: error) { loadData() }
+                } else if filteredCheckouts.isEmpty {
+                    EmptyStateView(
+                        icon: "wrench.and.screwdriver",
+                        title: "No Tools on Trucks",
+                        message: searchText.isEmpty ? "No tools are currently checked out to vehicles." : "No tools match your search."
+                    )
+                } else {
+                    toolsList
+                }
+            }
+            .overlay(alignment: .top) {
+                refreshingOverlay
             }
         }
         .navigationTitle("Truck Tools")
@@ -57,6 +64,18 @@ struct IOSTruckToolsPage: View {
                     ("Tips", "Tools are checked out and returned through the Tools section. If a tool is missing, check this page first to see which truck it was last assigned to. Keep expected return dates updated to avoid overdue notices.")
                 ]
             )
+        }
+    }
+
+    @ViewBuilder
+    private var refreshingOverlay: some View {
+        if isRefreshing {
+            ProgressView()
+                .progressViewStyle(.linear)
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .transition(.opacity)
+                .accessibilityLabel("Refreshing truck tools")
         }
     }
 
@@ -104,17 +123,32 @@ struct IOSTruckToolsPage: View {
     private func loadData() {
         guard let service = appCore.toolsService else {
             loadError = "Tools service not available"
-            isLoading = false
+            hasLoadedOnce = true
+            isInitialLoading = false
+            isRefreshing = false
             return
         }
-        isLoading = checkouts.isEmpty
-        loadError = nil
-        do {
-            // Get active checkouts (tools currently out on trucks)
-            checkouts = try service.listCheckouts(active: true)
-        } catch {
-            loadError = userFriendlyError(error, context: "load truck tools")
+
+        if hasLoadedOnce {
+            isRefreshing = true
+        } else {
+            isInitialLoading = true
         }
-        isLoading = false
+
+        DispatchQueue.main.async {
+            defer {
+                self.hasLoadedOnce = true
+                self.isInitialLoading = false
+                self.isRefreshing = false
+            }
+
+            self.loadError = nil
+            do {
+                // Get active checkouts (tools currently out on trucks)
+                self.checkouts = try service.listCheckouts(active: true)
+            } catch {
+                self.loadError = userFriendlyError(error, context: "load truck tools")
+            }
+        }
     }
 }
