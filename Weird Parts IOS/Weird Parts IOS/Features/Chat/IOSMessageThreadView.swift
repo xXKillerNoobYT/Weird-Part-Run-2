@@ -561,11 +561,13 @@ struct IOSMessageThreadView: View {
                 try FileManager.default.copyItem(at: url, to: tmpURL)
                 let attributes = try? FileManager.default.attributesOfItem(atPath: tmpURL.path)
                 let fileSize = (attributes?[.size] as? NSNumber)?.int64Value
+                let mimeType = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
                 pendingAttachments.append(ChatService.PendingAttachment(
                     type: "file",
                     filePath: tmpURL.path,
                     fileName: url.lastPathComponent,
-                    fileSize: fileSize
+                    fileSize: fileSize,
+                    mimeType: mimeType
                 ))
             } catch {
                 actionError = userFriendlyError(error, context: "attach file")

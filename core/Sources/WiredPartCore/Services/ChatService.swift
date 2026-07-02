@@ -1294,6 +1294,10 @@ public final class ChatService: Sendable {
 
     /// Push a Q&A thread back down one level with feedback.
     public func pushBackThread(threadId: Int64, pushedBackBy: Int64, reason: String) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: pushedBackBy, permissionKey: "moderate_chat")
+        }
+
         try db.writer.write { dbConn in
             guard let row = try Row.fetchOne(dbConn, sql: """
                 SELECT current_level FROM qa_threads WHERE id = ? AND deleted_at IS NULL
