@@ -116,7 +116,8 @@ WEB_URL="${PAPERCLIP_WEB_URL:-}"
 # /api/health yet stall the heavy issues/agents fetches; with the old
 # 120s×3-attempt budget two curls could outlive the job's 10-minute timeout
 # (observed 2026-07-02: health OK, first fetch hung, run cancelled at 10m).
-# Worst case now: 2 fetches × 2 attempts × 30s ≈ 2 minutes.
+# Worst case now: (2 health checks + 2 fetches) × 2 attempts × 30s ≈ 4 minutes,
+# comfortably under the job's 10-minute timeout.
 CURL_OPTS=(-fsS --connect-timeout 5 --max-time 30 --retry 1)
 
 # Prefer the local Paperclip instance outright when it answers — the runner
@@ -129,7 +130,7 @@ if curl "${CURL_OPTS[@]}" -o /dev/null "http://localhost:3100/api/health" 2>/dev
   fi
   PAPERCLIP_API_URL="http://localhost:3100"
 elif ! curl "${CURL_OPTS[@]}" -o /dev/null "$PAPERCLIP_API_URL/api/health" 2>/dev/null; then
-  echo "error: neither localhost:3100 nor the configured PAPERCLIP_API_URL answered /api/health" >&2
+  echo "error: neither localhost:3100 nor the configured PAPERCLIP_API_URL ($PAPERCLIP_API_URL) answered /api/health" >&2
   exit 1
 fi
 
