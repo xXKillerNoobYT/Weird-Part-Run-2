@@ -617,7 +617,16 @@ struct WarehouseDashboardPage: View {
 
     private var usesCompactQuickActionGrid: Bool {
         horizontalSizeClass == .compact &&
-            (dynamicTypeSize >= .accessibility1 || UIScreen.main.bounds.width < 360)
+            (dynamicTypeSize >= .accessibility1 || activeSceneScreenWidth < 360)
+    }
+
+    /// Screen width via the active window scene (UIScreen.main is deprecated in
+    /// iOS 26). Falls back to a standard iPhone width when no scene is attached
+    /// yet, which keeps the regular (non-compact) grid — same as most devices.
+    private var activeSceneScreenWidth: CGFloat {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+        return scene?.screen.bounds.width ?? 390
     }
 
     private var quickActions: [WarehouseQuickAction] {

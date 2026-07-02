@@ -461,7 +461,7 @@ struct PartsForecastingPage: View {
     @ViewBuilder
     private var emptyState: some View {
         let isFiltered = !searchText.isEmpty || filterUrgency != .all
-        return VStack(spacing: 16) {
+        VStack(spacing: 16) {
             Image(systemName: isFiltered ? "magnifyingglass" : "chart.line.uptrend.xyaxis")
                 .decorativeIconFont(48)
                 .foregroundStyle(.secondary)
@@ -911,13 +911,13 @@ private struct ForecastDetailSheet: View {
             LabeledContent("Name") {
                 TextField("Name", text: $editName)
                     .multilineTextAlignment(.trailing)
-                    .onChange(of: editName) { _ in isDirty = true }
+                    .onChange(of: editName) { isDirty = true }
             }
             LabeledContent("Code") {
                 TextField("Code", text: $editCode)
                     .multilineTextAlignment(.trailing)
                     .monospaced()
-                    .onChange(of: editCode) { _ in isDirty = true }
+                    .onChange(of: editCode) { isDirty = true }
             }
 
             LabeledContent("Min Stock (Global)") {
@@ -925,21 +925,21 @@ private struct ForecastDetailSheet: View {
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
                     .frame(width: 60)
-                    .onChange(of: editMinStock) { _ in isDirty = true }
+                    .onChange(of: editMinStock) { isDirty = true }
             }
             LabeledContent("Target Stock (Global)") {
                 TextField("0", text: $editTargetStock)
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
                     .frame(width: 60)
-                    .onChange(of: editTargetStock) { _ in isDirty = true }
+                    .onChange(of: editTargetStock) { isDirty = true }
             }
             LabeledContent("Max Stock (Global)") {
                 TextField("0", text: $editMaxStock)
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
                     .frame(width: 60)
-                    .onChange(of: editMaxStock) { _ in isDirty = true }
+                    .onChange(of: editMaxStock) { isDirty = true }
             }
 
             LabeledContent("Total Stock (All Locations)", value: "\(row.currentStock)")
