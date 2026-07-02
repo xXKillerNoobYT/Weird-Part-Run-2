@@ -25,6 +25,7 @@ struct IOSMessageThreadView: View {
     @State private var isSending = false
     @State private var loadError: String?
     @State private var actionError: String?
+    @State private var attachmentError: String?
 
     // Thread info panel
     @State private var showInfoPanel = false
@@ -152,6 +153,11 @@ struct IOSMessageThreadView: View {
                 actionError = userFriendlyError(error, context: "attach file")
             }
         }
+        .alert("Attachment Failed", isPresented: Binding(get: { attachmentError != nil }, set: { if !$0 { attachmentError = nil } })) {
+            Button("OK") { attachmentError = nil }
+        } message: {
+            Text(attachmentError ?? "")
+        }
         .confirmationDialog(
             "Escalate this question to the next level?",
             isPresented: $showEscalateConfirm,
@@ -260,20 +266,40 @@ struct IOSMessageThreadView: View {
             .accessibilityLabel("Attach photo")
             .onChange(of: selectedPhotoItems) {
                 Task {
+                    // Only queue an attachment after the temp-file write succeeds —
+                    // a swallowed failure here queues a path that doesn't exist and
+                    // silently drops the photo at send time (issue #1101).
+                    var failedCount = 0
                     for item in selectedPhotoItems {
-                        if let data = try? await item.loadTransferable(type: Data.self) {
+                        do {
+                            guard let data = try await item.loadTransferable(type: Data.self) else {
+                                failedCount += 1
+                                logger.error("Photo attachment import failed: no data returned for selected item")
+                                continue
+                            }
                             let tmpURL = FileManager.default.temporaryDirectory
                                 .appendingPathComponent(UUID().uuidString + ".jpg")
-                            try? data.write(to: tmpURL)
+                            try data.write(to: tmpURL)
                             let att = ChatService.PendingAttachment(
                                 type: "photo",
                                 filePath: tmpURL.path,
                                 fileName: tmpURL.lastPathComponent
                             )
                             await MainActor.run { pendingAttachments.append(att) }
+                        } catch {
+                            failedCount += 1
+                            logger.error("Photo attachment import failed: \(error.localizedDescription)")
                         }
                     }
-                    await MainActor.run { selectedPhotoItems = [] }
+                    let failures = failedCount
+                    await MainActor.run {
+                        selectedPhotoItems = []
+                        if failures > 0 {
+                            attachmentError = failures == 1
+                                ? "Couldn't attach the photo. Check available storage and try again."
+                                : "Couldn't attach \(failures) photos. Check available storage and try again."
+                        }
+                    }
                 }
             }
 
