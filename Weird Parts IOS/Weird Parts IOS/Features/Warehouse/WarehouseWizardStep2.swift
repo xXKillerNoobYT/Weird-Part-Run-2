@@ -192,7 +192,7 @@ struct WizardAddStorageUnitSheet: View {
                         ProgressView()
                     } else {
                         Button("Save") { saveUnit() }
-                            .disabled(unitName.trimmingCharacters(in: .whitespaces).isEmpty)
+                            .disabled(unitName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
             }
@@ -206,7 +206,7 @@ struct WizardAddStorageUnitSheet: View {
         do {
             try appCore.warehouseService?.createStorageUnit(
                 floorPlanId: floorPlanId,
-                name: unitName.trimmingCharacters(in: .whitespaces),
+                name: unitName.trimmingCharacters(in: .whitespacesAndNewlines),
                 unitType: unitType,
                 levels: levelCount,
                 areasPerLevel: areasPerLevel

@@ -217,7 +217,7 @@ struct IOSUnifiedApprovalsPage: View {
             TextField("Reason (required)", text: $rejectReason)
             Button("Cancel", role: .cancel) { rejectReason = "" }
             Button("Reject", role: .destructive) {
-                guard !rejectReason.trimmingCharacters(in: .whitespaces).isEmpty else {
+                guard !rejectReason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                     actionError = "Rejection reason is required."
                     return
                 }

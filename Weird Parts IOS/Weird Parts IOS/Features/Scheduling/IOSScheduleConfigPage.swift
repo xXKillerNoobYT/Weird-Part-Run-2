@@ -657,7 +657,7 @@ struct ShiftTemplateEditSheet: View {
 
     @State private var originalName = ""
 
-    private var isDirty: Bool { name.trimmingCharacters(in: .whitespaces) != originalName }
+    private var isDirty: Bool { name.trimmingCharacters(in: .whitespacesAndNewlines) != originalName }
 
     private let dayOrder = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
     private let dayLabels = ["M", "T", "W", "Th", "F", "Sa", "Su"]
@@ -753,7 +753,7 @@ struct ShiftTemplateEditSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .scrollDismissesKeyboard(.interactively)
@@ -797,7 +797,7 @@ struct ShiftTemplateEditSheet: View {
 
         if onSave(TemplateData(
             existingId: existing?.id,
-            name: name.trimmingCharacters(in: .whitespaces),
+            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             hatId: selectedHatId == 0 ? nil : selectedHatId,
             workDays: daysJSON,
             startTime: Formatters.timeHHmmFormatter.string(from: startTime),
@@ -837,7 +837,7 @@ struct HolidayEditSheet: View {
 
     @State private var originalName = ""
 
-    private var isDirty: Bool { name.trimmingCharacters(in: .whitespaces) != originalName }
+    private var isDirty: Bool { name.trimmingCharacters(in: .whitespacesAndNewlines) != originalName }
 
     var body: some View {
         NavigationStack {
@@ -881,7 +881,7 @@ struct HolidayEditSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .onAppear { populateFromExisting() }
@@ -911,7 +911,7 @@ struct HolidayEditSheet: View {
     private func save() {
         if onSave(HolidayData(
             existingId: existing?.id,
-            name: name.trimmingCharacters(in: .whitespaces),
+            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             date: Formatters.localDateFormatter.string(from: selectedDate),
             isPaid: isPaid,
             isRecurring: isRecurring

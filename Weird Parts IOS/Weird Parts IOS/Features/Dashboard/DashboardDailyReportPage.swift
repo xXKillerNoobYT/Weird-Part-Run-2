@@ -946,7 +946,7 @@ private struct ReportProblemSheet: View {
                     Button("Submit") {
                         submitProblem()
                     }
-                    .disabled(description.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
+                    .disabled(description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
                 }
             }
             .task {
@@ -968,7 +968,7 @@ private struct ReportProblemSheet: View {
             try service.reportProblem(
                 userId: userId,
                 jobId: selectedJobId,
-                description: description.trimmingCharacters(in: .whitespaces)
+                description: description.trimmingCharacters(in: .whitespacesAndNewlines)
             )
             isSaving = false
             dismiss()
@@ -1166,7 +1166,7 @@ private struct SubmitDailyReportSheet: View {
                     Button("Submit") {
                         submitReport()
                     }
-                    .disabled(accomplishments.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
+                    .disabled(accomplishments.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
                 }
             }
             .task { loadInitialData() }
@@ -1212,9 +1212,9 @@ private struct SubmitDailyReportSheet: View {
         do {
             try service.submitDailyReport(
                 userId: userId,
-                accomplishments: accomplishments.trimmingCharacters(in: .whitespaces),
-                issues: issues.trimmingCharacters(in: .whitespaces),
-                tomorrowNotes: tomorrowNotes.trimmingCharacters(in: .whitespaces)
+                accomplishments: accomplishments.trimmingCharacters(in: .whitespacesAndNewlines),
+                issues: issues.trimmingCharacters(in: .whitespacesAndNewlines),
+                tomorrowNotes: tomorrowNotes.trimmingCharacters(in: .whitespacesAndNewlines)
             )
             isSaving = false
             dismiss()

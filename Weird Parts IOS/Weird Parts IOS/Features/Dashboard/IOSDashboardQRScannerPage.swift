@@ -384,7 +384,7 @@ struct IOSDashboardQRScannerPage: View {
 
             Button("Look Up") { processManualCode() }
                 .buttonStyle(.bordered)
-                .disabled(manualCode.trimmingCharacters(in: .whitespaces).isEmpty || isProcessing)
+                .disabled(manualCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isProcessing)
         }
     }
 
@@ -526,7 +526,7 @@ struct IOSDashboardQRScannerPage: View {
     // MARK: - Process Code
 
     private func processManualCode() {
-        let code = manualCode.trimmingCharacters(in: .whitespaces)
+        let code = manualCode.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !code.isEmpty else { return }
         Task {
             await processCode(code, autoLock: true)

@@ -29,7 +29,7 @@ struct PreTripInspectionView: View {
 
     private var isDirty: Bool {
         !generalNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-        !odometerReading.trimmingCharacters(in: .whitespaces).isEmpty ||
+        !odometerReading.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
         fuelLevel != 1.0 ||
         checklistItems.contains { !$0.status.isEmpty || !$0.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }

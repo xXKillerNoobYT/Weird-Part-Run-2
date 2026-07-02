@@ -359,7 +359,7 @@ private struct AddContactSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(firstName.trimmingCharacters(in: .whitespaces).isEmpty || phone.isEmpty)
+                        .disabled(firstName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || phone.isEmpty)
                 }
             }
             .alert("Discard changes?", isPresented: $showDiscardAlert) {
@@ -381,8 +381,8 @@ private struct AddContactSheet: View {
             try service.createContact(
                 entityType: contactType,
                 entityId: 0,
-                firstName: firstName.trimmingCharacters(in: .whitespaces),
-                lastName: lastName.trimmingCharacters(in: .whitespaces),
+                firstName: firstName.trimmingCharacters(in: .whitespacesAndNewlines),
+                lastName: lastName.trimmingCharacters(in: .whitespacesAndNewlines),
                 role: "contact",
                 phone: phone,
                 email: email.isEmpty ? nil : email

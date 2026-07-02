@@ -340,7 +340,7 @@ struct IOSMessageThreadView: View {
                 }
             }
             .accessibilityLabel("Send message")
-            .disabled(messageText.trimmingCharacters(in: .whitespaces).isEmpty && pendingAttachments.isEmpty || isSending)
+            .disabled(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && pendingAttachments.isEmpty || isSending)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -395,7 +395,7 @@ struct IOSMessageThreadView: View {
             actionError = "Chat service unavailable"
             return
         }
-        let text = messageText.trimmingCharacters(in: .whitespaces)
+        let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !pendingAttachments.isEmpty else { return }
 
         isSending = true

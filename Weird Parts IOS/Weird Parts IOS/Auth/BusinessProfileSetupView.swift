@@ -26,8 +26,8 @@ struct BusinessProfileSetupView: View {
     @State private var navigateToAdmin = false
 
     private var isValid: Bool {
-        !companyName.trimmingCharacters(in: .whitespaces).isEmpty
-            && !industry.trimmingCharacters(in: .whitespaces).isEmpty
+        !companyName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !industry.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
@@ -169,7 +169,7 @@ struct BusinessProfileSetupView: View {
         errorMessage = nil
 
         let profile = BusinessProfile(
-            companyName: companyName.trimmingCharacters(in: .whitespaces),
+            companyName: companyName.trimmingCharacters(in: .whitespacesAndNewlines),
             industry: industry.isEmpty ? nil : industry,
             address: address.isEmpty ? nil : address,
             city: city.isEmpty ? nil : city,

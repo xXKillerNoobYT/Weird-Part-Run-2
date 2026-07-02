@@ -1269,7 +1269,7 @@ private struct CompanionRuleFormSheet: View {
 
     // Validation: source and target must be selected at the correct level
     private var isValid: Bool {
-        guard !ruleName.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
+        guard !ruleName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         guard sourceCategoryId != 0 && targetCategoryId != 0 else { return false }
         if matchLevel != "category" {
             guard sourceStyleId != 0 && targetStyleId != 0 else { return false }

@@ -197,7 +197,7 @@ private struct AddContractorSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(companyName.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(companyName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .alert("Discard changes?", isPresented: $showDiscardAlert) {
@@ -217,7 +217,7 @@ private struct AddContractorSheet: View {
         }
         do {
             try service.createContractor(
-                companyName: companyName.trimmingCharacters(in: .whitespaces),
+                companyName: companyName.trimmingCharacters(in: .whitespacesAndNewlines),
                 contactName: contactName.isEmpty ? nil : contactName,
                 email: email.isEmpty ? nil : email,
                 phone: phone.isEmpty ? nil : phone,

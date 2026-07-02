@@ -156,7 +156,7 @@ struct PartsForecastingPage: View {
                     }
                 }
             }
-            .disabled(dismissReason.trimmingCharacters(in: .whitespaces).isEmpty)
+            .disabled(dismissReason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         } message: {
             Text("Why are you dismissing this recommendation?")
         }

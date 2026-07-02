@@ -140,7 +140,7 @@ struct CompanySetupWizard: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(companyName.trimmingCharacters(in: .whitespaces).isEmpty)
+            .disabled(companyName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
             if completedSteps.contains(0) {
                 HStack {
@@ -654,7 +654,7 @@ struct CompanySetupWizard: View {
     // MARK: - Data Operations
 
     private func saveCompanyProfile() {
-        guard !companyName.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        guard !companyName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         do {
             try appCore.settingsService?.updateSetting(key: "company_name", value: companyName)
             try appCore.settingsService?.updateSetting(key: "company_address", value: companyAddress)

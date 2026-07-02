@@ -312,6 +312,28 @@ private struct EndOfJobReviewSheet: View {
     @State private var saveError: String?
     @State private var isSaving = false
 
+    /// Live validation: actuals feed variance % and the AI estimation-learning
+    /// pipeline, so zero/negative values must never be submitted.
+    private var actualDaysValidationMessage: String? {
+        positiveNumberValidationMessage(for: actualDays, label: "Actual Days")
+    }
+
+    private var actualHoursValidationMessage: String? {
+        positiveNumberValidationMessage(for: actualHours, label: "Actual Hours")
+    }
+
+    private func positiveNumberValidationMessage(for value: String, label: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard let number = Double(trimmed), number.isFinite else {
+            return "\(label) must be a plain number, like 3 or 3.5."
+        }
+        guard number > 0 else {
+            return "\(label) must be greater than zero."
+        }
+        return nil
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -334,6 +356,11 @@ private struct EndOfJobReviewSheet: View {
                             .multilineTextAlignment(.trailing)
                             .frame(width: 80)
                     }
+                    if let message = actualDaysValidationMessage {
+                        Label(message, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                    }
 
                     HStack {
                         Text("Actual Hours")
@@ -342,6 +369,11 @@ private struct EndOfJobReviewSheet: View {
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
                             .frame(width: 80)
+                    }
+                    if let message = actualHoursValidationMessage {
+                        Label(message, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .font(.caption)
                     }
                 } header: {
                     Text("Final Actuals")
@@ -367,7 +399,11 @@ private struct EndOfJobReviewSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Submit") { Task { await save() } }
-                        .disabled(isSaving || actualDays.isEmpty || actualHours.isEmpty)
+                        .disabled(
+                            isSaving || actualDays.isEmpty || actualHours.isEmpty
+                                || actualDaysValidationMessage != nil
+                                || actualHoursValidationMessage != nil
+                        )
                 }
             }
             .interactiveDismissDisabled(isSaving)
@@ -376,10 +412,17 @@ private struct EndOfJobReviewSheet: View {
 
     private func save() async {
         guard let svc = appCore.jobEstimationService,
-              let userId = appCore.currentUser?.id,
-              let days = Double(actualDays),
-              let hours = Double(actualHours) else {
-            saveError = "Please enter valid numbers for days and hours"
+              let userId = appCore.currentUser?.id else {
+            saveError = "Estimation service not available"
+            return
+        }
+        // Zero/negative actuals corrupt variance % and AI estimation learning,
+        // so require strictly positive values (backstop for the disabled button).
+        guard let days = Double(actualDays.trimmingCharacters(in: .whitespacesAndNewlines)),
+              days.isFinite, days > 0,
+              let hours = Double(actualHours.trimmingCharacters(in: .whitespacesAndNewlines)),
+              hours.isFinite, hours > 0 else {
+            saveError = "Actual days and hours must be numbers greater than zero"
             return
         }
         isSaving = true

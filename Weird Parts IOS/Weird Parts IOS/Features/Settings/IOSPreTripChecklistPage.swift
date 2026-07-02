@@ -282,7 +282,7 @@ struct IOSPreTripChecklistPage: View {
     }
 
     private func addItem() {
-        guard !newItemName.trimmingCharacters(in: .whitespaces).isEmpty,
+        guard !newItemName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               let sectionId = addItemSectionId else { return }
 
         let editType = selectedVehicleType == "all" ? "all" : selectedVehicleType
@@ -290,19 +290,19 @@ struct IOSPreTripChecklistPage: View {
 
         if let sIdx = checklists[editType]?.sections.firstIndex(where: { $0.id == sectionId }) {
             checklists[editType]?.sections[sIdx].items.append(
-                ChecklistItem(name: newItemName.trimmingCharacters(in: .whitespaces), isCritical: newItemCritical)
+                ChecklistItem(name: newItemName.trimmingCharacters(in: .whitespacesAndNewlines), isCritical: newItemCritical)
             )
         }
     }
 
     private func addSection() {
-        guard !newSectionName.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        guard !newSectionName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
 
         let editType = selectedVehicleType == "all" ? "all" : selectedVehicleType
         ensureChecklist(for: editType)
 
         checklists[editType]?.sections.append(
-            ChecklistSection(title: newSectionName.trimmingCharacters(in: .whitespaces), items: [])
+            ChecklistSection(title: newSectionName.trimmingCharacters(in: .whitespacesAndNewlines), items: [])
         )
     }
 

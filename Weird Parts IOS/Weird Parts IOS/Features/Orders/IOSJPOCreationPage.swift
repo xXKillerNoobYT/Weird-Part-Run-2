@@ -1066,9 +1066,9 @@ struct IOSJPOCreationPage: View {
                 let suggestions: [AISuggestion] = lines.prefix(3).compactMap { line in
                     let parts = line.components(separatedBy: "|")
                     guard parts.count >= 3 else { return nil }
-                    let name = parts[0].trimmingCharacters(in: .whitespaces)
-                    let reason = parts[1].trimmingCharacters(in: .whitespaces)
-                    guard let qty = Int(parts[2].trimmingCharacters(in: .whitespaces)), qty > 0 else {
+                    let name = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+                    let reason = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard let qty = Int(parts[2].trimmingCharacters(in: .whitespacesAndNewlines)), qty > 0 else {
                         return nil
                     }
                     // Try to match to a real part in catalog

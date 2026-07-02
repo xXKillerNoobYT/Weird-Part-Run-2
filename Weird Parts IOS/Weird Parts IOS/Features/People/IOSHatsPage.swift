@@ -263,7 +263,7 @@ private struct AddHatSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(hatName.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(hatName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .alert("Discard changes?", isPresented: $showDiscardAlert) {
@@ -283,7 +283,7 @@ private struct AddHatSheet: View {
         }
         do {
             try service.createHat(
-                name: hatName.trimmingCharacters(in: .whitespaces),
+                name: hatName.trimmingCharacters(in: .whitespacesAndNewlines),
                 description: hatDescription.isEmpty ? nil : hatDescription
             )
             dismiss()
