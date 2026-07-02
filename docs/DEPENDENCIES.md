@@ -55,7 +55,7 @@ swift test
 
 # App: open either entry point and let Xcode resolve packages
 open "Weird Parts IOS/Weird Parts.xcodeproj"     # project (schemes: "Weird Parts", "WiredPartCore")
-open "Wierd Parts.xcworkspace"                    # workspace (schemes: "WiredPart-iOS", "WiredPart-macOS", ...)
+open "Weird Parts.xcworkspace"                    # workspace (schemes: "WiredPart-iOS", "WiredPart-macOS", ...)
 ```
 
 See [SETUP.md](SETUP.md) for full build/test instructions and scheme details.

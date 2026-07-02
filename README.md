@@ -27,8 +27,8 @@ Tracking:
 
 ```text
 Weird-Part-Run-2/
-├── Wierd Parts.xcworkspace/          workspace entry point (schemes: WiredPart-iOS,
-│                                     WiredPart-macOS, Stage-9 smokes; note historical misspelling)
+├── Weird Parts.xcworkspace/          workspace entry point (schemes: WiredPart-iOS,
+│                                     WiredPart-macOS, Stage-9 smokes)
 ├── Weird Parts IOS/
 │   ├── Weird Parts.xcodeproj/        iOS Xcode project (scheme: "Weird Parts")
 │   ├── Weird Parts IOS/              SwiftUI app target

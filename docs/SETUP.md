@@ -64,14 +64,14 @@ The app target lives under `Weird Parts IOS/`. The shared package lives under `c
 
 The repo has two Xcode entry points. Both resolve the same packages; they differ in schemes.
 
-<!-- Verify: xcodebuild -list -project "Weird Parts IOS/Weird Parts.xcodeproj" ; xcodebuild -list -workspace "Wierd Parts.xcworkspace" -->
+<!-- Verify: xcodebuild -list -project "Weird Parts IOS/Weird Parts.xcodeproj" ; xcodebuild -list -workspace "Weird Parts.xcworkspace" -->
 
 | Entry point | Schemes | Use for |
 | --- | --- | --- |
 | `Weird Parts IOS/Weird Parts.xcodeproj` | `Weird Parts`, `WiredPartCore` | quick app-only build/test work (the commands below) |
-| `Wierd Parts.xcworkspace` (repo root) | `WiredPart-iOS`, `WiredPart-iOS-Stage9-Smokes`, `WiredPart-macOS`, `WiredPartCore` | the beta smoke gate ([docs/testing/wei-3091-stage-9-beta-smoke-package.md](testing/wei-3091-stage-9-beta-smoke-package.md)) and the experimental macOS scheme |
+| `Weird Parts.xcworkspace` (repo root) | `WiredPart-iOS`, `WiredPart-iOS-Stage9-Smokes`, `WiredPart-macOS`, `WiredPartCore` | the beta smoke gate ([docs/testing/wei-3091-stage-9-beta-smoke-package.md](testing/wei-3091-stage-9-beta-smoke-package.md)) and the experimental macOS scheme |
 
-Note the workspace filename's historical misspelling — it really is `Wierd Parts.xcworkspace`. Quote it exactly in commands.
+The workspace filename contains a space — quote `Weird Parts.xcworkspace` exactly in commands.
 
 ## Build The Core Package
 
