@@ -164,20 +164,27 @@ struct BusinessProfileSetupView: View {
 
     // MARK: - Actions
 
+    /// Trimmed value, or nil when the field is empty/whitespace-only — so
+    /// blank optionals persist as NULL instead of stray whitespace (#1337).
+    private func trimmedOrNil(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     private func saveProfile() {
         isLoading = true
         errorMessage = nil
 
         let profile = BusinessProfile(
             companyName: companyName.trimmingCharacters(in: .whitespacesAndNewlines),
-            industry: industry.isEmpty ? nil : industry,
-            address: address.isEmpty ? nil : address,
-            city: city.isEmpty ? nil : city,
-            state: state.isEmpty ? nil : state,
-            zip: zip.isEmpty ? nil : zip,
-            phone: phone.isEmpty ? nil : phone,
-            email: email.isEmpty ? nil : email,
-            website: website.isEmpty ? nil : website,
+            industry: trimmedOrNil(industry),
+            address: trimmedOrNil(address),
+            city: trimmedOrNil(city),
+            state: trimmedOrNil(state),
+            zip: trimmedOrNil(zip),
+            phone: trimmedOrNil(phone),
+            email: trimmedOrNil(email),
+            website: trimmedOrNil(website),
             isActive: 1
         )
 

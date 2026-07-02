@@ -49,6 +49,7 @@ struct IOSPreTripChecklistPage: View {
     @State private var selectedVehicleType: String = "all"
     @State private var checklists: [String: VehicleChecklist] = [:]
     @State private var isDirty = false
+    @State private var saveSuccessMessage: String?
 
     @State private var showAddItem = false
     @State private var addItemSectionId: String?
@@ -222,6 +223,17 @@ struct IOSPreTripChecklistPage: View {
                 }
             }
 
+            // Save success confirmation (issue #1214 — same pattern as
+            // IOSToolPoliciesPage) — cleared on the next edit or error.
+            if let saveSuccessMessage {
+                Section {
+                    Label(saveSuccessMessage, systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .font(.caption)
+                }
+                .accessibilityIdentifier("preTripChecklistSaveSuccessMessage")
+            }
+
             // Save
             Section {
                 Button { saveSettings() } label: {
@@ -235,7 +247,11 @@ struct IOSPreTripChecklistPage: View {
         }
         // Fix #149: dismiss keyboard when scrolling checklist editor
         .scrollDismissesKeyboard(.interactively)
-        .onChange(of: checklists) { _, _ in isDirty = true }
+        .onChange(of: checklists) { _, _ in
+            // New edits invalidate the last save confirmation (issue #1214).
+            isDirty = true
+            saveSuccessMessage = nil
+        }
         .alert("Add Item", isPresented: $showAddItem) {
             TextField("Item name", text: $newItemName)
             Toggle("Critical item", isOn: $newItemCritical)
@@ -350,8 +366,10 @@ struct IOSPreTripChecklistPage: View {
             try service.upsertSetting(key: "pretrip_checklist_config", value: json, category: "pretrip")
             saveError = nil
             isDirty = false
+            saveSuccessMessage = "Checklist saved."
         } catch {
             saveError = userFriendlyError(error, context: "save data")
+            saveSuccessMessage = nil
         }
     }
 

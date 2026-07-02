@@ -23,6 +23,15 @@ func userFriendlyError(_ error: Error, context: String = "load data") -> String 
         return "A saved clock entry has an invalid timestamp. Ask an admin to review the timesheet before using today's hours."
     }
 
+    if let warehouseError = error as? WarehouseService.WarehouseError,
+       case .gridShrinkWouldOrphanItems(let features, let zones) = warehouseError {
+        // Fixed counts only — no row contents (see security note above).
+        var stranded: [String] = []
+        if features > 0 { stranded.append("\(features) feature\(features == 1 ? "" : "s")") }
+        if zones > 0 { stranded.append("\(zones) zone\(zones == 1 ? "" : "s")") }
+        return "Can't shrink the grid: \(stranded.joined(separator: " and ")) would fall outside the new size. Move or remove them first."
+    }
+
     let raw = error.localizedDescription
     if raw.contains("no such table") {
         return "This feature isn't set up yet. Contact your admin."

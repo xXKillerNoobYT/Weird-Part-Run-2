@@ -717,8 +717,9 @@ struct IOSEmployeeDetailPage: View {
         }
         do {
             try service.toggleHatAssignment(employeeId: employeeId, hatId: hatId, assign: assign)
-            // Reload hats
-            allHats = (try? service.getAllHatsWithAssignment(employeeId: employeeId)) ?? []
+            // Reload hats — a reload failure now surfaces via loadError and keeps
+            // the previous list instead of showing zero hats assigned (#1335).
+            allHats = try service.getAllHatsWithAssignment(employeeId: employeeId)
         } catch {
             loadError = userFriendlyError(error, context: "update hat")
         }

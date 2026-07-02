@@ -654,12 +654,15 @@ struct CompanySetupWizard: View {
     // MARK: - Data Operations
 
     private func saveCompanyProfile() {
-        guard !companyName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        // Persist the trimmed values — SettingsService stores them verbatim,
+        // so validating trimmed but saving raw can store stray whitespace (#1337).
+        let trimmedName = companyName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return }
         do {
-            try appCore.settingsService?.updateSetting(key: "company_name", value: companyName)
-            try appCore.settingsService?.updateSetting(key: "company_address", value: companyAddress)
-            try appCore.settingsService?.updateSetting(key: "company_phone", value: companyPhone)
-            try appCore.settingsService?.updateSetting(key: "company_email", value: companyEmail)
+            try appCore.settingsService?.updateSetting(key: "company_name", value: trimmedName)
+            try appCore.settingsService?.updateSetting(key: "company_address", value: companyAddress.trimmingCharacters(in: .whitespacesAndNewlines))
+            try appCore.settingsService?.updateSetting(key: "company_phone", value: companyPhone.trimmingCharacters(in: .whitespacesAndNewlines))
+            try appCore.settingsService?.updateSetting(key: "company_email", value: companyEmail.trimmingCharacters(in: .whitespacesAndNewlines))
             completedSteps.insert(0)
             saveProgress()
         } catch {

@@ -1595,7 +1595,7 @@ public final class ChatService: Sendable {
                            s.name AS supplier_name,
                            j.job_name
                     FROM qa_threads qa
-                    JOIN chat_channels cc ON cc.id = qa.channel_id
+                    JOIN chat_channels cc ON cc.id = qa.channel_id AND cc.is_active = 1 AND cc.deleted_at IS NULL
                     JOIN supplier_channel_bridges scb ON scb.channel_id = cc.id AND scb.deleted_at IS NULL
                     JOIN suppliers s ON s.id = scb.supplier_id AND s.deleted_at IS NULL
                     LEFT JOIN users ua ON ua.id = qa.asked_by AND ua.deleted_at IS NULL

@@ -1,121 +1,78 @@
-# Wired-Part — Dependency Reference
+# WiredPart — Dependency Reference
 
-> Last updated: 2026-03-10
-> Purpose: Reliable dependency map for backend/frontend and deployment prep.
-> Paperclip staging update: Treat this as historical dependency context until a promoted stage requires dependency changes. Current execution order lives in `docs/plans/staged-paperclip-goals.md`.
-
----
-
-## Backend Python Dependencies (`backend/requirements.txt`)
-
-### Runtime — Web Framework
-- fastapi (>=0.115.0)
-- uvicorn[standard] (>=0.34.0)
-
-### Runtime — Data & Validation
-- pydantic (>=2.10.0)
-- pydantic-settings (>=2.7.0)
-- aiosqlite (>=0.20.0)
-
-### Runtime — Authentication & Security
-- python-jose[cryptography] (>=3.3.0) — JWT tokens
-- bcrypt (>=4.0.0) — password hashing
-- cryptography (>=44.0.0) — Ed25519 device security keys
-
-### Runtime — Scheduling & Utilities
-- apscheduler (>=3.10.0)
-- python-dotenv (>=1.0.0)
-- python-multipart (>=0.0.20) — file uploads
-
-### Runtime — PDF & Export
-- fpdf2 (>=2.7.0) — PO PDF generation (`backend/app/services/pdf_service.py`)
-
-### Test-only
-- pytest (>=8.3.0)
-- pytest-asyncio (>=0.24.0)
-- httpx (>=0.28.0) — also used at runtime by `ai_service.py` for LM Studio API calls
-
-### Notes
-- `fpdf2` is used for PO PDF generation. If missing, PDF generation falls back to plain text output.
-- `httpx` is listed under test-only in requirements.txt but is also imported at runtime by `ai_service.py`. It works because it's always installed, but note the dual usage.
-- `cryptography` is a transitive dependency of `python-jose[cryptography]` but is also directly imported by `device_security_service.py` for Ed25519 operations, so it's explicitly listed.
+> Last updated: 2026-07-01 (GitHub #1334)
+> Purpose: Dependency map for the current native iOS / Swift package repository.
+>
+> The 2026-03-10 edition of this file documented the retired Tauri/React/FastAPI stack (pip + npm dependencies). Those directories (`backend/`, `frontend/`, `src/`, `src-tauri/`) no longer exist in the working tree; the old lists are preserved in git history.
 
 ---
 
-## Frontend npm Dependencies (`package.json`)
+## Swift Package Dependencies
 
-### Runtime — React Core
-- react (^19.2.0)
-- react-dom (^19.2.0)
-- react-router-dom (^7.13.0)
-- @tanstack/react-query (^5.90.21)
-- zustand (^5.0.11)
+Declared in [`core/Package.swift`](../core/Package.swift) and pinned by the committed [`core/Package.resolved`](../core/Package.resolved).
 
-### Runtime — HTTP & Data
-- axios (^1.13.5)
+<!-- Verify: cat core/Package.swift && cat core/Package.resolved -->
 
-### Runtime — UI & Styling
-- lucide-react (^0.575.0) — icon library
-- clsx (^2.1.1) — className utility
-- tailwind-merge (^3.5.0) — Tailwind class deduplication
+| Package | Version | Why |
+|---------|---------|-----|
+| [duckduckgo/GRDB.swift](https://github.com/duckduckgo/GRDB.swift) | `exact: 2.4.2-1` (rev `80cae244`) | Database layer. DuckDuckGo's fork bundles GRDB 7.x + SQLCipher 4.7.0 as a prebuilt XCFramework, encrypting the whole SQLite database at rest. Chosen over plain `groue/GRDB.swift` because it keeps the same `GRDB` product name — zero import-site changes across 300+ Swift files. |
+| [weichsel/ZIPFoundation](https://github.com/weichsel/ZIPFoundation) | `from: 0.9.19` (resolved: 0.9.20) | ZIP archive support (backups, XLSX import/export). |
 
-### Runtime — QR/Barcode
-- qrcode (^1.5.4)
-- html5-qrcode (^2.3.8)
-- jsbarcode (^3.12.3)
-- @types/qrcode (^1.5.6)
-- @types/jsbarcode (^3.11.4)
+**Do not bump GRDB casually.** The fork is pinned exactly to `2.4.2-1` because newer fork tags (e.g. v3.7.0) fail macOS CLI `swift test` with `cannot find 'strcmp' in scope` under Swift 6 strict-module mode. `Package.resolved` is committed so every environment resolves the same revision. See the comment block in `core/Package.swift` before changing anything.
 
-### Runtime — Drag & Drop
-- @dnd-kit/core (^6.3.1)
-- @dnd-kit/sortable (^10.0.0)
-- @dnd-kit/utilities (^3.2.2)
-
-### Runtime — Capacitor (Mobile)
-- @capacitor/core (^6.0.0)
-- @capacitor/ios (^6.2.1)
-- @capacitor/app (^6.0.0)
-- @capacitor/camera (^6.0.0)
-- @capacitor/geolocation (^6.0.0)
-- @capacitor/haptics (^6.0.0)
-- @capacitor/network (^6.0.0)
-- @capacitor/preferences (^6.0.0)
-- @capacitor/splash-screen (^6.0.0)
-- @capacitor/status-bar (^6.0.0)
-- @capacitor-community/sqlite (^6.0.0)
-
-### Dev/Build
-- vite (^7.3.1)
-- typescript (~5.9.3)
-- @vitejs/plugin-react (^5.1.1)
-- tailwindcss (^4.2.0)
-- @tailwindcss/vite (^4.2.0)
-- @capacitor/cli (^6.0.0)
-- @types/node, @types/react, @types/react-dom
-- eslint + eslint-plugin-react-hooks + eslint-plugin-react-refresh + typescript-eslint + globals
-
-### Custom (No External Package)
-- Toast system: `src/lib/toast.ts` — pure DOM implementation, zero dependencies
+Everything else is Apple system frameworks (SwiftUI, GRDB's bundled SQLite/SQLCipher, MultipeerConnectivity, Vision, AVFoundation, Foundation Models, CryptoKit, CoreLocation) — no CocoaPods, no npm, no pip.
 
 ---
 
-## Install Commands
+## Toolchain & Platform Requirements
+
+<!-- Verify:
+  grep -o 'IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*' "Weird Parts IOS/Weird Parts.xcodeproj/project.pbxproj" | sort -u
+  grep -o 'MACOSX_DEPLOYMENT_TARGET = [0-9.]*' "Weird Parts IOS/Weird Parts.xcodeproj/project.pbxproj" | sort -u
+  head -1 core/Package.swift
+  xcodebuild -version
+-->
+
+| Requirement | Value |
+|-------------|-------|
+| iOS app deployment target | **iOS 26.2** (`IPHONEOS_DEPLOYMENT_TARGET = 26.2`) |
+| macOS target (workspace `WiredPart-macOS` scheme) | macOS 26.4 |
+| Core package platforms | iOS 17 / macOS 14 (`core/Package.swift`) — the package builds lower than the app so `swift test` runs on more Macs |
+| Swift tools version | 6.0 (`// swift-tools-version: 6.0`) |
+| Xcode | Xcode 26.2 or newer (needs the iOS 26.2 SDK; repo verified with Xcode 26.5 / build 17F42) |
+| macOS host | Apple Silicon Mac recommended (matches the self-hosted CI runner) |
+
+---
+
+## Install / Resolve Commands
 
 ```bash
-# Backend
-cd backend
-pip install -r requirements.txt
+# Resolve and build the core package
+cd core
+swift package resolve
+swift build
+swift test
 
-# Frontend
-cd frontend
-npm install
+# App: open either entry point and let Xcode resolve packages
+open "Weird Parts IOS/Weird Parts.xcodeproj"     # project (schemes: "Weird Parts", "WiredPartCore")
+open "Weird Parts.xcworkspace"                    # workspace (schemes: "WiredPart-iOS", "WiredPart-macOS", ...)
 ```
+
+See [SETUP.md](SETUP.md) for full build/test instructions and scheme details.
 
 ---
 
-## Deployment Dependency Checklist
+## CI Runner Dependencies
 
-- [x] Backend requirements.txt includes all runtime dependencies (including fpdf2) — verified 2026-03-10
-- [x] Frontend `npm install` resolves without lock or peer errors — verified 2026-03-10
-- [x] Dev/build commands run on Windows (verified); Mac requires physical test
-- [x] Any newly introduced package is documented in this file and in the relevant plan section — verified 2026-03-10
+iOS/macOS/Xcode CI jobs run on the repository's local self-hosted Mac runner, not GitHub-hosted macOS runners. Runner identity, labels, and recovery steps live in the canonical runbook: [runbooks/local-mac-actions-runner.md](runbooks/local-mac-actions-runner.md). Do not duplicate machine-specific details here.
+
+Optional local tooling (not build dependencies): GitHub CLI `gh` for PR/runner checks, Python 3 for `scripts/` repo guards.
+
+---
+
+## Dependency Checklist
+
+- [x] `core/Package.resolved` committed and matches `Package.swift` pins — verified 2026-07-01
+- [x] GRDB fork pinned exactly (`2.4.2-1`) with rationale documented in `Package.swift` — verified 2026-07-01
+- [x] No other third-party package managers in use (no Podfile, no package.json, no requirements.txt) — verified 2026-07-01
+- [ ] Any newly introduced package must be documented in this file with a "why" row and a pin policy

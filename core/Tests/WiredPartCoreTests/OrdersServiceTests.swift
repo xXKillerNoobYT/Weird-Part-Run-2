@@ -574,6 +574,39 @@ struct OrdersServiceTests {
         #expect(item.suppliers.map(\.id) == [lockedSupplierId])
     }
 
+    @Test("Generic supplier lock ignores soft-deleted PO line items")
+    func testGenericProcurementDemandIgnoresSoftDeletedPOLineLock() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Generic Bracket", categoryId: catId)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-GEN-3", name: "Stale Lock Job")
+        let priorSupplierId = try E2ETestHelpers.seedSupplier(env, name: "Stale Supplier")
+        let otherSupplierId = try E2ETestHelpers.seedSupplier(env, name: "Fresh Supplier")
+        _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: priorSupplierId, costPrice: 2.00)
+        _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: otherSupplierId, costPrice: 1.00)
+        let priorLineId = try approvedJPOLine(env, jobId: jobId, partId: partId, quantity: 2)
+        _ = try env.orders.generatePOsFromProcurement(items: [
+            OrdersService.ProcurementGenerateItem(partId: partId, supplierId: priorSupplierId, quantity: 2, jpoLineIds: [priorLineId])
+        ])
+        _ = try approvedJPOLine(env, jobId: jobId, partId: partId, quantity: 5)
+
+        // Lock is active while the prior PO line is live
+        let locked = try #require(env.orders.getProcurementDemand().first { $0.partId == partId })
+        #expect(locked.lockedSupplierId == priorSupplierId)
+
+        // Soft-delete the prior PO line: the stale lock must not dictate the supplier
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE po_line_items SET deleted_at = datetime('now') WHERE jpo_line_id = ?",
+                arguments: [priorLineId]
+            )
+        }
+
+        let item = try #require(env.orders.getProcurementDemand().first { $0.partId == partId })
+        #expect(item.lockedSupplierId == nil)
+        #expect(Set(item.suppliers.map(\.id)) == Set([priorSupplierId, otherSupplierId]))
+    }
+
     @Test("Branded procurement demand remains freely selectable despite prior PO history")
     func testBrandedProcurementDemandDoesNotLockToPriorSupplier() throws {
         let env = try E2ETestHelpers.setUp()

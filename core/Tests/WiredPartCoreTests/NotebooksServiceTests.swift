@@ -986,6 +986,45 @@ struct NotebooksServiceTests {
         #expect(afterReview.isEmpty)
     }
 
+    @Test("Pending warranty classifications exclude entries under soft-deleted sections")
+    func testListPendingWarrantyClassificationsExcludesDeletedSections() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        let nbId = try env.notebooks.createNotebook(
+            title: "Deleted Section Notes",
+            notebookType: "job",
+            jobId: jobId,
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: nbId,
+            groupId: nil,
+            name: "Doomed Section"
+        )
+        let entryId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "text",
+            title: "Orphaned callback",
+            content: "Should vanish with its section",
+            createdBy: env.adminUserId
+        )
+        try env.notebooks.classifyTodoWork(
+            entryId: entryId,
+            classification: "warranty",
+            classifiedBy: env.adminUserId
+        )
+
+        let pending = try env.notebooks.listPendingWarrantyClassifications()
+        #expect(pending.contains { $0.id == entryId })
+
+        // Soft-delete the section: its unreviewed entries must leave the review queue
+        try env.notebooks.deleteSection(sectionId: sectionId)
+
+        let afterDelete = try env.notebooks.listPendingWarrantyClassifications()
+        #expect(afterDelete.allSatisfy { $0.id != entryId })
+    }
+
     // MARK: - 19. Reclassify with Reason
 
     @Test("Reclassify todo resets review and logs reason")
