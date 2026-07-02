@@ -25,6 +25,12 @@ struct CreateSubcontractorScheduleSheet: View {
     @State private var notes = ""
     @State private var isSaving = false
     @State private var saveError: String?
+    /// Load-error states for the prerequisite pickers (#1177) — a failed job
+    /// or contractor list load must never render as an empty picker with a
+    /// disabled Create/Save button. Tracked separately so the operator knows
+    /// which prerequisite failed.
+    @State private var jobsLoadError: String?
+    @State private var contractorsLoadError: String?
 
     private let statuses = ["scheduled", "confirmed", "completed"]
 
@@ -45,7 +51,22 @@ struct CreateSubcontractorScheduleSheet: View {
         NavigationStack {
             Form {
                 Section("Job") {
-                    if jobs.isEmpty {
+                    if let error = jobsLoadError {
+                        // Inline load error with retry (#1177) — distinguishes
+                        // "failed to load jobs" from "no active jobs exist".
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label(error, systemImage: "exclamationmark.triangle")
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                            Button {
+                                loadJobList()
+                            } label: {
+                                Label("Retry", systemImage: "arrow.clockwise")
+                                    .font(.caption)
+                            }
+                            .accessibilityLabel("Retry loading jobs")
+                        }
+                    } else if jobs.isEmpty {
                         Text("No active jobs")
                             .foregroundStyle(.secondary)
                     } else {
@@ -59,7 +80,22 @@ struct CreateSubcontractorScheduleSheet: View {
                 }
 
                 Section("Subcontractor") {
-                    if contractors.isEmpty {
+                    if let error = contractorsLoadError {
+                        // Inline load error with retry (#1177) — distinguishes
+                        // "failed to load subcontractors" from "none exist".
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label(error, systemImage: "exclamationmark.triangle")
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                            Button {
+                                loadContractorList()
+                            } label: {
+                                Label("Retry", systemImage: "arrow.clockwise")
+                                    .font(.caption)
+                            }
+                            .accessibilityLabel("Retry loading subcontractors")
+                        }
+                    } else if contractors.isEmpty {
                         Text("No active subcontractors")
                             .foregroundStyle(.secondary)
                     } else {
@@ -146,11 +182,37 @@ struct CreateSubcontractorScheduleSheet: View {
             notes = existing.notes ?? ""
         }
 
-        if let jobsService = appCore.jobsService {
-            jobs = (try? jobsService.listJobs(status: "active", limit: 300)) ?? []
+        loadJobList()
+        loadContractorList()
+    }
+
+    /// Loads the active-job picker list with explicit error surfacing (#1177).
+    /// Kept separate from `loadData()` so Retry re-fetches only the list and
+    /// never re-applies `existing` values over in-progress user edits.
+    private func loadJobList() {
+        guard let jobsService = appCore.jobsService else {
+            jobsLoadError = "Jobs service not available. Try again after app services finish loading."
+            return
         }
-        if let peopleService = appCore.peopleService {
-            contractors = (try? peopleService.listContractors()) ?? []
+        do {
+            jobs = try jobsService.listJobs(status: "active", limit: 300)
+            jobsLoadError = nil
+        } catch {
+            jobsLoadError = userFriendlyError(error, context: "load active jobs")
+        }
+    }
+
+    /// Loads the subcontractor picker list with explicit error surfacing (#1177).
+    private func loadContractorList() {
+        guard let peopleService = appCore.peopleService else {
+            contractorsLoadError = "People service not available. Try again after app services finish loading."
+            return
+        }
+        do {
+            contractors = try peopleService.listContractors()
+            contractorsLoadError = nil
+        } catch {
+            contractorsLoadError = userFriendlyError(error, context: "load subcontractors")
         }
     }
 

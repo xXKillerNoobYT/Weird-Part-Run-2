@@ -17,6 +17,12 @@ struct CreateChannelSheet: View {
     // Supplier channel state
     @State private var selectedSupplierId: Int64 = 0
     @State private var suppliers: [PartsService.SupplierWithCount] = []
+    /// Load-error state for the supplier picker (#1102) — a failed supplier
+    /// list load must never render as an empty "Choose..." picker. Cleared on
+    /// each successful load; previously loaded suppliers stay visible on a
+    /// failed refresh.
+    @State private var supplierLoadError: String?
+    @State private var isLoadingSuppliers = false
 
     private var isDM: Bool { channelType == "dm" }
     private var isSupplier: Bool { channelType == "supplier" }
@@ -26,10 +32,37 @@ struct CreateChannelSheet: View {
             Form {
                 if isSupplier {
                     Section("Supplier") {
-                        Picker("Select Supplier", selection: $selectedSupplierId) {
-                            Text("Choose...").tag(Int64(0))
-                            ForEach(suppliers, id: \.supplier.id) { item in
-                                Text(item.supplier.name).tag(item.supplier.id ?? Int64(0))
+                        if let error = supplierLoadError {
+                            // Inline load error with retry (#1102) — distinguishes
+                            // "failed to load suppliers" from "no suppliers exist".
+                            HStack(spacing: 8) {
+                                Label(error, systemImage: "exclamationmark.triangle")
+                                    .font(.caption)
+                                    .foregroundStyle(.red)
+                                Spacer()
+                                Button {
+                                    Task { await loadSuppliers() }
+                                } label: {
+                                    Label("Retry", systemImage: "arrow.clockwise")
+                                        .font(.caption)
+                                }
+                                .accessibilityLabel("Retry loading suppliers")
+                            }
+                        }
+                        if isLoadingSuppliers && suppliers.isEmpty && supplierLoadError == nil {
+                            ProgressView()
+                                .frame(maxWidth: .infinity, alignment: .center)
+                        } else if suppliers.isEmpty && supplierLoadError == nil {
+                            // True empty state — only shown after a successful load.
+                            Text("No suppliers configured")
+                                .foregroundStyle(.secondary)
+                                .font(.caption)
+                        } else if !suppliers.isEmpty {
+                            Picker("Select Supplier", selection: $selectedSupplierId) {
+                                Text("Choose...").tag(Int64(0))
+                                ForEach(suppliers, id: \.supplier.id) { item in
+                                    Text(item.supplier.name).tag(item.supplier.id ?? Int64(0))
+                                }
                             }
                         }
                     }
@@ -128,7 +161,21 @@ struct CreateChannelSheet: View {
 
     @MainActor
     private func loadSuppliers() async {
-        guard isSupplier, let service = appCore.partsService else { return }
-        suppliers = (try? service.listSuppliers()) ?? []
+        guard isSupplier else { return }
+        guard let service = appCore.partsService else {
+            supplierLoadError = "Parts service not available"
+            return
+        }
+        isLoadingSuppliers = true
+        // Explicit do/catch (#1102): a supplier-list failure must surface a
+        // visible, retryable error instead of silently rendering an empty
+        // picker. Previously loaded suppliers are kept on a failed refresh.
+        do {
+            suppliers = try service.listSuppliers()
+            supplierLoadError = nil
+        } catch {
+            supplierLoadError = userFriendlyError(error, context: "load suppliers")
+        }
+        isLoadingSuppliers = false
     }
 }
