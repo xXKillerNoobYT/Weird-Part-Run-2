@@ -3760,15 +3760,30 @@ public final class WarehouseService: Sendable {
     }
 
     /// Move received parts to staging for a job (does NOT count toward shelf inventory).
+    ///
+    /// Supplier attribution: pass `supplierId` directly, or pass the
+    /// `receivingSessionId` the items came from and the supplier is resolved
+    /// from that session's purchase order. The resolved supplier is stamped on
+    /// the stock movement so supplier quality scores
+    /// (`PartsService.calculateSupplierScores`) count staged units in the
+    /// received denominator — completeSession skips staged items when it
+    /// writes supplier-stamped shelf movements, so this is the only place
+    /// staged units can pick up their supplier.
     @discardableResult
     public func stageReceivedPartsForJob(
         partId: Int64,
         qty: Int,
         jobId: Int64,
         performedBy: Int64,
-        notes: String? = nil
+        notes: String? = nil,
+        supplierId: Int64? = nil,
+        receivingSessionId: Int64? = nil
     ) throws -> Int64 {
-        try createMovement(
+        let resolvedSupplierId = try resolveSupplierId(
+            supplierId: supplierId,
+            receivingSessionId: receivingSessionId
+        )
+        return try createMovement(
             partId: partId,
             qty: qty,
             fromLocationType: nil,
@@ -3779,8 +3794,28 @@ public final class WarehouseService: Sendable {
             reason: "Received and staged for job",
             notes: notes,
             performedBy: performedBy,
-            jobId: jobId
+            jobId: jobId,
+            supplierId: resolvedSupplierId
         )
+    }
+
+    /// Resolve a supplier for a receiving-flow movement: an explicit
+    /// `supplierId` wins; otherwise the supplier is looked up from the
+    /// receiving session's purchase order. Returns nil when neither resolves.
+    private func resolveSupplierId(
+        supplierId: Int64?,
+        receivingSessionId: Int64?
+    ) throws -> Int64? {
+        if let supplierId { return supplierId }
+        guard let sessionId = receivingSessionId else { return nil }
+        return try db.writer.read { dbConn in
+            try Int64.fetchOne(dbConn, sql: """
+                SELECT po.supplier_id
+                FROM receiving_sessions rs
+                JOIN purchase_orders po ON po.id = rs.po_id AND po.deleted_at IS NULL
+                WHERE rs.id = ? AND rs.deleted_at IS NULL
+                """, arguments: [sessionId])
+        }
     }
 
     /// Record a write-off for used/damaged parts that won't go on shelf.
@@ -3823,17 +3858,10 @@ public final class WarehouseService: Sendable {
         supplierId: Int64? = nil,
         receivingSessionId: Int64? = nil
     ) throws -> Int64 {
-        var resolvedSupplierId = supplierId
-        if resolvedSupplierId == nil, let sessionId = receivingSessionId {
-            resolvedSupplierId = try db.writer.read { dbConn in
-                try Int64.fetchOne(dbConn, sql: """
-                    SELECT po.supplier_id
-                    FROM receiving_sessions rs
-                    JOIN purchase_orders po ON po.id = rs.po_id AND po.deleted_at IS NULL
-                    WHERE rs.id = ? AND rs.deleted_at IS NULL
-                    """, arguments: [sessionId])
-            }
-        }
+        let resolvedSupplierId = try resolveSupplierId(
+            supplierId: supplierId,
+            receivingSessionId: receivingSessionId
+        )
         return try createMovement(
             partId: partId,
             qty: qty,

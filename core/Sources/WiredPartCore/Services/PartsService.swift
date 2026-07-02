@@ -7699,8 +7699,12 @@ public final class PartsService: Sendable {
 
             // Total units received from this supplier.
             // Receiving writers persist the canonical receive family
-            // ('receive', 'receiving', 'receipt') — count all of them so the
-            // quality denominator matches what the receiving flow writes.
+            // ('receive', 'receiving', 'receipt') plus 'receiving_staged' for
+            // deliveries routed straight to job staging
+            // (WarehouseService.stageReceivedPartsForJob) — count all of them
+            // so the quality denominator matches what the receiving flow
+            // writes. Job-return staging also uses 'receiving_staged' but
+            // carries no supplier_id, so the supplier_id filter excludes it.
             let receivedRow = try Row.fetchOne(dbConn, sql: """
                 SELECT COALESCE(SUM(qty), 0) AS total_received
                 FROM stock_movements
@@ -7708,7 +7712,8 @@ public final class PartsService: Sendable {
                 AND movement_type IN (
                     '\(StockMovement.MovementType.receipt.rawValue)',
                     '\(StockMovement.MovementType.receive.rawValue)',
-                    '\(StockMovement.MovementType.receiving.rawValue)'
+                    '\(StockMovement.MovementType.receiving.rawValue)',
+                    '\(StockMovement.MovementType.receivingStaged.rawValue)'
                 )
                 AND deleted_at IS NULL
                 """, arguments: [supplierId])
@@ -8778,13 +8783,21 @@ public final class PartsService: Sendable {
     }
 
     /// Compute smart-card facet counts for the catalog filter bar.
+    ///
+    /// `lowStockOnly` mirrors the list's Low Stock toggle: when true, every
+    /// dimension facet (category/style/type/color/brand) is restricted to
+    /// below-min-stock parts so the badges match what the filtered list shows.
+    /// The Low Stock card's own count excludes the toggle (facet semantics —
+    /// a card never filters by its own dimension), and All Parts stays
+    /// search-only because tapping it resets every filter.
     public func getCatalogFilterCounts(
         search: String? = nil,
         categoryId: Int64? = nil,
         styleId: Int64? = nil,
         typeId: Int64? = nil,
         colorId: Int64? = nil,
-        brandId: Int64? = nil
+        brandId: Int64? = nil,
+        lowStockOnly: Bool = false
     ) throws -> CatalogFilterCounts {
         do { return try db.writer.read { dbConn in
             let lowStockSQL = """
@@ -8802,6 +8815,7 @@ public final class PartsService: Sendable {
                 if let typeId, dimension != "type" { clauses.append("p.type_id = ?"); args.append(typeId) }
                 if let colorId, dimension != "color" { clauses.append("p.color_id = ?"); args.append(colorId) }
                 if let brandId, dimension != "brand" { clauses.append("p.brand_id = ?"); args.append(brandId) }
+                if lowStockOnly, dimension != "lowStock" { clauses.append("(\(lowStockSQL))") }
                 if let search, !search.isEmpty {
                     clauses.append("(p.name LIKE ? OR p.code LIKE ? OR COALESCE(b.name, '') LIKE ?)")
                     let like = "%\(search)%"
@@ -8841,7 +8855,9 @@ public final class PartsService: Sendable {
                 """, arguments: StatementArguments(allArgs)) ?? 0
 
             // "Low Stock": all active dimension filters + below-min condition.
-            let (filteredWhere, filteredArgs) = buildWhere(excluding: nil)
+            // Excludes its own dimension (the low-stock toggle) so the count
+            // is stable whether or not the toggle is active.
+            let (filteredWhere, filteredArgs) = buildWhere(excluding: "lowStock")
             let lowStock = try Int.fetchOne(dbConn, sql: """
                 SELECT COUNT(*) FROM parts p
                 LEFT JOIN brands b ON b.id = p.brand_id AND b.deleted_at IS NULL

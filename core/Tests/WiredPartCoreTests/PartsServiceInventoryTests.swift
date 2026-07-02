@@ -477,6 +477,48 @@ struct PartsServiceInventoryTests {
         #expect(scores.totalUnitsReceived == 4, "received units must flow into the quality denominator")
     }
 
+    @Test("stageReceivedPartsForJob stamps supplier and staged units feed the quality denominator")
+    func testStageReceivedPartsForJob_stampsSupplierAndCountsAsReceived() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "StagedRcvCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "StagedRcvPart", categoryId: catId)
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "StagedRcvSupplier")
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-STG-001", name: "Staged Receiving Job")
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-STG-001", supplierId: supplierId)
+        _ = try env.orders.addPOLineItem(poId: poId, partId: partId, quantity: 10, unitPrice: 1.0)
+        let sessionId = try env.warehouse.startReceivingSession(poId: poId, startedBy: env.adminUserId)
+
+        // Regression (GH#84 review): a PO fully staged for a job wrote
+        // 'receiving_staged' with NO supplier_id, so totalUnitsReceived stayed 0
+        // and one damaged return from the same delivery drove quality to 0%.
+        let movementId = try env.warehouse.stageReceivedPartsForJob(
+            partId: partId,
+            qty: 8,
+            jobId: jobId,
+            performedBy: env.adminUserId,
+            receivingSessionId: sessionId
+        )
+
+        let stamped = try env.db.writer.read { db in
+            try Int64.fetchOne(db, sql: "SELECT supplier_id FROM stock_movements WHERE id = ?",
+                               arguments: [movementId])
+        }
+        #expect(stamped == supplierId, "staged receiving must carry the supplier resolved from session → PO")
+
+        _ = try env.warehouse.returnDamagedToSupplier(
+            partId: partId,
+            qty: 2,
+            returnType: "refund",
+            performedBy: env.adminUserId,
+            receivingSessionId: sessionId
+        )
+
+        let scores = try env.parts.calculateSupplierScores(supplierId: supplierId)
+        #expect(scores.totalUnitsReceived == 8, "staged units must count in the received denominator")
+        #expect(scores.totalUnitsReturned == 2, "damaged return from the same delivery counts as returned")
+        #expect(scores.qualityScore == 75, "quality = 100 - (2/8 × 100) — not 0% for a fully-staged PO")
+    }
+
     // MARK: - Supplier Traceability (GH#84)
 
     @Test("getSupplierTrace returns supplier-attributed movements newest first with part names")

@@ -1120,14 +1120,16 @@ struct PartsCatalogPage: View {
                 offset: offset
             )
 
-            // Facet counts for the smart-card filter bar (same filter state)
+            // Facet counts for the smart-card filter bar (same filter state,
+            // including the Low Stock toggle so badges match the visible list)
             let counts = try service.getCatalogFilterCounts(
                 search: effectiveSearchText.isEmpty ? nil : effectiveSearchText,
                 categoryId: selectedCategoryId,
                 styleId: selectedStyleId,
                 typeId: selectedTypeId,
                 colorId: selectedColorId,
-                brandId: selectedBrandId
+                brandId: selectedBrandId,
+                lowStockOnly: lowStockOnly
             )
 
             let prows = result.parts.map { pwd -> CatalogPartRow in

@@ -698,6 +698,30 @@ struct E2EPartsCatalogTests {
         #expect(counts.lowStock == 1, "only the part below its min stock level counts as low stock")
     }
 
+    @Test("getCatalogFilterCounts lowStockOnly restricts dimension facets to low-stock parts")
+    func testCatalogFilterCountsLowStockOnly() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catA = try env.parts.createCategory(name: "LowOnlyCatA")
+        let catB = try env.parts.createCategory(name: "LowOnlyCatB")
+        let brandX = try E2ETestHelpers.seedBrand(env, name: "LowOnlyBrandX")
+        // catA: one low-stock part (no stock, min 5) + one healthy part
+        _ = try env.parts.createPart(categoryId: catA, name: "LowOnlyLow", code: "LO-1", brandId: brandX, minStockLevel: 5)
+        let healthyA = try env.parts.createPart(categoryId: catA, name: "LowOnlyHealthy", code: "LO-2", brandId: brandX, minStockLevel: 5)
+        _ = try E2ETestHelpers.seedStock(env, partId: healthyA, qty: 10)
+        // catB: one healthy part only
+        let healthyB = try env.parts.createPart(categoryId: catB, name: "LowOnlyHealthyB", code: "LO-3", minStockLevel: 5)
+        _ = try E2ETestHelpers.seedStock(env, partId: healthyB, qty: 10)
+
+        // Regression (GH#67 review): with the Low Stock toggle active, dimension
+        // badges previously counted every part, contradicting the visible list.
+        let counts = try env.parts.getCatalogFilterCounts(lowStockOnly: true)
+        #expect(counts.byCategory[catA] == 1, "category facet must count only low-stock parts when the toggle is on")
+        #expect(counts.byCategory[catB] == nil, "categories with zero low-stock parts must not report a count")
+        #expect(counts.byBrand[brandX] == 1, "brand facet must count only low-stock parts when the toggle is on")
+        #expect(counts.lowStock == 1, "Low Stock card's own count excludes the toggle itself")
+        #expect(counts.allParts == 3, "All Parts stays search-only — tapping it resets every filter")
+    }
+
     @Test("getCatalogFilterCounts respects search text")
     func testCatalogFilterCountsSearch() throws {
         let env = try E2ETestHelpers.setUp()
