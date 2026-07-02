@@ -20,8 +20,12 @@ struct IOSDispatchPreferencesPage: View {
     @State private var showConfidenceScores = false
 
     // Flex Pool
-    @State private var enableFlexSelfAssign = false
-    @State private var requireManagerApproval = true
+    // Defaults mirror SettingsService.DispatchPreferenceSettings.defaults so a
+    // fresh install's toggle state matches what getDispatchPreferences() (and
+    // therefore SchedulingService.fetchFlexPool/claimFlexJob) actually enforces
+    // before any explicit save.
+    @State private var enableFlexSelfAssign = true
+    @State private var requireManagerApproval = false
 
     // Pipeline Targets
     @State private var startAnytimeTarget: Int = 3
@@ -198,8 +202,12 @@ struct IOSDispatchPreferencesPage: View {
             enableAILearning = parser.bool(map, key: "dispatch_ai_learning_enabled", default: true)
             showConfidenceScores = parser.bool(map, key: "dispatch_show_confidence_scores", default: false)
 
-            enableFlexSelfAssign = parser.bool(map, key: "dispatch_flex_self_assign_enabled", default: false)
-            requireManagerApproval = parser.bool(map, key: "dispatch_flex_require_approval", default: true)
+            // Defaults must match SettingsService.DispatchPreferenceSettings.defaults
+            // (flexSelfAssignEnabled: true, flexRequireApproval: false) -- that struct
+            // is what getDispatchPreferences() returns, and what SchedulingService's
+            // fetchFlexPool/claimFlexJob gate on, when no value has ever been saved.
+            enableFlexSelfAssign = parser.bool(map, key: "dispatch_flex_self_assign_enabled", default: true)
+            requireManagerApproval = parser.bool(map, key: "dispatch_flex_require_approval", default: false)
 
             startAnytimeTarget = parser.int(map, key: "dispatch_pipeline_start_anytime_target", default: 3)
             scheduleNeededTarget = parser.int(map, key: "dispatch_pipeline_schedule_needed_target", default: 2)
