@@ -21,6 +21,13 @@ on:
   schedule:
     - cron: "33 2 * * 1"
 
+# One queued run per ref — a new push supersedes the queued/in-flight run for
+# the same branch instead of stacking duplicate CodeQL analyses (10-20 min
+# each) on the single local runner. Scheduled runs keep their own group.
+concurrency:
+  group: codeql-${{ github.ref }}-${{ github.event_name == 'schedule' && 'scheduled' || 'ci' }}
+  cancel-in-progress: true
+
 jobs:
   required-codeql-compat:
     name: CodeQL

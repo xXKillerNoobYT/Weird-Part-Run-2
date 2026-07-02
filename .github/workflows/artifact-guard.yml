@@ -6,6 +6,12 @@ on:
   push:
     branches: ["main"]
 
+# One queued run per ref — a new push supersedes the queued/in-flight run for
+# the same branch instead of stacking duplicates on the single local runner.
+concurrency:
+  group: artifact-guard-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   tracked-artifacts:
     name: Tracked artifact guard
