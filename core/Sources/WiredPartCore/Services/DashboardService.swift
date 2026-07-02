@@ -519,6 +519,7 @@ public final class DashboardService: Sendable {
                                   JOIN po_jpo_links pjl ON pjl.po_id = po.id
                                   JOIN job_parts_orders jpo ON jpo.id = pjl.jpo_id
                                   WHERE jpo.job_id = j.id
+                                    AND jpo.deleted_at IS NULL
                                     AND po.status NOT IN ('cancelled')
                                     AND po.deleted_at IS NULL), 0
                                ) AS current_spend
@@ -1167,7 +1168,7 @@ public final class DashboardService: Sendable {
                              (SELECT SUM(po.total_cost) FROM purchase_orders po
                               JOIN po_jpo_links pjl ON pjl.po_id = po.id
                               JOIN job_parts_orders jpo ON jpo.id = pjl.jpo_id
-                              WHERE jpo.job_id = j.id AND po.status NOT IN ('cancelled') AND po.deleted_at IS NULL), 0
+                              WHERE jpo.job_id = j.id AND jpo.deleted_at IS NULL AND po.status NOT IN ('cancelled') AND po.deleted_at IS NULL), 0
                            ) AS current_spend
                     FROM jobs j
                     WHERE j.id = ? AND j.deleted_at IS NULL

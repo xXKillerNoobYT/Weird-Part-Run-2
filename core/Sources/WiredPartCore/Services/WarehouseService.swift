@@ -3630,10 +3630,11 @@ public final class WarehouseService: Sendable {
                     sql: """
                         SELECT jpo.job_id, j.job_name, jpo.id AS jpo_id
                         FROM po_line_items pl
-                        JOIN jpo_line_items jli ON jli.id = pl.jpo_line_id
-                        JOIN job_parts_orders jpo ON jpo.id = jli.jpo_id
-                        JOIN jobs j ON j.id = jpo.job_id
+                        JOIN jpo_line_items jli ON jli.id = pl.jpo_line_id AND jli.deleted_at IS NULL
+                        JOIN job_parts_orders jpo ON jpo.id = jli.jpo_id AND jpo.deleted_at IS NULL
+                        JOIN jobs j ON j.id = jpo.job_id AND j.deleted_at IS NULL
                         WHERE pl.id = ? AND pl.jpo_line_id IS NOT NULL
+                          AND pl.deleted_at IS NULL
                         """,
                     arguments: [poLineId]
                 )
