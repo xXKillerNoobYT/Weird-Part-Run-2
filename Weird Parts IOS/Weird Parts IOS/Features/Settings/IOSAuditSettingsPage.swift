@@ -46,6 +46,7 @@ struct IOSAuditSettingsPage: View {
     ]
 
     @State private var isDirty = false
+    @State private var saveSuccessMessage: String?
 
     private var hasValidSettings: Bool {
         misplacementPenalty > 0
@@ -155,6 +156,17 @@ struct IOSAuditSettingsPage: View {
                 Label("History", systemImage: "clock.arrow.circlepath")
             }
 
+            // Save success confirmation (issue #1214 — same pattern as
+            // IOSToolPoliciesPage) — cleared on the next edit or error.
+            if let saveSuccessMessage {
+                Section {
+                    Label(saveSuccessMessage, systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .font(.caption)
+                }
+                .accessibilityIdentifier("auditSettingsSaveSuccessMessage")
+            }
+
             // Save
             Section {
                 Button { saveSettings() } label: {
@@ -168,17 +180,17 @@ struct IOSAuditSettingsPage: View {
         }
         // Fix #149: dismiss keyboard when scrolling audit settings
         .scrollDismissesKeyboard(.interactively)
-        .onChange(of: enableAutoScheduling) { _, _ in isDirty = true }
-        .onChange(of: defaultAuditType) { _, _ in isDirty = true }
-        .onChange(of: maxConcurrentAudits) { _, _ in isDirty = true }
-        .onChange(of: allowSpeedMode) { _, _ in isDirty = true }
-        .onChange(of: speedModeRequiresQR) { _, _ in isDirty = true }
-        .onChange(of: speedModeTimeLimit) { _, _ in isDirty = true }
-        .onChange(of: verificationThreshold) { _, _ in isDirty = true }
-        .onChange(of: misplacementPenalty) { _, _ in isDirty = true }
-        .onChange(of: keepHistoryMonths) { _, _ in isDirty = true }
-        .onChange(of: autoArchive) { _, _ in isDirty = true }
-        .onChange(of: includeInDailyReport) { _, _ in isDirty = true }
+        .onChange(of: enableAutoScheduling) { _, _ in markDirty() }
+        .onChange(of: defaultAuditType) { _, _ in markDirty() }
+        .onChange(of: maxConcurrentAudits) { _, _ in markDirty() }
+        .onChange(of: allowSpeedMode) { _, _ in markDirty() }
+        .onChange(of: speedModeRequiresQR) { _, _ in markDirty() }
+        .onChange(of: speedModeTimeLimit) { _, _ in markDirty() }
+        .onChange(of: verificationThreshold) { _, _ in markDirty() }
+        .onChange(of: misplacementPenalty) { _, _ in markDirty() }
+        .onChange(of: keepHistoryMonths) { _, _ in markDirty() }
+        .onChange(of: autoArchive) { _, _ in markDirty() }
+        .onChange(of: includeInDailyReport) { _, _ in markDirty() }
     }
 
     // MARK: - Actions
@@ -239,8 +251,17 @@ struct IOSAuditSettingsPage: View {
             try service.upsertSettingsMap(data, category: "audit")
             saveError = nil
             isDirty = false
+            saveSuccessMessage = "Audit settings saved."
         } catch {
             saveError = userFriendlyError(error, context: "save data")
+            saveSuccessMessage = nil
         }
+    }
+
+    /// New edits invalidate the last save confirmation along with marking
+    /// the form dirty (issue #1214).
+    private func markDirty() {
+        isDirty = true
+        saveSuccessMessage = nil
     }
 }

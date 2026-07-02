@@ -34,6 +34,7 @@ struct IOSDispatchPreferencesPage: View {
     @State private var crewContinuityWeight: String = "medium"
 
     @State private var isDirty = false
+    @State private var saveSuccessMessage: String?
 
     private enum ActiveSheet: Identifiable {
         case help
@@ -145,6 +146,17 @@ struct IOSDispatchPreferencesPage: View {
                 Text("Crew continuity weight controls how strongly the system prefers keeping the same crew on a job.")
             }
 
+            // Save success confirmation (issue #1214 — same pattern as
+            // IOSToolPoliciesPage) — cleared on the next edit or error.
+            if let saveSuccessMessage {
+                Section {
+                    Label(saveSuccessMessage, systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .font(.caption)
+                }
+                .accessibilityIdentifier("dispatchPreferencesSaveSuccessMessage")
+            }
+
             // Save
             Section {
                 Button { saveSettings() } label: {
@@ -156,17 +168,17 @@ struct IOSDispatchPreferencesPage: View {
                 .accessibilityHint(isDirty ? "" : "Make changes to enable saving.")
             }
         }
-        .onChange(of: enableAISuggestions) { _, _ in isDirty = true }
-        .onChange(of: enableAILearning) { _, _ in isDirty = true }
-        .onChange(of: showConfidenceScores) { _, _ in isDirty = true }
-        .onChange(of: enableFlexSelfAssign) { _, _ in isDirty = true }
-        .onChange(of: requireManagerApproval) { _, _ in isDirty = true }
-        .onChange(of: startAnytimeTarget) { _, _ in isDirty = true }
-        .onChange(of: scheduleNeededTarget) { _, _ in isDirty = true }
-        .onChange(of: favoriteGCTarget) { _, _ in isDirty = true }
-        .onChange(of: defaultView) { _, _ in isDirty = true }
-        .onChange(of: crewHistoryMonths) { _, _ in isDirty = true }
-        .onChange(of: crewContinuityWeight) { _, _ in isDirty = true }
+        .onChange(of: enableAISuggestions) { _, _ in markDirty() }
+        .onChange(of: enableAILearning) { _, _ in markDirty() }
+        .onChange(of: showConfidenceScores) { _, _ in markDirty() }
+        .onChange(of: enableFlexSelfAssign) { _, _ in markDirty() }
+        .onChange(of: requireManagerApproval) { _, _ in markDirty() }
+        .onChange(of: startAnytimeTarget) { _, _ in markDirty() }
+        .onChange(of: scheduleNeededTarget) { _, _ in markDirty() }
+        .onChange(of: favoriteGCTarget) { _, _ in markDirty() }
+        .onChange(of: defaultView) { _, _ in markDirty() }
+        .onChange(of: crewHistoryMonths) { _, _ in markDirty() }
+        .onChange(of: crewContinuityWeight) { _, _ in markDirty() }
     }
 
     // MARK: - Actions
@@ -227,8 +239,17 @@ struct IOSDispatchPreferencesPage: View {
             try service.upsertSettingsMap(data, category: "dispatch")
             saveError = nil
             isDirty = false
+            saveSuccessMessage = "Dispatch preferences saved."
         } catch {
             saveError = userFriendlyError(error, context: "save data")
+            saveSuccessMessage = nil
         }
+    }
+
+    /// New edits invalidate the last save confirmation along with marking
+    /// the form dirty (issue #1214).
+    private func markDirty() {
+        isDirty = true
+        saveSuccessMessage = nil
     }
 }

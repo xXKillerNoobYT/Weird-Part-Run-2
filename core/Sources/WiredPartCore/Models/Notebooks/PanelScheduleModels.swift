@@ -34,6 +34,40 @@ public struct PanelSchedule: Codable, Identifiable, Sendable {
         self.circuits = circuits
     }
 
+    /// The panel sizes the schedule builder UI supports selecting.
+    public static let supportedTotalSpaces = [2, 4, 8, 12, 16, 20, 24, 30, 42]
+
+    /// The fallback panel size used when a decoded value is unusable.
+    public static let defaultTotalSpaces = 20
+
+    /// Clamps a raw `totalSpaces` value onto a supported panel size.
+    ///
+    /// Panel schedules are decoded from notebook block JSON and sync payloads,
+    /// so malformed values (negative, zero, or out-of-range) can reach the
+    /// model. Rendering `0..<(totalSpaces / 2)` with a negative value traps at
+    /// runtime (issue #1239), so every load path must normalize first.
+    ///
+    /// - Non-positive values fall back to the default panel size (20) so any
+    ///   existing circuits stay visible and repairable.
+    /// - Values between supported sizes round **up** to the next size so no
+    ///   in-range circuit becomes hidden.
+    /// - Values above the largest supported size clamp down to it (42).
+    public static func normalizedTotalSpaces(_ raw: Int) -> Int {
+        guard raw > 0 else { return defaultTotalSpaces }
+        guard let clamped = supportedTotalSpaces.first(where: { $0 >= raw }) else {
+            return supportedTotalSpaces.max() ?? defaultTotalSpaces
+        }
+        return clamped
+    }
+
+    /// Returns a copy whose `totalSpaces` is clamped to a supported panel size.
+    /// Apply this to every schedule decoded from JSON before rendering it.
+    public func clampingTotalSpacesToSupportedRange() -> PanelSchedule {
+        var normalized = self
+        normalized.totalSpaces = Self.normalizedTotalSpaces(totalSpaces)
+        return normalized
+    }
+
     /// Returns a copy safe to persist for the current panel size.
     ///
     /// Users can shrink `totalSpaces` from the builder settings while stale circuit
@@ -51,10 +85,12 @@ public struct PanelSchedule: Codable, Identifiable, Sendable {
     /// Returns a copy safe to persist after panel builder edits.
     ///
     /// A circuit marked spare should not retain active breaker/load metadata that
-    /// will be hidden by the grid and exports. Normalize both the visible panel
-    /// range and the per-circuit spare payload before writing notebook JSON.
+    /// will be hidden by the grid and exports. Normalize the panel size, the
+    /// visible panel range, and the per-circuit spare payload before writing
+    /// notebook JSON. Clamping runs first so pruning uses the repaired size.
     public func normalizedForPersistence() -> PanelSchedule {
-        var normalized = pruningCircuitsOutsideTotalSpaces()
+        var normalized = clampingTotalSpacesToSupportedRange()
+            .pruningCircuitsOutsideTotalSpaces()
         normalized.circuits = normalized.circuits.map { $0.normalizedForPersistence() }
         return normalized
     }
