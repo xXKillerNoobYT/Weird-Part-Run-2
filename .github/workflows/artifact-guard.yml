@@ -15,20 +15,12 @@ concurrency:
 jobs:
   tracked-artifacts:
     name: Tracked artifact guard
-    # WPR2 is a private repo with a repo-specific local Mac runner. Keep even
-    # lightweight required PR checks on that runner so PRs do not get blocked by
-    # cloud Actions billing/hosted-runner availability.
-    runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
+    # Pure-python guard — no Xcode needed. Owner authorized cloud-runner spend
+    # (2026-07-02) so lightweight PR gates run on hosted Linux in parallel
+    # instead of queueing behind the single local Mac runner.
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Verify self-hosted macOS runner
-        shell: bash
-        run: |
-          test "$RUNNER_OS" = "macOS"
-          test "$(uname -s)" = "Darwin"
-          echo "Runner: $RUNNER_NAME"
-          echo "Architecture: $RUNNER_ARCH"
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
