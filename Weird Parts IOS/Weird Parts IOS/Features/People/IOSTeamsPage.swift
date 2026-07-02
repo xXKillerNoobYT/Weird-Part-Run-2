@@ -173,7 +173,7 @@ struct IOSTeamsPage: View {
                 message: searchText.isEmpty
                     ? "No teams match the selected filter."
                     : "No teams match \"\(searchText)\".",
-                actionLabel: "Clear Filters",
+                actionLabel: searchText.isEmpty ? "Clear Filters" : "Clear Search & Filters",
                 actionIcon: "xmark.circle"
             ) {
                 searchText = ""
