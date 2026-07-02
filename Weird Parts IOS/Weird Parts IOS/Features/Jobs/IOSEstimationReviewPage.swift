@@ -400,7 +400,9 @@ private struct EndOfJobReviewSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Submit") { Task { await save() } }
                         .disabled(
-                            isSaving || actualDays.isEmpty || actualHours.isEmpty
+                            isSaving
+                                || actualDays.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                || actualHours.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                                 || actualDaysValidationMessage != nil
                                 || actualHoursValidationMessage != nil
                         )
@@ -411,9 +413,12 @@ private struct EndOfJobReviewSheet: View {
     }
 
     private func save() async {
-        guard let svc = appCore.jobEstimationService,
-              let userId = appCore.currentUser?.id else {
+        guard let svc = appCore.jobEstimationService else {
             saveError = "Estimation service not available"
+            return
+        }
+        guard let userId = appCore.currentUser?.id else {
+            saveError = "You must be signed in to submit an estimation review"
             return
         }
         // Zero/negative actuals corrupt variance % and AI estimation learning,
