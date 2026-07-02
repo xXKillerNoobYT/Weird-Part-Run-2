@@ -316,16 +316,34 @@ struct ReportBuilderView: View {
     // MARK: - Step 3: Filters
 
     /// Inverted ranges silently generate empty reports, which reads as
-    /// "no data" instead of "invalid input" (issue #1213).
-    private var hasValidDateRange: Bool { startDate <= endDate }
+    /// "no data" instead of "invalid input" (issue #1213). Compared at day
+    /// granularity to match generateCustomReport's yyyy-MM-dd truncation —
+    /// a same-calendar-day range is valid regardless of time-of-day.
+    private var hasValidDateRange: Bool {
+        Calendar.current.startOfDay(for: startDate) <= Calendar.current.startOfDay(for: endDate)
+    }
+
+    /// Picker limits at day granularity so a same-calendar-day range stays
+    /// selectable regardless of each value's time-of-day component.
+    private var startPickerLimit: PartialRangeThrough<Date> {
+        let endOfEndDay = Calendar.current.date(
+            byAdding: DateComponents(day: 1, second: -1),
+            to: Calendar.current.startOfDay(for: endDate)
+        ) ?? endDate
+        return ...endOfEndDay
+    }
+
+    private var endPickerLimit: PartialRangeFrom<Date> {
+        Calendar.current.startOfDay(for: startDate)...
+    }
 
     @ViewBuilder
     private var filtersStep: some View {
         Section("Date Range") {
             // Constrained pickers make an inverted range unreachable from
             // the UI; the validation below is defense in depth.
-            DatePicker("Start Date", selection: $startDate, in: ...endDate, displayedComponents: .date)
-            DatePicker("End Date", selection: $endDate, in: startDate..., displayedComponents: .date)
+            DatePicker("Start Date", selection: $startDate, in: startPickerLimit, displayedComponents: .date)
+            DatePicker("End Date", selection: $endDate, in: endPickerLimit, displayedComponents: .date)
 
             if !hasValidDateRange {
                 Label("Start date must be on or before the end date.", systemImage: "exclamationmark.triangle")

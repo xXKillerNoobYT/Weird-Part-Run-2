@@ -8,21 +8,24 @@ final class ReportBuilderDateRangeRegressionTests: XCTestCase {
         let source = try Self.readReportBuilderSource()
 
         XCTAssertTrue(
-            source.contains("DatePicker(\"Start Date\", selection: $startDate, in: ...endDate, displayedComponents: .date)"),
-            "Start Date must be constrained to on/before the End Date."
+            source.contains("DatePicker(\"Start Date\", selection: $startDate, in: startPickerLimit, displayedComponents: .date)"),
+            "Start Date must be constrained to on/before the End Date's calendar day."
         )
         XCTAssertTrue(
-            source.contains("DatePicker(\"End Date\", selection: $endDate, in: startDate..., displayedComponents: .date)"),
-            "End Date must be constrained to on/after the Start Date."
+            source.contains("DatePicker(\"End Date\", selection: $endDate, in: endPickerLimit, displayedComponents: .date)"),
+            "End Date must be constrained to on/after the Start Date's calendar day."
         )
     }
 
     func testGenerateIsBlockedForInvertedRanges() throws {
         let source = try Self.readReportBuilderSource()
 
+        // Day-granularity comparison matches generateCustomReport's
+        // yyyy-MM-dd truncation — a same-calendar-day range with a later
+        // start time-of-day must NOT be treated as inverted.
         XCTAssertTrue(
-            source.contains("private var hasValidDateRange: Bool { startDate <= endDate }"),
-            "The builder needs an explicit date-range validity check."
+            source.contains("Calendar.current.startOfDay(for: startDate) <= Calendar.current.startOfDay(for: endDate)"),
+            "The date-range validity check must compare at day granularity, matching the service's yyyy-MM-dd truncation."
         )
         XCTAssertTrue(
             source.contains(".disabled(isGenerating || !hasValidDateRange)"),
@@ -32,9 +35,24 @@ final class ReportBuilderDateRangeRegressionTests: XCTestCase {
             source.contains("guard hasValidDateRange else {"),
             "generateReport() must refuse inverted ranges as defense in depth."
         )
+    }
+
+    func testInvertedRangeShowsVisibleValidationLabel() throws {
+        let source = try Self.readReportBuilderSource()
+
+        // Assert the *visible* label layer specifically — the generateReport()
+        // guard message alone must not satisfy this test.
         XCTAssertTrue(
-            source.contains("Start date must be on or before the end date."),
-            "The user needs an actionable validation message for inverted ranges."
+            source.contains("Label(\"Start date must be on or before the end date.\", systemImage: \"exclamationmark.triangle\")"),
+            "The filters step needs a visible validation label for inverted ranges."
+        )
+        XCTAssertTrue(
+            source.contains(".accessibilityIdentifier(\"reportBuilderDateRangeError\")"),
+            "The validation label must keep its accessibility identifier for UI tests."
+        )
+        XCTAssertTrue(
+            source.contains("if !hasValidDateRange {"),
+            "The validation label must be gated on the shared date-range validity check."
         )
     }
 
