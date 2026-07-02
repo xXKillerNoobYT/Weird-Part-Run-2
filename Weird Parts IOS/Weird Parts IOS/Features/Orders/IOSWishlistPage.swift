@@ -794,11 +794,14 @@ struct IOSWishlistPage: View {
             // Auto-approval is a WRITE: if it throws, items that policy says should
             // auto-approve silently stay pending. Surface it as a banner (#1335)
             // while still loading the sections below so the page stays usable.
-            var autoApprovalFailure: String?
+            // Capture the raw error here and map it to user-facing copy inside
+            // MainActor.run — userFriendlyError is main-actor-isolated and must
+            // not be called from the detached task itself.
+            var autoApprovalFailure: (any Error)?
             do {
                 _ = try service.processAutoApprovals(byUserId: currentUserId)
             } catch {
-                autoApprovalFailure = userFriendlyError(error, context: "run wishlist auto-approvals")
+                autoApprovalFailure = error
             }
             do {
                 let result = try service.getSectionedItems()
@@ -809,13 +812,13 @@ struct IOSWishlistPage: View {
                 await MainActor.run {
                     sections = result
                     statusCounts = counts
-                    autoApprovalError = autoApprovalFailure
+                    autoApprovalError = autoApprovalFailure.map { userFriendlyError($0, context: "run wishlist auto-approvals") }
                     isLoading = false
                     postAIContext()
                 }
             } catch {
                 await MainActor.run {
-                    autoApprovalError = autoApprovalFailure
+                    autoApprovalError = autoApprovalFailure.map { userFriendlyError($0, context: "run wishlist auto-approvals") }
                     loadError = userFriendlyError(error, context: "load wishlist")
                     isLoading = false
                 }

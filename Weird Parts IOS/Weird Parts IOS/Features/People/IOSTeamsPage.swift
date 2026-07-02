@@ -167,7 +167,18 @@ struct IOSTeamsPage: View {
                 showEmployeesPage = true
             }
         } else if filteredTeams.isEmpty {
-            ContentUnavailableView.search(text: searchText)
+            EmptyStateView(
+                icon: "magnifyingglass",
+                title: "No Teams Match",
+                message: searchText.isEmpty
+                    ? "No teams match the selected filter."
+                    : "No teams match \"\(searchText)\".",
+                actionLabel: "Clear Filters",
+                actionIcon: "xmark.circle"
+            ) {
+                searchText = ""
+                filter = .all
+            }
         } else {
             List {
                 Section {

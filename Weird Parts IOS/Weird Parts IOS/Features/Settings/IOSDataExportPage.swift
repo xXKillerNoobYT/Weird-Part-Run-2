@@ -53,11 +53,63 @@ enum IOSDatabaseExportSnapshotter {
     }
 }
 
+/// Writes selected-table export artifacts (CSV/JSON) into the temporary directory.
+///
+/// Nonisolated so the row fetch, serialization, and file I/O run off the main
+/// actor — large table exports must not freeze the Settings UI (GH #1314).
+enum IOSTableExportWriter {
+    nonisolated static func writeExports(
+        tables: [String],
+        format: String,
+        settingsService: SettingsService
+    ) throws -> [URL] {
+        let tmpDir = FileManager.default.temporaryDirectory
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let dateStr = formatter.string(from: Date())
+        var urls: [URL] = []
+
+        for table in tables {
+            let rows = try settingsService.exportTable(table)
+            guard !rows.isEmpty else { continue }
+
+            let ext = format == "json" ? "json" : "csv"
+            let fileURL = tmpDir.appendingPathComponent("wiredpart-export-\(table)-\(dateStr).\(ext)")
+
+            if format == "json" {
+                let data = try JSONSerialization.data(withJSONObject: rows, options: [.prettyPrinted, .sortedKeys])
+                try data.write(to: fileURL)
+            } else {
+                // CSV
+                guard let firstRow = rows.first as? [String: Any] else { continue }
+                let headers = firstRow.keys.sorted()
+                var csv = headers.joined(separator: ",") + "\n"
+                for row in rows {
+                    guard let dict = row as? [String: Any] else { continue }
+                    let values = headers.map { key -> String in
+                        let val = dict[key] ?? ""
+                        let str = "\(val)"
+                        if str.contains(",") || str.contains("\"") || str.contains("\n") {
+                            return "\"\(str.replacingOccurrences(of: "\"", with: "\"\""))\""
+                        }
+                        return str
+                    }
+                    csv += values.joined(separator: ",") + "\n"
+                }
+                try csv.write(to: fileURL, atomically: true, encoding: .utf8)
+            }
+            urls.append(fileURL)
+        }
+        return urls
+    }
+}
+
 /// Data export page for iOS.
 ///
 /// Provides options to export the local database or specific tables
-/// as CSV files. Exports are saved to the device's documents directory
-/// and can be shared via the iOS share sheet.
+/// as CSV/JSON files. Export artifacts are written to the app's temporary
+/// directory and handed straight to the iOS share sheet; nothing is kept
+/// in the app's Documents folder.
 struct IOSDataExportPage: View {
     @EnvironmentObject private var appCore: AppCore
 
@@ -108,7 +160,7 @@ struct IOSDataExportPage: View {
             case .help:
                 PageHelpSheet(title: "Data Export Help", sections: [
                     ("What This Page Does", "Exports the local database or specific tables as CSV or JSON files. You can also export the full SQLite database file."),
-                    ("How to Use It", "Select a format (CSV or JSON), check the tables you want to export, then tap Export. Use 'Export Full Database' for a complete SQLite backup. Exported files are saved to the app's Documents folder."),
+                    ("How to Use It", "Select a format (CSV or JSON), check the tables you want to export, then tap Export. Use 'Export Full Database' for a complete SQLite backup. The share sheet opens as soon as the export is ready — save the files to the Files app, AirDrop them, or send them to another app from there."),
                 ])
             case .share(let urls):
                 ReportShareSheet(items: urls)
@@ -139,12 +191,13 @@ struct IOSDataExportPage: View {
         case help
         case share([URL])
 
+        // Stable IDs only — never embed file paths in SwiftUI view identity (GH #1314).
         var id: String {
             switch self {
             case .help:
                 return "help"
-            case .share(let urls):
-                return "share-\(urls.map(\.path).joined(separator: "|"))"
+            case .share:
+                return "share"
             }
         }
     }
@@ -251,7 +304,7 @@ struct IOSDataExportPage: View {
 
     private var infoSection: some View {
         Section {
-            Text("Exported files are saved to this app's Documents folder. Use the Files app or share sheet to transfer them to another location.")
+            Text("Exports are created as temporary files and offered through the share sheet right away. Save them to the Files app or another location from the share sheet — they are not stored inside the app.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -288,58 +341,35 @@ struct IOSDataExportPage: View {
             return
         }
 
-        let tmpDir = FileManager.default.temporaryDirectory
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        let dateStr = formatter.string(from: Date())
-        var urls: [URL] = []
+        // Capture value-type inputs on the main actor, then run the heavy row
+        // fetch, serialization, and file I/O off-main (GH #1314). UI state
+        // updates hop back to the MainActor, mirroring exportFullDatabase().
+        let tables = selectedTables.sorted()
+        let format = selectedFormat
 
-        do {
-            for table in selectedTables.sorted() {
-                let rows = try settingsService.exportTable(table)
-                guard !rows.isEmpty else { continue }
-
-                let ext = selectedFormat == "json" ? "json" : "csv"
-                let fileURL = tmpDir.appendingPathComponent("wiredpart-export-\(table)-\(dateStr).\(ext)")
-
-                if selectedFormat == "json" {
-                    let data = try JSONSerialization.data(withJSONObject: rows, options: [.prettyPrinted, .sortedKeys])
-                    try data.write(to: fileURL)
-                } else {
-                    // CSV
-                    guard let firstRow = rows.first as? [String: Any] else { continue }
-                    let headers = firstRow.keys.sorted()
-                    var csv = headers.joined(separator: ",") + "\n"
-                    for row in rows {
-                        guard let dict = row as? [String: Any] else { continue }
-                        let values = headers.map { key -> String in
-                            let val = dict[key] ?? ""
-                            let str = "\(val)"
-                            if str.contains(",") || str.contains("\"") || str.contains("\n") {
-                                return "\"\(str.replacingOccurrences(of: "\"", with: "\"\""))\""
-                            }
-                            return str
-                        }
-                        csv += values.joined(separator: ",") + "\n"
+        Task.detached(priority: .userInitiated) {
+            do {
+                let urls = try IOSTableExportWriter.writeExports(
+                    tables: tables,
+                    format: format,
+                    settingsService: settingsService
+                )
+                await MainActor.run {
+                    if urls.isEmpty {
+                        exportSuccess = false
+                        errorMessage = "No rows were exported from the selected tables. Choose tables with data or export the full database."
+                    } else {
+                        exportSuccess = true
+                        activeSheet = .share(urls)
                     }
-                    try csv.write(to: fileURL, atomically: true, encoding: .utf8)
+                    isExporting = false
                 }
-                urls.append(fileURL)
+            } catch {
+                await MainActor.run {
+                    errorMessage = userFriendlyError(error, context: "export data")
+                    isExporting = false
+                }
             }
-
-            guard !urls.isEmpty else {
-                exportSuccess = false
-                errorMessage = "No rows were exported from the selected tables. Choose tables with data or export the full database."
-                isExporting = false
-                return
-            }
-
-            exportSuccess = true
-            isExporting = false
-            activeSheet = .share(urls)
-        } catch {
-            errorMessage = userFriendlyError(error, context: "export data")
-            isExporting = false
         }
     }
 
