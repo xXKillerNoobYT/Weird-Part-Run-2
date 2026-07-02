@@ -1884,11 +1884,17 @@ struct IOSPODetailPage: View {
             }
 
             // View supplier profile link
-            NavigationLink {
-                Text("Supplier Profile")
-            } label: {
-                Label("View Supplier Profile", systemImage: "person.crop.rectangle")
+            if let sup = supplier {
+                NavigationLink {
+                    SupplierProfileSummaryView(supplier: sup)
+                } label: {
+                    Label("View Supplier Profile", systemImage: "person.crop.rectangle")
+                        .font(.caption)
+                }
+            } else {
+                Label("Supplier profile unavailable", systemImage: "person.crop.rectangle")
                     .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .padding()
@@ -2512,5 +2518,67 @@ private struct POLineEditSheet: View {
 
     private func formatCurrency(_ value: Double) -> String {
         Formatters.formatCurrency(value)
+    }
+}
+
+private struct SupplierProfileSummaryView: View {
+    let supplier: Supplier
+
+    var body: some View {
+        List {
+            Section("Supplier") {
+                profileRow("Name", supplier.name)
+                profileRow("Account", supplier.accountNumber)
+                profileRow("Website", supplier.website)
+                profileRow("Address", supplier.address)
+                // isActive is optional in the schema — hide the row when unknown
+                // instead of implying the supplier is active.
+                profileRow("Status", supplier.isActive.map { $0 == 0 ? "Inactive" : "Active" })
+            }
+
+            Section("Contacts") {
+                profileRow("Primary contact", supplier.contactName)
+                profileRow("Phone", supplier.phone)
+                profileRow("Email", supplier.email)
+                profileRow("Rep", supplier.repName)
+                profileRow("Rep phone", supplier.repPhone)
+                profileRow("Rep email", supplier.repEmail)
+            }
+
+            Section("Delivery") {
+                profileRow("Method", supplier.deliveryMethod)
+                profileRow("Delivery days", supplier.deliveryDays)
+                profileRow("Lead time", supplier.avgLeadDays.map { "\($0) days" })
+                profileRow("Special orders", supplier.specialOrderLeadDays.map { "\($0) days" })
+                profileRow("Delivery notes", supplier.deliveryNotes)
+            }
+
+            Section("Performance") {
+                profileRow("Reliability", percentText(supplier.reliabilityScore))
+                profileRow("On-time", percentText(supplier.onTimeRate))
+                profileRow("Quality", percentText(supplier.qualityScore))
+                profileRow("Communication", percentText(supplier.communicationScore))
+            }
+
+            if let notes = supplier.notes?.trimmingCharacters(in: .whitespacesAndNewlines), !notes.isEmpty {
+                Section("Notes") {
+                    Text(notes)
+                }
+            }
+        }
+        .navigationTitle("Supplier Profile")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    @ViewBuilder
+    private func profileRow(_ label: String, _ value: String?) -> some View {
+        if let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty {
+            LabeledContent(label, value: value)
+        }
+    }
+
+    private func percentText(_ value: Double?) -> String? {
+        guard let value else { return nil }
+        return "\(Int(value.rounded()))%"
     }
 }
