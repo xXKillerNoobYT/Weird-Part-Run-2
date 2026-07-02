@@ -438,6 +438,10 @@ struct IOSScheduleConfigPage: View {
             return
         }
 
+        // Clear any prior failure so a successful retry doesn't leave a stale
+        // red error section (the sub-loads below re-set it if they fail).
+        loadErrorMsg = nil
+
         // Load settings
         do {
             let s = try settings.getSettingsByCategory("scheduling")

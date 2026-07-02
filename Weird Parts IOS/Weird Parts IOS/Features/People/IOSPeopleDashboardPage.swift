@@ -328,6 +328,9 @@ struct IOSPeopleDashboardPage: View {
                 }
                 paymentAlertsError = nil
             } catch {
+                // Drop stale data so neither the UI nor postPageContext() can
+                // report a previous load's overdue count on a failed refresh.
+                overdueCustomers = []
                 paymentAlertsError = userFriendlyError(error, context: "load payment alerts")
             }
 
