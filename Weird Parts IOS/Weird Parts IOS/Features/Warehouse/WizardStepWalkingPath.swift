@@ -15,6 +15,9 @@ struct WizardStepWalkingPath: View {
     @State private var showingAddStops = false
     @State private var isLoading = true
     @State private var isSaving = false
+    @State private var showClearConfirm = false
+    @State private var lastRemovedStop: (areaId: Int64, index: Int)?
+    @State private var undoDismissTask: Task<Void, Never>?
 
     private var displayedStops: [Int64] { previewStops ?? pathStops }
     private var areaById: [Int64: WalkingPathAreaInfo] { Dictionary(uniqueKeysWithValues: allAreas.map { ($0.id, $0) }) }
@@ -62,6 +65,35 @@ struct WizardStepWalkingPath: View {
                 onAdd: addStops
             )
         }
+        // Clearing a SAVED path is destructive and persists immediately —
+        // it must never happen from a single accidental tap (issue #1198).
+        .confirmationDialog("Clear walking path?", isPresented: $showClearConfirm, titleVisibility: .visible) {
+            Button("Clear saved path", role: .destructive) { clearSavedPath() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("All \(pathStops.count) saved path stop\(pathStops.count == 1 ? "" : "s") will be removed immediately. The next audit will have no walking path until you rebuild it.")
+        }
+        // Brief undo affordance after removing a single saved stop.
+        .overlay(alignment: .bottom) {
+            if lastRemovedStop != nil {
+                HStack(spacing: 8) {
+                    Image(systemName: "trash")
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    Text("Stop removed")
+                        .font(.subheadline)
+                    Spacer(minLength: 8)
+                    Button("Undo") { undoRemoveStop() }
+                        .fontWeight(.semibold)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .padding()
+                .accessibilityIdentifier("walkingPathUndoBar")
+            }
+        }
+        .onDisappear { undoDismissTask?.cancel() }
     }
 
     private func stopList(showPreviewActions: Bool = true) -> some View {
@@ -310,7 +342,24 @@ struct WizardStepWalkingPath: View {
     }
 
     private func removeStop(_ areaId: Int64) {
-        pathStops.removeAll { $0 == areaId }
+        guard let index = pathStops.firstIndex(of: areaId) else { return }
+        undoDismissTask?.cancel()
+        lastRemovedStop = (areaId, index)
+        pathStops.remove(at: index)
+        saveStops(pathStops)
+        // Removal persists immediately, so give the user a short undo
+        // window instead of a heavier per-stop confirmation (issue #1198).
+        undoDismissTask = Task {
+            try? await Task.sleep(for: .seconds(5))
+            if !Task.isCancelled { lastRemovedStop = nil }
+        }
+    }
+
+    private func undoRemoveStop() {
+        undoDismissTask?.cancel()
+        guard let removed = lastRemovedStop else { return }
+        lastRemovedStop = nil
+        pathStops.insert(removed.areaId, at: min(removed.index, pathStops.count))
         saveStops(pathStops)
     }
 
@@ -333,13 +382,21 @@ struct WizardStepWalkingPath: View {
         saveStops(pathStops)
     }
 
+    /// Entry point for the Clear/Dismiss button. Preview dismissal is cheap
+    /// and stays immediate; clearing the SAVED path requires confirmation
+    /// because it persists destructively right away (issue #1198).
     private func clearPath() {
         if isPreviewing {
             previewStops = nil
         } else {
-            pathStops = []
-            saveStops([])
+            showClearConfirm = true
         }
+    }
+
+    /// Performs the confirmed destructive clear of the saved path.
+    private func clearSavedPath() {
+        pathStops = []
+        saveStops([])
     }
 
     private func saveStops(_ stops: [Int64]) {
