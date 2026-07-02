@@ -14,7 +14,7 @@ jobs:
     # Scheduled repo automation uses the local Mac runner while cloud Actions
     # billing is unavailable for this private repo.
     runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
-    timeout-minutes: 6
+    timeout-minutes: 10
     env:
       PAPERCLIP_API_URL: ${{ secrets.PAPERCLIP_API_URL }}
       PAPERCLIP_API_KEY: ${{ secrets.PAPERCLIP_API_KEY }}

@@ -91,6 +91,17 @@ hash_sha256() {
 }
 
 : "${PAPERCLIP_API_URL:?error: PAPERCLIP_API_URL is required}"
+
+# macOS ships no `timeout`; coreutils installs it as gtimeout. Resolve
+# whichever exists and degrade to unbounded (with a warning) when neither
+# does — a missing bound must not break the sync itself.
+TIMEOUT_BIN="$(command -v timeout || command -v gtimeout || true)"
+if [[ -z "$TIMEOUT_BIN" ]]; then
+  echo "warn: no timeout/gtimeout on PATH — gh calls run unbounded" >&2
+fi
+run_bounded() {
+  if [[ -n "$TIMEOUT_BIN" ]]; then "$TIMEOUT_BIN" 90 "$@"; else "$@"; fi
+}
 : "${PAPERCLIP_API_KEY:?error: PAPERCLIP_API_KEY is required}"
 : "${PAPERCLIP_COMPANY_ID:?error: PAPERCLIP_COMPANY_ID is required}"
 
@@ -262,7 +273,7 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
 fi
 
 echo "tracker-sync: fetching existing tracker comments" >&2
-COMMENTS_JSON="$(timeout 90 gh api "repos/$REPO/issues/$TRACKER_NUMBER/comments?per_page=100")"
+COMMENTS_JSON="$(run_bounded gh api "repos/$REPO/issues/$TRACKER_NUMBER/comments?per_page=100")"
 EXISTING_ID="$(
   jq -r '
     map(select(.body | startswith("# paperclip-tracker-sync:v1"))) |
@@ -274,14 +285,14 @@ EXISTING_ID="$(
 
 if [[ -n "$EXISTING_ID" ]]; then
   echo "tracker-sync: patching tracker comment $EXISTING_ID" >&2
-  timeout 90 gh api \
+  run_bounded gh api \
     --method PATCH \
     "repos/$REPO/issues/comments/$EXISTING_ID" \
     -f "body=$COMMENT_BODY" >/dev/null
   echo "updated tracker comment id: $EXISTING_ID"
 else
   echo "tracker-sync: creating tracker comment" >&2
-  timeout 90 gh issue comment "$TRACKER_NUMBER" --repo "$REPO" --body "$COMMENT_BODY" >/dev/null
+  run_bounded gh issue comment "$TRACKER_NUMBER" --repo "$REPO" --body "$COMMENT_BODY" >/dev/null
   echo "created tracker comment on $REPO#$TRACKER_NUMBER"
 fi
 
