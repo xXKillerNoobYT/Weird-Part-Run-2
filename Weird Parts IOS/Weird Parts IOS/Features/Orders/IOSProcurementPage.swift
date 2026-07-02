@@ -51,6 +51,16 @@ struct IOSProcurementPage: View {
     @State private var sourceCounts: [String: Int] = [:]
     @State private var cachedReadyToGenerate: [OrdersService.ProcurementItem] = []
 
+    // General-mode brand resolution per part against the selected supplier (#243).
+    // Recomputed alongside cachedReadyToGenerate; keyed by ProcurementItem.id.
+    @State private var brandResolutions: [Int64: GeneralBrandResolution] = [:]
+
+    /// Outcome of resolving a part's general-mode JPO lines against the selected supplier.
+    private enum GeneralBrandResolution: Equatable {
+        case resolved(brandName: String)
+        case unresolved
+    }
+
     private enum ActiveSheet: Identifiable {
         case help
         var id: String { "help" }
@@ -339,6 +349,63 @@ struct IOSProcurementPage: View {
             selectedSupplier[item.id] != nil &&
             effectiveOrderQty(for: item) > 0
         }
+        updateBrandResolutions()
+    }
+
+    /// Resolve general-mode JPO lines against each part's selected supplier (#243).
+    /// `.resolved` drives the teal pill; `.unresolved` shows the red warning and
+    /// blocks generation (the service also rejects unresolved lines as a backstop).
+    private func updateBrandResolutions() {
+        guard let service = appCore.ordersService else {
+            brandResolutions = [:]
+            return
+        }
+        var resolutions: [Int64: GeneralBrandResolution] = [:]
+        for item in items {
+            guard let supplierId = selectedSupplier[item.id] else { continue }
+            let jpoLineIds = item.sources.filter { $0.sourceType == "jpo" }.flatMap(\.lineIds)
+            guard !jpoLineIds.isEmpty else { continue }
+
+            var resolvedBrandId: Int64?
+            var hasUnresolved = false
+            for lineId in jpoLineIds {
+                do {
+                    switch try service.resolveGeneralLineItem(jpoLineId: lineId, supplierId: supplierId) {
+                    case .alreadySpecific:
+                        continue
+                    case .resolved(let brandId, _):
+                        resolvedBrandId = brandId
+                    case .noMatch:
+                        hasUnresolved = true
+                    }
+                } catch {
+                    // Fail closed: if resolution cannot be confirmed, treat the line
+                    // as unresolved so generation is blocked instead of mis-branded.
+                    hasUnresolved = true
+                }
+            }
+            if hasUnresolved {
+                resolutions[item.id] = .unresolved
+            } else if let brandId = resolvedBrandId {
+                resolutions[item.id] = .resolved(brandName: brandName(for: brandId))
+            }
+        }
+        brandResolutions = resolutions
+    }
+
+    private func brandName(for brandId: Int64) -> String {
+        guard let parts = appCore.partsService else { return "Brand #\(brandId)" }
+        do {
+            return try parts.getBrand(id: brandId).name
+        } catch {
+            return "Brand #\(brandId)"
+        }
+    }
+
+    /// True when any checked, supplier-selected part still has an unresolved
+    /// general-mode line — generation is blocked until the supplier changes.
+    private var hasUnresolvedGeneralBrand: Bool {
+        cachedReadyToGenerate.contains { brandResolutions[$0.id] == .unresolved }
     }
 
     /// The effective order quantity for a part, accounting for any pull decision.
@@ -573,6 +640,18 @@ struct IOSProcurementPage: View {
                     .padding(.vertical, 2)
                 }
 
+                // Unresolved general-mode brands block generation (#243)
+                if hasUnresolvedGeneralBrand {
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.caption2)
+                            .accessibilityHidden(true)
+                        Text("A selected supplier doesn't carry a brand for a General-mode part. Pick another supplier to continue.")
+                            .font(.caption2)
+                    }
+                    .foregroundStyle(.red)
+                }
+
                 // Action buttons
                 HStack(spacing: 12) {
                     Button {
@@ -587,7 +666,7 @@ struct IOSProcurementPage: View {
                         .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(isGenerating)
+                    .disabled(isGenerating || hasUnresolvedGeneralBrand)
 
                     Button {
                         withAnimation { showSavedToast = true }
@@ -779,6 +858,41 @@ struct IOSProcurementPage: View {
                         }
                 }
             }
+
+            // General-mode brand resolution against the selected supplier (#243)
+            brandResolutionView(item)
+        }
+    }
+
+    /// Teal 'Resolved: Brand' pill or red blocking warning for general-mode lines. (#243)
+    @ViewBuilder
+    private func brandResolutionView(_ item: OrdersService.ProcurementItem) -> some View {
+        switch brandResolutions[item.id] {
+        case .resolved(let brandName):
+            HStack(spacing: 4) {
+                Image(systemName: "info.circle.fill")
+                    .font(.caption2)
+                    .accessibilityHidden(true)
+                Text("Resolved: \(brandName)")
+                    .font(.caption2)
+                    .fontWeight(.medium)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(Color.teal.opacity(0.15)))
+            .foregroundStyle(.teal)
+            .accessibilityLabel("General mode brand resolved to \(brandName)")
+        case .unresolved:
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.caption2)
+                    .accessibilityHidden(true)
+                Text("Supplier doesn't carry this brand — pick another supplier")
+                    .font(.caption2)
+            }
+            .foregroundStyle(.red)
+        case nil:
+            EmptyView()
         }
     }
 
