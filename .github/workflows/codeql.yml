@@ -21,31 +21,47 @@ on:
   schedule:
     - cron: "33 2 * * 1"
 
+# One queued run per ref — a new push supersedes the queued/in-flight run for
+# the same branch instead of stacking duplicate CodeQL analyses (10-20 min
+# each) on the single local runner. Scheduled runs keep their own group.
+concurrency:
+  group: codeql-${{ github.ref }}-${{ github.event_name == 'schedule' && 'scheduled' || 'ci' }}
+  cancel-in-progress: true
+
 jobs:
   required-codeql-compat:
     name: CodeQL
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    # Required compatibility context for the private WPR2 repo. Route through
-    # the local Mac runner instead of cloud runners so PRs do not get blocked by
-    # billing/hosted-runner availability.
-    runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
+    # Echo-only compatibility context — no Xcode needed. Owner authorized
+    # cloud-runner spend (2026-07-02) so this gate never queues behind the Mac.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - name: Verify self-hosted macOS runner
-        shell: bash
-        run: |
-          test "$RUNNER_OS" = "macOS"
-          test "$(uname -s)" = "Darwin"
-          echo "Runner: $RUNNER_NAME"
-          echo "Architecture: $RUNNER_ARCH"
-
       - name: Required CodeQL compatibility gate
         run: |
           echo "Compatibility check for the legacy required CodeQL context."
           echo "The Swift scanner job remains named Analyze (swift)."
 
+  # PR-level required gate. The full Swift analysis hangs on GitHub-hosted
+  # macOS and is too slow to gate every PR, so PRs get this fast hosted-Linux
+  # gate under the same required check name, while push/schedule events run
+  # the real analysis on the local Mac runner (job below). The two jobs' `if`
+  # conditions are mutually exclusive, so the "Analyze (swift)" check context
+  # resolves exactly once per event.
+  analyze-pr-gate:
+    name: Analyze (swift)
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Swift CodeQL PR recovery gate
+        run: |
+          echo "Skipping Swift CodeQL on pull_request because the GitHub-hosted Swift build is hanging."
+          echo "Full Swift CodeQL still runs on push and schedule events."
+
   analyze:
     name: Analyze (${{ matrix.language }})
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name != 'pull_request'
     # Swift CodeQL requires macOS; WPR2 uses the local self-hosted Mac runner.
     runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
     timeout-minutes: 60
@@ -72,17 +88,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # PR CodeQL is currently hanging inside Swift builds on GitHub-hosted
-      # macOS runners. Keep the required Analyze (swift) PR gate green while
-      # retaining full Swift CodeQL analysis on push and schedule events.
-      - name: Swift CodeQL PR recovery gate
-        if: github.event_name == 'pull_request'
-        run: |
-          echo "Skipping Swift CodeQL on pull_request because the GitHub-hosted Swift build is hanging."
-          echo "Full Swift CodeQL still runs on push and schedule events."
-
       - name: Initialize CodeQL
-        if: github.event_name != 'pull_request'
         uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
@@ -92,13 +98,11 @@ jobs:
           config-file: ./.github/codeql/codeql-config.yml
 
       - name: Build Swift package outside repository
-        if: github.event_name != 'pull_request'
         # Keep SwiftPM dependency checkouts out of $GITHUB_WORKSPACE so CodeQL
         # does not report third-party package internals as application alerts.
         run: swift build --package-path core --scratch-path "$RUNNER_TEMP/wiredpart-swiftpm-build"
 
       - name: Perform CodeQL Analysis
-        if: github.event_name != 'pull_request'
         uses: github/codeql-action/analyze@v3
         with:
           category: "/language:${{ matrix.language }}"
@@ -106,7 +110,6 @@ jobs:
           upload: never
 
       - name: Upload CodeQL SARIF artifact
-        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: codeql-${{ matrix.language }}-sarif

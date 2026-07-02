@@ -41,6 +41,9 @@ public final class WarehouseService: Sendable {
         case jobReturnItemNotFound(Int64)
         case stagingBoxNotFound(Int64)
         case stagingTagNotFound(Int64)
+        /// A grid shrink would leave existing floor features/zones outside
+        /// the new bounds (issue #1240). Counts identify how many of each.
+        case gridShrinkWouldOrphanItems(features: Int, zones: Int)
     }
 
     // =========================================================================
@@ -4259,15 +4262,58 @@ public final class WarehouseService: Sendable {
     }
 
     /// Save user-defined grid dimensions to a floor plan (PE-040 — wizard dimensions form).
+    ///
+    /// Rejects shrinks that would strand existing features or zones outside
+    /// the new bounds (issue #1240) — placement validation only guards the
+    /// add/update paths, so an unchecked grid update was a bypass that could
+    /// persist an impossible floor plan.
     public func updateFloorPlanGrid(floorPlanId: Int64, rows: Int, cols: Int) throws {
         guard (1...20).contains(rows), (1...20).contains(cols) else {
             throw WarehouseError.invalidDimension
         }
         try db.writer.write { dbConn in
+            // COUNT(*) in SQL rather than fetching full rows; a missing table
+            // (partially-migrated DB) counts as zero, matching the service's
+            // isTableNotFoundError => empty convention.
+            let orphanedFeatures = try orphanCount(
+                table: "warehouse_floor_features",
+                floorPlanId: floorPlanId, rows: rows, cols: cols, dbConn: dbConn
+            )
+            let orphanedZones = try orphanCount(
+                table: "warehouse_zones",
+                floorPlanId: floorPlanId, rows: rows, cols: cols, dbConn: dbConn
+            )
+            guard orphanedFeatures == 0, orphanedZones == 0 else {
+                throw WarehouseError.gridShrinkWouldOrphanItems(
+                    features: orphanedFeatures,
+                    zones: orphanedZones
+                )
+            }
             try dbConn.execute(
                 sql: "UPDATE warehouse_floor_plans SET grid_rows = ?, grid_cols = ?, updated_at = datetime('now') WHERE id = ?",
                 arguments: [rows, cols, floorPlanId]
             )
+        }
+    }
+
+    /// Counts active rows in `table` that would fall outside a `rows` x `cols`
+    /// grid. Missing tables count as zero (partially-migrated DBs).
+    private func orphanCount(
+        table: String, floorPlanId: Int64, rows: Int, cols: Int, dbConn: Database
+    ) throws -> Int {
+        do {
+            return try Int.fetchOne(
+                dbConn,
+                sql: """
+                SELECT COUNT(*) FROM \(table)
+                WHERE floor_plan_id = ? AND deleted_at IS NULL
+                  AND (grid_x + grid_width > ? OR grid_y + grid_height > ?)
+                """,
+                arguments: [floorPlanId, cols, rows]
+            ) ?? 0
+        } catch {
+            if isTableNotFoundError(error) { return 0 }
+            throw error
         }
     }
 
