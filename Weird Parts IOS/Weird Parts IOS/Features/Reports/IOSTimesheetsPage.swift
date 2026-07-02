@@ -147,22 +147,22 @@ struct IOSTimesheetsPage: View {
         }
     }
 
+    /// Single employee-search predicate shared by the visible rows and the
+    /// exported segments so the two can never drift apart (issue #1243).
+    private func matchesEmployeeSearch(_ userName: String) -> Bool {
+        userName.lowercased().contains(searchText.lowercased())
+    }
+
     private var filteredRows: [ReportsService.TimesheetRow] {
         guard !searchText.isEmpty else { return rows }
-        let query = searchText.lowercased()
-        return rows.filter {
-            $0.userName.lowercased().contains(query)
-        }
+        return rows.filter { matchesEmployeeSearch($0.userName) }
     }
 
     /// Export segments filtered by the same employee search that drives the
     /// visible list, so exports never include hidden employees (issue #1243).
     private var filteredSegments: [ReportsService.TimesheetSegmentRow] {
         guard !searchText.isEmpty else { return segments }
-        let query = searchText.lowercased()
-        return segments.filter {
-            $0.userName.lowercased().contains(query)
-        }
+        return segments.filter { matchesEmployeeSearch($0.userName) }
     }
 
     private func timesheetRow(_ row: ReportsService.TimesheetRow) -> some View {
