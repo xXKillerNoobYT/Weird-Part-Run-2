@@ -87,7 +87,7 @@ These are the "eyes" of the loop. They don't fix anything — they just produce 
 - **Pass condition:** Every referenced column exists in schema
 
 ### Scanner 5: Problems Folder
-- **Input:** `docs/Problomes/` directory
+- **Input:** `docs/problems/` directory
 - **Output:** List of user-reported issues not yet fixed
 - **Pass condition:** Every file has been addressed
 
@@ -205,7 +205,7 @@ LOOP STATUS — Iteration N
 
 ### Plans (Source of Truth)
 - `docs/plans/master-issue-list.md` — 65 known issues with tiers
-- `docs/Problomes/` — user-reported problems (32 screenshots)
+- `docs/problems/` — user-reported problems (32 screenshots)
 - `docs/plans/ios-page-review-tracker.md` — page review status
 - `docs/RELEASE-READINESS-CHECKLIST.md` — release gates
 - All `docs/plans/ios-*.md` — per-module feature specs

@@ -1,3 +1,0 @@
-Notebook sections: PASS frame=(16.0, 514.0, 165.66666666666666, 254.0)
-Add content: PASS frame=(193.66666666666666, 562.0, 165.33333333333334, 158.0)
-Horizontal overflow: PASS viewport=(0.0, 0.0, 375.0, 812.0)
