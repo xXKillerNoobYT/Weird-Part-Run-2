@@ -1,6 +1,6 @@
 # Wired Parts Run 2 Staged Paperclip Goals
 
-> Last updated: 2026-05-27
+> Last updated: 2026-07-02 (beta completion pass — promotion table synced to live Paperclip goal statuses; GitHub sync register corrected)
 > Authority: This is the staged execution index for Paperclip-managed programming work. It supersedes old "current phase" labels in historical plans when deciding what agents may start next.
 
 ## North Star
@@ -11,8 +11,10 @@ Wired Parts Run 2 should reach field-test readiness as a local-first iOS shop-ma
 
 | Stage | State | Execution rule |
 |---|---|---|
-| Stage 1 | Active | Agents may execute bounded implementation and cleanup that stabilizes the shell, identity, local database, onboarding, and navigation. |
-| Stages 2-10 | Planned | Agents may plan, clarify, file blockers, and prepare backlog handles only. Implementation starts only after Isaac/Paperclip explicitly promotes the stage. |
+| Stage 1 | Active | Shell/identity/local-DB/onboarding/navigation stabilization continues as maintenance (dead-end routes eliminated 2026-07-02, GH #1338). |
+| Stages 2-4 | **Achieved** (per live Paperclip goals) | Bug fixes and maintenance proceed as GitHub issues; no promotion gate needed for fixes to achieved stages. |
+| Stage 5 | **Active** (per live Paperclip goals) | Time/hours/breaks/timesheets — #435/#436 re-landed + break-compliance day-hours fix, 2026-07-02. |
+| Stages 6-11 | Planned | Agents may plan, clarify, file blockers, and prepare backlog handles. Implementation starts when Isaac/Paperclip promotes the stage — except explicit GitHub issues, which are always actionable work per the issues-ledger goal. |
 | Non-primary projects | Planning-only | Keep reusable guidance and dependency notes, but do not pull execution focus away from Wired Parts Run 2 unless they unblock it. |
 
 Promotion requires an issue-thread decision or approved plan revision that names the new active stage, confirms blockers from earlier stages are closed or consciously deferred, and states the validation gate for the next stage.
@@ -70,20 +72,6 @@ Each stage depends on the earlier stages unless the issue thread explicitly reco
 
 ## GitHub Sync Register
 
-GitHub issue creation/update was attempted during WEI-2687, but both available paths lacked repository visibility:
+GitHub access is restored and healthy (verified 2026-07-02: `gh` resolves `xXKillerNoobYT/Weird-Part-Run-2`, issues/PRs sync normally, Paperclip Tracker Sync workflow green). GitHub issues are the live backlog handles; the fallback note below is historical.
 
-- Local `gh` could not resolve `Weirdtoo/Weird-Part-Run-2` from the current remote.
-- Local `gh` could not resolve the historical `xXKillerNoobYT/Weird-Part-Run-2` repository recorded in the handoff.
-- The Paperclip GitHub app returned zero accessible repositories.
-
-Until GitHub access is restored, this document is the durable backlog handle for any stage row that does not list a live GitHub issue. When access is restored, create or update GitHub issues for stages that still only have this document as their handle, then replace those fallback notes with issue URLs.
-
-## Promotion Checklist
-
-Before any stage changes from planned to active:
-
-1. Confirm the previous active stage is done, explicitly deferred, or blocked with a named owner/action.
-2. Update this document with the new state and any changed dependencies.
-3. Link or create GitHub/Paperclip issue handles for the promoted stage.
-4. Record acceptance criteria, required evidence, and review lane on the issue.
-5. Re-run branch/worktree hygiene preflight before assigning implementation.
+*Historical note (2026-05): during WEI-2687 both `gh` paths and the Paperclip GitHub app lacked repository visibility, so this document temporarily served as the durable backlog handle.*
