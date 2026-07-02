@@ -104,8 +104,9 @@ struct PanelScheduleBuilder: View {
             .padding(.vertical, 4)
             .background(.gray.opacity(0.1))
 
-            // Circuit rows
-            ForEach(0..<(schedule.totalSpaces / 2), id: \.self) { row in
+            // Circuit rows — max() keeps the range valid even if a malformed
+            // negative totalSpaces slips past load-path clamping (#1239).
+            ForEach(0..<max(schedule.totalSpaces / 2, 0), id: \.self) { row in
                 let leftSpace = row * 2 + 1
                 let rightSpace = row * 2 + 2
                 let leftCircuit = schedule.circuits.first { $0.spaceNumber == leftSpace }
@@ -346,7 +347,9 @@ private struct PanelSettingsSheet: View {
     @Binding var schedule: PanelSchedule
     @Environment(\.dismiss) private var dismiss
 
-    private let spaceOptions = [2, 4, 8, 12, 16, 20, 24, 30, 42]
+    // Single source of truth lives on the model so decode-time clamping and
+    // the picker can never drift apart.
+    private let spaceOptions = PanelSchedule.supportedTotalSpaces
     private let ampOptions = [100, 125, 150, 200, 225, 400, 600]
 
     var body: some View {
