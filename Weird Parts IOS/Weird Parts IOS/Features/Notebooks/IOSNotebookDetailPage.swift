@@ -1406,7 +1406,9 @@ struct IOSNotebookDetailPage: View {
                 for entry in section.entries where entry.blockType == "panel_schedule" {
                     if let data = entry.blockData?.data(using: .utf8),
                        let schedule = try? JSONDecoder().decode(PanelSchedule.self, from: data) {
-                        panelSchedule = schedule
+                        // Clamp malformed/synced totalSpaces before rendering —
+                        // a negative value traps range construction (#1239).
+                        panelSchedule = schedule.clampingTotalSpacesToSupportedRange()
                         return
                     }
                 }
@@ -1418,7 +1420,7 @@ struct IOSNotebookDetailPage: View {
                 for entry in section.entries where entry.blockType == "panel_schedule" {
                     if let data = entry.blockData?.data(using: .utf8),
                        let schedule = try? JSONDecoder().decode(PanelSchedule.self, from: data) {
-                        panelSchedule = schedule
+                        panelSchedule = schedule.clampingTotalSpacesToSupportedRange()
                         return
                     }
                 }
