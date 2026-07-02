@@ -70,5 +70,5 @@ Completed and inactive plans are archived in `archive/` or retained as reference
 cd core && swift build && swift test
 
 # iOS app (Xcode)
-# Open Wierd Parts.xcworkspace, select WiredPart-iOS scheme, Cmd+B
+# Open Weird Parts.xcworkspace, select WiredPart-iOS scheme, Cmd+B
 ```
