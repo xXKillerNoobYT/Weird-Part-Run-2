@@ -171,8 +171,8 @@ printf '%s' "$AGENTS_JSON" > "$_agents_file"
 # forever once the active-issue payload grew large (run 28589871223 hung in
 # "building snapshot" for 10 minutes on a 560 KB issues payload).
 # The bullet list is also capped: GitHub issue comments max out at 65,536
-# characters, so beyond MAX_LISTED issues the snapshot lists the newest and
-# summarizes the rest.
+# characters, so beyond MAX_LISTED issues the snapshot lists the first
+# MAX_LISTED (sorted by identifier) and summarizes the rest.
 MAX_LISTED=300
 COMMENT_BODY="$(
   jq -nr \
@@ -190,6 +190,7 @@ COMMENT_BODY="$(
       $issues[0]
       | map({
           identifier,
+          id,
           title,
           status,
           priority,
@@ -209,10 +210,13 @@ COMMENT_BODY="$(
         | join(", "))
       end;
 
-    def render_id($id):
-      if $web == "" then $id
-      else "[" + $id + "](" + $web + "/" + ($id | split("-")[0]) + "/issues/" + $id + ")"
-      end;
+    def render_id($raw):
+      ($raw | tostring) as $id
+      # only WEI-123-style identifiers produce internal links; anything
+      # else (missing identifier, raw uuid id) renders as plain text
+      | if $web == "" or ($id | test("^[A-Za-z]+-[0-9]+$") | not) then $id
+        else "[" + $id + "](" + $web + "/" + ($id | split("-")[0]) + "/issues/" + $id + ")"
+        end;
 
     normalized as $all
     | ($all | length) as $total
@@ -226,7 +230,7 @@ COMMENT_BODY="$(
     "### Active Issues\n\n" +
     (
       ($listed | map(
-        "- " + render_id(.identifier // .id) +
+        "- " + render_id(.identifier // .id // "?") +
         " | **" + (.status // "unknown") + "**" +
         " | owner: `" + (agent_name(.assigneeAgentId)) + "`" +
         " | blockers: `" + blocker_summary(.) + "`" +
