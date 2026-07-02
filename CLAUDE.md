@@ -96,9 +96,13 @@ Errors are learning opportunities. When something breaks:
 
 Use one GitHub issue per coherent fix/PR whenever practical. Prefer umbrella issues for cross-cutting bug classes such as shared validation, repeated silent-error handling, common accessibility defects, or scanner findings that can be fixed by one coordinated pass. File separate issues only when the fix owners, risk, acceptance criteria, or release priority are materially different. Every fix should reference and close its issue or update the umbrella checklist it resolves.
 
-## WPR2 PR CI: Local Mac Actions Runner
+## WPR2 PR CI: Hybrid Runners (cloud gates + local Mac for Xcode)
 
-For this repo, do not treat GitHub-hosted Actions billing, `macos-latest`, `ubuntu-latest`, or queued cloud runners as the first PR blocker. The repo has a local self-hosted Mac runner intended for trusted iOS/macOS/Xcode PR build, test, QA work, and repo-owned Actions automation while cloud billing is unavailable.
+Owner authorization (2026-07-02): GitHub Actions cloud-runner budget MAY be spent to keep PR CI fast. The routing policy:
+
+- **`ubuntu-latest` (cloud)** — every PR-gating job that does not need Xcode: Artifact Guard, the CodeQL required-compat gate, the PR-level "Analyze (swift)" recovery gate, and PR Merge Maintenance. These run in parallel and never queue behind the Mac.
+- **Local self-hosted Mac runner** — jobs that genuinely need macOS/Xcode: full Swift CodeQL analysis (push/schedule), iOS build/test/QA work, and Approved PR Autofix (local Codex). Paperclip tracker sync also stays local (it talks to the local Paperclip API).
+- **Hosted `macos-latest` stays avoided** (10× minute cost, and Swift CodeQL previously hung there) unless the owner asks.
 
 Use `docs/runbooks/local-mac-actions-runner.md` as the canonical runner reference instead of duplicating machine-specific details here.
 
