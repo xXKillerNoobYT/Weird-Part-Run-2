@@ -4272,24 +4272,48 @@ public final class WarehouseService: Sendable {
             throw WarehouseError.invalidDimension
         }
         try db.writer.write { dbConn in
-            let orphanedFeatures = try WarehouseFloorFeature
-                .filter(Column("floor_plan_id") == floorPlanId && Column("deleted_at") == nil)
-                .fetchAll(dbConn)
-                .filter { $0.gridX + $0.gridWidth > cols || $0.gridY + $0.gridHeight > rows }
-            let orphanedZones = try WarehouseZone
-                .filter(Column("floor_plan_id") == floorPlanId && Column("deleted_at") == nil)
-                .fetchAll(dbConn)
-                .filter { $0.gridX + $0.gridWidth > cols || $0.gridY + $0.gridHeight > rows }
-            guard orphanedFeatures.isEmpty, orphanedZones.isEmpty else {
+            // COUNT(*) in SQL rather than fetching full rows; a missing table
+            // (partially-migrated DB) counts as zero, matching the service's
+            // isTableNotFoundError => empty convention.
+            let orphanedFeatures = try orphanCount(
+                table: "warehouse_floor_features",
+                floorPlanId: floorPlanId, rows: rows, cols: cols, dbConn: dbConn
+            )
+            let orphanedZones = try orphanCount(
+                table: "warehouse_zones",
+                floorPlanId: floorPlanId, rows: rows, cols: cols, dbConn: dbConn
+            )
+            guard orphanedFeatures == 0, orphanedZones == 0 else {
                 throw WarehouseError.gridShrinkWouldOrphanItems(
-                    features: orphanedFeatures.count,
-                    zones: orphanedZones.count
+                    features: orphanedFeatures,
+                    zones: orphanedZones
                 )
             }
             try dbConn.execute(
                 sql: "UPDATE warehouse_floor_plans SET grid_rows = ?, grid_cols = ?, updated_at = datetime('now') WHERE id = ?",
                 arguments: [rows, cols, floorPlanId]
             )
+        }
+    }
+
+    /// Counts active rows in `table` that would fall outside a `rows` x `cols`
+    /// grid. Missing tables count as zero (partially-migrated DBs).
+    private func orphanCount(
+        table: String, floorPlanId: Int64, rows: Int, cols: Int, dbConn: Database
+    ) throws -> Int {
+        do {
+            return try Int.fetchOne(
+                dbConn,
+                sql: """
+                SELECT COUNT(*) FROM \(table)
+                WHERE floor_plan_id = ? AND deleted_at IS NULL
+                  AND (grid_x + grid_width > ? OR grid_y + grid_height > ?)
+                """,
+                arguments: [floorPlanId, cols, rows]
+            ) ?? 0
+        } catch {
+            if isTableNotFoundError(error) { return 0 }
+            throw error
         }
     }
 
