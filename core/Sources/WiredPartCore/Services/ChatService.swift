@@ -25,6 +25,7 @@ public final class ChatService: Sendable {
         case threadNotFound(Int64)
         case notChannelMember(channelId: Int64, userId: Int64)
         case requiredFieldEmpty
+        case invalidEscalationLevel(String)
     }
 
     // =========================================================================
@@ -620,24 +621,35 @@ public final class ChatService: Sendable {
     }
 
     /// Create a new Q&A thread. Returns the inserted row ID.
+    ///
+    /// - Parameter level: Escalation level the thread starts at. Defaults to
+    ///   `"worker"` (the bottom of the chain, used by the Q&A page). The RFI
+    ///   page passes `"office"` so the new thread is an RFI immediately and
+    ///   shows up in the office-level RFI list. Must be one of
+    ///   ``qaEscalationLevels``; anything else throws
+    ///   ``ChatError/invalidEscalationLevel(_:)``.
     @discardableResult
     public func createQAThread(
         jobId: Int64,
         askedBy: Int64,
         subject: String,
-        priority: String = "normal"
+        priority: String = "normal",
+        level: String = "worker"
     ) throws -> Int64 {
         guard !subject.isBlankRequiredText else {
             throw ChatError.requiredFieldEmpty
+        }
+        guard Self.qaEscalationLevels.contains(level) else {
+            throw ChatError.invalidEscalationLevel(level)
         }
         return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     INSERT INTO qa_threads
                     (job_id, asked_by, subject, current_level, status, priority, created_at, updated_at)
-                    VALUES (?, ?, ?, 'worker', 'open', ?, datetime('now'), datetime('now'))
+                    VALUES (?, ?, ?, ?, 'open', ?, datetime('now'), datetime('now'))
                     """,
-                arguments: [jobId, askedBy, subject, priority]
+                arguments: [jobId, askedBy, subject, level, priority]
             )
             return dbConn.lastInsertedRowID
         }

@@ -192,4 +192,64 @@ struct QAReviewFilterTests {
         let all = Set(try env.chat.listQAThreads().map(\.id))
         #expect(all == [workerThread, officeThread])
     }
+
+    // MARK: - createQAThread(level:) — RFI creation
+
+    @Test("Threads created at office level appear in the RFI queue immediately")
+    func testCreateThreadAtOfficeLevel() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let askerId = try seedUser(env, name: "Olive Office", hat: "Office")
+
+        // The RFI page creates threads directly at the office level so the
+        // onSubmitted reload can show them (regression: hard-coded 'worker'
+        // creation dead-ended against the office-level RFI list).
+        let rfiId = try env.chat.createQAThread(
+            jobId: jobId,
+            askedBy: askerId,
+            subject: "Need spec sheet from engineer",
+            level: "office"
+        )
+
+        let rfis = try env.chat.listQAThreads(levels: ["office"])
+        #expect(rfis.map(\.id) == [rfiId])
+        #expect(rfis.first?.currentLevel == "office")
+        #expect(rfis.first?.status == "open")
+
+        // It must NOT leak into the worker-level queue.
+        #expect(try env.chat.listQAThreads(levels: ["worker"]).isEmpty)
+    }
+
+    @Test("Default createQAThread level is still worker")
+    func testCreateThreadDefaultLevel() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let askerId = try seedUser(env, name: "Wanda Worker", hat: "Worker")
+
+        let threadId = try env.chat.createQAThread(jobId: jobId, askedBy: askerId, subject: "Where is the panel?")
+
+        #expect(try env.chat.listQAThreads(levels: ["worker"]).map(\.id) == [threadId])
+        #expect(try env.chat.listQAThreads(levels: ["office"]).isEmpty)
+    }
+
+    @Test("createQAThread rejects levels outside the escalation chain")
+    func testCreateThreadInvalidLevel() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        var threw = false
+        do {
+            _ = try env.chat.createQAThread(
+                jobId: jobId,
+                askedBy: env.adminUserId,
+                subject: "Bad level",
+                level: "ceo"
+            )
+        } catch ChatService.ChatError.invalidEscalationLevel(let level) {
+            threw = true
+            #expect(level == "ceo")
+        }
+        #expect(threw, "createQAThread must throw invalidEscalationLevel for unknown levels")
+        #expect(try env.chat.listQAThreads().isEmpty, "No thread row may be inserted for an invalid level")
+    }
 }

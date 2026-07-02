@@ -62,7 +62,10 @@ struct IOSRFIListPage: View {
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .createRFI:
-                IOSQAQuestionForm(onSubmitted: { loadData() })
+                // RFIs live at the office level — create the thread there so it
+                // appears in this page's office-level list right away instead of
+                // dead-ending at the worker level (#1200 follow-up).
+                IOSQAQuestionForm(escalationLevel: "office", onSubmitted: { loadData() })
                     .environmentObject(appCore)
             case .help:
                 PageHelpSheet(
