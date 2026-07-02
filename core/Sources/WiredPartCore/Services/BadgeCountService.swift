@@ -76,9 +76,15 @@ public final class BadgeCountService: Sendable {
         }
 
         /// True if any item has been pending for more than 7 days.
+        ///
+        /// Uses `parseDateTimeUTC` (not `parseISO`/`parseDateTime`) because the
+        /// pending queues mix timestamp formats: service-written rows carry
+        /// ISO 8601 strings while rows created via SQLite column defaults carry
+        /// zone-less `datetime('now')` strings that are always UTC — parsing
+        /// those as device-local time would skew aging by the UTC offset (#708).
         public var hasOldItems: Bool {
             guard let dateStr = oldestPendingDate else { return false }
-            guard let date = CoreFormatters.parseISO(dateStr) else { return false }
+            guard let date = CoreFormatters.parseDateTimeUTC(dateStr) else { return false }
             return Date().timeIntervalSince(date) > 7 * 86400
         }
 
@@ -235,11 +241,49 @@ public final class BadgeCountService: Sendable {
             """, arguments: [uid, uid])
         }
 
-        // Oldest pending date — find the oldest pending/in-review JPO for tint calculation
-        counts.oldestPendingDate = try safeString(sql: """
+        // Oldest pending date — the age/tint signal must consider EVERY queue
+        // that contributes to a user-visible badge, not just JPOs. Otherwise a
+        // stale time-off request, tool edit verification, or deletion approval
+        // shows a non-aged badge even though the Office count includes it (#708).
+        //
+        // Each table is queried separately (instead of one UNION) so a missing
+        // table on a partially-migrated database only drops that queue rather
+        // than nil-ing the entire aged-badge signal.
+        let pendingAgeQueries = [
+            // Pending/in-review JPOs (orders + office badges)
+            """
             SELECT MIN(created_at) FROM job_parts_orders
             WHERE status IN ('pending', 'in_review') AND deleted_at IS NULL
-        """)
+            """,
+            // Pending time-off requests (office badge)
+            """
+            SELECT MIN(created_at) FROM schedule_exceptions
+            WHERE exception_type = 'time_off' AND is_approved = 0 AND deleted_at IS NULL
+            """,
+            // Pending tool edit verifications (office + tools badges).
+            // tool_change_log has no created_at column — changed_at is its
+            // creation timestamp (set by default on insert, never updated).
+            """
+            SELECT MIN(changed_at) FROM tool_change_log
+            WHERE verification_status = 'pending' AND deleted_at IS NULL
+            """,
+            // Pending deletion approvals (office badge)
+            """
+            SELECT MIN(created_at) FROM scheduled_deletions
+            WHERE status = 'pending_approval' AND deleted_at IS NULL
+            """,
+        ]
+        // Pick the overall oldest by PARSED date, not by string comparison —
+        // the queues mix ISO 8601 ("...T...Z") and SQLite datetime('now')
+        // ("YYYY-MM-DD HH:MM:SS") formats, which do not sort lexicographically.
+        // parseDateTimeUTC: SQLite's zone-less defaults are always UTC, so
+        // parsing them as device-local time could pick the wrong "oldest" when
+        // ISO and SQLite timestamps are hours apart (#708).
+        counts.oldestPendingDate = try pendingAgeQueries
+            .compactMap { try safeString(sql: $0) }
+            .compactMap { raw in CoreFormatters.parseDateTimeUTC(raw).map { (raw: raw, date: $0) } }
+            .min { $0.date < $1.date }?
+            .raw
 
         return counts
     }

@@ -112,7 +112,7 @@ struct AppConfigPage: View {
                 Button {
                     if let manager = appCore.onboardingManager {
                         manager.resetProgress()
-                        manager.isOnboardingActive = true
+                        manager.startTour()
                     }
                 } label: {
                     Label("Restart App Tour", systemImage: "arrow.counterclockwise")

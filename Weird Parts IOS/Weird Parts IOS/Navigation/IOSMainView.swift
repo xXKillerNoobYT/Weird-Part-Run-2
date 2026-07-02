@@ -729,6 +729,14 @@ struct ModuleHostView: View {
     @State private var selectedTabId: String = ""
     @State private var showUserMenu = false
 
+    /// Scroll-edge state for the horizontal sub-tab strip. Drives the edge
+    /// fade scrims that signal more tabs exist beyond the screen edge (#1099).
+    private struct SubTabScrollEdges: Equatable {
+        var canScrollLeading = false
+        var canScrollTrailing = false
+    }
+    @State private var subTabScrollEdges = SubTabScrollEdges()
+
     /// Tabs visible to the current user after permission filtering.
     private var visibleTabsList: [AppTab] {
         visibleTabs(for: module, permissions: appCore.permissions)
@@ -946,8 +954,47 @@ struct ModuleHostView: View {
                     proxy.scrollTo(selectedId, anchor: .center)
                 }
             }
+            .onScrollGeometryChange(for: SubTabScrollEdges.self) { geometry in
+                let maxOffsetX = geometry.contentSize.width - geometry.containerSize.width
+                // 1pt tolerance avoids fade flicker from sub-pixel scroll offsets.
+                return SubTabScrollEdges(
+                    canScrollLeading: maxOffsetX > 1 && geometry.contentOffset.x > 1,
+                    canScrollTrailing: maxOffsetX > 1 && geometry.contentOffset.x < maxOffsetX - 1
+                )
+            } action: { _, edges in
+                subTabScrollEdges = edges
+            }
+            // Edge fades: without an affordance, a partially clipped trailing
+            // chip (e.g. after "Daily Report" on compact iPhones) reads as
+            // broken layout instead of scrollable content (#1099).
+            .overlay(alignment: .leading) {
+                if subTabScrollEdges.canScrollLeading {
+                    subTabEdgeFade(.leading)
+                }
+            }
+            .overlay(alignment: .trailing) {
+                if subTabScrollEdges.canScrollTrailing {
+                    subTabEdgeFade(.trailing)
+                }
+            }
+            .animation(.easeInOut(duration: 0.15), value: subTabScrollEdges)
         }
         .background(DS.Background.page)
+    }
+
+    /// Gradient scrim shown at a sub-tab strip edge while more chips remain
+    /// scrolled off-screen in that direction. Purely decorative — taps pass
+    /// through and it is hidden from accessibility.
+    @ViewBuilder
+    private func subTabEdgeFade(_ edge: HorizontalEdge) -> some View {
+        LinearGradient(
+            colors: [DS.Background.page, DS.Background.page.opacity(0)],
+            startPoint: edge == .leading ? .leading : .trailing,
+            endPoint: edge == .leading ? .trailing : .leading
+        )
+        .frame(width: DS.Space.xxl)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     @ViewBuilder

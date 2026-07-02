@@ -29,9 +29,30 @@ class OnboardingProgressManager: ObservableObject {
         completedTasks.contains(taskId)
     }
 
+    /// Clears all completed-task progress and persists the cleared state.
+    /// Does NOT touch `isOnboardingActive` — tour activation is owned by
+    /// `startTour()`/`endTour()`, so restart call sites pair this with
+    /// `startTour()`. Keeping activation out of here avoids a redundant
+    /// `isOnboardingActive` publish and duplicate UserDefaults write when
+    /// the two methods run back-to-back.
     func resetProgress() {
         completedTasks.removeAll()
+        saveProgress()
+    }
+
+    /// Starts (or restarts) the guided tour and persists the active flag.
+    /// Use this instead of setting `isOnboardingActive` directly — direct
+    /// assignment is not persisted, so the state would revert on relaunch.
+    func startTour() {
         isOnboardingActive = true
+        saveProgress()
+    }
+
+    /// Ends the guided tour and persists the inactive flag so per-page
+    /// tour banners stop rendering after the walkthrough is completed,
+    /// skipped, or explicitly dismissed (issue #1067).
+    func endTour() {
+        isOnboardingActive = false
         saveProgress()
     }
 
