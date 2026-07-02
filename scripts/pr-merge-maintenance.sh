@@ -193,25 +193,31 @@ while IFS= read -r pr; do
   if [[ "${PR_MAINTENANCE_REQUIRE_COPILOT_REVIEW:-1}" == "1" ]]; then
     # A GraphQL API failure must FAIL CLOSED (never merge on unknown review
     # state). We probe once and treat empty/failed output as "not satisfied".
-    review_state="$(gh api graphql -f query="query { repository(owner: \"$repo_owner\", name: \"$repo_name\") { pullRequest(number: $number) { latestReviews: reviews(first: 100) { nodes { author { login } } } reviewThreads(first: 100) { totalCount nodes { isResolved } } } } }" 2>/dev/null || echo "")"
+    # Review nodes carry author login + state so a PENDING/DISMISSED review
+    # cannot satisfy the gate.
+    review_state="$(gh api graphql -f query="query { repository(owner: \"$repo_owner\", name: \"$repo_name\") { pullRequest(number: $number) { latestReviews: reviews(first: 100) { nodes { author { login } state } } reviewThreads(first: 100) { totalCount nodes { isResolved } } } } }" 2>/dev/null || echo "")"
 
     if [[ -z "$review_state" ]]; then
       echo "    skip: could not read review state (API failure) — not merging on unknown review status"
       continue
     fi
 
-    # Match the Copilot reviewer by login prefix — GitHub returns
-    # 'copilot-pull-request-reviewer[bot]' (or similar) here, so an exact
-    # 'Copilot' match would never fire.
-    copilot_reviews="$(jq '[.data.repository.pullRequest.latestReviews.nodes[]? | select((.author.login // "") | ascii_downcase | startswith("copilot"))] | length' <<<"$review_state" 2>/dev/null || echo "0")"
+    # A satisfying Copilot review is an EXACT bot login (no prefix spoofing by a
+    # 'copilot*' human account) whose state is a real submitted review
+    # (COMMENTED/APPROVED/CHANGES_REQUESTED — never PENDING/DISMISSED).
+    copilot_reviews="$(jq '[.data.repository.pullRequest.latestReviews.nodes[]?
+      | select((.author.login // "") == "copilot-pull-request-reviewer[bot]")
+      | select(.state == "COMMENTED" or .state == "APPROVED" or .state == "CHANGES_REQUESTED")] | length' <<<"$review_state" 2>/dev/null || echo "0")"
     if [[ ! "$copilot_reviews" =~ ^[0-9]+$ ]]; then copilot_reviews="0"; fi
 
     if [[ "$copilot_reviews" -eq 0 ]]; then
-      # Request the review if a Copilot reviewer is not already requested, then
-      # wait. Match by login prefix (bot logins vary: 'Copilot',
-      # 'copilot-pull-request-reviewer[bot]', …).
+      # Request the review only if the Copilot bot is not already a requested
+      # reviewer. Match the two exact logins GitHub uses for this bot across
+      # API surfaces ('Copilot' in requested_reviewers,
+      # 'copilot-pull-request-reviewer[bot]' in reviews) — no prefix match, so a
+      # similarly-named human can't suppress the request.
       already_requested="$(gh api "repos/$REPO/pulls/$number" \
-        --jq '[.requested_reviewers[]?.login | select((. // "") | ascii_downcase | startswith("copilot"))] | length' 2>/dev/null || echo "0")"
+        --jq '[.requested_reviewers[]?.login | select(. == "Copilot" or . == "copilot-pull-request-reviewer[bot]")] | length' 2>/dev/null || echo "0")"
       if [[ ! "$already_requested" =~ ^[0-9]+$ ]]; then already_requested="0"; fi
       if [[ "$already_requested" -eq 0 ]]; then
         run_or_log gh api -X POST "repos/$REPO/pulls/$number/requested_reviewers" \
@@ -223,9 +229,10 @@ while IFS= read -r pr; do
       continue
     fi
 
-    # Copilot has reviewed — block on any unresolved review thread so findings
-    # are addressed and resolved before the merge, not after. If the thread
-    # count exceeds the page we fetched, fail closed (can't prove resolution).
+    # Copilot has reviewed — block on any unresolved review thread (from any
+    # reviewer) so findings are addressed and resolved before the merge, not
+    # after. If the thread count exceeds the page we fetched, fail closed
+    # (can't prove resolution).
     thread_total="$(jq '.data.repository.pullRequest.reviewThreads.totalCount // 0' <<<"$review_state" 2>/dev/null || echo "0")"
     if [[ ! "$thread_total" =~ ^[0-9]+$ ]]; then thread_total="0"; fi
     if [[ "$thread_total" -gt 100 ]]; then
@@ -235,7 +242,7 @@ while IFS= read -r pr; do
     unresolved="$(jq '[.data.repository.pullRequest.reviewThreads.nodes[]? | select(.isResolved == false)] | length' <<<"$review_state" 2>/dev/null || echo "1")"
     if [[ ! "$unresolved" =~ ^[0-9]+$ ]]; then unresolved="1"; fi
     if [[ "$unresolved" -gt 0 ]]; then
-      echo "    skip: $unresolved unresolved Copilot review thread(s) — must be addressed before merge"
+      echo "    skip: $unresolved unresolved review thread(s) (any reviewer) — must be resolved before merge"
       continue
     fi
   fi
