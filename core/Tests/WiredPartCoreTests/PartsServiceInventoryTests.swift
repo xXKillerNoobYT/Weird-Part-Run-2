@@ -553,6 +553,15 @@ struct PartsServiceInventoryTests {
         #expect(trace.first?.movementType == "return_to_supplier", "newest first")
         #expect(trace.allSatisfy { $0.partName == "Traceable Widget" })
         #expect(trace.allSatisfy { $0.partId == partId })
+
+        // Receiving and return_to_supplier rows leave from/to_location_* nil
+        // on the supplier side (see WarehouseService). traceStep must fall
+        // back to supplier_id so the trace shows the supplier instead of
+        // "Unknown" (GH#84 traceability).
+        let returnStep = try #require(trace.first { $0.movementType == "return_to_supplier" })
+        #expect(returnStep.toLocation == "Supplier: TraceSupplier")
+        let receivingStep = try #require(trace.first { $0.movementType == "receiving" })
+        #expect(receivingStep.fromLocation == "Supplier: TraceSupplier")
     }
 
     @Test("tracePartMovements resolves specific job names for location endpoints")

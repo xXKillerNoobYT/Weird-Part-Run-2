@@ -8159,14 +8159,38 @@ public final class PartsService: Sendable {
     /// Build a TraceStep from a stock_movements row, resolving location
     /// endpoints to specific entity names (warehouse/job/truck/staging).
     private func traceStep(from row: Row, dbConn: Database) throws -> TraceStep {
-        TraceStep(
+        // Receiving and return-to-supplier movements don't populate
+        // from_location_*/to_location_* on the supplier side (by design in
+        // WarehouseService — see createMovement callers), so fall back to
+        // supplier_id for whichever endpoint is nil rather than rendering
+        // "Unknown" when the row clearly names a supplier.
+        let movementType: String = row["movement_type"] ?? StockMovement.MovementType.transfer.rawValue
+        let supplierId: Int64? = row["supplier_id"]
+        var fromType: String? = row["from_location_type"]
+        var fromId: Int64? = row["from_location_id"]
+        var toType: String? = row["to_location_type"]
+        var toId: Int64? = row["to_location_id"]
+
+        if let supplierId {
+            if movementType == StockMovement.MovementType.returnToSupplier.rawValue, toType == nil {
+                toType = "supplier"
+                toId = supplierId
+            } else if fromType == nil {
+                // Receiving (and similar inbound movements) originate at the
+                // supplier even though from_location_* is left nil.
+                fromType = "supplier"
+                fromId = supplierId
+            }
+        }
+
+        return TraceStep(
             movementId: row["id"],
             partId: row["part_id"],
             partName: row["part_name"],
             date: row["created_at"] ?? "",
-            movementType: row["movement_type"] ?? StockMovement.MovementType.transfer.rawValue,
-            fromLocation: try describeLocation(type: row["from_location_type"], id: row["from_location_id"], dbConn: dbConn),
-            toLocation: try describeLocation(type: row["to_location_type"], id: row["to_location_id"], dbConn: dbConn),
+            movementType: movementType,
+            fromLocation: try describeLocation(type: fromType, id: fromId, dbConn: dbConn),
+            toLocation: try describeLocation(type: toType, id: toId, dbConn: dbConn),
             qty: row["qty"],
             unitCost: row["unit_cost_at_move"],
             performedByName: row["performer_name"],

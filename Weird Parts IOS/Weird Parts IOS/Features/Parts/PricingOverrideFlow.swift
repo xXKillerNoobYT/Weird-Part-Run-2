@@ -159,10 +159,13 @@ struct PricingTierSetSheet: View {
                             .textFieldStyle(.plain)
                             .autocorrectionDisabled()
                             .frame(minHeight: 44)
-                            .onChange(of: partSearchText) { _, _ in
-                                Task { await loadPartOptions() }
-                            }
                     }
+                }
+                // Tied to partSearchText's identity so SwiftUI cancels any
+                // in-flight load automatically when the text changes again —
+                // avoids untracked Tasks racing and applying stale results.
+                .task(id: partSearchText) {
+                    await loadPartOptions()
                 }
             }
 

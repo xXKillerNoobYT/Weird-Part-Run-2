@@ -468,8 +468,10 @@ struct PartsCatalogPage: View {
         onChange: @escaping (Int64?) -> Void
     ) -> some View {
         let selectedName = selection.flatMap { sel in options.first { $0.0 == sel }?.1 }
+        // When counts haven't loaded yet, fall back to the option count so the
+        // card still conveys available choices instead of a misleading "0".
         let badgeCount = selection.map { counts[$0] ?? 0 }
-            ?? options.filter { counts[$0.0] != nil }.count
+            ?? (counts.isEmpty ? options.count : options.filter { counts[$0.0] != nil }.count)
         let isSelected = selection != nil
 
         Menu {
@@ -1049,6 +1051,10 @@ struct PartsCatalogPage: View {
 
     private func resetAndLoad() {
         currentPage = 1
+        // Clear stale facet badges immediately so the filter bar doesn't keep
+        // showing counts from the previous filter/search state while the new
+        // request is in flight.
+        filterCounts = nil
         Task { await loadData() }
     }
 
