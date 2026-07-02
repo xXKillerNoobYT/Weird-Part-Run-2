@@ -41,6 +41,9 @@ public final class WarehouseService: Sendable {
         case jobReturnItemNotFound(Int64)
         case stagingBoxNotFound(Int64)
         case stagingTagNotFound(Int64)
+        /// A grid shrink would leave existing floor features/zones outside
+        /// the new bounds (issue #1240). Counts identify how many of each.
+        case gridShrinkWouldOrphanItems(features: Int, zones: Int)
     }
 
     // =========================================================================
@@ -4259,11 +4262,30 @@ public final class WarehouseService: Sendable {
     }
 
     /// Save user-defined grid dimensions to a floor plan (PE-040 — wizard dimensions form).
+    ///
+    /// Rejects shrinks that would strand existing features or zones outside
+    /// the new bounds (issue #1240) — placement validation only guards the
+    /// add/update paths, so an unchecked grid update was a bypass that could
+    /// persist an impossible floor plan.
     public func updateFloorPlanGrid(floorPlanId: Int64, rows: Int, cols: Int) throws {
         guard (1...20).contains(rows), (1...20).contains(cols) else {
             throw WarehouseError.invalidDimension
         }
         try db.writer.write { dbConn in
+            let orphanedFeatures = try WarehouseFloorFeature
+                .filter(Column("floor_plan_id") == floorPlanId && Column("deleted_at") == nil)
+                .fetchAll(dbConn)
+                .filter { $0.gridX + $0.gridWidth > cols || $0.gridY + $0.gridHeight > rows }
+            let orphanedZones = try WarehouseZone
+                .filter(Column("floor_plan_id") == floorPlanId && Column("deleted_at") == nil)
+                .fetchAll(dbConn)
+                .filter { $0.gridX + $0.gridWidth > cols || $0.gridY + $0.gridHeight > rows }
+            guard orphanedFeatures.isEmpty, orphanedZones.isEmpty else {
+                throw WarehouseError.gridShrinkWouldOrphanItems(
+                    features: orphanedFeatures.count,
+                    zones: orphanedZones.count
+                )
+            }
             try dbConn.execute(
                 sql: "UPDATE warehouse_floor_plans SET grid_rows = ?, grid_cols = ?, updated_at = datetime('now') WHERE id = ?",
                 arguments: [rows, cols, floorPlanId]
