@@ -38,6 +38,12 @@ struct IOSWarehouseLeaderboardPage: View {
         }
     }
 
+    /// The user's position in the overall (unfiltered) leaderboard, so a
+    /// search-narrowed list never renumbers matches from #1 (issue #1244).
+    private func overallRank(of rating: UserWarehouseRating) -> Int {
+        (leaderboard.firstIndex(where: { $0.userId == rating.userId }) ?? 0) + 1
+    }
+
     private var isManager: Bool {
         appCore.hasPermission("manage_warehouse")
     }
@@ -101,8 +107,10 @@ struct IOSWarehouseLeaderboardPage: View {
     @ViewBuilder
     private var leaderboardContent: some View {
         List {
-            // Top 3 podium
-            if leaderboard.count >= 3 {
+            // Top 3 podium — overall standings only. Hidden while a search is
+            // active so a narrowed Rankings list never sits under an
+            // unrelated overall podium (issue #1244).
+            if searchText.isEmpty, leaderboard.count >= 3 {
                 Section {
                     HStack(alignment: .bottom, spacing: 12) {
                         Spacer()
@@ -115,10 +123,12 @@ struct IOSWarehouseLeaderboardPage: View {
                 }
             }
 
-            // Full list
-            Section("Rankings") {
-                ForEach(Array(filteredLeaderboard.enumerated()), id: \.element.userId) { index, rating in
-                    leaderboardRow(rank: index + 1, rating: rating)
+            // Full list — retitled during search so the narrowed scope is clear
+            Section(searchText.isEmpty ? "Rankings" : "Search Results") {
+                ForEach(filteredLeaderboard, id: \.userId) { rating in
+                    // Rank stays the user's overall standing even in filtered
+                    // results — a search match must not be renumbered as #1.
+                    leaderboardRow(rank: overallRank(of: rating), rating: rating)
                         .contentShape(Rectangle())
                         .onTapGesture {
                             if isManager {
