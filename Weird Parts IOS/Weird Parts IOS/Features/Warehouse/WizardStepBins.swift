@@ -116,7 +116,7 @@ struct WizardStepBins: View {
                                 .font(.subheadline)
                                 .monospaced()
                             Spacer()
-                            if let partId = bin.assignedPartId {
+                            if bin.assignedPartId != nil {
                                 Image(systemName: "shippingbox.fill")
                                     .foregroundStyle(.green)
                                     .font(.caption)

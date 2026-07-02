@@ -985,7 +985,9 @@ struct IOSAIAssistantPanel: View {
                 query: queryText,
                 db: db,
                 permissions: appCore.permissions,
-                userId: appCore.currentUser?.id ?? 0,
+                // Fail closed: pass nil when no user session exists so user-specific
+                // tools return a not-signed-in error instead of running as user 0 (#724).
+                userId: appCore.currentUser?.id,
                 navigationContext: navContext,
                 conversationId: conversationId
             )

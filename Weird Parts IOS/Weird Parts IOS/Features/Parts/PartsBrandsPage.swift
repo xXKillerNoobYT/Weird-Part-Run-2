@@ -238,7 +238,7 @@ struct PartsBrandsPage: View {
     @ViewBuilder
     private var emptyState: some View {
         let isSearching = !searchText.isEmpty
-        return VStack(spacing: 16) {
+        VStack(spacing: 16) {
             Image(systemName: isSearching ? "magnifyingglass" : "tag")
                 .decorativeIconFont(48)
                 .foregroundStyle(.secondary)
