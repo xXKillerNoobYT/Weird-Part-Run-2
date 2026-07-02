@@ -1451,13 +1451,16 @@ struct ToolTradeSheet: View {
             isSaving = false
             return
         }
+        // Send the trimmed notes — the dirty signature already compares the
+        // trimmed value, and whitespace-only notes should persist as nil.
+        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
             _ = try service.initiateTrade(
                 toolId: tool.id,
                 fromUserId: userId,
                 toUserId: toUserId,
                 condition: condition.rawValue,
-                notes: notes.isEmpty ? nil : notes
+                notes: trimmedNotes.isEmpty ? nil : trimmedNotes
             )
             // Re-baseline so the sheet is clean before the parent tears it
             // down — a successful send must never trip the discard guard.
