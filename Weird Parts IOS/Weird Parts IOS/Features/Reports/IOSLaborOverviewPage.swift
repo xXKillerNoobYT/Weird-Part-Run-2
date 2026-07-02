@@ -40,9 +40,11 @@ struct IOSLaborOverviewPage: View {
         .reportExportToolbar(
             title: "Labor_Overview",
             columns: ["Employee", "Regular", "Overtime", "Total", "Days"],
-            rows: timesheetRows.map { [$0.userName, String(format: "%.1f", $0.regularHours),
-                                       String(format: "%.1f", $0.overtimeHours),
-                                       String(format: "%.1f", $0.totalHours), "\($0.daysWorked)"] }
+            // Export exactly what's visible — an active search filter must
+            // filter the export too (issue #1243).
+            rows: filteredTimesheetRows.map { [$0.userName, String(format: "%.1f", $0.regularHours),
+                                               String(format: "%.1f", $0.overtimeHours),
+                                               String(format: "%.1f", $0.totalHours), "\($0.daysWorked)"] }
         )
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -56,7 +58,8 @@ struct IOSLaborOverviewPage: View {
             PageHelpSheet(title: "Labor Overview Help", sections: [
                 ("What This Page Does", "Gives you a high-level view of labor for the current week. Shows total hours, regular vs overtime, and the number of active workers. Below that, each employee is listed with their individual breakdown."),
                 ("How to Use It", "The top section shows weekly totals. Scroll down to see each employee's regular hours, overtime, and days worked. Pull down to refresh if crews are still clocking in."),
-                ("Tips", "Keep an eye on overtime numbers. If someone is already high mid-week, consider adjusting schedules. This report resets each Monday.")
+                ("Tips", "Keep an eye on overtime numbers. If someone is already high mid-week, consider adjusting schedules. This report resets each Monday."),
+                ("Exporting", "Exports include exactly the rows currently visible. If a search is active, only matching rows are exported — clear the search to export everything.")
             ])
         }
         .refreshable { loadData() }
