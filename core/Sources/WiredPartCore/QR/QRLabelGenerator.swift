@@ -88,6 +88,17 @@ public enum QRPaperSize: String, CaseIterable, Codable, Sendable {
         }
     }
 
+    /// Whether this paper is exact-size thermal label media.
+    ///
+    /// Thermal stock is one physical label per page, printed edge-to-edge —
+    /// plain-paper margins must never be applied to it (issue #1208).
+    public var isThermalMedia: Bool {
+        switch self {
+        case .thermal2x1, .thermal4x6: return true
+        default: return false
+        }
+    }
+
     /// Label grid for sticker sheets: (columns, rows, labelSize, margins, spacing)
     public var labelGrid: LabelGrid? {
         switch self {
@@ -188,10 +199,78 @@ public enum QRLabelLayout: String, CaseIterable, Codable, Sendable {
     }
 }
 
+// MARK: - Plain Paper Layout
+
+/// Resolved tiling layout for plain-paper (non-sticker) label printing.
+///
+/// Produced by `QRLabelPDFGenerator.plainPaperLayout(labelSize:paperSize:)` so the
+/// print-sheet page-count estimate and the PDF renderer always share the exact same
+/// geometry (issue #1208 — the two previously used slightly different math).
+public struct PlainPaperLabelLayout: Sendable, Equatable {
+    public let columns: Int
+    public let rows: Int
+    public let labelSize: CGSize
+    public let margin: CGFloat
+    public let spacing: CGFloat
+
+    /// Number of labels rendered on one page.
+    public var labelsPerPage: Int { columns * rows }
+
+    /// Frame for the label at a 0-based slot index (row-major order).
+    public func labelRect(forSlot slot: Int) -> CGRect {
+        let col = slot % columns
+        let row = slot / columns
+        return CGRect(
+            x: margin + CGFloat(col) * (labelSize.width + spacing),
+            y: margin + CGFloat(row) * (labelSize.height + spacing),
+            width: labelSize.width,
+            height: labelSize.height
+        )
+    }
+}
+
 // MARK: - PDF Generator
 
 public struct QRLabelPDFGenerator {
     private static let labelPadding: CGFloat = 4
+    private static let plainPaperMargin: CGFloat = 36 // 0.5" margin
+    private static let plainPaperSpacing: CGFloat = 8
+
+    /// Compute the tiling layout used for plain-paper (non-sticker) printing.
+    ///
+    /// - Thermal media is exact-size label stock: the label IS the page, so the layout
+    ///   is a single full-bleed label with zero margins regardless of the selected label
+    ///   size (issue #1208 — plain-paper margins used to push thermal labels off-page).
+    /// - Regular paper keeps the 0.5" margin grid. Returns `nil` when the requested
+    ///   label cannot fit inside the printable area at all, so callers can block the
+    ///   print instead of silently rendering a clipped PDF.
+    public static func plainPaperLayout(labelSize: QRLabelSize, paperSize: QRPaperSize) -> PlainPaperLabelLayout? {
+        let pageSize = paperSize.pageSizePoints
+
+        if paperSize.isThermalMedia {
+            return PlainPaperLabelLayout(
+                columns: 1, rows: 1,
+                labelSize: pageSize,
+                margin: 0, spacing: 0
+            )
+        }
+
+        let labelDim = labelSize.sizePoints
+        let usableWidth = pageSize.width - plainPaperMargin * 2
+        let usableHeight = pageSize.height - plainPaperMargin * 2
+        guard labelDim.width <= usableWidth, labelDim.height <= usableHeight else { return nil }
+
+        // Max n such that n*label + (n-1)*spacing <= usable.
+        let cols = Int((usableWidth + plainPaperSpacing) / (labelDim.width + plainPaperSpacing))
+        let rows = Int((usableHeight + plainPaperSpacing) / (labelDim.height + plainPaperSpacing))
+        guard cols >= 1, rows >= 1 else { return nil }
+
+        return PlainPaperLabelLayout(
+            columns: cols, rows: rows,
+            labelSize: labelDim,
+            margin: plainPaperMargin, spacing: plainPaperSpacing
+        )
+    }
 
     typealias QRImageGenerator = @Sendable (
         _ type: QREntityType,
@@ -260,6 +339,13 @@ public struct QRLabelPDFGenerator {
             return nil
         }
 
+        // Plain paper / thermal: refuse combinations whose labels cannot fit the
+        // physical media instead of silently printing clipped labels (issue #1208).
+        if paperSize.labelGrid == nil,
+           plainPaperLayout(labelSize: labelSize, paperSize: paperSize) == nil {
+            return nil
+        }
+
         guard canRenderQRCodesForPDF(
             items: items,
             labelSize: labelSize,
@@ -301,9 +387,16 @@ public struct QRLabelPDFGenerator {
         paperSize: QRPaperSize,
         qrImageGenerator: QRImageGenerator = defaultQRImageGenerator
     ) -> Bool {
-        let labelDimensions = paperSize.labelGrid.map { grid in
-            CGSize(width: grid.labelWidth, height: grid.labelHeight)
-        } ?? labelSize.sizePoints
+        let labelDimensions: CGSize
+        if let grid = paperSize.labelGrid {
+            labelDimensions = CGSize(width: grid.labelWidth, height: grid.labelHeight)
+        } else if let layout = plainPaperLayout(labelSize: labelSize, paperSize: paperSize) {
+            // Thermal media renders one full-page label, so the QR must be sized
+            // against the physical page — not the nominal label selection (#1208).
+            labelDimensions = layout.labelSize
+        } else {
+            return false
+        }
         let qrSide = min(labelDimensions.width, labelDimensions.height) - labelPadding * 2
 
         return items.allSatisfy { item in
@@ -375,30 +468,20 @@ public struct QRLabelPDFGenerator {
         paperSize: QRPaperSize,
         qrImageGenerator: QRImageGenerator
     ) -> Bool {
-        let pageSize = paperSize.pageSizePoints
-        let labelDim = labelSize.sizePoints
-        let margin: CGFloat = 36 // 0.5" margin
-        let spacing: CGFloat = 8
-
-        let usableWidth = pageSize.width - margin * 2
-        let usableHeight = pageSize.height - margin * 2
-
-        let cols = max(1, Int(usableWidth / (labelDim.width + spacing)))
-        let rows = max(1, Int(usableHeight / (labelDim.height + spacing)))
-        let labelsPerPage = cols * rows
+        // Shared geometry with the print-sheet estimate; thermal media resolves to a
+        // single full-bleed label per page, other paper keeps the margin grid (#1208).
+        guard let pageLayout = plainPaperLayout(labelSize: labelSize, paperSize: paperSize) else {
+            return false
+        }
 
         var itemIndex = 0
         while itemIndex < items.count {
             context.beginPage()
 
-            for slot in 0..<labelsPerPage {
+            for slot in 0..<pageLayout.labelsPerPage {
                 guard itemIndex < items.count else { break }
 
-                let col = slot % cols
-                let row = slot / cols
-                let x = margin + CGFloat(col) * (labelDim.width + spacing)
-                let y = margin + CGFloat(row) * (labelDim.height + spacing)
-                let labelRect = CGRect(x: x, y: y, width: labelDim.width, height: labelDim.height)
+                let labelRect = pageLayout.labelRect(forSlot: slot)
 
                 guard renderSingleLabel(in: context.cgContext,
                                         rect: labelRect,

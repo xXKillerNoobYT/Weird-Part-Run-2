@@ -96,12 +96,24 @@ struct QRLabelPrintSheet: View {
 
                 // Label size
                 Section("Label Size") {
-                    Picker("Size", selection: $labelSize) {
-                        ForEach(QRLabelSize.allCases, id: \.self) { size in
-                            Text(size.displayName).tag(size)
+                    if paperSize.isThermalMedia {
+                        // Thermal media is exact-size label stock: one label per page,
+                        // printed edge-to-edge. A separate label-size choice would either
+                        // be ignored or clip off-page, so it is disabled here (#1208).
+                        Label(
+                            "Thermal media prints one label per page at the exact media size (\(paperSize.displayName)).",
+                            systemImage: "info.circle"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    } else {
+                        Picker("Size", selection: $labelSize) {
+                            ForEach(QRLabelSize.allCases, id: \.self) { size in
+                                Text(size.displayName).tag(size)
+                            }
                         }
+                        .pickerStyle(.menu)
                     }
-                    .pickerStyle(.menu)
                 }
 
                 // Layout
@@ -157,7 +169,7 @@ struct QRLabelPrintSheet: View {
                         let pages = Int(ceil(Double(items.count) / Double(available)))
                         LabeledContent("Pages to Print", value: "\(pages)")
                     } else {
-                        Label("Choose at least one available sticker position before printing.", systemImage: "exclamationmark.triangle.fill")
+                        Label(noPrintablePositionsMessage, systemImage: "exclamationmark.triangle.fill")
                             .foregroundStyle(.red)
                     }
                 }
@@ -275,12 +287,18 @@ struct QRLabelPrintSheet: View {
         if let grid = paperSize.labelGrid {
             return QRLabelPDFGenerator.availableStickerPositionCount(grid: grid, usedPositions: usedPositions)
         }
-        // Plain paper: auto-calculate
-        let pageSize = paperSize.pageSizePoints
-        let labelDim = labelSize.sizePoints
-        let cols = max(1, Int((pageSize.width - 72) / (labelDim.width + 8)))
-        let rows = max(1, Int((pageSize.height - 72) / (labelDim.height + 8)))
-        return cols * rows
+        // Plain paper & thermal: use the generator's own layout math so this estimate
+        // always matches what actually renders — thermal media resolves to exactly
+        // one full-bleed label per page (#1208).
+        return QRLabelPDFGenerator.plainPaperLayout(labelSize: labelSize, paperSize: paperSize)?.labelsPerPage ?? 0
+    }
+
+    /// Blocking message shown when no label positions can be printed.
+    private var noPrintablePositionsMessage: String {
+        if paperSize.labelGrid != nil {
+            return "Choose at least one available sticker position before printing."
+        }
+        return "The selected label size doesn't fit on \(paperSize.displayName). Choose a smaller label or different paper."
     }
 
     private func printLabels() {
@@ -288,7 +306,7 @@ struct QRLabelPrintSheet: View {
         printError = nil
 
         guard availablePositionsPerPage > 0 else {
-            printError = "Choose at least one available sticker position before printing."
+            printError = noPrintablePositionsMessage
             isPrinting = false
             return
         }
