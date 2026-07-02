@@ -65,9 +65,10 @@ struct NewUserWelcomeView: View {
                 Button {
                     withAnimation {
                         hasSeenWelcome = true
-                        // Auto-start the guided onboarding tour for new users
+                        // Auto-start the guided onboarding tour for new users.
+                        // startTour() persists the flag so it survives relaunch.
                         if let manager = appCore.onboardingManager {
-                            manager.isOnboardingActive = true
+                            manager.startTour()
                         }
                     }
                 } label: {

@@ -586,12 +586,15 @@ struct OnboardingWalkthroughView: View {
     private func finishOnboarding() {
         OnboardingCompletionDefaults.markCompleted(skippedModules: skippedModules)
         hasCompletedOnboarding = true
-        // Coordinate with OnboardingProgressManager — mark view tasks complete
+        // Coordinate with OnboardingProgressManager — mark view tasks complete,
+        // then END the active tour so per-page banners stop rendering after the
+        // walkthrough is completed or skipped (issue #1067). Users can restart
+        // the tour any time from the dashboard checklist or Settings.
         if let manager = appCore.onboardingManager {
             for moduleId in completedModules {
                 manager.markCompleted("\(moduleId)-view")
             }
-            manager.isOnboardingActive = true
+            manager.endTour()
         }
     }
 

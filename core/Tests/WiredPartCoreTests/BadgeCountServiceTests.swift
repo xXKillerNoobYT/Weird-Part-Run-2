@@ -430,4 +430,138 @@ struct BadgeCountServiceTests {
         // A cert expiring in 3 days is NOT within a 2-day window
         #expect(try service.expiringCertCount(withinDays: 2) == 0)
     }
+
+    // MARK: - oldestPendingDate considers every badge queue (#708)
+    //
+    // The age/tint signal previously only scanned pending/in-review JPOs, so
+    // stale time-off, tool-edit, and deletion approvals were counted in the
+    // Office badge number but invisible to hasOldItems.
+
+    @Test("oldest pending time-off with no pending JPO drives hasOldItems")
+    func testOldestPendingDateIncludesStaleTimeOff() throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = BadgeCountService(db: env.db)
+
+        // A 10-day-old unapproved time-off request; no JPOs exist at all.
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO schedule_exceptions
+                    (user_id, exception_date, exception_type, is_approved, created_at)
+                VALUES (?, date('now', '+1 day'), 'time_off', 0, datetime('now', '-10 days'))
+                """, arguments: [env.adminUserId])
+        }
+
+        let counts = try service.getAllBadgeCounts(userId: env.adminUserId)
+        #expect(counts.pendingApprovals == 0)
+        #expect(counts.pendingTimeOff == 1)
+        #expect(counts.oldestPendingDate != nil,
+            "Stale time-off approvals must feed the badge age signal, not just the count")
+        #expect(counts.hasOldItems == true,
+            "A 10-day-old pending time-off request must trigger the aged badge tint")
+    }
+
+    @Test("oldest pending tool edit verification with no pending JPO drives hasOldItems")
+    func testOldestPendingDateIncludesStaleToolEdits() throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = BadgeCountService(db: env.db)
+
+        // A tool with a 10-day-old pending edit verification; no JPOs exist.
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO tools (tool_number, name) VALUES ('T-708', 'Badge Age Drill')
+                """)
+            let toolId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO tool_change_log
+                    (tool_id, changed_by, change_type, verification_status, changed_at)
+                VALUES (?, ?, 'edit', 'pending', datetime('now', '-10 days'))
+                """, arguments: [toolId, env.adminUserId])
+        }
+
+        let counts = try service.getAllBadgeCounts(userId: env.adminUserId)
+        #expect(counts.pendingApprovals == 0)
+        #expect(counts.pendingToolEdits == 1)
+        #expect(counts.oldestPendingDate != nil,
+            "Stale tool edit verifications must feed the badge age signal")
+        #expect(counts.hasOldItems == true,
+            "A 10-day-old pending tool edit must trigger the aged badge tint")
+    }
+
+    @Test("oldest pending deletion approval with no pending JPO drives hasOldItems")
+    func testOldestPendingDateIncludesStaleDeletions() throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = BadgeCountService(db: env.db)
+
+        // A 10-day-old deletion awaiting approval; no JPOs exist.
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO scheduled_deletions
+                    (entity_type, entity_id, entity_name, status, created_at)
+                VALUES ('category', 999, 'Stale Deletion', 'pending_approval', datetime('now', '-10 days'))
+                """)
+        }
+
+        let counts = try service.getAllBadgeCounts(userId: env.adminUserId)
+        #expect(counts.pendingApprovals == 0)
+        #expect(counts.pendingDeletions == 1)
+        #expect(counts.oldestPendingDate != nil,
+            "Stale deletion approvals must feed the badge age signal")
+        #expect(counts.hasOldItems == true,
+            "A 10-day-old pending deletion approval must trigger the aged badge tint")
+    }
+
+    @Test("pending JPOs still feed oldestPendingDate, and the overall oldest queue wins")
+    func testOldestPendingDatePicksOverallOldestAcrossQueues() throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = BadgeCountService(db: env.db)
+
+        // Recent pending JPO (3 days old) — within the 7-day threshold on its own.
+        let jobId = try env.jobs.createJob(
+            jobNumber: "J-BADGE-708",
+            jobName: "Oldest Queue Job",
+            customerName: "Test Customer",
+            status: "active",
+            createdBy: env.adminUserId
+        )
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId)
+        try env.orders.updateJPOStatus(id: jpoId, status: "pending")
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                UPDATE job_parts_orders SET created_at = datetime('now', '-3 days') WHERE id = ?
+                """, arguments: [jpoId])
+        }
+
+        // JPO alone: date present, but not old enough for the aged tint.
+        let jpoOnly = try service.getAllBadgeCounts(userId: env.adminUserId)
+        #expect(jpoOnly.oldestPendingDate != nil,
+            "Pending JPOs must still populate oldestPendingDate (existing behavior)")
+        #expect(jpoOnly.hasOldItems == false,
+            "A 3-day-old JPO is within the 7-day threshold")
+
+        // Add a 20-day-old deletion approval — the overall oldest must win.
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO scheduled_deletions
+                    (entity_type, entity_id, entity_name, status, created_at)
+                VALUES ('part', 998, 'Ancient Deletion', 'pending_approval', datetime('now', '-20 days'))
+                """)
+        }
+        let deletionCreatedAt = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT created_at FROM scheduled_deletions WHERE entity_id = 998")
+        }
+
+        let combined = try service.getAllBadgeCounts(userId: env.adminUserId)
+        #expect(combined.oldestPendingDate == deletionCreatedAt,
+            "oldestPendingDate must be the overall oldest item across every pending queue")
+        #expect(combined.hasOldItems == true)
+    }
+
+    @Test("hasOldItems parses SQLite datetime('now') space-separated timestamps")
+    func testHasOldItemsParsesSpaceFormatTimestamps() {
+        // Rows created via SQLite column defaults store 'YYYY-MM-DD HH:MM:SS'
+        // (no 'T', no zone). parseISO rejected these, silently disabling the
+        // aged tint for default-stamped queues (#708).
+        let counts = BadgeCountService.BadgeCounts(oldestPendingDate: "2020-01-01 00:00:00")
+        #expect(counts.hasOldItems == true)
+    }
 }

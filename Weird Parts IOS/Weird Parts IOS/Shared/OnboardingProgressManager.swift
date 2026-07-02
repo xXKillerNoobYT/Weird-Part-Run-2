@@ -35,6 +35,22 @@ class OnboardingProgressManager: ObservableObject {
         saveProgress()
     }
 
+    /// Starts (or restarts) the guided tour and persists the active flag.
+    /// Use this instead of setting `isOnboardingActive` directly — direct
+    /// assignment is not persisted, so the state would revert on relaunch.
+    func startTour() {
+        isOnboardingActive = true
+        saveProgress()
+    }
+
+    /// Ends the guided tour and persists the inactive flag so per-page
+    /// tour banners stop rendering after the walkthrough is completed,
+    /// skipped, or explicitly dismissed (issue #1067).
+    func endTour() {
+        isOnboardingActive = false
+        saveProgress()
+    }
+
     /// Returns tasks for a page filtered by user's hat permissions.
     func tasksForPage(_ pageId: String, permissions: [String]) -> [OnboardingTask] {
         onboardingTaskRegistry[pageId]?.filter { task in
