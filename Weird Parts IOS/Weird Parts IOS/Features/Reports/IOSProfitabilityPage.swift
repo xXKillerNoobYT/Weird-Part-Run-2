@@ -34,11 +34,13 @@ struct IOSProfitabilityPage: View {
             .reportExportToolbar(
                 title: "Profitability",
                 columns: ["Job", "Revenue", "Labor", "Material", "Profit", "Margin"],
-                rows: rows.map { [$0.jobName, String(format: "$%.2f", $0.revenue),
-                                  String(format: "$%.2f", $0.laborCost),
-                                  String(format: "$%.2f", $0.materialCost),
-                                  String(format: "$%.2f", $0.profit),
-                                  String(format: "%.1f%%", $0.margin)] }
+                // Export exactly what's visible — an active search filter must
+                // filter the export too (issue #1243).
+                rows: filteredRows.map { [$0.jobName, String(format: "$%.2f", $0.revenue),
+                                          String(format: "$%.2f", $0.laborCost),
+                                          String(format: "$%.2f", $0.materialCost),
+                                          String(format: "$%.2f", $0.profit),
+                                          String(format: "%.1f%%", $0.margin)] }
             )
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
@@ -52,7 +54,8 @@ struct IOSProfitabilityPage: View {
                 PageHelpSheet(title: "Profitability Help", sections: [
                     ("What This Page Does", "Shows how much profit each job is making. For every job, you see revenue, labor cost, material cost, total profit, and margin percentage. Green means healthy, red means losing money."),
                     ("How to Use It", "Scroll through the list to see all jobs. Use the search bar to find a specific job. The margin badge on the right gives you a quick color-coded indicator: green is 20%+, orange is break-even, red is a loss."),
-                    ("Tips", "Focus on jobs with orange or red margins first. If a job's labor cost is unusually high, check if overtime is driving it up. Export this report to share with management during job reviews.")
+                    ("Tips", "Focus on jobs with orange or red margins first. If a job's labor cost is unusually high, check if overtime is driving it up. Export this report to share with management during job reviews."),
+                    ("Exporting", "Exports include exactly the rows currently visible. If a search is active, only matching rows are exported — clear the search to export everything.")
                 ])
             }
             .searchable(text: $searchText, prompt: "Search jobs...")
