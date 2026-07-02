@@ -567,7 +567,12 @@ struct PartsFlowWizard: View {
         guard let service = appCore.partsService,
               let warehouseService = appCore.warehouseService else {
             isSaving = false
-            saveErrorMessage = "Parts service unavailable. Your draft is still saved on this device."
+            saveErrorMessage = "Parts or warehouse service unavailable. Your draft is still saved on this device."
+            return
+        }
+        guard let performedBy = userId else {
+            isSaving = false
+            saveErrorMessage = "Not logged in. Your draft is still saved on this device."
             return
         }
 
@@ -596,7 +601,7 @@ struct PartsFlowWizard: View {
                             // Upserts the warehouse stock row and records a
                             // traceable adjustment movement.
                             _ = try warehouseService.recordPartsFirstSetupCount(
-                                partId: partId, countedQty: qty, performedBy: userId
+                                partId: partId, countedQty: qty, performedBy: performedBy
                             )
                             didPersistEntry = true
                         }

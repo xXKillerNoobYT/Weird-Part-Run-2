@@ -34,7 +34,8 @@ func userFriendlyError(_ error: Error, context: String = "load data") -> String 
         case .invalidDimension:
             // Issue #1165: service-layer dimension/placement validation.
             // Fixed string — no dimension values from the failed input.
-            return "Dimensions and grid placement must be positive and fit inside the floor-plan grid."
+            // Width/height must be positive; grid X/Y must be non-negative (0 is valid).
+            return "Dimensions must be positive, and grid placement must be zero or greater, and fit inside the floor-plan grid."
         case .noEligibleVerificationCounters(let required, let available):
             // Issue #494: fixed counts only — no user names or part data.
             return "Not enough eligible counters: \(required) needed, \(available) available besides you. Add active users or lower the required count."

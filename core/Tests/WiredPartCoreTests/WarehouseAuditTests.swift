@@ -1486,10 +1486,14 @@ struct WarehouseAuditTests {
         let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
 
         #expect(throws: WarehouseService.WarehouseError.invalidQuantity) {
-            _ = try env.warehouse.recordPartsFirstSetupCount(partId: partId, countedQty: -1)
+            _ = try env.warehouse.recordPartsFirstSetupCount(
+                partId: partId, countedQty: -1, performedBy: env.adminUserId
+            )
         }
         #expect(throws: WarehouseService.WarehouseError.partNotFound(999_999)) {
-            _ = try env.warehouse.recordPartsFirstSetupCount(partId: 999_999, countedQty: 3)
+            _ = try env.warehouse.recordPartsFirstSetupCount(
+                partId: 999_999, countedQty: 3, performedBy: env.adminUserId
+            )
         }
     }
 

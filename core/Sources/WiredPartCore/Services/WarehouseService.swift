@@ -2789,10 +2789,12 @@ public final class WarehouseService: Sendable {
     public func recordPartsFirstSetupCount(
         partId: Int64,
         countedQty: Int,
-        performedBy: Int64? = nil
+        performedBy: Int64
     ) throws -> Int {
         guard countedQty >= 0 else { throw WarehouseError.invalidQuantity }
         return try db.writer.write { dbConn in
+            try Self.requireActiveUser(performedBy, dbConn: dbConn)
+
             let partExists = (try Int.fetchOne(dbConn, sql: """
                 SELECT COUNT(*) FROM parts WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [partId]) ?? 0) > 0
