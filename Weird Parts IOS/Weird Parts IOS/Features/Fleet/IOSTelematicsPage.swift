@@ -13,7 +13,9 @@ struct IOSTelematicsPage: View {
     // MARK: - State
 
     @State private var locations: [FleetService.VehicleLocationRow] = []
-    @State private var isLoading = true
+    @State private var isInitialLoading = true
+    @State private var isRefreshing = false
+    @State private var hasLoadedOnce = false
     @State private var loadError: String?
     @State private var searchText = ""
     @State private var activeSheet: ActiveSheet?
@@ -72,22 +74,39 @@ struct IOSTelematicsPage: View {
 
     @ViewBuilder
     private var locationList: some View {
-        if isLoading {
-            ProgressView("Loading GPS data...")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let error = loadError {
-            ErrorStateView(message: error) { loadData() }
-        } else if filteredLocations.isEmpty {
-            EmptyStateView(
-                icon: "location.slash",
-                title: "No GPS Data",
-                message: "Vehicle location data will appear here once drivers submit GPS updates from their mobile devices."
-            )
-        } else {
-            List(filteredLocations, id: \.id) { location in
-                locationRow(location)
+        Group {
+            if isInitialLoading {
+                ProgressView("Loading GPS data...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = loadError {
+                ErrorStateView(message: error) { loadData() }
+            } else if filteredLocations.isEmpty {
+                EmptyStateView(
+                    icon: "location.slash",
+                    title: "No GPS Data",
+                    message: "Vehicle location data will appear here once drivers submit GPS updates from their mobile devices."
+                )
+            } else {
+                List(filteredLocations, id: \.id) { location in
+                    locationRow(location)
+                }
+                .listStyle(.insetGrouped)
             }
-            .listStyle(.insetGrouped)
+        }
+        .overlay(alignment: .top) {
+            refreshingOverlay
+        }
+    }
+
+    @ViewBuilder
+    private var refreshingOverlay: some View {
+        if isRefreshing {
+            ProgressView()
+                .progressViewStyle(.linear)
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .transition(.opacity)
+                .accessibilityLabel("Refreshing GPS data")
         }
     }
 
@@ -174,18 +193,31 @@ struct IOSTelematicsPage: View {
     private func loadData() {
         guard let service = appCore.fleetService else {
             loadError = "Fleet service not available"
-            isLoading = false
+            hasLoadedOnce = true
+            isInitialLoading = false
+            isRefreshing = false
             return
         }
-        isLoading = locations.isEmpty
-        loadError = nil
 
-        do {
-            locations = try service.listTelematicsData()
-        } catch {
-            loadError = userFriendlyError(error, context: "load telematics data")
+        if hasLoadedOnce {
+            isRefreshing = true
+        } else {
+            isInitialLoading = true
         }
 
-        isLoading = false
+        DispatchQueue.main.async {
+            defer {
+                self.hasLoadedOnce = true
+                self.isInitialLoading = false
+                self.isRefreshing = false
+            }
+
+            self.loadError = nil
+            do {
+                self.locations = try service.listTelematicsData()
+            } catch {
+                self.loadError = userFriendlyError(error, context: "load telematics data")
+            }
+        }
     }
 }

@@ -234,16 +234,21 @@ struct QRScanSheet: View {
                     case .detected(let payload, _):
                         await processPayload(payload)
                     case .error(let msg):
-                        scanError = msg
+                        // SwiftUI @State must be mutated on the main actor (GH #711).
+                        await MainActor.run { scanError = msg }
                     case .permissionDenied:
-                        scanError = "Camera permission required. Enable in Settings."
-                        isScanning = false
+                        await MainActor.run {
+                            scanError = "Camera permission required. Enable in Settings."
+                            isScanning = false
+                        }
                         return
                     }
                 }
             } catch {
-                scanError = userFriendlyError(error, context: "scan item")
-                isScanning = false
+                await MainActor.run {
+                    scanError = userFriendlyError(error, context: "scan item")
+                    isScanning = false
+                }
             }
         }
     }
@@ -259,7 +264,7 @@ struct QRScanSheet: View {
 
     private func processPayload(_ payload: String) async {
         guard let db = appCore.db else {
-            scanError = "Database not available"
+            await MainActor.run { scanError = "Database not available" }
             return
         }
 
