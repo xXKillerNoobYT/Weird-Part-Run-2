@@ -13,7 +13,7 @@ final class MyTruckTrailerNavigationTests: XCTestCase {
             "The attached trailer row should navigate to the trailer detail page with the attached trailer id."
         )
         XCTAssertTrue(
-            source.contains("} else {\n                    trailerRow(stats)\n                }"),
+            source.range(of: #"\}\s*else\s*\{\s*trailerRow\(stats\)\s*\}"#, options: .regularExpression) != nil,
             "When the trailer id is unavailable, the attached trailer row should render without NavigationLink chrome."
         )
     }
