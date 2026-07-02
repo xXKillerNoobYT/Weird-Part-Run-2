@@ -191,13 +191,29 @@ while IFS= read -r pr; do
   #     Copilot can review — so the merge must wait for the review explicitly.
   #     Set PR_MAINTENANCE_REQUIRE_COPILOT_REVIEW=0 to bypass (not recommended). ---
   if [[ "${PR_MAINTENANCE_REQUIRE_COPILOT_REVIEW:-1}" == "1" ]]; then
-    copilot_reviews="$(gh api "repos/$REPO/pulls/$number/reviews" \
-      --jq '[.[] | select(.user.login == "copilot-pull-request-reviewer[bot]")] | length' 2>/dev/null || echo "0")"
+    # A GraphQL API failure must FAIL CLOSED (never merge on unknown review
+    # state). We probe once and treat empty/failed output as "not satisfied".
+    review_state="$(gh api graphql -f query="query { repository(owner: \"$repo_owner\", name: \"$repo_name\") { pullRequest(number: $number) { latestReviews: reviews(first: 100) { nodes { author { login } } } reviewThreads(first: 100) { totalCount nodes { isResolved } } } } }" 2>/dev/null || echo "")"
+
+    if [[ -z "$review_state" ]]; then
+      echo "    skip: could not read review state (API failure) — not merging on unknown review status"
+      continue
+    fi
+
+    # Match the Copilot reviewer by login prefix — GitHub returns
+    # 'copilot-pull-request-reviewer[bot]' (or similar) here, so an exact
+    # 'Copilot' match would never fire.
+    copilot_reviews="$(jq '[.data.repository.pullRequest.latestReviews.nodes[]? | select((.author.login // "") | ascii_downcase | startswith("copilot"))] | length' <<<"$review_state" 2>/dev/null || echo "0")"
+    if [[ ! "$copilot_reviews" =~ ^[0-9]+$ ]]; then copilot_reviews="0"; fi
+
     if [[ "$copilot_reviews" -eq 0 ]]; then
-      # Request the review if it is not already pending, then wait for it.
-      pending_copilot="$(gh api "repos/$REPO/pulls/$number" \
-        --jq '([.requested_reviewers[]?.login] | index("Copilot")) // -1' 2>/dev/null || echo "-1")"
-      if [[ "$pending_copilot" == "-1" ]]; then
+      # Request the review if a Copilot reviewer is not already requested, then
+      # wait. Match by login prefix (bot logins vary: 'Copilot',
+      # 'copilot-pull-request-reviewer[bot]', …).
+      already_requested="$(gh api "repos/$REPO/pulls/$number" \
+        --jq '[.requested_reviewers[]?.login | select((. // "") | ascii_downcase | startswith("copilot"))] | length' 2>/dev/null || echo "0")"
+      if [[ ! "$already_requested" =~ ^[0-9]+$ ]]; then already_requested="0"; fi
+      if [[ "$already_requested" -eq 0 ]]; then
         run_or_log gh api -X POST "repos/$REPO/pulls/$number/requested_reviewers" \
           -f 'reviewers[]=copilot-pull-request-reviewer[bot]' >/dev/null 2>&1 || true
         echo "    skip: requested Copilot review — waiting for it before merge"
@@ -208,9 +224,16 @@ while IFS= read -r pr; do
     fi
 
     # Copilot has reviewed — block on any unresolved review thread so findings
-    # are addressed and resolved before the merge, not after.
-    unresolved="$(gh api graphql -f query="query { repository(owner: \"$repo_owner\", name: \"$repo_name\") { pullRequest(number: $number) { reviewThreads(first: 100) { nodes { isResolved } } } } }" \
-      --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length' 2>/dev/null || echo "0")"
+    # are addressed and resolved before the merge, not after. If the thread
+    # count exceeds the page we fetched, fail closed (can't prove resolution).
+    thread_total="$(jq '.data.repository.pullRequest.reviewThreads.totalCount // 0' <<<"$review_state" 2>/dev/null || echo "0")"
+    if [[ ! "$thread_total" =~ ^[0-9]+$ ]]; then thread_total="0"; fi
+    if [[ "$thread_total" -gt 100 ]]; then
+      echo "    skip: $thread_total review threads exceed the 100 fetched — cannot confirm resolution, not merging"
+      continue
+    fi
+    unresolved="$(jq '[.data.repository.pullRequest.reviewThreads.nodes[]? | select(.isResolved == false)] | length' <<<"$review_state" 2>/dev/null || echo "1")"
+    if [[ ! "$unresolved" =~ ^[0-9]+$ ]]; then unresolved="1"; fi
     if [[ "$unresolved" -gt 0 ]]; then
       echo "    skip: $unresolved unresolved Copilot review thread(s) — must be addressed before merge"
       continue
