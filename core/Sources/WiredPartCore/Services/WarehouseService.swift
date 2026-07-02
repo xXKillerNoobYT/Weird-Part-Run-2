@@ -863,7 +863,8 @@ public final class WarehouseService: Sendable {
         scanConfirmed: Bool = false,
         gpsLat: Double? = nil,
         gpsLng: Double? = nil,
-        validatePath: Bool = true
+        validatePath: Bool = true,
+        supplierId: Int64? = nil
     ) throws -> Int64 {
         try db.writer.read { dbConn in
             try Self.requireActiveUser(performedBy, dbConn: dbConn)
@@ -915,14 +916,14 @@ public final class WarehouseService: Sendable {
                      to_location_type, to_location_id, movement_type,
                      reason, notes, performed_by, job_id, photo_path,
                      reference_number, unit_cost_at_move, unit_sell_at_move,
-                     verified_by, scan_confirmed, gps_lat, gps_lng, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     verified_by, scan_confirmed, gps_lat, gps_lng, supplier_id, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                 arguments: [partId, qty, fromLocationType, fromLocationId,
                             toLocationType, toLocationId, movementType,
                             reason, notes, performedBy, jobId, photoPath,
                             referenceNumber, unitCostAtMove, unitSellAtMove,
-                            verifiedBy, scanConfirmed ? 1 : 0, gpsLat, gpsLng,
+                            verifiedBy, scanConfirmed ? 1 : 0, gpsLat, gpsLng, supplierId,
                             occurredAt.map(Self.sqliteDateString) ?? Self.sqliteDateString(Date())]
             )
             let movementId = dbConn.lastInsertedRowID
@@ -1931,6 +1932,15 @@ public final class WarehouseService: Sendable {
                 arguments: [sessionId]
             )
 
+            // Resolve the supplier for this session's PO so receiving movements
+            // carry supplier attribution (used by supplier quality scores).
+            let sessionSupplierId = try Int64.fetchOne(dbConn, sql: """
+                SELECT po.supplier_id
+                FROM receiving_sessions rs
+                JOIN purchase_orders po ON po.id = rs.po_id AND po.deleted_at IS NULL
+                WHERE rs.id = ? AND rs.deleted_at IS NULL
+                """, arguments: [sessionId])
+
             // Create shelf stock movements for each received item that was not
             // already routed to staging, return/review, or write-off.
             let items = try Row.fetchAll(
@@ -1962,15 +1972,16 @@ public final class WarehouseService: Sendable {
                 guard partId > 0, shelfQty > 0 else { continue }
                 let unitCost: Double? = item["actual_cost"] as Double?
 
-                // Insert movement
+                // Insert movement (stamped with the PO's supplier so supplier
+                // quality scores can count these units as received)
                 try dbConn.execute(
                     sql: """
                         INSERT INTO stock_movements
                         (part_id, qty, to_location_type, to_location_id,
-                         movement_type, reason, performed_by, unit_cost_at_move, created_at)
-                        VALUES (?, ?, 'warehouse', 1, '\(StockMovement.MovementType.receiving.rawValue)', 'PO receiving', ?, ?, datetime('now'))
+                         movement_type, reason, performed_by, unit_cost_at_move, supplier_id, created_at)
+                        VALUES (?, ?, 'warehouse', 1, '\(StockMovement.MovementType.receiving.rawValue)', 'PO receiving', ?, ?, ?, datetime('now'))
                         """,
-                    arguments: [partId, shelfQty, completedBy, unitCost]
+                    arguments: [partId, shelfQty, completedBy, unitCost, sessionSupplierId]
                 )
 
                 // Add to warehouse stock
@@ -3826,15 +3837,30 @@ public final class WarehouseService: Sendable {
     }
 
     /// Move received parts to staging for a job (does NOT count toward shelf inventory).
+    ///
+    /// Supplier attribution: pass `supplierId` directly, or pass the
+    /// `receivingSessionId` the items came from and the supplier is resolved
+    /// from that session's purchase order. The resolved supplier is stamped on
+    /// the stock movement so supplier quality scores
+    /// (`PartsService.calculateSupplierScores`) count staged units in the
+    /// received denominator — completeSession skips staged items when it
+    /// writes supplier-stamped shelf movements, so this is the only place
+    /// staged units can pick up their supplier.
     @discardableResult
     public func stageReceivedPartsForJob(
         partId: Int64,
         qty: Int,
         jobId: Int64,
         performedBy: Int64,
-        notes: String? = nil
+        notes: String? = nil,
+        supplierId: Int64? = nil,
+        receivingSessionId: Int64? = nil
     ) throws -> Int64 {
-        try createMovement(
+        let resolvedSupplierId = try resolveSupplierId(
+            supplierId: supplierId,
+            receivingSessionId: receivingSessionId
+        )
+        return try createMovement(
             partId: partId,
             qty: qty,
             fromLocationType: nil,
@@ -3845,8 +3871,28 @@ public final class WarehouseService: Sendable {
             reason: "Received and staged for job",
             notes: notes,
             performedBy: performedBy,
-            jobId: jobId
+            jobId: jobId,
+            supplierId: resolvedSupplierId
         )
+    }
+
+    /// Resolve a supplier for a receiving-flow movement: an explicit
+    /// `supplierId` wins; otherwise the supplier is looked up from the
+    /// receiving session's purchase order. Returns nil when neither resolves.
+    private func resolveSupplierId(
+        supplierId: Int64?,
+        receivingSessionId: Int64?
+    ) throws -> Int64? {
+        if let supplierId { return supplierId }
+        guard let sessionId = receivingSessionId else { return nil }
+        return try db.writer.read { dbConn in
+            try Int64.fetchOne(dbConn, sql: """
+                SELECT po.supplier_id
+                FROM receiving_sessions rs
+                JOIN purchase_orders po ON po.id = rs.po_id AND po.deleted_at IS NULL
+                WHERE rs.id = ? AND rs.deleted_at IS NULL
+                """, arguments: [sessionId])
+        }
     }
 
     /// Record a write-off for used/damaged parts that won't go on shelf.
@@ -3873,15 +3919,27 @@ public final class WarehouseService: Sendable {
     }
 
     /// Record a supplier return for damaged parts.
+    ///
+    /// Supplier attribution: pass `supplierId` directly, or pass the
+    /// `receivingSessionId` the damaged item came from and the supplier is
+    /// resolved from that session's purchase order. The resolved supplier is
+    /// stamped on the stock movement so supplier quality scores
+    /// (`PartsService.calculateSupplierScores`) can count the returned units.
     @discardableResult
     public func returnDamagedToSupplier(
         partId: Int64,
         qty: Int,
         returnType: String,  // "replacement" or "refund"
         performedBy: Int64,
-        notes: String? = nil
+        notes: String? = nil,
+        supplierId: Int64? = nil,
+        receivingSessionId: Int64? = nil
     ) throws -> Int64 {
-        try createMovement(
+        let resolvedSupplierId = try resolveSupplierId(
+            supplierId: supplierId,
+            receivingSessionId: receivingSessionId
+        )
+        return try createMovement(
             partId: partId,
             qty: qty,
             fromLocationType: nil,
@@ -3891,7 +3949,8 @@ public final class WarehouseService: Sendable {
             movementType: StockMovement.MovementType.returnToSupplier.rawValue,
             reason: "Damaged: \(returnType)",
             notes: notes,
-            performedBy: performedBy
+            performedBy: performedBy,
+            supplierId: resolvedSupplierId
         )
     }
 

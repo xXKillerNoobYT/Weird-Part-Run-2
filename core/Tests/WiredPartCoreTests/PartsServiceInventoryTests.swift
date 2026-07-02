@@ -357,6 +357,238 @@ struct PartsServiceInventoryTests {
         #expect(reliability >= 0 && reliability <= 100, "reliability_score must be in [0, 100]")
     }
 
+    @Test("calculateSupplierScores counts return_to_supplier movements as returned units")
+    func testCalculateSupplierScores_countsReturnToSupplier() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "RTSCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "RTSPart", categoryId: catId)
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "RTSSupplier")
+
+        try env.db.writer.write { db in
+            // 10 units received from the supplier — the receiving flow writes
+            // movement_type 'receiving' with the PO's supplier stamped.
+            try db.execute(sql: """
+                INSERT INTO stock_movements
+                    (part_id, qty, to_location_type, to_location_id, movement_type, supplier_id, performed_by, created_at)
+                VALUES (?, 10, 'warehouse', 1, 'receiving', ?, ?, datetime('now'))
+                """, arguments: [partId, supplierId, env.adminUserId])
+            // 2 units returned — the supplier-return flow writes
+            // movement_type 'return_to_supplier' with NO location endpoints.
+            // Regression (GH#84): the score query only counted 'return' rows
+            // with supplier-bound locations, so returns never affected quality.
+            try db.execute(sql: """
+                INSERT INTO stock_movements
+                    (part_id, qty, movement_type, supplier_id, performed_by, created_at)
+                VALUES (?, 2, 'return_to_supplier', ?, ?, datetime('now'))
+                """, arguments: [partId, supplierId, env.adminUserId])
+        }
+
+        let scores = try env.parts.calculateSupplierScores(supplierId: supplierId)
+        #expect(scores.totalUnitsReceived == 10, "'receiving' movements must count as received units")
+        #expect(scores.totalUnitsReturned == 2, "'return_to_supplier' movements must count as returned units")
+        #expect(scores.qualityScore == 80, "quality = 100 - (2/10 × 100)")
+    }
+
+    @Test("calculateSupplierScores still counts legacy supplier-bound 'return' movements")
+    func testCalculateSupplierScores_countsLegacySupplierBoundReturns() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "LegacyReturnCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "LegacyReturnPart", categoryId: catId)
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "LegacyReturnSupplier")
+
+        try env.db.writer.write { db in
+            // Legacy shape: movement_type 'return' explicitly routed warehouse → supplier
+            try db.execute(sql: """
+                INSERT INTO stock_movements
+                    (part_id, qty, from_location_type, from_location_id, to_location_type, to_location_id,
+                     movement_type, supplier_id, performed_by, created_at)
+                VALUES (?, 4, 'warehouse', 1, 'supplier', ?, 'return', ?, ?, datetime('now'))
+                """, arguments: [partId, supplierId, supplierId, env.adminUserId])
+            // A job return to the warehouse must NOT count against the supplier
+            try db.execute(sql: """
+                INSERT INTO stock_movements
+                    (part_id, qty, from_location_type, from_location_id, to_location_type, to_location_id,
+                     movement_type, supplier_id, performed_by, created_at)
+                VALUES (?, 7, 'job_return_holding', 1, 'warehouse', 1, 'return', ?, ?, datetime('now'))
+                """, arguments: [partId, supplierId, env.adminUserId])
+        }
+
+        let scores = try env.parts.calculateSupplierScores(supplierId: supplierId)
+        #expect(scores.totalUnitsReturned == 4,
+                "legacy supplier-bound 'return' rows count; warehouse-bound job returns do not")
+    }
+
+    @Test("returnDamagedToSupplier stamps supplier attribution resolved from the receiving session")
+    func testReturnDamagedToSupplier_resolvesSupplierFromSession() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "DamagedCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "DamagedPart", categoryId: catId)
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "DamagedSupplier")
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-DMG-001", supplierId: supplierId)
+        _ = try env.orders.addPOLineItem(poId: poId, partId: partId, quantity: 5, unitPrice: 1.0)
+        let sessionId = try env.warehouse.startReceivingSession(poId: poId, startedBy: env.adminUserId)
+
+        let movementId = try env.warehouse.returnDamagedToSupplier(
+            partId: partId,
+            qty: 3,
+            returnType: "refund",
+            performedBy: env.adminUserId,
+            receivingSessionId: sessionId
+        )
+
+        let stamped = try env.db.writer.read { db in
+            try Int64.fetchOne(db, sql: "SELECT supplier_id FROM stock_movements WHERE id = ?",
+                               arguments: [movementId])
+        }
+        #expect(stamped == supplierId, "supplier must be resolved from session → PO → supplier")
+
+        let scores = try env.parts.calculateSupplierScores(supplierId: supplierId)
+        #expect(scores.totalUnitsReturned == 3, "damaged return must feed the supplier quality score")
+    }
+
+    @Test("completeSession stamps supplier_id on shelf receiving movements")
+    func testCompleteSession_stampsSupplierOnReceivingMovements() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "RcvStampCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "RcvStampPart", categoryId: catId)
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "RcvStampSupplier")
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-STAMP-001", supplierId: supplierId)
+        _ = try env.orders.addPOLineItem(poId: poId, partId: partId, quantity: 4, unitPrice: 2.5)
+        let sessionId = try env.warehouse.startReceivingSession(poId: poId, startedBy: env.adminUserId)
+
+        let itemId: Int64 = try env.db.writer.read { db in
+            try Int64.fetchOne(db, sql: """
+                SELECT id FROM receiving_session_items WHERE session_id = ?
+                """, arguments: [sessionId]) ?? 0
+        }
+        #expect(itemId > 0)
+        try env.warehouse.updateSessionItem(itemId: itemId, receivedQty: 4)
+        try env.warehouse.completeSession(sessionId: sessionId, completedBy: env.adminUserId)
+
+        let stamped = try env.db.writer.read { db in
+            try Int64.fetchOne(db, sql: """
+                SELECT supplier_id FROM stock_movements
+                WHERE part_id = ? AND movement_type = 'receiving'
+                """, arguments: [partId])
+        }
+        #expect(stamped == supplierId, "receiving movement must carry the PO's supplier")
+
+        let scores = try env.parts.calculateSupplierScores(supplierId: supplierId)
+        #expect(scores.totalUnitsReceived == 4, "received units must flow into the quality denominator")
+    }
+
+    @Test("stageReceivedPartsForJob stamps supplier and staged units feed the quality denominator")
+    func testStageReceivedPartsForJob_stampsSupplierAndCountsAsReceived() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "StagedRcvCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "StagedRcvPart", categoryId: catId)
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "StagedRcvSupplier")
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-STG-001", name: "Staged Receiving Job")
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-STG-001", supplierId: supplierId)
+        _ = try env.orders.addPOLineItem(poId: poId, partId: partId, quantity: 10, unitPrice: 1.0)
+        let sessionId = try env.warehouse.startReceivingSession(poId: poId, startedBy: env.adminUserId)
+
+        // Regression (GH#84 review): a PO fully staged for a job wrote
+        // 'receiving_staged' with NO supplier_id, so totalUnitsReceived stayed 0
+        // and one damaged return from the same delivery drove quality to 0%.
+        let movementId = try env.warehouse.stageReceivedPartsForJob(
+            partId: partId,
+            qty: 8,
+            jobId: jobId,
+            performedBy: env.adminUserId,
+            receivingSessionId: sessionId
+        )
+
+        let stamped = try env.db.writer.read { db in
+            try Int64.fetchOne(db, sql: "SELECT supplier_id FROM stock_movements WHERE id = ?",
+                               arguments: [movementId])
+        }
+        #expect(stamped == supplierId, "staged receiving must carry the supplier resolved from session → PO")
+
+        _ = try env.warehouse.returnDamagedToSupplier(
+            partId: partId,
+            qty: 2,
+            returnType: "refund",
+            performedBy: env.adminUserId,
+            receivingSessionId: sessionId
+        )
+
+        let scores = try env.parts.calculateSupplierScores(supplierId: supplierId)
+        #expect(scores.totalUnitsReceived == 8, "staged units must count in the received denominator")
+        #expect(scores.totalUnitsReturned == 2, "damaged return from the same delivery counts as returned")
+        #expect(scores.qualityScore == 75, "quality = 100 - (2/8 × 100) — not 0% for a fully-staged PO")
+    }
+
+    // MARK: - Supplier Traceability (GH#84)
+
+    @Test("getSupplierTrace returns supplier-attributed movements newest first with part names")
+    func testGetSupplierTrace() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "TraceCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Traceable Widget", categoryId: catId)
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "TraceSupplier")
+        let otherSupplierId = try E2ETestHelpers.seedSupplier(env, name: "OtherTraceSupplier")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO stock_movements
+                    (part_id, qty, to_location_type, to_location_id, movement_type, supplier_id, performed_by, created_at)
+                VALUES (?, 10, 'warehouse', 1, 'receiving', ?, ?, datetime('now', '-2 days'))
+                """, arguments: [partId, supplierId, env.adminUserId])
+            try db.execute(sql: """
+                INSERT INTO stock_movements
+                    (part_id, qty, movement_type, supplier_id, performed_by, created_at)
+                VALUES (?, 2, 'return_to_supplier', ?, ?, datetime('now', '-1 days'))
+                """, arguments: [partId, supplierId, env.adminUserId])
+            // Different supplier — must not appear
+            try db.execute(sql: """
+                INSERT INTO stock_movements
+                    (part_id, qty, to_location_type, to_location_id, movement_type, supplier_id, performed_by, created_at)
+                VALUES (?, 99, 'warehouse', 1, 'receiving', ?, ?, datetime('now'))
+                """, arguments: [partId, otherSupplierId, env.adminUserId])
+        }
+
+        let trace = try env.parts.getSupplierTrace(supplierId: supplierId, limit: 10)
+        #expect(trace.count == 2)
+        #expect(trace.first?.movementType == "return_to_supplier", "newest first")
+        #expect(trace.allSatisfy { $0.partName == "Traceable Widget" })
+        #expect(trace.allSatisfy { $0.partId == partId })
+
+        // Receiving and return_to_supplier rows leave from/to_location_* nil
+        // on the supplier side (see WarehouseService). traceStep must fall
+        // back to supplier_id so the trace shows the supplier instead of
+        // "Unknown" (GH#84 traceability).
+        let returnStep = try #require(trace.first { $0.movementType == "return_to_supplier" })
+        #expect(returnStep.toLocation == "Supplier: TraceSupplier")
+        let receivingStep = try #require(trace.first { $0.movementType == "receiving" })
+        #expect(receivingStep.fromLocation == "Supplier: TraceSupplier")
+    }
+
+    @Test("tracePartMovements resolves specific job names for location endpoints")
+    func testTracePartMovements_locationNameFidelity() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "FidelityCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "FidelityPart", categoryId: catId)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-FID-1", name: "Fidelity Jobsite")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO stock_movements
+                    (part_id, qty, from_location_type, from_location_id, to_location_type, to_location_id,
+                     movement_type, performed_by, created_at)
+                VALUES (?, 5, 'warehouse', 1, 'job', ?, 'consume', ?, datetime('now'))
+                """, arguments: [partId, jobId, env.adminUserId])
+        }
+
+        let steps = try env.parts.tracePartMovements(partId: partId)
+        let step = try #require(steps.first)
+        #expect(step.toLocation == "Job Site: Fidelity Jobsite",
+                "job endpoints must resolve to the actual job name, not a generic type label")
+        // No warehouse_locations row with id 1 exists in a fresh test DB,
+        // so the from side falls back to the generic label.
+        #expect(step.fromLocation == "Warehouse")
+    }
+
     // MARK: - recalculateAllSupplierScores
 
     @Test("recalculateAllSupplierScores completes without error on empty DB")

@@ -659,4 +659,125 @@ struct E2EPartsCatalogTests {
         #expect(cleared.effectiveCost == nil)
         #expect(cleared.source == "none")
     }
+
+    // MARK: - Catalog Filter Facet Counts (GH#67 smart-card stat filters)
+
+    @Test("getCatalogFilterCounts returns per-dimension counts with own-dimension exclusion")
+    func testCatalogFilterCounts() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catA = try env.parts.createCategory(name: "FacetCatA")
+        let catB = try env.parts.createCategory(name: "FacetCatB")
+        let brandX = try E2ETestHelpers.seedBrand(env, name: "FacetBrandX")
+        _ = try env.parts.createPart(categoryId: catA, name: "FacetPart1", code: "FP-1", brandId: brandX)
+        _ = try env.parts.createPart(categoryId: catA, name: "FacetPart2", code: "FP-2")
+        _ = try env.parts.createPart(categoryId: catB, name: "FacetPart3", code: "FP-3", brandId: brandX)
+
+        let unfiltered = try env.parts.getCatalogFilterCounts()
+        #expect(unfiltered.allParts == 3)
+        #expect(unfiltered.byCategory[catA] == 2)
+        #expect(unfiltered.byCategory[catB] == 1)
+        #expect(unfiltered.byBrand[brandX] == 2)
+
+        // With a category filter active:
+        let filtered = try env.parts.getCatalogFilterCounts(categoryId: catA)
+        #expect(filtered.byBrand[brandX] == 1, "brand facet must respect the active category filter")
+        #expect(filtered.byCategory[catB] == 1,
+                "category facet excludes its own selection so other options stay pickable")
+        #expect(filtered.allParts == 3, "All Parts card ignores dimension filters")
+    }
+
+    @Test("getCatalogFilterCounts lowStock counts parts below min stock under current filters")
+    func testCatalogFilterCountsLowStock() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try env.parts.createCategory(name: "LowFacetCat")
+        _ = try env.parts.createPart(categoryId: catId, name: "LowFacetPart", code: "LF-1", minStockLevel: 5)
+        let healthyId = try env.parts.createPart(categoryId: catId, name: "HealthyFacetPart", code: "LF-2", minStockLevel: 5)
+        _ = try E2ETestHelpers.seedStock(env, partId: healthyId, qty: 10)
+
+        let counts = try env.parts.getCatalogFilterCounts(categoryId: catId)
+        #expect(counts.lowStock == 1, "only the part below its min stock level counts as low stock")
+    }
+
+    @Test("getCatalogFilterCounts lowStockOnly restricts dimension facets to low-stock parts")
+    func testCatalogFilterCountsLowStockOnly() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catA = try env.parts.createCategory(name: "LowOnlyCatA")
+        let catB = try env.parts.createCategory(name: "LowOnlyCatB")
+        let brandX = try E2ETestHelpers.seedBrand(env, name: "LowOnlyBrandX")
+        // catA: one low-stock part (no stock, min 5) + one healthy part
+        _ = try env.parts.createPart(categoryId: catA, name: "LowOnlyLow", code: "LO-1", brandId: brandX, minStockLevel: 5)
+        let healthyA = try env.parts.createPart(categoryId: catA, name: "LowOnlyHealthy", code: "LO-2", brandId: brandX, minStockLevel: 5)
+        _ = try E2ETestHelpers.seedStock(env, partId: healthyA, qty: 10)
+        // catB: one healthy part only
+        let healthyB = try env.parts.createPart(categoryId: catB, name: "LowOnlyHealthyB", code: "LO-3", minStockLevel: 5)
+        _ = try E2ETestHelpers.seedStock(env, partId: healthyB, qty: 10)
+
+        // Regression (GH#67 review): with the Low Stock toggle active, dimension
+        // badges previously counted every part, contradicting the visible list.
+        let counts = try env.parts.getCatalogFilterCounts(lowStockOnly: true)
+        #expect(counts.byCategory[catA] == 1, "category facet must count only low-stock parts when the toggle is on")
+        #expect(counts.byCategory[catB] == nil, "categories with zero low-stock parts must not report a count")
+        #expect(counts.byBrand[brandX] == 1, "brand facet must count only low-stock parts when the toggle is on")
+        #expect(counts.lowStock == 1, "Low Stock card's own count excludes the toggle itself")
+        #expect(counts.allParts == 3, "All Parts stays search-only — tapping it resets every filter")
+    }
+
+    @Test("getCatalogFilterCounts respects search text")
+    func testCatalogFilterCountsSearch() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try env.parts.createCategory(name: "SearchFacetCat")
+        _ = try env.parts.createPart(categoryId: catId, name: "Copper Elbow", code: "SF-1")
+        _ = try env.parts.createPart(categoryId: catId, name: "PVC Elbow", code: "SF-2")
+
+        let counts = try env.parts.getCatalogFilterCounts(search: "Copper", categoryId: catId)
+        #expect(counts.allParts == 1)
+        #expect(counts.byCategory[catId] == 1)
+    }
+
+    // MARK: - Part-Level Pricing Target (GH#83)
+
+    @Test("getPreviewParts scoped to a single part returns only that part")
+    func testGetPreviewPartsPartLevel() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try env.parts.createCategory(name: "PartTierCat")
+        let p1 = try env.parts.createPart(categoryId: catId, name: "PartTierTarget", code: "PT-1")
+        _ = try env.parts.createPart(categoryId: catId, name: "PartTierOther", code: "PT-2")
+
+        let preview = try env.parts.getPreviewParts(partId: p1, newMarkupPercent: 25)
+        #expect(preview.count == 1)
+        #expect(preview.first?.partId == p1)
+    }
+
+    @Test("findOverrideConflicts at part level returns no conflicts")
+    func testFindOverrideConflictsPartLevel() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try env.parts.createCategory(name: "PartConflictCat")
+        let p1 = try env.parts.createPart(categoryId: catId, name: "PartConflictTarget", code: "PC-1")
+
+        // Even with an existing part tier — the setPricingTier upsert replaces
+        // it, so there is nothing for the user to review one-at-a-time.
+        _ = try env.parts.setPricingTier(partId: p1, markupPercent: 10)
+        let conflicts = try env.parts.findOverrideConflicts(partId: p1, newMarkupPercent: 25)
+        #expect(conflicts.isEmpty, "part is the most specific level — no lower-level overrides exist")
+    }
+
+    @Test("setPricingTier at part level replaces the previous tier for the same part")
+    func testSetPricingTierPartLevelUpsert() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try env.parts.createCategory(name: "PartUpsertCat")
+        let p1 = try env.parts.createPart(categoryId: catId, name: "PartUpsertTarget", code: "PU-1")
+
+        _ = try env.parts.setPricingTier(partId: p1, markupPercent: 10)
+        _ = try env.parts.setPricingTier(partId: p1, markupPercent: 30)
+
+        let rows = try env.db.writer.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT markup_percent FROM pricing_tiers
+                WHERE part_id = ? AND deleted_at IS NULL
+                """, arguments: [p1])
+        }
+        #expect(rows.count == 1, "only one active part-level tier may exist per part")
+        let markup: Double? = rows.first?["markup_percent"]
+        #expect(markup == 30)
+    }
 }
