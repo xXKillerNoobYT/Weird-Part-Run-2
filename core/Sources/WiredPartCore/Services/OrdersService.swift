@@ -3016,6 +3016,12 @@ public final class OrdersService: Sendable {
 
     /// Generate a Purchase Order from an approved JPO. Creates a new PO and links its
     /// line items to the JPO line items, then marks the JPO as "ordered".
+    ///
+    /// General-mode lines (`brand_selection_mode = 'general'`) are resolved to a concrete
+    /// brand for the chosen supplier via the same core as `generatePOsFromProcurement`;
+    /// the resolved `brand_id` is persisted and the mode is kept as `'general'` for
+    /// auditability. Throws `OrdersError.generalBrandUnresolved` (rolling back the whole
+    /// transaction) when the supplier carries no matching brand. (#243)
     @discardableResult
     public func generatePOFromJPO(jpoId: Int64, supplierId: Int64) throws -> Int64 {
         try db.writer.write { dbConn in
@@ -3034,11 +3040,12 @@ public final class OrdersService: Sendable {
             }
 
             // Guard: supplier must exist and not be tombstoned — a PO against a deleted
-            // supplier won't surface in supplier-filtered list views.
-            let supplierExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM suppliers WHERE id = ? AND deleted_at IS NULL
-                """, arguments: [supplierId]) ?? 0) > 0
-            guard supplierExists else { throw OrdersError.supplierNotFound(supplierId) }
+            // supplier won't surface in supplier-filtered list views. Fetching the name
+            // (rather than COUNT) also feeds the generalBrandUnresolved error below.
+            guard let supplierName = try String.fetchOne(dbConn, sql: """
+                SELECT name FROM suppliers WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [supplierId])
+            else { throw OrdersError.supplierNotFound(supplierId) }
 
             // Generate PO number (MAX-based to prevent duplicates after deletions)
             let maxNum = try Int.fetchOne(
@@ -3062,9 +3069,11 @@ public final class OrdersService: Sendable {
             let lines = try Row.fetchAll(
                 dbConn,
                 sql: """
-                    SELECT id, part_id, qty_requested
-                    FROM jpo_line_items
-                    WHERE jpo_id = ? AND deleted_at IS NULL
+                    SELECT jl.id, jl.part_id, jl.qty_requested, jl.brand_selection_mode,
+                           p.name AS part_name
+                    FROM jpo_line_items jl
+                    LEFT JOIN parts p ON p.id = jl.part_id AND p.deleted_at IS NULL
+                    WHERE jl.jpo_id = ? AND jl.deleted_at IS NULL
                     """,
                 arguments: [jpoId]
             )
@@ -3072,13 +3081,40 @@ public final class OrdersService: Sendable {
                 let partId: Int64 = line["part_id"] ?? 0
                 let qty: Int = line["qty_requested"] ?? 1
                 let jpoLineId: Int64 = line["id"] ?? 0
+
+                // General-mode lines carry no brand — resolve one against the chosen
+                // supplier and persist it on the PO line. The mode stays 'general' so
+                // audits can see this was an auto-resolution. Mirrors
+                // generatePOsFromProcurement — both JPO-to-PO paths share one invariant. (#243)
+                let brandSelectionMode: String = line["brand_selection_mode"] ?? "specific"
+                var resolvedBrandId: Int64? = nil
+                if brandSelectionMode == "general" {
+                    switch try Self.resolveGeneralLineItem(
+                        jpoLineId: jpoLineId, supplierId: supplierId, dbConn: dbConn
+                    ) {
+                    case .resolved(let brandId, _):
+                        resolvedBrandId = brandId
+                    case .noMatch:
+                        throw OrdersError.generalBrandUnresolved(
+                            partId: partId,
+                            partName: line["part_name"] as String?,
+                            supplierId: supplierId,
+                            supplierName: supplierName
+                        )
+                    case .alreadySpecific:
+                        break
+                    }
+                }
+
                 try dbConn.execute(
                     sql: """
                         INSERT INTO po_line_items
-                        (po_id, jpo_line_id, part_id, qty_ordered, created_at)
-                        VALUES (?, ?, ?, ?, datetime('now'))
+                        (po_id, jpo_line_id, part_id, qty_ordered,
+                         brand_id, brand_selection_mode, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
                         """,
-                    arguments: [poId, jpoLineId, partId, qty]
+                    arguments: [poId, jpoLineId, partId, qty,
+                                resolvedBrandId, brandSelectionMode]
                 )
                 let poLineId = dbConn.lastInsertedRowID
                 try dbConn.execute(
@@ -4107,8 +4143,9 @@ public final class OrdersService: Sendable {
         }
     }
 
-    /// Connection-scoped resolution core — shared by the public read-only API and
-    /// `generatePOsFromProcurement`, which runs inside a write transaction. (#243)
+    /// Connection-scoped resolution core — shared by the public read-only API and the
+    /// two JPO-to-PO conversion paths (`generatePOsFromProcurement` and
+    /// `generatePOFromJPO`), which run inside write transactions. (#243)
     private static func resolveGeneralLineItem(
         jpoLineId: Int64,
         supplierId: Int64,
