@@ -30,6 +30,9 @@ struct IOSJPOCreationPage: View {
 
     @State private var searchText = ""
     @State private var searchResults: [Part] = []
+    /// Inline error for the part search panel — a failed search must not render
+    /// as "No parts found" (#1335). Cleared on each successful search.
+    @State private var searchError: String?
     @State private var isSearching = false
     @State private var recentSearches: [String] = []
     @State private var bestMatchName: String?
@@ -367,6 +370,7 @@ struct IOSJPOCreationPage: View {
                     Button {
                         searchText = ""
                         searchResults = []
+                        searchError = nil
                         bestMatchName = nil
                     } label: {
                         Image(systemName: "xmark.circle.fill")
@@ -384,6 +388,23 @@ struct IOSJPOCreationPage: View {
                 ProgressView()
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 8)
+            } else if let error = searchError {
+                // Inline search error row with retry (#1335) — keeps the rest of
+                // the order form usable while making the failure visible.
+                HStack(spacing: 8) {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                    Spacer()
+                    Button {
+                        searchParts()
+                    } label: {
+                        Label("Retry", systemImage: "arrow.clockwise")
+                            .font(.caption)
+                    }
+                    .accessibilityLabel("Retry part search")
+                }
+                .padding(.vertical, 8)
             } else if searchResults.isEmpty && !searchText.isEmpty && searchText.count >= 2 {
                 Text("No parts found for \"\(searchText)\"")
                     .font(.caption)
@@ -911,8 +932,16 @@ struct IOSJPOCreationPage: View {
     // MARK: - Search
 
     private func searchParts() {
-        guard let service = appCore.partsService, searchText.count >= 2 else {
-            submitError = "Parts service not available"
+        // A short query is not an error — just clear results (#1335: this used to
+        // raise a misleading "Parts service not available" submitError).
+        guard searchText.count >= 2 else {
+            searchResults = []
+            searchError = nil
+            bestMatchName = nil
+            return
+        }
+        guard let service = appCore.partsService else {
+            searchError = "Parts service not available"
             searchResults = []
             bestMatchName = nil
             return
@@ -920,11 +949,14 @@ struct IOSJPOCreationPage: View {
         isSearching = true
         bestMatchName = nil
 
-        // Standard search
+        // Standard search — surface failures inline so a DB error is
+        // distinguishable from a genuine zero-result search (#1335).
         do {
             searchResults = try service.searchParts(query: searchText, limit: 20)
+            searchError = nil
         } catch {
             searchResults = []
+            searchError = userFriendlyError(error, context: "search parts")
         }
         isSearching = false
 

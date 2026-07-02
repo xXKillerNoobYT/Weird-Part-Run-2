@@ -17,6 +17,9 @@ struct IOSWishlistPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var loadError: String?
+    /// Degraded-state banner when the auto-approval write pass fails — eligible
+    /// items would otherwise stay pending forever with no indication (#1335).
+    @State private var autoApprovalError: String?
     @State private var activeSheet: ActiveSheet?
     @State private var itemToDelete: WishlistItem?
 
@@ -96,6 +99,19 @@ struct IOSWishlistPage: View {
         VStack(spacing: 0) {
             OnboardingBanner(pageId: "orders-wishlist")
             smartCardFilters
+            if let error = autoApprovalError {
+                // Auto-approval pass failed (#1335) — items stay pending until retry.
+                HStack(spacing: 8) {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                    Spacer()
+                    Button("Retry") { loadData() }
+                        .font(.callout)
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 6)
+            }
             contentView
         }
         .task { appCore.onboardingManager?.markCompleted("wishlist-view") }
@@ -775,20 +791,31 @@ struct IOSWishlistPage: View {
         // processAutoApprovals was removed from getSectionedItems() to avoid main-thread
         // DB writes inside a read; we fire it here as a detached utility task instead.
         Task.detached(priority: .utility) {
-            _ = try? service.processAutoApprovals(byUserId: currentUserId)
+            // Auto-approval is a WRITE: if it throws, items that policy says should
+            // auto-approve silently stay pending. Surface it as a banner (#1335)
+            // while still loading the sections below so the page stays usable.
+            var autoApprovalFailure: String?
+            do {
+                _ = try service.processAutoApprovals(byUserId: currentUserId)
+            } catch {
+                autoApprovalFailure = userFriendlyError(error, context: "run wishlist auto-approvals")
+            }
             do {
                 let result = try service.getSectionedItems()
                 // Counts are computed independently so card totals reflect ALL items,
-                // not just the currently-filtered subset.
-                let counts = (try? service.getStatusCounts()) ?? WishlistService.StatusCounts()
+                // not just the currently-filtered subset. A counts failure now routes
+                // to loadError instead of rendering all-zero status cards (#1335).
+                let counts = try service.getStatusCounts()
                 await MainActor.run {
                     sections = result
                     statusCounts = counts
+                    autoApprovalError = autoApprovalFailure
                     isLoading = false
                     postAIContext()
                 }
             } catch {
                 await MainActor.run {
+                    autoApprovalError = autoApprovalFailure
                     loadError = userFriendlyError(error, context: "load wishlist")
                     isLoading = false
                 }
