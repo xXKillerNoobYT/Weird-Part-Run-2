@@ -34,7 +34,7 @@ public final class BreakService: Sendable {
                 try BreakPolicy
                     .filter(Column("state_code") == stateCode && Column("deleted_at") == nil)
                     .filter(Column("work_day_hours") <= dayHours)
-                    .order(Column("policy_type").asc)
+                    .order(Column("policy_type").asc, Column("work_day_hours").desc)
                     .fetchAll(dbConn)
             }
         } catch {
@@ -49,7 +49,7 @@ public final class BreakService: Sendable {
             return try db.writer.read { dbConn in
                 try BreakPolicy
                     .filter(Column("deleted_at") == nil)
-                    .order(Column("state_code").asc, Column("policy_type").asc)
+                    .order(Column("state_code").asc, Column("policy_type").asc, Column("work_day_hours").asc)
                     .fetchAll(dbConn)
             }
         } catch {
@@ -71,15 +71,76 @@ public final class BreakService: Sendable {
     ) throws -> BreakPolicy {
         do {
             return try db.writer.write { dbConn in
-                var policy = BreakPolicy(
-                    id: nil, stateCode: stateCode, policyType: policyType,
-                    workDayHours: workDayHours, lunchMinutes: lunchMinutes,
-                    breakCount: breakCount, breakMinutes: breakMinutes,
-                    dataSource: dataSource, dataDate: Self.todayString(),
-                    createdAt: nil, updatedAt: nil, deletedAt: nil
+                let dataDate = Self.todayString()
+                let matchingPolicySQL = """
+                    SELECT id
+                    FROM break_policies
+                    WHERE deleted_at IS NULL
+                      AND policy_type = ?
+                      AND work_day_hours = ?
+                      AND ((? IS NULL AND state_code IS NULL) OR state_code = ?)
+                    ORDER BY id ASC
+                    """
+                let matchingIds = try Int64.fetchAll(
+                    dbConn,
+                    sql: matchingPolicySQL,
+                    arguments: [policyType, workDayHours, stateCode, stateCode]
                 )
-                try policy.insert(dbConn)
-                return policy
+
+                if let policyId = matchingIds.first {
+                    try dbConn.execute(sql: """
+                        UPDATE break_policies
+                        SET state_code = ?,
+                            policy_type = ?,
+                            work_day_hours = ?,
+                            lunch_minutes = ?,
+                            break_count = ?,
+                            break_minutes = ?,
+                            data_source = ?,
+                            data_date = ?,
+                            updated_at = datetime('now'),
+                            deleted_at = NULL
+                        WHERE id = ?
+                        """, arguments: [
+                            stateCode, policyType, workDayHours, lunchMinutes,
+                            breakCount, breakMinutes, dataSource, dataDate, policyId
+                        ])
+
+                    if matchingIds.count > 1 {
+                        try dbConn.execute(sql: """
+                            UPDATE break_policies
+                            SET deleted_at = datetime('now'),
+                                updated_at = datetime('now')
+                            WHERE id IN (
+                                SELECT id
+                                FROM break_policies
+                                WHERE deleted_at IS NULL
+                                  AND policy_type = ?
+                                  AND work_day_hours = ?
+                                  AND ((? IS NULL AND state_code IS NULL) OR state_code = ?)
+                                  AND id <> ?
+                            )
+                            """, arguments: [policyType, workDayHours, stateCode, stateCode, policyId])
+                    }
+
+                    return try BreakPolicy.fetchOne(dbConn, key: policyId) ?? BreakPolicy(
+                        id: policyId, stateCode: stateCode, policyType: policyType,
+                        workDayHours: workDayHours, lunchMinutes: lunchMinutes,
+                        breakCount: breakCount, breakMinutes: breakMinutes,
+                        dataSource: dataSource, dataDate: dataDate,
+                        createdAt: nil, updatedAt: nil, deletedAt: nil
+                    )
+                } else {
+                    var policy = BreakPolicy(
+                        id: nil, stateCode: stateCode, policyType: policyType,
+                        workDayHours: workDayHours, lunchMinutes: lunchMinutes,
+                        breakCount: breakCount, breakMinutes: breakMinutes,
+                        dataSource: dataSource, dataDate: dataDate,
+                        createdAt: nil, updatedAt: nil, deletedAt: nil
+                    )
+                    try policy.insert(dbConn)
+                    return policy
+                }
             }
         } catch {
             if isTableNotFoundError(error) {

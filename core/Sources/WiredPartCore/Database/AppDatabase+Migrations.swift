@@ -145,6 +145,7 @@ extension AppDatabase {
         registerMigration103TimesheetCorrectionAudit(&migrator)
         registerMigration104AuthTokenSessionDeviceId(&migrator)
         registerMigration105JobRecordsLocalFirst(&migrator)
+        registerMigration106BreakPolicyPresets(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5902,5 +5903,13 @@ private func registerMigration100POEmailRequestType(_ migrator: inout DatabaseMi
         try db.alter(table: "purchase_orders") { t in
             t.add(column: "send_group_id", .text)
         }
+    }
+}
+
+// MARK: - Migration 106: Break/lunch policy presets — 50 states + DC (re-lands #436)
+
+private func registerMigration106BreakPolicyPresets(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("106_break_policy_presets") { db in
+        try AppDatabase.seedBreakPolicyPresets(db)
     }
 }
