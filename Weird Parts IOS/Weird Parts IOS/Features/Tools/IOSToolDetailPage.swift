@@ -18,6 +18,11 @@ struct IOSToolDetailPage: View {
     @State private var nextMaintenanceDue: String?
     @State private var isLoading = true
     @State private var loadError: String?
+    /// Scoped sub-section load errors (#1196) — trade/maintenance failures keep
+    /// the rest of the tool detail usable but must be visible: a failed query
+    /// must never render as "no pending trades" or "no maintenance due".
+    @State private var pendingTradesError: String?
+    @State private var maintenanceError: String?
     @State private var activeSheet: ActiveSheet?
     @State private var actionMessage: String?
 
@@ -163,6 +168,31 @@ struct IOSToolDetailPage: View {
                         }
                     }
                     .padding(.vertical, 2)
+                }
+            }
+
+            // Scoped sub-section failure banner (#1196) — the page stays
+            // partially usable, but trade/maintenance load failures render as
+            // a visible, retryable warning instead of clean empty sections.
+            if pendingTradesError != nil || maintenanceError != nil {
+                Section {
+                    if let error = pendingTradesError {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                    if let error = maintenanceError {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                    Button {
+                        loadAllData()
+                    } label: {
+                        Label("Retry", systemImage: "arrow.clockwise")
+                            .font(.caption)
+                    }
+                    .accessibilityLabel("Retry loading trade and maintenance data")
                 }
             }
 
@@ -761,15 +791,30 @@ struct IOSToolDetailPage: View {
             }
             versionHistory = try service.getToolVersionHistory(toolId: toolId)
             pendingEdits = try service.getPendingEdits(toolId: toolId)
-            // Expire old trades then load pending ones
-            _ = try? service.expireOldTrades()
-            if let userId = appCore.currentUser?.id {
-                pendingTrades = (try? service.getPendingTradesForUser(userId: userId)
-                    .filter { $0.toolId == toolId }) ?? []
+
+            // Expire old trades then load pending ones. Scoped do/catch (#1196):
+            // a failure here keeps the rest of the page usable but surfaces a
+            // visible sub-section error; previously loaded trades stay visible
+            // on a failed refresh.
+            do {
+                _ = try service.expireOldTrades()
+                if let userId = appCore.currentUser?.id {
+                    pendingTrades = try service.getPendingTradesForUser(userId: userId)
+                        .filter { $0.toolId == toolId }
+                }
+                pendingTradesError = nil
+            } catch {
+                pendingTradesError = userFriendlyError(error, context: "load pending trades")
             }
-            // Load maintenance configs and next due
-            maintenanceConfigs = (try? service.getMaintenanceConfigs(toolId: toolId)) ?? []
-            nextMaintenanceDue = try? service.calculateNextMaintenanceDate(toolId: toolId)
+
+            // Load maintenance configs and next due — same scoped surfacing (#1196).
+            do {
+                maintenanceConfigs = try service.getMaintenanceConfigs(toolId: toolId)
+                nextMaintenanceDue = try service.calculateNextMaintenanceDate(toolId: toolId)
+                maintenanceError = nil
+            } catch {
+                maintenanceError = userFriendlyError(error, context: "load maintenance data")
+            }
         } catch {
             loadError = userFriendlyError(error, context: "load tool details")
         }
