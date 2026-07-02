@@ -21,6 +21,9 @@ struct DeliveryTimelineBar: View {
     let orderDate: Date?
     let expectedDate: Date?
     let isReceived: Bool
+    /// Injectable clock so the calendar-day logic is testable at fixed
+    /// instants (e.g. late evening) instead of only the test-runtime moment.
+    var now: () -> Date = { Date() }
 
     /// Convenience init accepting ISO-8601 date strings (common in the codebase).
     init(orderDateString: String?, expectedDateString: String?, isReceived: Bool = false) {
@@ -49,7 +52,7 @@ struct DeliveryTimelineBar: View {
         let cal = Calendar.current
         return cal.dateComponents(
             [.day],
-            from: cal.startOfDay(for: Date()),
+            from: cal.startOfDay(for: now()),
             to: cal.startOfDay(for: expected)
         ).day
     }
@@ -58,7 +61,7 @@ struct DeliveryTimelineBar: View {
     var progress: Double {
         guard let order = orderDate, let expected = expectedDate else { return 0 }
         let total = expected.timeIntervalSince(order)
-        let elapsed = Date().timeIntervalSince(order)
+        let elapsed = now().timeIntervalSince(order)
         guard total > 0 else { return 1.0 }
         return min(max(elapsed / total, 0), 1.0)
     }
@@ -89,7 +92,7 @@ struct DeliveryTimelineBar: View {
         return max(0, cal.dateComponents(
             [.day],
             from: cal.startOfDay(for: order),
-            to: cal.startOfDay(for: Date())
+            to: cal.startOfDay(for: now())
         ).day ?? 0)
     }
 
