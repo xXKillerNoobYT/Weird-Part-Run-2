@@ -604,7 +604,9 @@ final class IOSSyncManager {
             return PeerInfo(
                 id: peer.deviceId,
                 name: peer.deviceName,
-                state: peer.multipeerState == "connected" ? "connected" : peer.transport,
+                state: peer.transport == "multipeer"
+                    ? Self.multipeerDisplayState(peer.multipeerState)
+                    : (peer.multipeerState == "connected" ? "connected" : peer.transport),
                 discoveredAt: peer.discoveredAt,
                 address: address,
                 isManuallySyncable: Self.isManuallySyncablePeer(
@@ -626,7 +628,7 @@ final class IOSSyncManager {
             PeerInfo(
                 id: peer.deviceId,
                 name: peer.deviceName,
-                state: peer.state.rawValue == "connected" ? "connected" : "multipeer",
+                state: Self.multipeerDisplayState(peer.state.rawValue),
                 discoveredAt: peer.discoveredAt,
                 address: nil,
                 isManuallySyncable: Self.isManuallySyncablePeer(
@@ -651,7 +653,20 @@ final class IOSSyncManager {
     }
 
     private func isMultipeerDiscoveredPeer(_ peer: PeerInfo) -> Bool {
-        peer.state == "multipeer" || (peer.state == "connected" && peer.address == nil)
+        peer.state == "multipeer" || peer.state == "connecting"
+            || (peer.state == "connected" && peer.address == nil)
+    }
+
+    /// Maps a raw Multipeer connection state ("found"/"connecting"/"connected")
+    /// onto a `PeerInfo` display state. `connecting` stays distinct so the peer
+    /// browser can show an in-progress row instead of a generic waiting state;
+    /// `found` (and any future states) collapse to the waiting "multipeer" row.
+    private static func multipeerDisplayState(_ multipeerState: String?) -> String {
+        switch multipeerState {
+        case "connected": return "connected"
+        case "connecting": return "connecting"
+        default: return "multipeer"
+        }
     }
 
     private func formattedPeerAddress(host: String, port: Int) -> String? {

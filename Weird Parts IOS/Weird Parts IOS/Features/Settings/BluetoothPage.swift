@@ -69,16 +69,26 @@ struct BluetoothPage: View {
 
                             Spacer()
 
-                            if peer.state == "connected" {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(.green)
-                                    .accessibilityLabel("Status: Connected")
-                            } else {
+                            // Mirror IOSPeerBrowser: Sync is gated by the explicit
+                            // per-peer capability and targets the selected peer —
+                            // unconnected Multipeer rows must not fire a global sync.
+                            if peer.isManuallySyncable {
                                 Button("Sync") {
-                                    Task { await syncManager.syncNow() }
+                                    Task { await syncManager.syncWithPeer(peerDeviceId: peer.id) }
                                 }
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
+                            } else if peer.state == "connecting" {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else if peer.state == "multipeer" {
+                                Text("Waiting")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                    .accessibilityLabel("Status: Connected")
                             }
                         }
                         .frame(minHeight: 48)
@@ -133,6 +143,7 @@ struct BluetoothPage: View {
     private func peerIcon(_ state: String) -> String {
         switch state {
         case "connected": return "desktopcomputer"
+        case "connecting": return "arrow.triangle.2.circlepath"
         case "multipeer": return "antenna.radiowaves.left.and.right"
         case "lan": return "network"
         default: return "desktopcomputer.and.arrow.down"
@@ -142,6 +153,7 @@ struct BluetoothPage: View {
     private func peerColor(_ state: String) -> Color {
         switch state {
         case "connected": return .green
+        case "connecting": return .orange
         case "multipeer": return .blue
         case "lan": return Color.accentColor
         default: return .secondary
@@ -151,6 +163,7 @@ struct BluetoothPage: View {
     private func peerTransportLabel(_ state: String) -> String {
         switch state {
         case "connected": return "Connected"
+        case "connecting": return "Connecting"
         case "multipeer": return "Bluetooth / Wi-Fi Direct"
         case "lan": return "Local Network"
         default: return state.capitalized
