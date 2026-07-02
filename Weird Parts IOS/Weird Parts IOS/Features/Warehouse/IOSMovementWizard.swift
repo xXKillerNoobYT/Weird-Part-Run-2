@@ -667,7 +667,7 @@ struct IOSMovementWizard: View {
                     .fontWeight(.medium)
 
                 let reasons = ["Restocking", "Job requirement", "Return/defect", "Inventory correction", "Consolidation"]
-                MovementWizardFlowLayout(spacing: 8) {
+                FlowChipLayout(spacing: 8) {
                     ForEach(reasons, id: \.self) { r in
                         Button {
                             reason = reason == r ? "" : r
@@ -1189,42 +1189,3 @@ private struct PartSearchRow: Identifiable, Sendable {
     let availableQty: Int?
 }
 
-// MARK: - Flow Layout (for reason chips)
-
-private struct MovementWizardFlowLayout: Layout {
-    var spacing: CGFloat = 8
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let result = layout(proposal: proposal, subviews: subviews)
-        return result.size
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let result = layout(proposal: proposal, subviews: subviews)
-        for (index, origin) in result.origins.enumerated() {
-            subviews[index].place(at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y), proposal: .unspecified)
-        }
-    }
-
-    private func layout(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, origins: [CGPoint]) {
-        let maxWidth = proposal.width ?? .infinity
-        var origins: [CGPoint] = []
-        var x: CGFloat = 0
-        var y: CGFloat = 0
-        var rowHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x + size.width > maxWidth && x > 0 {
-                x = 0
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-            origins.append(CGPoint(x: x, y: y))
-            rowHeight = max(rowHeight, size.height)
-            x += size.width + spacing
-        }
-
-        return (CGSize(width: maxWidth, height: y + rowHeight), origins)
-    }
-}

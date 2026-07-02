@@ -715,54 +715,6 @@ private func formatLocalizedDecimal(_ value: Double) -> String {
 // MARK: - BrandFlowLayout (wrapping horizontal layout)
 
 /// A simple flow layout that wraps children to the next line when they don't fit.
-struct BrandFlowLayout: Layout {
-    var spacing: CGFloat = 8
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let result = layout(subviews: subviews, width: proposal.width ?? .infinity)
-        return result.size
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let result = layout(subviews: subviews, width: bounds.width)
-        for (index, position) in result.positions.enumerated() {
-            subviews[index].place(
-                at: CGPoint(x: bounds.minX + position.x, y: bounds.minY + position.y),
-                proposal: ProposedViewSize(result.sizes[index])
-            )
-        }
-    }
-
-    private func layout(subviews: Subviews, width: CGFloat) -> LayoutResult {
-        var positions: [CGPoint] = []
-        var sizes: [CGSize] = []
-        var x: CGFloat = 0
-        var y: CGFloat = 0
-        var rowHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x + size.width > width && x > 0 {
-                x = 0
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-            positions.append(CGPoint(x: x, y: y))
-            sizes.append(size)
-            rowHeight = max(rowHeight, size.height)
-            x += size.width + spacing
-        }
-
-        return LayoutResult(
-            positions: positions,
-            sizes: sizes,
-            size: CGSize(width: width, height: y + rowHeight)
-        )
-    }
-
-    struct LayoutResult {
-        var positions: [CGPoint]
-        var sizes: [CGSize]
-        var size: CGSize
-    }
-}
+/// Alias to the shared `FlowChipLayout`, whose geometry (`FlowLayoutMath` in core)
+/// always reports a finite measured size (#1203).
+typealias BrandFlowLayout = FlowChipLayout
