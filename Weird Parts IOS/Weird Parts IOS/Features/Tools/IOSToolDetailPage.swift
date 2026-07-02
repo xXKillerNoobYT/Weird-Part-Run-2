@@ -1339,8 +1339,21 @@ struct ToolTradeSheet: View {
     @State private var employees: [PeopleService.EmployeeListItem] = []
     @State private var isSaving = false
     @State private var saveError: String?
-    @State private var isDirty = false
-    @State private var showDiscardAlert = false
+    @State private var showDiscardConfirm = false
+
+    @State private var baselineSignature = ""
+
+    /// Signature over every user-entered field — including the trade
+    /// recipient — so changing any of them marks the sheet dirty (issue #714).
+    private var formSignature: String {
+        [
+            selectedUser.map(String.init) ?? "",
+            condition.rawValue,
+            notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        ].joined(separator: "|")
+    }
+
+    private var isDirty: Bool { formSignature != baselineSignature }
 
     var body: some View {
         NavigationStack {
@@ -1359,11 +1372,9 @@ struct ToolTradeSheet: View {
                         }
                     }
                     .pickerStyle(.segmented)
-                    .onChange(of: condition) { _, _ in isDirty = true }
 
                     TextField("Notes (optional)", text: $notes, axis: .vertical)
                         .lineLimit(2...4)
-                        .onChange(of: notes) { _, _ in isDirty = true }
                 } header: {
                     Text("Condition Check (Required)")
                 }
@@ -1403,7 +1414,7 @@ struct ToolTradeSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
-                        if isDirty { showDiscardAlert = true } else { dismiss() }
+                        if isDirty { showDiscardConfirm = true } else { dismiss() }
                     }
                     .disabled(isSaving)
                 }
@@ -1414,12 +1425,13 @@ struct ToolTradeSheet: View {
                     .disabled(selectedUser == nil || isSaving)
                 }
             }
-            .alert("Discard changes?", isPresented: $showDiscardAlert) {
+            .confirmationDialog("Discard changes?", isPresented: $showDiscardConfirm, titleVisibility: .visible) {
                 Button("Discard", role: .destructive) { dismiss() }
-                Button("Keep Editing", role: .cancel) {}
-            } message: {
-                Text("Your unsaved changes will be lost.")
+                Button("Keep editing", role: .cancel) {}
             }
+            // Snapshot the baseline from the untouched defaults so a
+            // pristine sheet never counts as dirty (issue #714).
+            .onAppear { baselineSignature = formSignature }
             .task { loadEmployees() }
         }
     }
@@ -1447,7 +1459,9 @@ struct ToolTradeSheet: View {
                 condition: condition.rawValue,
                 notes: notes.isEmpty ? nil : notes
             )
-            isDirty = false
+            // Re-baseline so the sheet is clean before the parent tears it
+            // down — a successful send must never trip the discard guard.
+            baselineSignature = formSignature
             onComplete()
         } catch {
             saveError = userFriendlyError(error, context: "save data")
