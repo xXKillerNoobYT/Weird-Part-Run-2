@@ -13,11 +13,24 @@ This guide is for the current native iOS and Swift package repository. Older web
 
 | Requirement | Purpose |
 | --- | --- |
-| macOS with Xcode installed | builds the SwiftUI iOS app and runs simulators |
+| macOS with Xcode 26.2+ installed | builds the SwiftUI iOS app and runs simulators (repo verified with Xcode 26.5) |
 | Xcode command line tools | provides `xcodebuild`, `xcrun`, SwiftPM |
-| Swift 6-compatible toolchain | builds `core/Package.swift` |
+| Swift 6-compatible toolchain | builds `core/Package.swift` (swift-tools-version 6.0) |
 | GitHub CLI `gh` | optional, for PR/runner checks |
 | Python 3 | optional, for repo guard scripts |
+
+## Platform Requirements
+
+<!-- Verify: grep -o 'IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*' "Weird Parts IOS/Weird Parts.xcodeproj/project.pbxproj" | sort -u -->
+
+| Target | Minimum version |
+| --- | --- |
+| iOS app (iPhone/iPad, device or simulator) | iOS 26.2 (`IPHONEOS_DEPLOYMENT_TARGET = 26.2`) |
+| macOS scheme (`WiredPart-macOS`, experimental) | macOS 26.4 |
+| Core package (`core/Package.swift`) | iOS 17 / macOS 14 — `swift test` runs on Macs that cannot run the app target |
+| Xcode | 26.2 or newer (needs the iOS 26.2 SDK) |
+
+A beta tester's iPhone or iPad must be on iOS 26.2 or later to run the app.
 
 Check local tools:
 
@@ -36,7 +49,22 @@ cd Weird-Part-Run-2
 open "Weird Parts IOS/Weird Parts.xcodeproj"
 ```
 
+Tip: the repo's git history is large (GitHub #1339). For a much faster first clone, use a partial clone — it fetches file contents on demand: `git clone --filter=blob:none git@github.com:xXKillerNoobYT/Weird-Part-Run-2.git`
+
 The app target lives under `Weird Parts IOS/`. The shared package lives under `core/` and is the preferred place for business logic, persistence, sync, QR/OCR, and service tests.
+
+## Build Entry Points And Schemes
+
+The repo has two Xcode entry points. Both resolve the same packages; they differ in schemes.
+
+<!-- Verify: xcodebuild -list -project "Weird Parts IOS/Weird Parts.xcodeproj" ; xcodebuild -list -workspace "Wierd Parts.xcworkspace" -->
+
+| Entry point | Schemes | Use for |
+| --- | --- | --- |
+| `Weird Parts IOS/Weird Parts.xcodeproj` | `Weird Parts`, `WiredPartCore` | quick app-only build/test work (the commands below) |
+| `Wierd Parts.xcworkspace` (repo root) | `WiredPart-iOS`, `WiredPart-iOS-Stage9-Smokes`, `WiredPart-macOS`, `WiredPartCore` | the beta smoke gate ([docs/testing/wei-3091-stage-9-beta-smoke-package.md](testing/wei-3091-stage-9-beta-smoke-package.md)) and the experimental macOS scheme |
+
+Note the workspace filename's historical misspelling — it really is `Wierd Parts.xcworkspace`. Quote it exactly in commands.
 
 ## Build The Core Package
 

@@ -1,7 +1,7 @@
 # WiredPart v1.0 — Testing Requirements & Verification Procedures
 
 > **Document Owner:** QA Lead
-> **Last Updated:** 2026-06-07
+> **Last Updated:** 2026-07-01 (metrics refresh, GitHub #1334)
 > **Scope:** Complete testing strategy covering unit, integration, E2E, UI, performance, and security testing
 > **Standard:** Production-grade quality for enterprise deployment
 > **Paperclip staging update:** This remains the quality gate reference. The stage order and active/planned status live in `docs/plans/staged-paperclip-goals.md`.
@@ -40,7 +40,7 @@ For current command examples, local runner expectations, and handoff template, s
 - **NOT XCTest** — although XCUITest is used for UI tests
 - **Database:** In-memory GRDB (`AppDatabase.openInMemoryDatabase()`) for all core tests
 - **Isolation:** Every test creates a fresh database — no shared state between tests
-- **Helper:** `E2ETestHelpers.TestEnvironment` provides all 13 services + admin user
+- **Helper:** `E2ETestHelpers.TestEnvironment` provides the core services (22 total in the package) + admin user
 
 ### 1.3 Test Execution
 
@@ -58,7 +58,7 @@ cd core && swift test --verbose
 cd core && swift test list
 ```
 
-**Expected output:** `✔ Test run with 545 tests in 40 suites passed after ~34 seconds.`
+**Expected output (as of 2026-07-01 — counts grow over time; treat as minimums):** `✔ Test run with 2224 tests in 67 suites passed after ~113 seconds.`
 
 ---
 
@@ -79,7 +79,7 @@ Every service MUST have tests covering:
 
 ### 2.2 Service-by-Service Requirements
 
-#### AuthService (22 tests — COMPLETE)
+#### AuthService (83 tests across AuthServiceTests + E2EAuthBootstrapTests — COMPLETE)
 - [x] Seed first admin with all 7 default hats
 - [x] Prevent double-seeding
 - [x] PIN hashing (bcrypt) and verification
@@ -90,7 +90,7 @@ Every service MUST have tests covering:
 - [x] Active users listing
 - [x] Wrong PIN rejection
 
-#### PartsService (~30 tests — COMPLETE)
+#### PartsService (~339 tests across 8 parts test files — COMPLETE)
 - [x] Category CRUD (create, list, get, update, delete)
 - [x] Part hierarchy (category → style → type)
 - [x] Part CRUD with all fields
@@ -101,7 +101,7 @@ Every service MUST have tests covering:
 - [x] Part search and filtering
 - [x] Import/export data format
 
-#### WarehouseService (~60 tests — COMPLETE)
+#### WarehouseService (~283 tests across 7 warehouse test files — COMPLETE)
 - [x] Floor plan CRUD
 - [x] Storage unit hierarchy (unit → level → area → bin)
 - [x] Part assignment to areas
@@ -118,14 +118,14 @@ Every service MUST have tests covering:
 - [x] Onboarding wizard (start → steps → complete)
 - [x] Inventory/backorder/turnover reports
 
-#### JobsService (~20 tests — COMPLETE)
+#### JobsService (160 tests across JobsServiceTests + E2EJobsLaborTests — COMPLETE)
 - [x] Job CRUD with all fields
 - [x] Job status transitions
 - [x] Labor entry management (clock in/out)
 - [x] Daily report linking
 - [x] Job search and filtering
 
-#### OrdersService (~25 tests — COMPLETE)
+#### OrdersService (125 tests across OrdersServiceTests + E2EOrdersTests — COMPLETE)
 - [x] JPO (Job Parts Order) CRUD + line items
 - [x] PO (Purchase Order) CRUD + line items
 - [x] JPO → PO conversion workflow
@@ -134,7 +134,7 @@ Every service MUST have tests covering:
 - [x] Price history tracking
 - [x] Supplier linking
 
-#### FleetService (~20 tests — COMPLETE)
+#### FleetService (71 tests + shared E2EFleetPeopleTests — COMPLETE)
 - [x] Vehicle CRUD
 - [x] Driver assignment
 - [x] Maintenance record management
@@ -143,7 +143,7 @@ Every service MUST have tests covering:
 - [x] Inspection templates
 - [x] Trailer management
 
-#### PeopleService (~15 tests — COMPLETE)
+#### PeopleService (80 tests + shared E2EFleetPeopleTests — COMPLETE)
 - [x] Employee CRUD
 - [x] Customer/Contractor CRUD
 - [x] Contact management
@@ -152,7 +152,7 @@ Every service MUST have tests covering:
 - [x] Certification tracking
 - [x] Skills and wage management
 
-#### SchedulingService (~30 tests — COMPLETE)
+#### SchedulingService (177 tests — COMPLETE)
 - [x] Schedule entry CRUD
 - [x] Dispatch management
 - [x] Time-off requests (create, approve, deny)
@@ -161,14 +161,14 @@ Every service MUST have tests covering:
 - [x] Conflict detection
 - [x] Calendar view data generation
 
-#### ChatService (~10 tests — COMPLETE)
+#### ChatService (60 tests + shared E2ECrossServiceTests — COMPLETE)
 - [x] Channel creation
 - [x] Message sending and receiving
 - [x] Q&A thread management
 - [x] RFI creation
 - [x] Escalation workflow
 
-#### NotebooksService (~15 tests — COMPLETE)
+#### NotebooksService (69 tests across NotebooksServiceTests + PanelScheduleTests — COMPLETE)
 - [x] Notebook CRUD
 - [x] Section management
 - [x] Entry CRUD (text, checklist, photo)
@@ -176,7 +176,7 @@ Every service MUST have tests covering:
 - [x] Job notebook linking
 - [x] Todo stage tracking
 
-#### ToolsService (~35 tests — COMPLETE)
+#### ToolsService (117 tests — COMPLETE)
 - [x] Tool CRUD with all properties
 - [x] Kit management (create, add tools, verify)
 - [x] Checkout/return workflow
@@ -184,19 +184,19 @@ Every service MUST have tests covering:
 - [x] Maintenance type management
 - [x] Admin dashboard data
 
-#### ReportsService (~15 tests — COMPLETE)
+#### ReportsService (50 tests + shared E2ESettingsReportsTests — COMPLETE)
 - [x] Report generation for each type
 - [x] Period locking
 - [x] Bookkeeper export format
 - [x] Chart data generation
 
-#### SettingsService (~15 tests — COMPLETE)
+#### SettingsService (62 tests + shared E2ESettingsReportsTests — COMPLETE)
 - [x] Company settings CRUD
 - [x] Theme management
 - [x] Notification preferences
 - [x] Feature flags
 
-#### DashboardService (22 tests — COMPLETE)
+#### DashboardService (57 tests — COMPLETE)
 - [x] KPI summary (empty + with data)
 - [x] Certification/vehicle alerts
 - [x] Daily report generation
@@ -207,7 +207,7 @@ Every service MUST have tests covering:
 - [x] Active jobs picker
 - [x] Employee count
 
-#### BreakService (11 tests — COMPLETE)
+#### BreakService (26 tests — COMPLETE)
 - [x] Break policy CRUD (state-based)
 - [x] Break bonus management + toggle
 - [x] Start/end breaks
@@ -217,14 +217,14 @@ Every service MUST have tests covering:
 - [x] Compliance calculation
 - [x] Time rounding logic
 
-#### WishlistService (11 tests — COMPLETE)
+#### WishlistService (38 tests — COMPLETE)
 - [x] Item CRUD
 - [x] Status workflow (pending → approved → sent_to_procurement)
 - [x] Dismiss and reopen
 - [x] Status counts
 - [x] Filter by status
 
-#### BackgroundTaskService (8 tests — COMPLETE)
+#### BackgroundTaskService (9 tests — COMPLETE)
 - [x] Task lifecycle (start → complete/fail)
 - [x] Recent tasks ordering
 - [x] Type filtering
@@ -232,7 +232,7 @@ Every service MUST have tests covering:
 - [x] 24-hour summary aggregation
 - [x] Cleanup (old entries + stale tasks)
 
-#### JobEstimationService (17 tests — COMPLETE)
+#### JobEstimationService (27 tests — COMPLETE)
 - [x] Question CRUD
 - [x] Stage-filtered questions
 - [x] Question update and rejection
@@ -244,12 +244,12 @@ Every service MUST have tests covering:
 - [x] Monthly capacity calculation
 - [x] Historical average
 
-#### DailyReportGenerator (3 tests — COMPLETE)
+#### DailyReportGenerator (8 tests — COMPLETE)
 - [x] Empty report generation (no data)
 - [x] Today's jobs listing
 - [x] Report metadata correctness
 
-#### DeviceResetService (~5 tests — COMPLETE)
+#### DeviceResetService (22 tests — COMPLETE)
 - [x] Full device reset
 - [x] Selective data reset
 - [x] Reset verification
@@ -417,7 +417,7 @@ For each of the 14 feature modules, verify:
 
 ### 8.1 Before Every Release
 
-1. `cd core && swift test` — All 545+ tests must pass
+1. `cd core && swift test` — All 2,224+ tests must pass
 2. Run full XCUITest suite — All UI tests must pass
 3. Manual smoke test on physical iPhone + iPad
 4. Dark mode spot check on 5 random pages
@@ -470,9 +470,9 @@ For each of the 14 feature modules, verify:
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| Xcode | 16+ | Build, test, profile |
+| Xcode | 26.2+ (repo verified with 26.5) | Build, test, profile |
 | Swift | 6.0+ | Compilation |
-| iOS Simulator | iOS 18+ | Automated testing |
+| iOS Simulator | iOS 26.2+ (matches app deployment target) | Automated testing |
 | Instruments | Latest | Performance profiling |
 | SwiftLint | Latest | Code quality |
 | TestFlight | Latest | Beta distribution |

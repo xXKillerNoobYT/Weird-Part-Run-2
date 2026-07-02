@@ -13,19 +13,24 @@ Tracking:
 
 | Need | Read |
 | --- | --- |
+| What the app can do (feature overview) | [docs/FEATURES.md](docs/FEATURES.md) |
+| Beta testing: install, first launch, report bugs | [docs/BETA-TESTER-GUIDE.md](docs/BETA-TESTER-GUIDE.md) |
 | Build or test locally | [docs/SETUP.md](docs/SETUP.md) |
 | Pick the right code area | [docs/WORKING-AREAS.md](docs/WORKING-AREAS.md) |
 | Verify a change | [docs/QA-PROCESS.md](docs/QA-PROCESS.md) |
 | Current staged roadmap | [docs/plans/staged-paperclip-goals.md](docs/plans/staged-paperclip-goals.md) |
 | Dependency and runner notes | [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) |
+| Design philosophy | [docs/KEY-PRINCIPLES.md](docs/KEY-PRINCIPLES.md) |
 | Historical implementation context | [docs/DEVELOPMENT-HANDOFF.md](docs/DEVELOPMENT-HANDOFF.md) |
 
 ## Repository Map
 
 ```text
 Weird-Part-Run-2/
+├── Wierd Parts.xcworkspace/          workspace entry point (schemes: WiredPart-iOS,
+│                                     WiredPart-macOS, Stage-9 smokes; note historical misspelling)
 ├── Weird Parts IOS/
-│   ├── Weird Parts.xcodeproj/        iOS Xcode project
+│   ├── Weird Parts.xcodeproj/        iOS Xcode project (scheme: "Weird Parts")
 │   ├── Weird Parts IOS/              SwiftUI app target
 │   ├── Weird Parts IOSTests/         app-level unit/regression tests
 │   └── Weird Parts IOSUITests/       XCUITest suites and launch tests
