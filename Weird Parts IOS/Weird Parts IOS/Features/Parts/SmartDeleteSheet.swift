@@ -181,8 +181,11 @@ struct SmartDeleteSheet: View {
                 entityType: entityType, entityId: entityId, entityName: entityName,
                 reason: reason.isEmpty ? nil : reason, scheduledBy: nil
             )
-            await onComplete()
+            // Dismiss-first ordering (issue #735): close the sheet as soon
+            // as the delete succeeds; the parent refresh runs after the
+            // dismissal so it can't delay the close or race a stale sheet.
             dismiss()
+            await onComplete()
         } catch {
             self.error = userFriendlyError(error, context: "delete parts")
         }
@@ -205,8 +208,11 @@ struct SmartDeleteSheet: View {
             case "color": try service.deleteColor(id: entityId)
             default: break
             }
-            await onComplete()
+            // Dismiss-first ordering (issue #735): close the sheet as soon
+            // as the delete succeeds; the parent refresh runs after the
+            // dismissal so it can't delay the close or race a stale sheet.
             dismiss()
+            await onComplete()
         } catch {
             self.error = userFriendlyError(error, context: "delete parts")
         }

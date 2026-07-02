@@ -331,10 +331,11 @@ struct PricingBulkEditSheet: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
             Button("Done") {
-                Task {
-                    await onComplete()
-                    dismiss()
-                }
+                // Dismiss-first ordering (issue #736): close the sheet
+                // immediately on confirmation, then run the parent refresh
+                // (same idiom as PricingOverrideFlow's completion screen).
+                dismiss()
+                Task { await onComplete() }
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
