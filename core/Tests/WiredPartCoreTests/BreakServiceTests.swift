@@ -594,6 +594,33 @@ struct BreakServiceTests {
         #expect(!compliance.isCompliant)
     }
 
+    @Test("Break compliance uses the 10-hour preset tier on 10+ hour days")
+    func testBreakComplianceUsesTenHourPresetOnLongDays() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-10HR", name: "Ten Hour Day Job")
+
+        // CA's 8-hour meal requirement is a single 30-minute lunch; the 10+ hour row
+        // requires a second meal period, raising the combined requirement to 60 minutes.
+        try breakService.updateCompanyBreakSettings(stateCode: "CA", autoFillBreaks: false)
+
+        // No labor entry yet for today: compliance must fall back to the 8-hour tier.
+        let shortDay = try breakService.calculateBreakCompliance(userId: env.adminUserId)
+        #expect(shortDay.requiredLunchMinutes == 30)
+
+        // Log a 10.5-hour labor entry for today so the day qualifies for the 10-hour tier.
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status)
+                VALUES (?, ?, date('now') || 'T06:00:00', date('now') || 'T16:30:00', 8, 2.5, 'completed')
+                """, arguments: [env.adminUserId, jobId])
+        }
+
+        let longDay = try breakService.calculateBreakCompliance(userId: env.adminUserId)
+        #expect(longDay.requiredLunchMinutes == 60)
+    }
+
     // MARK: - Auto Fill
 
     @Test("autoFillBreaksForDay is no-op when autoFill is disabled")

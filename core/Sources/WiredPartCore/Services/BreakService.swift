@@ -339,11 +339,40 @@ public final class BreakService: Sendable {
     // MARK: - Break Compliance
     // =========================================================================
 
+    /// Total scheduled hours (regular + overtime) worked by a user on a given UTC day,
+    /// summed across every labor entry whose `clock_in` falls on that date. Used to pick
+    /// the correct preset tier (8h vs 10h) in `getBreakPolicy` — without this, long days
+    /// were always evaluated against the 8-hour requirement even when a 10+ hour preset
+    /// row (e.g. CA's 10+ hour meal requirement) applied.
+    private func scheduledDayHours(userId: Int64, date: Date) throws -> Int {
+        let dateStr = Self.formatDateUTC(date)
+        do {
+            let totalHours = try db.writer.read { dbConn -> Double in
+                try Double.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(SUM(regular_hours + overtime_hours), 0)
+                    FROM labor_entries
+                    WHERE user_id = ?
+                      AND deleted_at IS NULL
+                      AND substr(clock_in, 1, 10) = ?
+                    """, arguments: [userId, dateStr]) ?? 0
+            }
+            // Round up so a day that just crosses 8 hours (e.g. 8.25h) still qualifies
+            // for the 10-hour preset tier's stronger requirements once actually reached,
+            // while still using getBreakPolicy's own `<= dayHours` filter to pick the
+            // closest applicable tier (8 or 10).
+            return totalHours > 8 ? 10 : 8
+        } catch {
+            if isTableNotFoundError(error) { return 8 }
+            throw error
+        }
+    }
+
     /// Calculate break compliance for a user on a given day.
     public func calculateBreakCompliance(userId: Int64, date: Date = Date()) throws -> BreakComplianceSummary {
         let records = try getBreakRecordsForDay(userId: userId, date: date)
         let settings = try getCompanyBreakSettings()
-        let policies = try getBreakPolicy(stateCode: settings.stateCode)
+        let dayHours = try scheduledDayHours(userId: userId, date: date)
+        let policies = try getBreakPolicy(stateCode: settings.stateCode, dayHours: dayHours)
 
         // State presets split requirements across the paid and offered rows and list 0
         // where a state specifies no requirement. Use the strongest seeded requirement,
