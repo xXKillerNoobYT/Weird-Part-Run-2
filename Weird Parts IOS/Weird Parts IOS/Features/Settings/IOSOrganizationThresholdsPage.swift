@@ -13,6 +13,7 @@ struct IOSOrganizationThresholdsPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var saveError: String?
+    @State private var saveSuccessMessage: String?
     @State private var activeSheet: ActiveSheet?
 
     // Confidence Decay
@@ -102,6 +103,8 @@ struct IOSOrganizationThresholdsPage: View {
         .onChange(of: formSignature) { _, _ in
             guard !isLoading else { return }
             hasUnsavedChanges = formSignature != baselineFormSignature
+            // New edits invalidate the last save confirmation (issue #1214).
+            if hasUnsavedChanges { saveSuccessMessage = nil }
         }
         .confirmationDialog(
             "Discard changes?",
@@ -196,6 +199,17 @@ struct IOSOrganizationThresholdsPage: View {
                 Label("Organization Rating", systemImage: "star.circle")
             }
 
+            // Save success confirmation (issue #1214 — same pattern as
+            // IOSToolPoliciesPage) — cleared on the next edit or error.
+            if let saveSuccessMessage {
+                Section {
+                    Label(saveSuccessMessage, systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .font(.caption)
+                }
+                .accessibilityIdentifier("organizationThresholdsSaveSuccessMessage")
+            }
+
             // Save
             Section {
                 Button { saveSettings() } label: {
@@ -269,8 +283,10 @@ struct IOSOrganizationThresholdsPage: View {
             try service.upsertSettingsMap(data, category: "org")
             saveError = nil
             resetDirtyTracking()
+            saveSuccessMessage = "Organization thresholds saved."
         } catch {
             saveError = userFriendlyError(error, context: "save data")
+            saveSuccessMessage = nil
         }
     }
 

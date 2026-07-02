@@ -23,13 +23,18 @@ BLOCKED_EXAMPLES = [
     "core/.build/debug/WiredPartCoreTests.xctest",
     "core/SourcePackages/checkouts/GRDB.swift/Package.swift",
     "core/SourcePackages/repositories/GRDB.swift.git/config",
-    "Wierd Parts.xcworkspace/xcuserdata/local-user.xcuserdatad/UserInterfaceState.xcuserstate",
+    "Weird Parts.xcworkspace/xcuserdata/local-user.xcuserdatad/UserInterfaceState.xcuserstate",
     "Weird Parts IOS/build/cache.dat",
     "Weird Parts IOS/ModuleCache.noindex/Session.modulevalidation",
     "Weird Parts IOS/CompilationCache.noindex/generic/lock",
     "Weird Parts IOS/Index.noindex/DataStore/v5/records",
     "docs/github-issue-fisher/2026-05-26T06-06-11Z/report.md",
     "docs/github-issue-fisher/latest-report.md",
+    # Screenshot/image dumps outside the sanctioned locations (issue #1333 —
+    # 26 MB of QA evidence and problem screenshots accumulated in docs/).
+    "docs/testing/artifacts/wei-9999/evidence.png",
+    "docs/some-report/screenshot.png",
+    "Weird Parts IOS/Weird Parts IOS/debug-capture.jpg",
 ]
 
 ALLOWED_EXAMPLES = [
@@ -42,7 +47,22 @@ ALLOWED_EXAMPLES = [
     "Weird Parts IOS/AppDelegate.swift",
     "docs/build-notes.md",
     "docs/github-issue-fisher/.gitkeep",
+    # Sanctioned image locations: the user's problem-report inbox and
+    # Xcode asset catalogs.
+    "docs/problems/Screenshot 2026-03-28 at 2.01.57 PM.png",
+    "Weird Parts IOS/Weird Parts IOS/Assets.xcassets/AppIcon.appiconset/icon.png",
 ]
+
+# Tracked images are only allowed in these locations. Everything else is a
+# screenshot/evidence dump that belongs in a GitHub issue or PR attachment
+# (see docs/testing/artifacts/README.md for the policy).
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".heic", ".webp"}
+IMAGE_ALLOWED_PREFIXES = ("docs/problems/",)
+IMAGE_ALLOWED_PATH_PARTS = {"Assets.xcassets"}
+
+# Any tracked file larger than this is presumed to be a build artifact or
+# media dump; raise the limit deliberately if a legitimate need appears.
+MAX_TRACKED_FILE_BYTES = 1_000_000
 
 
 BLOCKED_SUFFIXES = {
@@ -88,7 +108,19 @@ def is_blocked(path: str) -> bool:
         if part == "SourcePackages" and parts[index + 1] in {"checkouts", "repositories"}:
             return True
 
-    return any(normalized.endswith(suffix) for suffix in BLOCKED_FILE_SUFFIXES)
+    if any(normalized.endswith(suffix) for suffix in BLOCKED_FILE_SUFFIXES):
+        return True
+
+    # Images are only allowed in the problem-report inbox and asset catalogs.
+    suffix = PurePosixPath(normalized).suffix.lower()
+    if suffix in IMAGE_SUFFIXES:
+        if normalized.startswith(IMAGE_ALLOWED_PREFIXES):
+            return False
+        if any(part in IMAGE_ALLOWED_PATH_PARTS for part in parts):
+            return False
+        return True
+
+    return False
 
 
 def tracked_files() -> list[str]:
@@ -128,17 +160,39 @@ def main() -> int:
     if args.self_test:
         return run_self_test()
 
-    blocked = [path for path in tracked_files() if is_blocked(path)]
-    if blocked:
-        print("Generated local runtime/cache artifacts are tracked by git:", file=sys.stderr)
-        for path in blocked[:200]:
-            print(f"  {path}", file=sys.stderr)
-        if len(blocked) > 200:
-            print(f"  ... and {len(blocked) - 200} more", file=sys.stderr)
+    tracked = tracked_files()
+    blocked = [path for path in tracked if is_blocked(path)]
+
+    # Size rule: no tracked file may exceed MAX_TRACKED_FILE_BYTES. Checked
+    # against the checkout (CI runs on a full checkout), independently of the
+    # path rules above.
+    import os
+
+    oversized = []
+    for path in tracked:
+        try:
+            size = os.path.getsize(path)
+        except OSError:
+            continue
+        if size > MAX_TRACKED_FILE_BYTES:
+            oversized.append(f"{path} ({size / 1_000_000:.1f} MB)")
+
+    if blocked or oversized:
+        if blocked:
+            print("Generated local runtime/cache artifacts or stray media are tracked by git:", file=sys.stderr)
+            for path in blocked[:200]:
+                print(f"  {path}", file=sys.stderr)
+            if len(blocked) > 200:
+                print(f"  ... and {len(blocked) - 200} more", file=sys.stderr)
+        if oversized:
+            print(f"Tracked files exceed the {MAX_TRACKED_FILE_BYTES / 1_000_000:.0f} MB limit:", file=sys.stderr)
+            for entry in oversized[:50]:
+                print(f"  {entry}", file=sys.stderr)
         print("\nRemove these from the index with `git rm --cached` and keep them ignored.", file=sys.stderr)
+        print("Screenshots belong in GitHub issue/PR attachments; problem reports go in docs/problems/.", file=sys.stderr)
         return 1
 
-    print("No tracked Paperclip/Xcode runtime artifacts found.")
+    print("No tracked Paperclip/Xcode runtime artifacts, stray media, or oversized files found.")
     return 0
 
 
