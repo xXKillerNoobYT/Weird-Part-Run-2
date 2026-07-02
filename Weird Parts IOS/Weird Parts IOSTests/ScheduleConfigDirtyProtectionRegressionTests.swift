@@ -19,8 +19,19 @@ final class ScheduleConfigDirtyProtectionRegressionTests: XCTestCase {
             2,
             "Both schedule config edit sheets should compare a full-form signature against the on-appear baseline."
         )
-        // Shift template signature covers every persisted field.
-        for field in ["String(selectedHatId)", "Formatters.timeHHmmFormatter.string(from: startTime)",
+        // Shift template signature covers every persisted field — including
+        // the day selection (the original #1248 data-loss path) and the
+        // trimmed name. The anchored fragment below is the exact head of the
+        // signature array, so a save()-path match cannot satisfy it.
+        XCTAssertTrue(
+            source.contains("let days = dayOrder.filter { selectedDays.contains($0) }.joined(separator: \",\")"),
+            "Shift template form signature must derive from the selected work days."
+        )
+        XCTAssertTrue(
+            source.contains("name.trimmingCharacters(in: .whitespaces),\n            String(selectedHatId),\n            days,"),
+            "Shift template form signature must lead with the trimmed name, hat, and selected days."
+        )
+        for field in ["Formatters.timeHHmmFormatter.string(from: startTime)",
                       "Formatters.timeHHmmFormatter.string(from: endTime)", "String(breakMinutes)",
                       "String(breakPaid)", "overtimeRule"] {
             XCTAssertTrue(
