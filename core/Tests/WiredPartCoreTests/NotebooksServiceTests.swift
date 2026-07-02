@@ -1915,6 +1915,96 @@ struct NotebooksServiceTests {
         #expect(notebookId == nbId)
     }
 
+    @Test("createBlockEntry preserves palette block metadata")
+    func testCreateBlockEntryPreservesPaletteBlockMetadata() throws {
+        let env = try E2ETestHelpers.setUp()
+        let nbId = try env.notebooks.createNotebook(
+            title: "Palette Notebook",
+            notebookType: "general",
+            jobId: nil,
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: nbId, groupId: nil, name: "Section A"
+        )
+        let panelJson = "{\"panelType\":\"Load Center\",\"circuits\":[{\"position\":1,\"label\":\"Kitchen\"}]}"
+        let tableNotes = "Part, Qty\nEMT, 12"
+
+        let headingId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "heading",
+            title: "Panel Notes",
+            headingLevel: 2,
+            createdBy: env.adminUserId
+        )
+        let photoId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "photo",
+            title: "Panel photo",
+            photoPath: "file:///tmp/panel.jpg",
+            createdBy: env.adminUserId
+        )
+        let partId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "part_reference",
+            title: "Breaker",
+            referenceType: "part",
+            referenceId: 42,
+            createdBy: env.adminUserId
+        )
+        let panelId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "panel_schedule",
+            title: "Main Panel",
+            blockData: panelJson,
+            createdBy: env.adminUserId
+        )
+        let tableId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "table",
+            title: "Materials",
+            content: tableNotes,
+            createdBy: env.adminUserId
+        )
+        let todoId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "todo",
+            title: "Return for warranty check",
+            taskStatus: "in_progress",
+            taskDueDate: "2026-05-20",
+            taskAssignedTo: env.adminUserId,
+            taskPartsNote: "Bring replacement GFCI",
+            workClassification: "warranty",
+            warrantyTimerEnd: "2026-06-20T00:00:00Z",
+            isQuestion: true,
+            createdBy: env.adminUserId
+        )
+
+        let hierarchy = try env.notebooks.getNotebookHierarchy(notebookId: nbId)
+        let entries = hierarchy.ungroupedSections.flatMap(\.entries)
+        let byId = Dictionary(uniqueKeysWithValues: entries.map { ($0.id, $0) })
+
+        #expect(byId[headingId]?.blockType == "heading")
+        #expect(byId[headingId]?.headingLevel == 2)
+        #expect(byId[photoId]?.photoPath == "file:///tmp/panel.jpg")
+        #expect(byId[partId]?.referenceType == "part")
+        #expect(byId[partId]?.referenceId == 42)
+        #expect(byId[panelId]?.blockData == panelJson)
+        #expect(byId[tableId]?.content == tableNotes)
+        #expect(byId[todoId]?.taskStatus == "in_progress")
+        #expect(byId[todoId]?.taskDueDate == "2026-05-20")
+        #expect(byId[todoId]?.taskAssignedTo == env.adminUserId)
+        #expect(byId[todoId]?.taskPartsNote == "Bring replacement GFCI")
+        #expect(byId[todoId]?.workClassification == "warranty")
+        #expect(byId[todoId]?.warrantyTimerEnd == "2026-06-20T00:00:00Z")
+        #expect(byId[todoId]?.isQuestion == true)
+
+        let detail = try env.notebooks.getNotebookDetail(id: nbId)
+        let detailTodo = try #require(detail.entries.first { $0.id == todoId })
+        #expect(detailTodo.taskStatus == "in_progress")
+        #expect(detailTodo.taskPartsNote == "Bring replacement GFCI")
+    }
+
     @Test("listNotebooks hides job name for soft-deleted job")
     func testListNotebooksHidesDeletedJobName() throws {
         let env = try E2ETestHelpers.setUp()

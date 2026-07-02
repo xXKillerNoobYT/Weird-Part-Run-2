@@ -264,6 +264,27 @@ A dedicated tool for building electrical panel schedules. This is a first-class 
 - **Auto-numbering:** odd on left, even on right (standard panel layout)
 - **Color coding:** by circuit type (lighting, receptacle, motor, etc.)
 
+### Implementation Update — 2026-07-02
+
+- Re-landed the stranded slash command palette (`/h1`…`/todo`, all target block
+  types) in `AddNotebookEntrySheet.swift`, adapted to main's current picker
+  (which already had photo/part_reference rendering) rather than the original
+  May donor baseline. Quote and code blocks render in `IOSNotebookDetailPage.swift`.
+- Re-landed panel circuit drag/drop, tap-based move mode, VoiceOver move
+  actions, and `CircuitClassification` (lighting/receptacle/motor/spare/blank/special)
+  color coding in `PanelScheduleBuilder.swift` and `PanelScheduleModels.swift`.
+- Circuit position validation (same-side double-breaker span, space-occupancy
+  conflicts) lives on `PanelSchedule` (`validationErrors`, `upsertCircuit`,
+  `moveCircuit`) and composes with the existing #1239 `totalSpaces` clamping —
+  it does not replace it. Panel type space limits stay driven by the shared
+  `PanelSchedule.supportedTotalSpaces` list rather than per-type ranges, so the
+  #1239 fix's single source of truth for panel sizing is preserved.
+- No new migration was required: `task_status`/`task_due_date`/`task_assigned_to`/
+  `task_parts_note` already exist on `notebook_entries`, and panel circuit
+  classification persists inside the existing `block_data` JSON blob.
+- Print layouts, PDF export, and custom headers remain a separate lane
+  (tracked in the WEI-1135 stranded commit, not part of this pass).
+
 ### Print Layout
 
 - **Custom paper sizes:** Letter, Legal, A4, Card Stock (various sizes)

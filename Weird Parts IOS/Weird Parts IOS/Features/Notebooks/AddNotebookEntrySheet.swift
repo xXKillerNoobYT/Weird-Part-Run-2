@@ -35,6 +35,46 @@ struct AddNotebookEntrySheet: View {
         var checked: Bool
     }
 
+    private struct SlashCommand: Identifiable {
+        let id: String
+        let command: String
+        let title: String
+        let subtitle: String
+        let systemImage: String
+        let blockType: String
+        let headingLevel: Int?
+    }
+
+    private let slashCommands: [SlashCommand] = [
+        SlashCommand(id: "h1", command: "/h1", title: "Heading 1", subtitle: "Large section header", systemImage: "textformat.size.larger", blockType: "heading", headingLevel: 1),
+        SlashCommand(id: "h2", command: "/h2", title: "Heading 2", subtitle: "Medium sub-header", systemImage: "textformat.size", blockType: "heading", headingLevel: 2),
+        SlashCommand(id: "h3", command: "/h3", title: "Heading 3", subtitle: "Small sub-header", systemImage: "textformat", blockType: "heading", headingLevel: 3),
+        SlashCommand(id: "checklist", command: "/checklist", title: "Checklist", subtitle: "Checkbox list items", systemImage: "checklist", blockType: "checklist", headingLevel: nil),
+        SlashCommand(id: "photo", command: "/photo", title: "Photo", subtitle: "Camera or library placeholder", systemImage: "photo", blockType: "photo", headingLevel: nil),
+        SlashCommand(id: "part", command: "/part", title: "Part Reference", subtitle: "Tappable part reference placeholder", systemImage: "shippingbox", blockType: "part_reference", headingLevel: nil),
+        SlashCommand(id: "panel", command: "/panel", title: "Panel Schedule", subtitle: "Embedded panel schedule block", systemImage: "bolt", blockType: "panel_schedule", headingLevel: nil),
+        SlashCommand(id: "divider", command: "/divider", title: "Divider", subtitle: "Horizontal separator", systemImage: "minus", blockType: "divider", headingLevel: nil),
+        SlashCommand(id: "quote", command: "/quote", title: "Quote", subtitle: "Indented quote block", systemImage: "quote.opening", blockType: "quote", headingLevel: nil),
+        SlashCommand(id: "callout", command: "/callout", title: "Callout", subtitle: "Highlighted note", systemImage: "exclamationmark.bubble", blockType: "callout", headingLevel: nil),
+        SlashCommand(id: "table", command: "/table", title: "Table", subtitle: "Simple grid placeholder", systemImage: "tablecells", blockType: "table", headingLevel: nil),
+        SlashCommand(id: "code", command: "/code", title: "Code", subtitle: "Monospace code block", systemImage: "chevron.left.forwardslash.chevron.right", blockType: "code", headingLevel: nil),
+        SlashCommand(id: "todo", command: "/todo", title: "To-Do", subtitle: "Work item with status tracking", systemImage: "circle", blockType: "todo", headingLevel: nil)
+    ]
+
+    private var slashQuery: String? {
+        guard !isEditing, content.hasPrefix("/") else { return nil }
+        return String(content.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private var filteredSlashCommands: [SlashCommand] {
+        guard let query = slashQuery, !query.isEmpty else { return slashCommands }
+        return slashCommands.filter { command in
+            command.command.dropFirst().lowercased().contains(query) ||
+            command.title.lowercased().contains(query) ||
+            command.subtitle.lowercased().contains(query)
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -45,12 +85,25 @@ struct AddNotebookEntrySheet: View {
                             Text("Text").tag("text")
                             Text("Heading").tag("heading")
                             Text("Checklist").tag("checklist")
+                            Text("Photo").tag("photo")
+                            Text("Part Reference").tag("part_reference")
+                            Text("Panel Schedule").tag("panel_schedule")
                             Text("To-Do").tag("todo")
+                            Text("Quote").tag("quote")
                             Text("Callout").tag("callout")
+                            Text("Table").tag("table")
+                            Text("Code").tag("code")
                             Text("Divider").tag("divider")
                         }
                         .pickerStyle(.menu)
+                        Text("Type / in the content field to open the command palette.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
+                }
+
+                if slashQuery != nil {
+                    commandPaletteSection
                 }
 
                 // Type-specific fields
@@ -66,6 +119,24 @@ struct AddNotebookEntrySheet: View {
 
                 case "callout":
                     calloutFields
+
+                case "quote":
+                    quoteFields
+
+                case "code":
+                    codeFields
+
+                case "photo":
+                    photoFields
+
+                case "part_reference":
+                    partReferenceFields
+
+                case "panel_schedule":
+                    panelScheduleFields
+
+                case "table":
+                    tableFields
 
                 case "divider":
                     Section {
@@ -87,8 +158,14 @@ struct AddNotebookEntrySheet: View {
                                 shortcutRow("/h2 Title", "Heading level 2")
                                 shortcutRow("/h3 Title", "Heading level 3")
                                 shortcutRow("/checklist", "New checklist")
+                                shortcutRow("/photo Caption", "Photo placeholder")
+                                shortcutRow("/part Name", "Part reference placeholder")
+                                shortcutRow("/panel Name", "Panel schedule block")
+                                shortcutRow("/quote Text", "Quote block")
                                 shortcutRow("/todo Task", "New to-do item")
                                 shortcutRow("/callout Text", "Callout block")
+                                shortcutRow("/table Title", "Table placeholder")
+                                shortcutRow("/code Text", "Code block")
                                 shortcutRow("/divider", "Horizontal divider")
                             }
                         }
@@ -146,6 +223,41 @@ struct AddNotebookEntrySheet: View {
     }
 
     // MARK: - Type-Specific Field Groups
+
+    private var commandPaletteSection: some View {
+        Section("Command Palette") {
+            if filteredSlashCommands.isEmpty {
+                Text("No matching commands")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(filteredSlashCommands) { command in
+                    Button {
+                        applySlashCommand(command)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: command.systemImage)
+                                .frame(width: 28, height: 28)
+                                .foregroundStyle(.blue)
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(command.title)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.primary)
+                                Text("\(command.command) - \(command.subtitle)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }
+                        .frame(minHeight: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(command.title), \(command.command)")
+                }
+            }
+        }
+    }
 
     private var textFields: some View {
         Group {
@@ -223,7 +335,93 @@ struct AddNotebookEntrySheet: View {
         }
     }
 
+    private var quoteFields: some View {
+        Section("Quote") {
+            TextEditor(text: $content)
+                .frame(minHeight: 80)
+        }
+    }
+
+    private var codeFields: some View {
+        Section("Code") {
+            TextEditor(text: $content)
+                .font(.system(.body, design: .monospaced))
+                .frame(minHeight: 100)
+        }
+    }
+
+    private var photoFields: some View {
+        Group {
+            Section("Photo Caption") {
+                TextField("Photo caption", text: $title)
+            }
+            Section {
+                Text("Photo capture and library selection will attach to this block in the next media pass.")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            }
+        }
+    }
+
+    private var partReferenceFields: some View {
+        Section("Part Reference") {
+            TextField("Part name, SKU, or note", text: $title)
+        }
+    }
+
+    private var panelScheduleFields: some View {
+        Section("Panel Schedule") {
+            TextField("Panel name", text: $title)
+            Text("Open the notebook panel builder after adding this block to edit breaker assignments.")
+                .foregroundStyle(.secondary)
+                .font(.caption)
+        }
+    }
+
+    private var tableFields: some View {
+        Group {
+            Section("Table Title (Optional)") {
+                TextField("Table title", text: $title)
+            }
+            Section("Table Notes") {
+                TextEditor(text: $content)
+                    .frame(minHeight: 80)
+            }
+        }
+    }
+
     // MARK: - Shortcut Commands
+
+    private func applySlashCommand(_ command: SlashCommand) {
+        let trailingText = trailingTextAfterCommand(command.command)
+        blockType = command.blockType
+        if let level = command.headingLevel {
+            headingLevel = level
+        }
+
+        switch command.blockType {
+        case "heading", "todo", "photo", "part_reference", "panel_schedule":
+            title = trailingText
+            content = ""
+        case "checklist":
+            title = trailingText
+            content = ""
+            if checklistItems.isEmpty {
+                checklistItems.append(ChecklistItemInput(text: "", checked: false))
+            }
+        case "divider":
+            title = ""
+            content = ""
+        default:
+            content = trailingText
+        }
+    }
+
+    private func trailingTextAfterCommand(_ command: String) -> String {
+        let raw = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard raw.lowercased().hasPrefix(command.lowercased()) else { return "" }
+        return String(raw.dropFirst(command.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     private func processShortcutCommand(_ text: String) {
         guard !isEditing else { return }
@@ -258,6 +456,27 @@ struct AddNotebookEntrySheet: View {
         } else if text == "/divider" {
             blockType = "divider"
             content = ""
+        } else if text.hasPrefix("/quote ") {
+            blockType = "quote"
+            content = String(text.dropFirst(7))
+        } else if text.hasPrefix("/code ") {
+            blockType = "code"
+            content = String(text.dropFirst(6))
+        } else if text.hasPrefix("/table ") {
+            blockType = "table"
+            content = String(text.dropFirst(7))
+        } else if text.hasPrefix("/photo ") {
+            blockType = "photo"
+            title = String(text.dropFirst(7))
+            content = ""
+        } else if text.hasPrefix("/part ") {
+            blockType = "part_reference"
+            title = String(text.dropFirst(6))
+            content = ""
+        } else if text.hasPrefix("/panel ") {
+            blockType = "panel_schedule"
+            title = String(text.dropFirst(7))
+            content = ""
         }
     }
 
@@ -280,6 +499,9 @@ struct AddNotebookEntrySheet: View {
         switch blockType {
         case "heading": return title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case "todo": return title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case "photo": return title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case "part_reference": return title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case "panel_schedule": return title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case "divider": return false
         case "checklist": return checklistItems.filter({ !$0.text.isEmpty }).isEmpty
         default: return title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -308,6 +530,7 @@ struct AddNotebookEntrySheet: View {
                     blockData: blockType == "checklist" ? nil : blockData,
                     headingLevel: blockType == "heading" ? headingLevel : nil,
                     checklistItems: blockType == "checklist" ? blockData : nil,
+                    referenceType: blockType == "part_reference" ? "part" : nil,
                     updatedBy: userId
                 )
             } else {
@@ -326,6 +549,7 @@ struct AddNotebookEntrySheet: View {
                     blockData: blockType == "checklist" ? nil : blockData,
                     headingLevel: blockType == "heading" ? headingLevel : nil,
                     checklistItems: blockType == "checklist" ? blockData : nil,
+                    referenceType: blockType == "part_reference" ? "part" : nil,
                     createdBy: userId
                 )
             }
