@@ -79,6 +79,7 @@ struct IOSAssignDriverSheet: View {
                 Text(loadError ?? "")
             }
         }
+        .presentationDetents([.large])
     }
 
     // MARK: - Sections

@@ -343,7 +343,7 @@ struct IOSScheduleConfigPage: View {
                 Text("Supervisor Hats")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                FlowLayout(spacing: 6) {
+                FlowChipLayout(spacing: 6) {
                     ForEach(allHats) { hat in
                         Button {
                             if supervisorHatIds.contains(hat.id) {
@@ -576,53 +576,6 @@ struct IOSScheduleConfigPage: View {
     }
 }
 
-// MARK: - FlowLayout (simple wrapping layout)
-
-private struct FlowLayout: Layout {
-    var spacing: CGFloat = 6
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let result = layout(subviews: subviews, width: proposal.width ?? .infinity)
-        return result.size
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let result = layout(subviews: subviews, width: bounds.width)
-        for (index, placement) in result.placements.enumerated() {
-            subviews[index].place(
-                at: CGPoint(x: bounds.minX + placement.x, y: bounds.minY + placement.y),
-                proposal: ProposedViewSize(placement.size)
-            )
-        }
-    }
-
-    private struct LayoutResult {
-        var placements: [(x: CGFloat, y: CGFloat, size: CGSize)] = []
-        var size: CGSize = .zero
-    }
-
-    private func layout(subviews: Subviews, width: CGFloat) -> LayoutResult {
-        var result = LayoutResult()
-        var x: CGFloat = 0
-        var y: CGFloat = 0
-        var rowHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x + size.width > width && x > 0 {
-                x = 0
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-            result.placements.append((x: x, y: y, size: size))
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
-        }
-
-        result.size = CGSize(width: width, height: y + rowHeight)
-        return result
-    }
-}
 
 // MARK: - Date Helper
 
