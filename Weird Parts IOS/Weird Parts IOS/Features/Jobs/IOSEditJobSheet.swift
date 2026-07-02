@@ -51,6 +51,11 @@ struct IOSEditJobSheet: View {
         _notes = State(initialValue: job.notes ?? "")
         _budgetLimit = State(initialValue: job.budgetLimit.map { String($0) } ?? "")
         _estimatedHours = State(initialValue: job.estimatedHours.map { String($0) } ?? "")
+        // Baseline mirrors the job's saved workflow — including nil for jobs
+        // without one. The picker is the only thing that mutates this, so a
+        // template change is persisted only when the user explicitly picks a
+        // different option (issue #1105: never draft the default template).
+        _selectedStageTemplateId = State(initialValue: job.stageTemplateId)
     }
 
     private var isValid: Bool {
@@ -128,16 +133,24 @@ struct IOSEditJobSheet: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
-                        Picker("Workflow", selection: Binding(
-                            get: { selectedStageTemplateId ?? stageTemplates.first?.id ?? 0 },
-                            set: { selectedStageTemplateId = $0 }
-                        )) {
+                        Picker("Workflow", selection: $selectedStageTemplateId) {
+                            // Jobs without a workflow get an explicit "No Workflow"
+                            // choice so opening the editor never pre-drafts the
+                            // default template (issue #1105). Jobs that already
+                            // have a workflow keep the template-only list — the
+                            // service has no unassign path, so removal stays
+                            // unsupported here.
+                            if job.stageTemplateId == nil {
+                                Text("No Workflow").tag(Int64?.none)
+                            }
                             ForEach(stageTemplates.filter { $0.stageCount > 0 }) { template in
-                                Text(template.name).tag(template.id)
+                                Text(template.name).tag(Int64?.some(template.id))
                             }
                         }
                         if selectedStageTemplateId != job.stageTemplateId {
-                            Text("Saving will preview and confirm the template change so the current stage is preserved when possible.")
+                            Text(job.stageTemplateId == nil
+                                ? "Saving will confirm assigning this workflow. The job will start at the workflow's first stage."
+                                : "Saving will preview and confirm the template change so the current stage is preserved when possible.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -174,14 +187,18 @@ struct IOSEditJobSheet: View {
             .interactiveDismissDisabled(isSaving)
             .task { loadStageTemplates() }
             .confirmationDialog(
-                "Change stage template?",
+                job.stageTemplateId == nil ? "Assign workflow?" : "Change stage template?",
                 isPresented: $showingTemplateChangeConfirmation,
                 titleVisibility: .visible
             ) {
-                Button("Change Template") { saveJob(applyTemplateChange: true) }
+                Button(job.stageTemplateId == nil ? "Assign Workflow" : "Change Template") {
+                    saveJob(applyTemplateChange: true)
+                }
                 Button("Cancel", role: .cancel) { }
             } message: {
-                Text("The job will move to the selected workflow. If its current stage is not in that template, it will move to the first stage in the new template.")
+                Text(job.stageTemplateId == nil
+                    ? "This job currently has no workflow. It will be assigned the selected workflow and start at its first stage."
+                    : "The job will move to the selected workflow. If its current stage is not in that template, it will move to the first stage in the new template.")
             }
         }
     }
@@ -195,9 +212,9 @@ struct IOSEditJobSheet: View {
         }
         do {
             stageTemplates = try service.listJobStageTemplates().filter { $0.stageCount > 0 }
-            if selectedStageTemplateId == nil {
-                selectedStageTemplateId = job.stageTemplateId ?? stageTemplates.first(where: { $0.isDefault })?.id ?? stageTemplates.first?.id
-            }
+            // Deliberately no default here: selectedStageTemplateId keeps the
+            // baseline set in init (nil for workflow-less jobs), so saving an
+            // unrelated edit never assigns the default/first template (#1105).
         } catch {
             errorMessage = userFriendlyError(error, context: "load stage templates")
         }
