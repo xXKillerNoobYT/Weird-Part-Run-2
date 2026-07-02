@@ -88,7 +88,7 @@ struct TypeBrandColorSection: View {
             }
         }
         .task { await loadSKUData() }
-        .onChange(of: linkedBrandIds) { _ in
+        .onChange(of: linkedBrandIds) {
             normalizeSelectedBrand()
         }
         .sheet(item: $activeSheet) { sheet in

@@ -100,7 +100,7 @@ struct ForecastSettingsSheet: View {
                 Text("Trailer").tag("trailer")
             }
             .pickerStyle(.segmented)
-            .onChange(of: selectedLocationType) { _ in
+            .onChange(of: selectedLocationType) {
                 populateFields()
                 isDirty = false
             }
@@ -137,7 +137,7 @@ struct ForecastSettingsSheet: View {
                         .multilineTextAlignment(.trailing)
                         .frame(maxWidth: 80)
                         .keyboardType(.numberPad)
-                        .onChange(of: aduLookbackDays) { _ in isDirty = true }
+                        .onChange(of: aduLookbackDays) { isDirty = true }
                     Text("days")
                 }
                 .frame(minHeight: 44)
@@ -149,7 +149,7 @@ struct ForecastSettingsSheet: View {
                         .multilineTextAlignment(.trailing)
                         .frame(maxWidth: 60)
                         .keyboardType(.numberPad)
-                        .onChange(of: windowWeeks) { _ in isDirty = true }
+                        .onChange(of: windowWeeks) { isDirty = true }
                     Text("weeks")
                 }
                 .frame(minHeight: 44)
@@ -162,7 +162,7 @@ struct ForecastSettingsSheet: View {
                     .multilineTextAlignment(.trailing)
                     .frame(maxWidth: 80)
                     .keyboardType(.numberPad)
-                    .onChange(of: minDataDays) { _ in isDirty = true }
+                    .onChange(of: minDataDays) { isDirty = true }
                 Text("days")
             }
             .frame(minHeight: 44)
@@ -200,7 +200,7 @@ struct ForecastSettingsSheet: View {
                 .multilineTextAlignment(.trailing)
                 .frame(maxWidth: 80)
                 .keyboardType(.decimalPad)
-                .onChange(of: value.wrappedValue) { _ in isDirty = true }
+                .onChange(of: value.wrappedValue) { isDirty = true }
             Text("x \(unitLabel)")
                 .foregroundStyle(.secondary)
         }
@@ -211,7 +211,7 @@ struct ForecastSettingsSheet: View {
         Section {
             Stepper("Suppress below: \(freeSpaceThreshold)", value: $freeSpaceThreshold, in: 1...10)
                 .frame(minHeight: 44)
-                .onChange(of: freeSpaceThreshold) { _ in isDirty = true }
+                .onChange(of: freeSpaceThreshold) { isDirty = true }
         } header: {
             Text("Free Space Threshold")
         } footer: {
