@@ -305,21 +305,25 @@ struct PanelScheduleBuilder: View {
 
     private func circuitBackground(_ circuit: CircuitEntry?) -> Color {
         guard let circuit, !circuit.isSpare else { return .yellow.opacity(0.05) }
+        // Breaker-type safety coloring (GFCI/AFCI/dual-function) takes priority: it's the
+        // pre-existing, safety-relevant visual cue and must stay reachable regardless of
+        // classification, per #1379 review — classification color coding is additive, not
+        // a replacement for it.
+        switch circuit.breakerType {
+        case .gfci, .afci, .dualFunction: return .green.opacity(0.1)
+        case .double: return .blue.opacity(0.1)
+        case .tandem: return .purple.opacity(0.1)
+        case .spare: return .yellow.opacity(0.1)
+        case .blank: return .gray.opacity(0.1)
+        case .single: break
+        }
         switch circuit.classification {
         case .lighting: return .cyan.opacity(0.12)
         case .receptacle: return .orange.opacity(0.12)
         case .motor: return .red.opacity(0.12)
         case .spare: return .yellow.opacity(0.1)
         case .blank: return .gray.opacity(0.1)
-        case .special: break
-        }
-        switch circuit.breakerType {
-        case .double: return .blue.opacity(0.1)
-        case .tandem: return .purple.opacity(0.1)
-        case .gfci, .afci, .dualFunction: return .green.opacity(0.1)
-        case .spare: return .yellow.opacity(0.1)
-        case .blank: return .gray.opacity(0.1)
-        default: return .clear
+        case .special: return .clear
         }
     }
 
@@ -344,6 +348,8 @@ struct PanelScheduleBuilder: View {
                 legendDot(.red, "Motor")
                 legendDot(.blue, "Double")
                 legendDot(.purple, "Tandem")
+                legendDot(.green, "GFI/AFI")
+                legendDot(.yellow, "Spare")
             }
             .lineLimit(1)
 

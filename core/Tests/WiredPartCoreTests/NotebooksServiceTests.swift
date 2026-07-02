@@ -187,6 +187,70 @@ struct NotebooksServiceTests {
         #expect(oldValues["title"] as? String == "Original heading")
     }
 
+    @Test("Updating task/reference/photo metadata on a block entry records change history for each field")
+    func testUpdateBlockEntryMetadataRecordsChangeHistoryForNewFields() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let nbId = try env.notebooks.createNotebook(
+            title: "Metadata Blocks",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: nbId, groupId: nil, name: "Info"
+        )
+        let entryId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "todo",
+            title: "Follow up",
+            content: nil,
+            createdBy: env.adminUserId
+        )
+
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId,
+            content: nil,
+            blockData: nil,
+            photoPath: "photos/entry.jpg",
+            referenceType: "part",
+            referenceId: 42,
+            taskStatus: "in_progress",
+            taskDueDate: "2026-08-01",
+            taskAssignedTo: env.adminUserId,
+            taskPartsNote: "Need breaker",
+            workClassification: "electrical",
+            warrantyTimerEnd: "2026-09-01",
+            isQuestion: true,
+            updatedBy: env.adminUserId
+        )
+
+        let historyRows = try env.db.writer.read { dbConn in
+            try Row.fetchAll(dbConn, sql: """
+                SELECT changed_fields, old_values
+                FROM _change_log
+                WHERE table_name = 'notebook_entries'
+                  AND record_id = ?
+                  AND operation = 'UPDATE'
+                ORDER BY id DESC
+                """, arguments: [entryId])
+        }
+        #expect(historyRows.count == 1)
+        let changedFieldsJSON = try #require(historyRows.first?["changed_fields"] as String?)
+        let changedFieldsData = try #require(changedFieldsJSON.data(using: .utf8))
+        let changedFields = try #require(JSONSerialization.jsonObject(with: changedFieldsData) as? [String: Any])
+
+        #expect(changedFields["photo_path"] as? String == "photos/entry.jpg")
+        #expect(changedFields["reference_type"] as? String == "part")
+        #expect(changedFields["reference_id"] as? Int64 == 42)
+        #expect(changedFields["task_status"] as? String == "in_progress")
+        #expect(changedFields["task_due_date"] as? String == "2026-08-01")
+        #expect(changedFields["task_assigned_to"] as? Int64 == env.adminUserId)
+        #expect(changedFields["task_parts_note"] as? String == "Need breaker")
+        #expect(changedFields["work_classification"] as? String == "electrical")
+        #expect(changedFields["warranty_timer_end"] as? String == "2026-09-01")
+        #expect(changedFields["is_question"] as? Int64 == 1)
+    }
+
     @Test("Creating checklist block entries stores checklist items in the canonical column")
     func testCreateChecklistBlockEntryStoresChecklistItems() throws {
         let env = try E2ETestHelpers.setUp()

@@ -1044,7 +1044,10 @@ public final class NotebooksService: Sendable {
             try ServicePermissionGate.requirePermission(dbConn, userId: updatedBy, permissionKey: "manage_notebooks")
 
             guard let existing = try Row.fetchOne(dbConn, sql: """
-                SELECT title, content, block_data, heading_level, checklist_items
+                SELECT title, content, block_data, heading_level, checklist_items,
+                       photo_path, reference_type, reference_id,
+                       task_status, task_due_date, task_assigned_to, task_parts_note,
+                       work_classification, warranty_timer_end, is_question
                 FROM notebook_entries
                 WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [entryId]) else { return }
@@ -1055,6 +1058,16 @@ public final class NotebooksService: Sendable {
             let oldBlockData = existing["block_data"] as String?
             let oldHeadingLevel = existing["heading_level"] as Int?
             let oldChecklistItems = existing["checklist_items"] as String?
+            let oldPhotoPath = existing["photo_path"] as String?
+            let oldReferenceType = existing["reference_type"] as String?
+            let oldReferenceId = existing["reference_id"] as Int64?
+            let oldTaskStatus = existing["task_status"] as String?
+            let oldTaskDueDate = existing["task_due_date"] as String?
+            let oldTaskAssignedTo = existing["task_assigned_to"] as Int64?
+            let oldTaskPartsNote = existing["task_parts_note"] as String?
+            let oldWorkClassification = existing["work_classification"] as String?
+            let oldWarrantyTimerEnd = existing["warranty_timer_end"] as String?
+            let oldIsQuestionInt = existing["is_question"] as Int?
 
             try dbConn.execute(sql: """
                 UPDATE notebook_entries
@@ -1093,11 +1106,33 @@ public final class NotebooksService: Sendable {
                     oldValues[field] = old ?? NSNull()
                 }
             }
+            func trackInt64(_ field: String, old: Int64?, new: Int64?) {
+                if old != new {
+                    changedFields[field] = new ?? NSNull()
+                    oldValues[field] = old ?? NSNull()
+                }
+            }
             trackString("title", old: oldTitle, new: newTitle)
             trackString("content", old: oldContent, new: content)
             trackString("block_data", old: oldBlockData, new: blockData)
             trackInt("heading_level", old: oldHeadingLevel, new: headingLevel)
             trackString("checklist_items", old: oldChecklistItems, new: checklistItems)
+            // COALESCE(?, col) means a nil parameter leaves the column untouched, so the
+            // effective new value for change-log purposes is `param ?? old`.
+            trackString("photo_path", old: oldPhotoPath, new: photoPath ?? oldPhotoPath)
+            trackString("reference_type", old: oldReferenceType, new: referenceType ?? oldReferenceType)
+            trackInt64("reference_id", old: oldReferenceId, new: referenceId ?? oldReferenceId)
+            trackString("task_status", old: oldTaskStatus, new: taskStatus ?? oldTaskStatus)
+            trackString("task_due_date", old: oldTaskDueDate, new: taskDueDate ?? oldTaskDueDate)
+            trackInt64("task_assigned_to", old: oldTaskAssignedTo, new: taskAssignedTo ?? oldTaskAssignedTo)
+            trackString("task_parts_note", old: oldTaskPartsNote, new: taskPartsNote ?? oldTaskPartsNote)
+            trackString("work_classification", old: oldWorkClassification, new: workClassification ?? oldWorkClassification)
+            trackString("warranty_timer_end", old: oldWarrantyTimerEnd, new: warrantyTimerEnd ?? oldWarrantyTimerEnd)
+            trackInt(
+                "is_question",
+                old: oldIsQuestionInt,
+                new: isQuestion.map { $0 ? 1 : 0 } ?? oldIsQuestionInt
+            )
 
             if !changedFields.isEmpty {
                 let changedFieldsData = try JSONSerialization.data(withJSONObject: changedFields, options: [.sortedKeys])
