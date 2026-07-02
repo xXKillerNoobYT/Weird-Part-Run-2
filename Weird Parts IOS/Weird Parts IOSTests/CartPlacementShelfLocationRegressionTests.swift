@@ -35,6 +35,10 @@ final class CartPlacementShelfLocationRegressionTests: XCTestCase {
             source.contains("use Guided Movement"),
             "The cart sheet should point users at Guided Movement for real inventory ledger moves."
         )
+        XCTAssertTrue(
+            source.contains("Bins are marked placed for reference only."),
+            "A bins-only cart must not claim shelf locations are being updated (bins are reference-only)."
+        )
     }
 
     func testCartPlacementTrimsLocationBeforeSaving() throws {
@@ -45,6 +49,10 @@ final class CartPlacementShelfLocationRegressionTests: XCTestCase {
                 && source.contains(".trimmingCharacters(in: .whitespacesAndNewlines)")
                 && source.contains("!location.isEmpty"),
             "Cart placement should trim the entered location and skip whitespace-only values."
+        )
+        XCTAssertFalse(
+            source.contains("in: .whitespaces)"),
+            "All cart trimming must use .whitespacesAndNewlines — a looser character set on the enable check lets newline-only input enable Place All and then place nothing."
         )
     }
 

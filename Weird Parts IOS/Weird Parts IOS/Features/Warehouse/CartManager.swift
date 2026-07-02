@@ -82,7 +82,7 @@ struct CartSheetView: View {
                     EmptyStateView(
                         icon: "cart",
                         title: "Cart is Empty",
-                        message: "Add parts or bins from any list to update their recorded locations in bulk."
+                        message: "Add parts from any list to update their recorded shelf locations in bulk. Bins can be marked placed for reference."
                     )
                 } else {
                     cartList
@@ -180,7 +180,7 @@ struct CartSheetView: View {
         VStack(spacing: 8) {
             // Be explicit about what "placing" does so this flow can't be
             // mistaken for an inventory ledger movement (issue #1253).
-            Text("Placing updates each part's recorded shelf location. To move stock quantities between locations, use Guided Movement.")
+            Text(placementScopeCaption)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -200,10 +200,25 @@ struct CartSheetView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(placedItems.count == cartManager.itemCount ? .green : .blue)
-            .disabled(isPlacingItems || placements.values.allSatisfy { $0.trimmingCharacters(in: .whitespaces).isEmpty })
+            // Match the save path's trimming exactly — a mismatch here would
+            // enable the button for newline-only input that then places nothing.
+            .disabled(isPlacingItems || placements.values.allSatisfy {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            })
         }
         .padding()
         .background(Color(.secondarySystemBackground))
+    }
+
+    /// Caption describing exactly what "placing" persists for the current
+    /// cart contents. Bins are only marked placed for reference, so a
+    /// bins-only cart must not claim shelf locations are being updated.
+    private var placementScopeCaption: String {
+        let hasParts = cartManager.items.contains { $0.partId != nil }
+        if hasParts {
+            return "Placing updates each part's recorded shelf location. To move stock quantities between locations, use Guided Movement."
+        }
+        return "Bins are marked placed for reference only. To move stock quantities between locations, use Guided Movement."
     }
 
     private func placeAllItems() {
