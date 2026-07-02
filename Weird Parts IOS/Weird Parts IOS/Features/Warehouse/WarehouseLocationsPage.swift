@@ -1058,7 +1058,9 @@ private struct AddStorageUnitSheet: View {
             onCreated()
             dismiss()
         } catch {
-            self.error = userFriendlyError(error, context: "load locations")
+            // Issue #1165: surface service-layer dimension/placement
+            // rejections inline so the sheet stays open for correction.
+            self.error = userFriendlyError(error, context: "create storage unit")
         }
     }
 }
@@ -1187,7 +1189,8 @@ private struct EditStorageUnitSheet: View {
             onUpdated()
             dismiss()
         } catch {
-            self.error = userFriendlyError(error, context: "load locations")
+            // Issue #1165: surface service-layer placement rejections inline.
+            self.error = userFriendlyError(error, context: "update storage unit")
         }
     }
 }

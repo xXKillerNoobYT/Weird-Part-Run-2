@@ -564,7 +564,8 @@ struct PartsFlowWizard: View {
         guard validateBeforeSaving() else { return }
         isSaving = true
 
-        guard let service = appCore.partsService else {
+        guard let service = appCore.partsService,
+              let warehouseService = appCore.warehouseService else {
             isSaving = false
             saveErrorMessage = "Parts service unavailable. Your draft is still saved on this device."
             return
@@ -581,22 +582,27 @@ struct PartsFlowWizard: View {
                 var failedParts: [String] = []
                 for item in snapshot {
                     guard let partId = item.part.id else { continue }
-                    var notesParts: [String] = []
-                    if let location = locations[partId]?.trimmingCharacters(in: .whitespacesAndNewlines),
-                       !location.isEmpty {
-                        notesParts.append("Location: \(location)")
-                    }
-                    if let qty = Self.validQuantity(from: counts[partId]) {
-                        notesParts.append("Initial count: \(qty)")
-                    }
-                    if !notesParts.isEmpty {
-                        let combined = notesParts.joined(separator: " | ")
-                        do {
-                            try service.updatePart(id: partId, notes: combined)
-                            savedEntries += 1
-                        } catch {
-                            failedParts.append(item.part.name)
+                    var didPersistEntry = false
+                    do {
+                        // Issue #91: persist to canonical records instead of
+                        // concatenating "Location: X | Initial count: N" into
+                        // the part's free-text notes field.
+                        if let location = locations[partId]?.trimmingCharacters(in: .whitespacesAndNewlines),
+                           !location.isEmpty {
+                            try service.updatePart(id: partId, shelfLocation: location)
+                            didPersistEntry = true
                         }
+                        if let qty = Self.validQuantity(from: counts[partId]) {
+                            // Upserts the warehouse stock row and records a
+                            // traceable adjustment movement.
+                            _ = try warehouseService.recordPartsFirstSetupCount(
+                                partId: partId, countedQty: qty, performedBy: userId
+                            )
+                            didPersistEntry = true
+                        }
+                        if didPersistEntry { savedEntries += 1 }
+                    } catch {
+                        failedParts.append(item.part.name)
                     }
                 }
                 return (savedEntries: savedEntries, failedParts: failedParts)

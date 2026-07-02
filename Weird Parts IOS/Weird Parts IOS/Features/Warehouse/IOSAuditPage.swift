@@ -160,6 +160,7 @@ struct IOSAuditPage: View {
                 loadData()
             }
             .environmentObject(appCore)
+            .presentationDetents([.medium, .large])
         }
         .alert("Error", isPresented: Binding(
             get: { actionError != nil },
