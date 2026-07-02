@@ -570,6 +570,7 @@ struct IOSReceiveShipmentPage: View {
                     }
                     .frame(minHeight: 44)
                     .disabled(isCompleting)
+                    .accessibilityIdentifier("completeReceivingButton")
                 }
 
                 if let error = actionError {
@@ -636,6 +637,7 @@ struct IOSReceiveShipmentPage: View {
                     Image(systemName: "barcode.viewfinder")
                 }
                 .accessibilityLabel("Scan barcode")
+                .accessibilityIdentifier("receiveShipmentScanBarcodeButton")
             }
         }
         .alert("Barcode Not Found", isPresented: Binding(
@@ -754,6 +756,7 @@ struct IOSReceiveShipmentPage: View {
                             .font(.title3)
                     }
                     .buttonStyle(.plain)
+                    .dsMinTapTarget()
                     .accessibilityLabel("Decrease quantity")
 
                     Text("\(receivedQtys[item.id] ?? item.expectedQty)")
@@ -782,6 +785,7 @@ struct IOSReceiveShipmentPage: View {
                             .font(.title3)
                     }
                     .buttonStyle(.plain)
+                    .dsMinTapTarget()
                     .accessibilityLabel("Increase quantity")
 
                     // Quick-fill to expected qty (shown when quantity differs)

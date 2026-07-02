@@ -48,7 +48,10 @@ struct UsedStickerPicker: View {
                         }
                     }
                     .buttonStyle(.plain)
-                    .frame(minHeight: 30)
+                    // 44pt minimum touch target per Apple HIG / issue #1199 —
+                    // dense sticker sheets (e.g. Avery 5167) must stay tappable.
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
                     .disabled(!usedPositions.contains(position) && availablePositionCount <= 1)
                     .accessibilityLabel(usedPositions.contains(position) ? "Position \(position + 1): Used" : "Position \(position + 1): Available")
                     .accessibilityHint(!usedPositions.contains(position) && availablePositionCount <= 1 ? "At least one blank sticker position must remain available to print." : "Double tap to toggle whether this sticker position is already used.")

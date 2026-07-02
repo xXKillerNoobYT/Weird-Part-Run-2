@@ -343,6 +343,8 @@ struct IOSPartsOrderManagementPage: View {
         .frame(minHeight: 50)
     }
 
+    // The icon is the only channel conveying line status in the row, so it
+    // must stay visible to VoiceOver with a semantic label (issue #1184).
     @ViewBuilder
     private func statusIcon(_ status: String) -> some View {
         switch status {
@@ -350,22 +352,22 @@ struct IOSPartsOrderManagementPage: View {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
                 .font(.caption)
-                .accessibilityHidden(true)
+                .accessibilityLabel("Status: Received")
         case "backorder":
             Image(systemName: "clock.badge.exclamationmark")
                 .foregroundStyle(.red)
                 .font(.caption)
-                .accessibilityHidden(true)
+                .accessibilityLabel("Status: On backorder")
         case "pending":
             Image(systemName: "hourglass")
                 .foregroundStyle(.blue)
                 .font(.caption)
-                .accessibilityHidden(true)
+                .accessibilityLabel("Status: Pending")
         default:
             Image(systemName: "circle")
                 .foregroundStyle(.secondary)
                 .font(.caption)
-                .accessibilityHidden(true)
+                .accessibilityLabel("Status: \(status.capitalized)")
         }
     }
 
