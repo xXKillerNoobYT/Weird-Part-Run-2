@@ -116,6 +116,7 @@ if [[ "$inspected" -lt "$total" ]]; then
 fi
 
 repo_owner="${REPO%%/*}"
+repo_name="${REPO##*/}"
 
 # Walk PRs in order (oldest first = lowest number first).
 # Pick the FIRST one we can act on and do exactly that one action, then exit.
@@ -185,9 +186,40 @@ while IFS= read -r pr; do
     fi
   fi
 
+  # --- Copilot review gate (owner directive: every PR gets a Copilot review
+  #     before merge). Cloud PR checks now go green in seconds — faster than
+  #     Copilot can review — so the merge must wait for the review explicitly.
+  #     Set PR_MAINTENANCE_REQUIRE_COPILOT_REVIEW=0 to bypass (not recommended). ---
+  if [[ "${PR_MAINTENANCE_REQUIRE_COPILOT_REVIEW:-1}" == "1" ]]; then
+    copilot_reviews="$(gh api "repos/$REPO/pulls/$number/reviews" \
+      --jq '[.[] | select(.user.login == "copilot-pull-request-reviewer[bot]")] | length' 2>/dev/null || echo "0")"
+    if [[ "$copilot_reviews" -eq 0 ]]; then
+      # Request the review if it is not already pending, then wait for it.
+      pending_copilot="$(gh api "repos/$REPO/pulls/$number" \
+        --jq '([.requested_reviewers[]?.login] | index("Copilot")) // -1' 2>/dev/null || echo "-1")"
+      if [[ "$pending_copilot" == "-1" ]]; then
+        run_or_log gh api -X POST "repos/$REPO/pulls/$number/requested_reviewers" \
+          -f 'reviewers[]=copilot-pull-request-reviewer[bot]' >/dev/null 2>&1 || true
+        echo "    skip: requested Copilot review — waiting for it before merge"
+      else
+        echo "    skip: Copilot review pending — waiting before merge"
+      fi
+      continue
+    fi
+
+    # Copilot has reviewed — block on any unresolved review thread so findings
+    # are addressed and resolved before the merge, not after.
+    unresolved="$(gh api graphql -f query="query { repository(owner: \"$repo_owner\", name: \"$repo_name\") { pullRequest(number: $number) { reviewThreads(first: 100) { nodes { isResolved } } } } }" \
+      --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length' 2>/dev/null || echo "0")"
+    if [[ "$unresolved" -gt 0 ]]; then
+      echo "    skip: $unresolved unresolved Copilot review thread(s) — must be addressed before merge"
+      continue
+    fi
+  fi
+
   # --- Ready to merge ---
   if [[ "$merge_state" == "CLEAN" || "$merge_state" == "HAS_HOOKS" || "$merge_state" == "BLOCKED" ]]; then
-    echo "==> PR #$number is CLEAN and checks pass — merging now (squash)"
+    echo "==> PR #$number is CLEAN, checks pass, Copilot review satisfied — merging now (squash)"
     if run_or_log gh pr merge "$number" --repo "$REPO" --squash --delete-branch --auto; then
       echo "    Merged (or auto-merge queued). Push to $BASE will trigger next run."
     else
