@@ -148,8 +148,27 @@ while IFS= read -r pr; do
   if [[ "$mergeable" == "CONFLICTING" || "$merge_state" == "DIRTY" ]]; then
     echo "    skip: has merge conflicts — engineer must resolve first"; continue; fi
 
+  # --- Resolve UNKNOWN mergeability before acting ---
+  # The list endpoint returns mergeable_state only when GitHub has it cached;
+  # treating UNKNOWN as BEHIND made the train "rebase" an up-to-date branch
+  # forever (update-branch no-ops, the state never changes, nothing merges).
+  # A single-PR GET forces GitHub to compute mergeability; poll briefly.
+  if [[ "$merge_state" == "UNKNOWN" ]]; then
+    for _attempt in 1 2 3 4 5; do
+      merge_state="$(gh api "repos/$REPO/pulls/$number" \
+        --jq '(.mergeable_state // "unknown") | ascii_upcase' 2>/dev/null || echo "UNKNOWN")"
+      [[ "$merge_state" != "UNKNOWN" ]] && break
+      sleep 3
+    done
+    echo "    resolved mergeability: state=$merge_state"
+    if [[ "$merge_state" == "UNKNOWN" ]]; then
+      echo "    skip: mergeability still computing — next run retries"; continue; fi
+    if [[ "$merge_state" == "DIRTY" ]]; then
+      echo "    skip: has merge conflicts — engineer must resolve first"; continue; fi
+  fi
+
   # --- Rebase if behind ---
-  if [[ "$merge_state" == "BEHIND" || "$merge_state" == "UNKNOWN" ]]; then
+  if [[ "$merge_state" == "BEHIND" ]]; then
     echo "==> PR #$number is BEHIND main — rebasing now (one action, then done)"
     if run_or_log gh pr update-branch "$number" --repo "$REPO"; then
       echo "    Rebased. CodeQL will re-run on the new head. Exiting — next run handles merge."

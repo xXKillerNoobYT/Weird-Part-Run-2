@@ -516,13 +516,27 @@ public final class ReportsService: Sendable {
                     clauses.append("tca.labor_entry_id = ?")
                     args.append(laborEntryId)
                 }
-                if let startDate {
-                    clauses.append("\(Self.localDateSQL("tca.original_clock_in")) >= date(?)")
-                    args.append(startDate)
-                }
-                if let endDate {
-                    clauses.append("\(Self.localDateSQL("tca.original_clock_in")) <= date(?)")
-                    args.append(endDate)
+                // A correction must stay reviewable in any period that contains EITHER
+                // its original work date OR its adjusted work date. Filtering by
+                // original_clock_in alone hides the audit trail when a manager moves an
+                // entry across a date/pay-period boundary: the corrected segment shows
+                // up in the destination period (getTimesheetSegments filters by the
+                // adjusted labor_entries.clock_in) but its history vanished (#1097).
+                if startDate != nil || endDate != nil {
+                    var perColumnRanges: [String] = []
+                    for column in ["tca.original_clock_in", "tca.adjusted_clock_in"] {
+                        var bounds: [String] = []
+                        if let startDate {
+                            bounds.append("\(Self.localDateSQL(column)) >= date(?)")
+                            args.append(startDate)
+                        }
+                        if let endDate {
+                            bounds.append("\(Self.localDateSQL(column)) <= date(?)")
+                            args.append(endDate)
+                        }
+                        perColumnRanges.append("(" + bounds.joined(separator: " AND ") + ")")
+                    }
+                    clauses.append("(" + perColumnRanges.joined(separator: " OR ") + ")")
                 }
 
                 let sql = Self.timesheetCorrectionAuditSQL(whereClause: clauses.joined(separator: " AND "))
