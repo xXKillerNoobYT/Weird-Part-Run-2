@@ -315,11 +315,24 @@ struct ReportBuilderView: View {
 
     // MARK: - Step 3: Filters
 
+    /// Inverted ranges silently generate empty reports, which reads as
+    /// "no data" instead of "invalid input" (issue #1213).
+    private var hasValidDateRange: Bool { startDate <= endDate }
+
     @ViewBuilder
     private var filtersStep: some View {
         Section("Date Range") {
-            DatePicker("Start Date", selection: $startDate, displayedComponents: .date)
-            DatePicker("End Date", selection: $endDate, displayedComponents: .date)
+            // Constrained pickers make an inverted range unreachable from
+            // the UI; the validation below is defense in depth.
+            DatePicker("Start Date", selection: $startDate, in: ...endDate, displayedComponents: .date)
+            DatePicker("End Date", selection: $endDate, in: startDate..., displayedComponents: .date)
+
+            if !hasValidDateRange {
+                Label("Start date must be on or before the end date.", systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .accessibilityIdentifier("reportBuilderDateRangeError")
+            }
         }
 
         Section("Quick Ranges") {
@@ -350,7 +363,7 @@ struct ReportBuilderView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.indigo)
-                .disabled(isGenerating)
+                .disabled(isGenerating || !hasValidDateRange)
             }
             .listRowBackground(Color.clear)
         }
@@ -474,6 +487,13 @@ struct ReportBuilderView: View {
     // MARK: - Actions
 
     private func generateReport() {
+        // Final guard — an inverted range must surface as invalid input,
+        // never as a plausible-looking empty report (issue #1213).
+        guard hasValidDateRange else {
+            generateError = "Start date must be on or before the end date. Adjust the date range and try again."
+            step = .results
+            return
+        }
         isGenerating = true
         generateError = nil
         step = .results
