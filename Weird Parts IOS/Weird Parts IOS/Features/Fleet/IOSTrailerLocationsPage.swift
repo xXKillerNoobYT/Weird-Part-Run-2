@@ -6,7 +6,9 @@ struct IOSTrailerLocationsPage: View {
     @EnvironmentObject private var appCore: AppCore
 
     @State private var trailers: [FleetService.TrailerListItem] = []
-    @State private var isLoading = true
+    @State private var isInitialLoading = true
+    @State private var isRefreshing = false
+    @State private var hasLoadedOnce = false
     @State private var searchText = ""
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
@@ -18,19 +20,24 @@ struct IOSTrailerLocationsPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if isLoading {
-                ProgressView("Loading trailer locations...")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let error = loadError {
-                ErrorStateView(message: error) { loadData() }
-            } else if filteredTrailers.isEmpty {
-                EmptyStateView(
-                    icon: "box.truck.fill",
-                    title: "No Trailers",
-                    message: searchText.isEmpty ? "No trailers in the system." : "No trailers match your search."
-                )
-            } else {
-                trailerList
+            Group {
+                if isInitialLoading {
+                    ProgressView("Loading trailer locations...")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let error = loadError {
+                    ErrorStateView(message: error) { loadData() }
+                } else if filteredTrailers.isEmpty {
+                    EmptyStateView(
+                        icon: "box.truck.fill",
+                        title: "No Trailers",
+                        message: searchText.isEmpty ? "No trailers in the system." : "No trailers match your search."
+                    )
+                } else {
+                    trailerList
+                }
+            }
+            .overlay(alignment: .top) {
+                refreshingOverlay
             }
         }
         .navigationTitle("Trailer Locations")
@@ -55,6 +62,18 @@ struct IOSTrailerLocationsPage: View {
                     ("Tips", "Use the search bar to find a trailer by number, type, job name, or tow vehicle. Pull down to refresh locations. If a trailer shows the wrong location, update it from the trailer detail page.")
                 ]
             )
+        }
+    }
+
+    @ViewBuilder
+    private var refreshingOverlay: some View {
+        if isRefreshing {
+            ProgressView()
+                .progressViewStyle(.linear)
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .transition(.opacity)
+                .accessibilityLabel("Refreshing trailer locations")
         }
     }
 
@@ -141,16 +160,31 @@ struct IOSTrailerLocationsPage: View {
     private func loadData() {
         guard let fleet = appCore.fleetService else {
             loadError = "Fleet service not available"
-            isLoading = false
+            hasLoadedOnce = true
+            isInitialLoading = false
+            isRefreshing = false
             return
         }
-        isLoading = trailers.isEmpty
-        loadError = nil
-        do {
-            trailers = try fleet.listTrailers()
-        } catch {
-            loadError = userFriendlyError(error, context: "load trailer locations")
+
+        if hasLoadedOnce {
+            isRefreshing = true
+        } else {
+            isInitialLoading = true
         }
-        isLoading = false
+
+        DispatchQueue.main.async {
+            defer {
+                self.hasLoadedOnce = true
+                self.isInitialLoading = false
+                self.isRefreshing = false
+            }
+
+            self.loadError = nil
+            do {
+                self.trailers = try fleet.listTrailers()
+            } catch {
+                self.loadError = userFriendlyError(error, context: "load trailer locations")
+            }
+        }
     }
 }

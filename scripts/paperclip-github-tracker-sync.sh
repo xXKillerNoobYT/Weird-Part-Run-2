@@ -112,22 +112,35 @@ fi
 STAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 WEB_URL="${PAPERCLIP_WEB_URL:-}"
 
-# Bounded curls: the configured PAPERCLIP_API_URL can be a trycloudflare
-# tunnel that goes NXDOMAIN mid-life; without timeouts these curls hung until
-# the 10-minute workflow timeout cancelled every run (15/15 cancelled). If the
-# configured URL is unreachable, fall back to the local Paperclip instance —
-# the runner lives on the same Mac.
-CURL_OPTS=(-fsS --connect-timeout 10 --max-time 120 --retry 2)
-if ! curl "${CURL_OPTS[@]}" -o /dev/null "$PAPERCLIP_API_URL/api/health" 2>/dev/null; then
-  echo "warn: $PAPERCLIP_API_URL unreachable, falling back to http://localhost:3100" >&2
+# Bounded curls: tight budgets — a half-dead trycloudflare tunnel can pass
+# /api/health yet stall the heavy issues/agents fetches; with the old
+# 120s×3-attempt budget two curls could outlive the job's 10-minute timeout
+# (observed 2026-07-02: health OK, first fetch hung, run cancelled at 10m).
+# Worst case now: (2 health checks + 2 fetches) × 2 attempts × 30s ≈ 4 minutes,
+# comfortably under the job's 10-minute timeout.
+CURL_OPTS=(-fsS --connect-timeout 5 --max-time 30 --retry 1)
+
+# Prefer the local Paperclip instance outright when it answers — the runner
+# lives on the Mac that hosts Paperclip, and localhost cannot go stale the
+# way an injected tunnel URL can. Only keep the configured URL when
+# localhost is down (e.g. a future runner on another machine).
+if curl "${CURL_OPTS[@]}" -o /dev/null "http://localhost:3100/api/health" 2>/dev/null; then
+  if [[ "$PAPERCLIP_API_URL" != "http://localhost:3100" ]]; then
+    echo "tracker-sync: local Paperclip is up — using http://localhost:3100 over the configured URL" >&2
+  fi
   PAPERCLIP_API_URL="http://localhost:3100"
+elif ! curl "${CURL_OPTS[@]}" -o /dev/null "$PAPERCLIP_API_URL/api/health" 2>/dev/null; then
+  echo "error: neither localhost:3100 nor the configured PAPERCLIP_API_URL ($PAPERCLIP_API_URL) answered /api/health" >&2
+  exit 1
 fi
 
-echo "tracker-sync: fetching issues/agents from $PAPERCLIP_API_URL" >&2
+echo "tracker-sync: fetching issues from $PAPERCLIP_API_URL" >&2
 
 ISSUES_JSON="$(curl "${CURL_OPTS[@]}" \
   -H "Authorization: Bearer $PAPERCLIP_API_KEY" \
   "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/issues?status=todo,in_progress,in_review,blocked")"
+
+echo "tracker-sync: fetching agents" >&2
 
 AGENTS_JSON="$(curl "${CURL_OPTS[@]}" \
   -H "Authorization: Bearer $PAPERCLIP_API_KEY" \

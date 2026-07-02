@@ -208,7 +208,6 @@ struct E2EWarehouseTests {
                            arguments: [env.adminUserId])
         }
         let activity = try env.warehouse.getRecentActivity()
-        let entry = activity.first(where: { $0.description.contains("RA_Part") == false })
         let anyEntry = activity.first
         #expect(anyEntry != nil)
         #expect(anyEntry?.performedByName == "Unknown")

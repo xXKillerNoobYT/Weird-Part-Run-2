@@ -203,7 +203,15 @@ struct CategoriesTreeView: View {
                     }
                     .frame(maxWidth: .infinity)
                 } else {
-                    ContentUnavailableView.search(text: searchText)
+                    EmptyStateView(
+                        icon: "magnifyingglass",
+                        title: "No Matches",
+                        message: "No categories, styles, types, or brands match \"\(searchText)\".",
+                        actionLabel: "Clear Search",
+                        actionIcon: "xmark.circle"
+                    ) {
+                        searchText = ""
+                    }
                 }
             } else {
                 ScrollView {
@@ -670,11 +678,11 @@ struct CategoriesTreeView: View {
                             .padding(.leading, DS.Space.lg * 4 + 14)
                             .padding(.vertical, DS.Space.xs)
                     } else if brandSKUs.isEmpty {
-                        ContentUnavailableView {
-                            Label("No SKU Rows Yet", systemImage: "barcode.viewfinder")
-                        } description: {
-                            Text("This type/brand pair has no SKU rows yet.")
-                        }
+                        EmptyStateView(
+                            icon: "barcode.viewfinder",
+                            title: "No SKU Rows Yet",
+                            message: "This type/brand pair has no SKU rows yet."
+                        )
                         .padding(.leading, DS.Space.lg * 4 + 14)
                         .padding(.vertical, DS.Space.xs)
                         .accessibilityIdentifier("emptySKURows_\(typeId)_\(realBrandId)")
