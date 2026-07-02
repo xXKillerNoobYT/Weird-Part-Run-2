@@ -232,7 +232,7 @@ struct UserMenuSheet: View {
                         checklistDismissed = false
                         if let manager = appCore.onboardingManager {
                             manager.resetProgress()
-                            manager.isOnboardingActive = true
+                            manager.startTour()
                         }
                         dismiss()
                     } label: {

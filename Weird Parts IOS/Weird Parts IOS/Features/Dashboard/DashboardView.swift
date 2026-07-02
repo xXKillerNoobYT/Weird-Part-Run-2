@@ -72,6 +72,12 @@ struct DashboardView: View {
     @State private var isLoading = true
     @State private var loadError: String?
 
+    /// Clearance for the floating AI assistant button (52pt circle + margins).
+    /// Reserved at the end of the scroll content so the last dashboard card can
+    /// scroll fully above the FAB, and at the trailing edge of the dismiss toast
+    /// so the Undo action never sits underneath the FAB on compact phones (#1098).
+    private let aiFabClearance: CGFloat = 76
+
     // Lifecycle-aware timers — only fire when dashboard is visible (fixes #214)
     @State private var refreshCancellable: AnyCancellable?
     @State private var clockCancellable: AnyCancellable?
@@ -112,7 +118,10 @@ struct DashboardView: View {
                     }
                 }
                 .padding(.vertical)
-                .padding(.bottom, dynamicTypeSize.isAccessibilitySize ? DS.Space.xxxxl : 0)
+                // Always reserve FAB clearance so the final card (onboarding
+                // checklist / tour progress on fresh installs) can scroll clear
+                // of the floating AI button and bottom tab bar (#1098).
+                .padding(.bottom, aiFabClearance + (dynamicTypeSize.isAccessibilitySize ? DS.Space.xxxxl : 0))
             }
             .refreshable { await loadData() }
             .background(DS.Background.page)
@@ -181,13 +190,17 @@ struct DashboardView: View {
                         }
                     }
                     .font(.subheadline.weight(.semibold))
+                    .dsMinTapTarget()
                     .accessibilityIdentifier("checklistUndoDismissToast")
                 }
                 .padding(.horizontal, DS.Space.md)
                 .padding(.vertical, DS.Space.sm)
                 .background(.regularMaterial, in: Capsule())
                 .shadow(radius: 8, y: 3)
-                .padding(.horizontal, DS.Space.lg)
+                .padding(.leading, DS.Space.lg)
+                // Keep the toast (and its Undo action) clear of the floating AI
+                // button that overlays the bottom-trailing corner (#1098).
+                .padding(.trailing, aiFabClearance)
                 .padding(.bottom, DS.Space.lg)
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("checklistDismissToast")
@@ -368,10 +381,10 @@ struct DashboardView: View {
                     .controlSize(.small)
                 }
 
-                // Tour button
+                // Tour button — startTour() persists the flag across relaunch (#1067)
                 if appCore.onboardingManager?.isOnboardingActive != true {
                     Button {
-                        withAnimation { appCore.onboardingManager?.isOnboardingActive = true }
+                        withAnimation { appCore.onboardingManager?.startTour() }
                     } label: {
                         Label("Take the Full App Tour", systemImage: "graduationcap.fill")
                             .font(.subheadline)
@@ -518,11 +531,15 @@ struct DashboardView: View {
                 }
 
                 Button {
-                    withAnimation { manager.isOnboardingActive = false }
+                    // endTour() persists the inactive flag — a plain assignment
+                    // here was lost on relaunch and banners came back (#1067).
+                    withAnimation { manager.endTour() }
                 } label: {
                     Text("End Tour")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
                 }
             }
             .padding()
