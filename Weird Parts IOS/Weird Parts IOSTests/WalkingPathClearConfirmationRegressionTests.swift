@@ -20,10 +20,24 @@ final class WalkingPathClearConfirmationRegressionTests: XCTestCase {
             source.contains("Button(\"Clear saved path\", role: .destructive) { clearSavedPath() }"),
             "Only the explicit destructive confirmation button may call the persisting clear."
         )
-        // The unconfirmed one-tap clear+persist must not exist anymore.
+        // The Clear entry point must not persist anything itself — extraction
+        // of the actual method body avoids matching the (legitimate)
+        // clearSavedPath() implementation elsewhere in the file.
+        let clearPathBody = try Self.methodBody(named: "clearPath", in: source)
         XCTAssertFalse(
-            source.contains("pathStops = []\n            saveStops([])"),
+            clearPathBody.contains("saveStops"),
             "clearPath() must not clear and persist in one unconfirmed step."
+        )
+        XCTAssertTrue(
+            clearPathBody.contains("showClearConfirm = true"),
+            "clearPath() must route saved-path clears through the confirmation flag."
+        )
+        // The confirmed clear must drop any pending single-stop undo so a
+        // stale undo bar can't resurrect a stop into the freshly cleared path.
+        let clearSavedPathBody = try Self.methodBody(named: "clearSavedPath", in: source)
+        XCTAssertTrue(
+            clearSavedPathBody.contains("discardPendingUndo()"),
+            "clearSavedPath() must discard any pending stop-removal undo."
         )
     }
 
@@ -55,6 +69,39 @@ final class WalkingPathClearConfirmationRegressionTests: XCTestCase {
             source.contains(".accessibilityIdentifier(\"walkingPathUndoBar\")"),
             "The undo bar needs a stable accessibility identifier for UI tests."
         )
+        XCTAssertTrue(
+            source.contains("undoDismissTask = Task { @MainActor in"),
+            "The undo auto-dismiss task must be MainActor-confined since it mutates view @State."
+        )
+        XCTAssertTrue(
+            source.contains(".onDisappear { discardPendingUndo() }"),
+            "Leaving the view must drop pending undo state, not just cancel its dismiss timer."
+        )
+    }
+
+    /// Extracts the brace-balanced body of the named function.
+    private static func methodBody(named methodName: String, in source: String) throws -> String {
+        guard let nameRange = source.range(of: "func \(methodName)(") else {
+            throw XCTSkip("Expected method \(methodName) in source")
+        }
+        guard let openBrace = source[nameRange.upperBound...].firstIndex(of: "{") else {
+            throw XCTSkip("Expected opening brace for \(methodName)")
+        }
+
+        var depth = 0
+        var index = openBrace
+        while index < source.endIndex {
+            let char = source[index]
+            if char == "{" { depth += 1 }
+            if char == "}" { depth -= 1 }
+            let next = source.index(after: index)
+            if depth == 0 {
+                return String(source[openBrace..<next])
+            }
+            index = next
+        }
+
+        throw XCTSkip("Expected closing brace for \(methodName)")
     }
 
     private static func readWalkingPathSource(

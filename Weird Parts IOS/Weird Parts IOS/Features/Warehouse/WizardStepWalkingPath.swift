@@ -93,7 +93,7 @@ struct WizardStepWalkingPath: View {
                 .accessibilityIdentifier("walkingPathUndoBar")
             }
         }
-        .onDisappear { undoDismissTask?.cancel() }
+        .onDisappear { discardPendingUndo() }
     }
 
     private func stopList(showPreviewActions: Bool = true) -> some View {
@@ -349,10 +349,19 @@ struct WizardStepWalkingPath: View {
         saveStops(pathStops)
         // Removal persists immediately, so give the user a short undo
         // window instead of a heavier per-stop confirmation (issue #1198).
-        undoDismissTask = Task {
+        // MainActor-confined: the closure mutates view @State.
+        undoDismissTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(5))
             if !Task.isCancelled { lastRemovedStop = nil }
         }
+    }
+
+    /// Drops any pending undo state — used when the undo would no longer be
+    /// meaningful (path cleared) or the view is going away.
+    private func discardPendingUndo() {
+        undoDismissTask?.cancel()
+        undoDismissTask = nil
+        lastRemovedStop = nil
     }
 
     private func undoRemoveStop() {
@@ -393,8 +402,11 @@ struct WizardStepWalkingPath: View {
         }
     }
 
-    /// Performs the confirmed destructive clear of the saved path.
+    /// Performs the confirmed destructive clear of the saved path. Any
+    /// pending single-stop undo is discarded — undoing into a cleared path
+    /// would silently resurrect a stop the user just chose to wipe.
     private func clearSavedPath() {
+        discardPendingUndo()
         pathStops = []
         saveStops([])
     }
