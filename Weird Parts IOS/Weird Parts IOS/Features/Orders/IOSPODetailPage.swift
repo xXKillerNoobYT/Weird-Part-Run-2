@@ -1733,6 +1733,13 @@ struct IOSPODetailPage: View {
                             .fill(Color(.systemGray6))
                     )
                     .padding(.leading, 18)
+                } else if receiptEntryItems[entry.id] != nil {
+                    // Loaded successfully but the session has no item rows —
+                    // say so instead of spinning forever.
+                    Text("No item details recorded for this session.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 18)
                 } else {
                     HStack {
                         Spacer()
@@ -2262,6 +2269,10 @@ struct IOSPODetailPage: View {
             // Leave the entry un-cached so expanding it again retries, and surface
             // the failure inline — via the SEPARATE item-level error so already-
             // loaded sessions stay visible instead of blanking the sheet (#1335).
+            // Collapse the failed row too; otherwise its "Loading items..."
+            // spinner sticks forever since nothing was cached.
+            receiptEntryItems.removeValue(forKey: sessionId)
+            expandedReceiptEntryIds.remove(sessionId)
             receiptItemsError = userFriendlyError(error, context: "load receipt details")
         }
     }
@@ -2362,6 +2373,13 @@ struct IOSPODetailPage: View {
                 receiptHistoryEntries = try service.getReceiptHistoryEntries(poId: poId)
                 receiptHistoryError = nil
             } catch {
+                // Clear previously-loaded history so the error can't sit on top
+                // of stale data (keeps the sheet and postAIContext consistent).
+                receiptBatches = []
+                receiptHistoryEntries = []
+                receiptEntryItems = [:]
+                expandedReceiptEntryIds = []
+                receiptItemsError = nil
                 receiptHistoryError = userFriendlyError(error, context: "load receipt history")
             }
             postAIContext(detail)
