@@ -126,7 +126,7 @@ struct CompanionSandboxSheet: View {
 
             // Selected categories chips
             if !selectedCategories.isEmpty {
-                WrappedHStack(spacing: 8) {
+                FlowChipLayout(spacing: 8) {
                     ForEach(selectedCategories) { cat in
                         HStack(spacing: 4) {
                             Text(cat.categoryName)
@@ -400,59 +400,3 @@ struct CompanionSandboxSheet: View {
     }
 }
 
-// MARK: - Wrapped HStack (Flow Layout)
-
-/// Simple wrapping horizontal stack layout for chip display.
-private struct WrappedHStack: Layout {
-    var spacing: CGFloat = 8
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let result = computeLayout(subviews: subviews, width: proposal.width ?? .infinity)
-        return result.size
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let result = computeLayout(subviews: subviews, width: bounds.width)
-        for (index, position) in result.positions.enumerated() {
-            subviews[index].place(
-                at: CGPoint(x: bounds.minX + position.x, y: bounds.minY + position.y),
-                proposal: ProposedViewSize(result.sizes[index])
-            )
-        }
-    }
-
-    private struct LayoutResult {
-        var size: CGSize
-        var positions: [CGPoint]
-        var sizes: [CGSize]
-    }
-
-    private func computeLayout(subviews: Subviews, width: CGFloat) -> LayoutResult {
-        var positions: [CGPoint] = []
-        var sizes: [CGSize] = []
-        var x: CGFloat = 0
-        var y: CGFloat = 0
-        var rowHeight: CGFloat = 0
-        var maxWidth: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x + size.width > width && x > 0 {
-                x = 0
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-            positions.append(CGPoint(x: x, y: y))
-            sizes.append(size)
-            rowHeight = max(rowHeight, size.height)
-            x += size.width + spacing
-            maxWidth = max(maxWidth, x - spacing)
-        }
-
-        return LayoutResult(
-            size: CGSize(width: maxWidth, height: y + rowHeight),
-            positions: positions,
-            sizes: sizes
-        )
-    }
-}
