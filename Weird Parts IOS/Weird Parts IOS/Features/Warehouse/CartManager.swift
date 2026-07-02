@@ -2,7 +2,12 @@ import SwiftUI
 import Combine
 import WiredPartCore
 
-/// Item in the warehouse cart — a part or bin being moved to a new location.
+/// Item in the warehouse cart — a part or bin whose recorded shelf location
+/// is being updated in bulk.
+///
+/// Note: cart placement updates location *metadata* on the part record.
+/// It does not create inventory ledger movements — quantity moves between
+/// structured locations go through the Guided Movement wizard.
 struct CartItem: Identifiable, Equatable, Sendable {
     let id = UUID()
     let partId: Int64?
@@ -16,12 +21,12 @@ struct CartItem: Identifiable, Equatable, Sendable {
     }
 }
 
-/// Global cart manager for moving multiple bins/parts at once.
+/// Global cart manager for updating recorded locations of multiple bins/parts at once.
 ///
 /// Usage:
 /// - Inject as `@StateObject` at the warehouse router level
 /// - Any bin/part list can add items via `addToCart()`
-/// - Cart sheet shows items and allows placing to new locations
+/// - Cart sheet shows items and allows recording new shelf locations
 @MainActor
 final class CartManager: ObservableObject {
     @Published var items: [CartItem] = []
@@ -77,7 +82,7 @@ struct CartSheetView: View {
                     EmptyStateView(
                         icon: "cart",
                         title: "Cart is Empty",
-                        message: "Add parts or bins from any list to move them in bulk."
+                        message: "Add parts from any list to update their recorded shelf locations in bulk. Bins can be marked placed for reference."
                     )
                 } else {
                     cartList
@@ -173,6 +178,13 @@ struct CartSheetView: View {
 
     private var placeAllButton: some View {
         VStack(spacing: 8) {
+            // Be explicit about what "placing" does so this flow can't be
+            // mistaken for an inventory ledger movement (issue #1253).
+            Text(placementScopeCaption)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+
             if isPlacingItems {
                 ProgressView("Placing items\u{2026}")
                     .font(.caption)
@@ -188,10 +200,25 @@ struct CartSheetView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(placedItems.count == cartManager.itemCount ? .green : .blue)
-            .disabled(isPlacingItems || placements.values.allSatisfy { $0.trimmingCharacters(in: .whitespaces).isEmpty })
+            // Match the save path's trimming exactly — a mismatch here would
+            // enable the button for newline-only input that then places nothing.
+            .disabled(isPlacingItems || placements.values.allSatisfy {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            })
         }
         .padding()
         .background(Color(.secondarySystemBackground))
+    }
+
+    /// Caption describing exactly what "placing" persists for the current
+    /// cart contents. Bins are only marked placed for reference, so a
+    /// bins-only cart must not claim shelf locations are being updated.
+    private var placementScopeCaption: String {
+        let hasParts = cartManager.items.contains { $0.partId != nil }
+        if hasParts {
+            return "Placing updates each part's recorded shelf location. To move stock quantities between locations, use Guided Movement."
+        }
+        return "Bins are marked placed for reference only. To move stock quantities between locations, use Guided Movement."
     }
 
     private func placeAllItems() {
@@ -224,12 +251,16 @@ struct CartSheetView: View {
             var errorMsg: String?
 
             for item in items {
-                guard let location = currentPlacements[item.id],
-                      !location.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
+                guard let location = currentPlacements[item.id]?
+                    .trimmingCharacters(in: .whitespacesAndNewlines),
+                      !location.isEmpty else { continue }
 
                 if let partId = item.partId {
                     do {
-                        try service.updatePart(id: partId, notes: "Location: \(location)")
+                        // Record the new location in the part's dedicated
+                        // shelf_location column. Never write to `notes` here —
+                        // that destroyed free-form part notes (issue #1253).
+                        try service.updatePart(id: partId, shelfLocation: location)
                         placed.insert(item.id)
                     } catch {
                         failedPartIDs.insert(item.id)
@@ -259,7 +290,7 @@ struct CartSheetView: View {
             var placed: Set<UUID> = []
 
             for item in items {
-                guard currentPlacements[item.id]?.trimmingCharacters(in: .whitespaces).isEmpty == false else { continue }
+                guard currentPlacements[item.id]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else { continue }
                 placed.insert(item.id)
             }
 
