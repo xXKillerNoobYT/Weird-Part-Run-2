@@ -34,9 +34,10 @@ permissions:
 
 jobs:
   maintain-prs:
-    # Merge maintenance must not stall behind GitHub-hosted Actions billing.
-    # Use the WPR2 local Mac runner for repo automation.
-    runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
+    # Pure gh/bash automation — no Xcode needed. Owner authorized cloud-runner
+    # spend (2026-07-02); running the train-feeder on hosted Linux means PRs
+    # keep rebasing/merging even while the Mac runner is busy with CodeQL.
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       GH_TOKEN: ${{ github.token }}
@@ -44,14 +45,6 @@ jobs:
       PR_MAINTENANCE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true && '1' || '0' }}
 
     steps:
-      - name: Verify self-hosted macOS runner
-        shell: bash
-        run: |
-          test "$RUNNER_OS" = "macOS"
-          test "$(uname -s)" = "Darwin"
-          echo "Runner: $RUNNER_NAME"
-          echo "Architecture: $RUNNER_ARCH"
-
       - name: Checkout
         uses: actions/checkout@v4
 

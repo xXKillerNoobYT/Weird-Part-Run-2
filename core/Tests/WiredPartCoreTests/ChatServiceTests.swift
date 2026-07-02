@@ -509,6 +509,36 @@ struct ChatServiceTests {
         #expect(closedQuestions.isEmpty)
     }
 
+    @Test("listSupplierQuestions excludes threads on soft-deleted channels")
+    func testListSupplierQuestionsExcludesDeletedChannels() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-SQ-03", name: "Deleted Channel Job")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "DeletedChannelSupplier")
+        let channelId = try env.chat.createSupplierChannel(
+            name: "Doomed Channel",
+            supplierId: supplierId,
+            supplierDisplayName: "DeletedChannelSupplier",
+            contactId: nil,
+            role: nil,
+            createdBy: env.adminUserId
+        )
+        let threadId = try env.chat.createSupplierQuestion(
+            channelId: channelId,
+            jobId: jobId,
+            askedBy: env.adminUserId,
+            subject: "Question on a doomed channel"
+        )
+
+        #expect(try env.chat.listSupplierQuestions().contains { $0.id == threadId })
+
+        // Soft-delete the channel: its Q&A threads must leave the supplier questions page
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE chat_channels SET deleted_at = datetime('now') WHERE id = ?", arguments: [channelId])
+        }
+
+        #expect(try env.chat.listSupplierQuestions().allSatisfy { $0.id != threadId })
+    }
+
     @Test("deactivateSupplierBridge soft-deletes the bridge")
     func testDeactivateSupplierBridge() throws {
         let env = try E2ETestHelpers.setUp()

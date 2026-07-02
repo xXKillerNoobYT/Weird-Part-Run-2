@@ -1266,6 +1266,75 @@ struct WarehouseServiceExtTests {
         #expect(link == nil)
     }
 
+    @Test("getJobLinkForPOLine returns nil when any link in the chain is soft-deleted")
+    func testGetJobLinkForPOLineExcludesSoftDeleted() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-LINK-01", name: "Routed Job")
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-LINK-02", supplierId: supplierId)
+
+        // Build the full routing chain: PO line -> JPO line -> JPO -> job
+        let (jpoId, jpoLineId, poLineId): (Int64, Int64, Int64) = try env.db.writer.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO job_parts_orders
+                    (job_id, order_number, requested_by, status, created_at, updated_at)
+                    VALUES (?, 'JPO-LINK-01', ?, 'approved', datetime('now'), datetime('now'))
+                    """,
+                arguments: [jobId, env.adminUserId]
+            )
+            let jpoId = db.lastInsertedRowID
+            try db.execute(
+                sql: """
+                    INSERT INTO jpo_line_items (jpo_id, part_id, qty_requested, created_at)
+                    VALUES (?, ?, 5, datetime('now'))
+                    """,
+                arguments: [jpoId, partId]
+            )
+            let jpoLineId = db.lastInsertedRowID
+            try db.execute(
+                sql: """
+                    INSERT INTO po_line_items (po_id, jpo_line_id, part_id, qty_ordered, created_at)
+                    VALUES (?, ?, ?, 5, datetime('now'))
+                    """,
+                arguments: [poId, jpoLineId, partId]
+            )
+            return (jpoId, jpoLineId, db.lastInsertedRowID)
+        }
+
+        // Intact chain resolves the job link
+        #expect(try env.warehouse.getJobLinkForPOLine(poLineId: poLineId)?.jobId == jobId)
+
+        // Soft-deleting ANY table in the chain must break routing (receiving falls back to shelf)
+        let softDeleteCases: [(table: String, id: Int64)] = [
+            ("jobs", jobId),
+            ("job_parts_orders", jpoId),
+            ("jpo_line_items", jpoLineId),
+            ("po_line_items", poLineId)
+        ]
+        for testCase in softDeleteCases {
+            try env.db.writer.write { db in
+                try db.execute(
+                    sql: "UPDATE \(testCase.table) SET deleted_at = datetime('now') WHERE id = ?",
+                    arguments: [testCase.id]
+                )
+            }
+            let link = try env.warehouse.getJobLinkForPOLine(poLineId: poLineId)
+            #expect(link == nil, "Expected nil link when \(testCase.table) row is soft-deleted")
+            try env.db.writer.write { db in
+                try db.execute(
+                    sql: "UPDATE \(testCase.table) SET deleted_at = NULL WHERE id = ?",
+                    arguments: [testCase.id]
+                )
+            }
+        }
+
+        // Restored chain resolves again (sanity check that the loop restored everything)
+        #expect(try env.warehouse.getJobLinkForPOLine(poLineId: poLineId)?.jobId == jobId)
+    }
+
     // MARK: - listDistinctStockLocations
 
     @Test("listDistinctStockLocations returns empty when no stock exists")

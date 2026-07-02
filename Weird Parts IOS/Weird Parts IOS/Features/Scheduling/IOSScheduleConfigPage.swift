@@ -667,10 +667,27 @@ struct ShiftTemplateEditSheet: View {
     @State private var breakPaid = false
     @State private var overtimeRule = "company_default"
     @State private var showDeleteConfirm = false
+    @State private var showDiscardConfirm = false
 
-    @State private var originalName = ""
+    @State private var baselineSignature = ""
 
-    private var isDirty: Bool { name.trimmingCharacters(in: .whitespaces) != originalName }
+    /// Signature over every persisted field so edits to any of them —
+    /// not just the name — mark the sheet dirty (issue #1248).
+    private var formSignature: String {
+        let days = dayOrder.filter { selectedDays.contains($0) }.joined(separator: ",")
+        return [
+            name.trimmingCharacters(in: .whitespaces),
+            String(selectedHatId),
+            days,
+            Formatters.timeHHmmFormatter.string(from: startTime),
+            Formatters.timeHHmmFormatter.string(from: endTime),
+            String(breakMinutes),
+            String(breakPaid),
+            overtimeRule
+        ].joined(separator: "|")
+    }
+
+    private var isDirty: Bool { formSignature != baselineSignature }
 
     private let dayOrder = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
     private let dayLabels = ["M", "T", "W", "Th", "F", "Sa", "Su"]
@@ -762,7 +779,9 @@ struct ShiftTemplateEditSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty { showDiscardConfirm = true } else { dismiss() }
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
@@ -783,13 +802,19 @@ struct ShiftTemplateEditSheet: View {
             } message: {
                 Text("This action cannot be undone.")
             }
+            .confirmationDialog("Discard changes?", isPresented: $showDiscardConfirm, titleVisibility: .visible) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep editing", role: .cancel) {}
+            }
         }
     }
 
     private func populateFromExisting() {
+        // Snapshot the baseline after seeding (or after defaults, for new
+        // templates) so untouched sheets never count as dirty.
+        defer { baselineSignature = formSignature }
         guard let t = existing else { return }
         name = t.name
-        originalName = t.name
         selectedHatId = t.hatId ?? 0
         // Parse work days JSON
         if let data = t.workDays.data(using: .utf8),
@@ -847,10 +872,22 @@ struct HolidayEditSheet: View {
     @State private var isPaid = true
     @State private var isRecurring = false
     @State private var showDeleteConfirm = false
+    @State private var showDiscardConfirm = false
 
-    @State private var originalName = ""
+    @State private var baselineSignature = ""
 
-    private var isDirty: Bool { name.trimmingCharacters(in: .whitespaces) != originalName }
+    /// Signature over every persisted field so edits to any of them —
+    /// not just the name — mark the sheet dirty (issue #1248).
+    private var formSignature: String {
+        [
+            name.trimmingCharacters(in: .whitespaces),
+            Formatters.localDateFormatter.string(from: selectedDate),
+            String(isPaid),
+            String(isRecurring)
+        ].joined(separator: "|")
+    }
+
+    private var isDirty: Bool { formSignature != baselineSignature }
 
     var body: some View {
         NavigationStack {
@@ -890,7 +927,9 @@ struct HolidayEditSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty { showDiscardConfirm = true } else { dismiss() }
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
@@ -909,13 +948,19 @@ struct HolidayEditSheet: View {
             } message: {
                 Text("This action cannot be undone.")
             }
+            .confirmationDialog("Discard changes?", isPresented: $showDiscardConfirm, titleVisibility: .visible) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep editing", role: .cancel) {}
+            }
         }
     }
 
     private func populateFromExisting() {
+        // Snapshot the baseline after seeding (or after defaults, for new
+        // holidays) so untouched sheets never count as dirty.
+        defer { baselineSignature = formSignature }
         guard let h = existing else { return }
         name = h.name
-        originalName = h.name
         isPaid = h.isPaid
         isRecurring = h.isRecurring
         if let d = Formatters.localDateFormatter.date(from: h.date) { selectedDate = d }

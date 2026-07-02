@@ -200,6 +200,40 @@ struct DashboardServiceTests {
         #expect((found?.pctUsed ?? 0) >= 80.0)
     }
 
+    @Test("Budget alerts and job KPI spend exclude POs linked through soft-deleted JPOs")
+    func testJobSpendExcludesSoftDeletedJPOs() throws {
+        let (env, dash) = try freshEnv()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BUDGET-02", name: "JPO Spend Job")
+        let suppId = try E2ETestHelpers.seedSupplier(env, name: "SpendSupplier")
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-SPEND-01", supplierId: suppId)
+
+        // Link the PO to the job through a JPO: budget 100, PO total 100 (100% spent)
+        let jpoId: Int64 = try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET budget_limit = 100 WHERE id = ?", arguments: [jobId])
+            try db.execute(sql: "UPDATE purchase_orders SET total_cost = 100 WHERE id = ?", arguments: [poId])
+            try db.execute(sql: """
+                INSERT INTO job_parts_orders
+                (job_id, order_number, requested_by, status, created_at, updated_at)
+                VALUES (?, 'JPO-SPEND-01', ?, 'approved', datetime('now'), datetime('now'))
+                """, arguments: [jobId, env.adminUserId])
+            let jpoId = db.lastInsertedRowID
+            try db.execute(sql: "INSERT INTO po_jpo_links (po_id, jpo_id) VALUES (?, ?)", arguments: [poId, jpoId])
+            return jpoId
+        }
+
+        // Live JPO: spend counts toward the alert and KPI detail
+        #expect(try dash.getBudgetAlerts().contains { $0.id == jobId })
+        #expect(try dash.getJobKPIDetail(jobId: jobId)?.currentSpend == 100)
+
+        // Soft-delete the JPO: its PO spend must stop counting
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE job_parts_orders SET deleted_at = datetime('now') WHERE id = ?", arguments: [jpoId])
+        }
+
+        #expect(try dash.getBudgetAlerts().allSatisfy { $0.id != jobId })
+        #expect(try dash.getJobKPIDetail(jobId: jobId)?.currentSpend == 0)
+    }
+
     // MARK: - Labor & Clock
 
     @Test("My hours today for user")
