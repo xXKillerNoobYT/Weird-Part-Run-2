@@ -569,7 +569,7 @@ struct PartsPricingPage: View {
     @ViewBuilder
     private var emptyState: some View {
         let isFiltered = !searchText.isEmpty || showMissingPriceOnly
-        return VStack(spacing: 16) {
+        VStack(spacing: 16) {
             Image(systemName: isFiltered ? "magnifyingglass" : "dollarsign.circle")
                 .decorativeIconFont(48)
                 .foregroundStyle(.secondary)

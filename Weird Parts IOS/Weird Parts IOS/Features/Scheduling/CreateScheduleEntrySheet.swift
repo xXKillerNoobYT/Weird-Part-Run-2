@@ -116,8 +116,8 @@ struct CreateScheduleEntrySheet: View {
                 selectedJobId = initialJobId
                 loadAssignmentDetail()
             }
-            .onChange(of: entryDate) { _ in loadAssignmentDetail() }
-            .onChange(of: selectedJobId) { _ in loadAssignmentDetail() }
+            .onChange(of: entryDate) { loadAssignmentDetail() }
+            .onChange(of: selectedJobId) { loadAssignmentDetail() }
         }
     }
 

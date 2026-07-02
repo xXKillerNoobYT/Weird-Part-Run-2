@@ -9,6 +9,11 @@ struct IOSQAQuestionForm: View {
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
 
+    /// Escalation level the new thread starts at. The Q&A page uses the
+    /// default ("worker" — bottom of the chain); the RFI page passes "office"
+    /// so the submitted thread is an RFI and appears in the office-level RFI
+    /// list immediately (#1200 regression fix).
+    var escalationLevel: String = "worker"
     var onSubmitted: (() -> Void)?
 
     @State private var question = ""
@@ -73,7 +78,7 @@ struct IOSQAQuestionForm: View {
                     }
                 }
             }
-            .navigationTitle("Ask a Question")
+            .navigationTitle(escalationLevel == "office" ? "New RFI" : "Ask a Question")
             .navigationBarTitleDisplayMode(.inline)
             .scrollDismissesKeyboard(.immediately)
             .interactiveDismissDisabled(!question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -145,11 +150,12 @@ struct IOSQAQuestionForm: View {
                 jobId: jobId,
                 askedBy: userId,
                 subject: question.trimmingCharacters(in: .whitespacesAndNewlines),
-                priority: priority
+                priority: priority,
+                level: escalationLevel
             )
             isSaving = false
-            onSubmitted?()
             dismiss()
+            onSubmitted?()
         } catch {
             isSaving = false
             errorMessage = userFriendlyError(error, context: "load messages")

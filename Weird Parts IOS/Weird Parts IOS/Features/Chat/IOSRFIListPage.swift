@@ -62,7 +62,10 @@ struct IOSRFIListPage: View {
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .createRFI:
-                IOSQAQuestionForm(onSubmitted: { loadData() })
+                // RFIs live at the office level — create the thread there so it
+                // appears in this page's office-level list right away instead of
+                // dead-ending at the worker level (#1200 follow-up).
+                IOSQAQuestionForm(escalationLevel: "office", onSubmitted: { loadData() })
                     .environmentObject(appCore)
             case .help:
                 PageHelpSheet(
@@ -166,11 +169,19 @@ struct IOSRFIListPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if filteredThreads.isEmpty && filteredSupplierQuestions.isEmpty {
-            EmptyStateView(
-                icon: "doc.questionmark",
-                title: "No RFIs",
-                message: "No requests for information at this time."
-            )
+            if threads.isEmpty && supplierQuestions.isEmpty {
+                EmptyStateView(
+                    icon: "doc.questionmark",
+                    title: "No RFIs",
+                    message: "No questions have been escalated to the office level and no supplier questions are waiting."
+                )
+            } else {
+                EmptyStateView(
+                    icon: "doc.questionmark",
+                    title: "No Matching RFIs",
+                    message: "No RFIs match your current filter or search."
+                )
+            }
         } else {
             List {
                 if !filteredSupplierQuestions.isEmpty {
@@ -329,8 +340,10 @@ struct IOSRFIListPage: View {
         isLoading = threads.isEmpty && supplierQuestions.isEmpty
         loadError = nil
         do {
-            // Load all — client-side filtering via smart cards
-            threads = try service.listQAThreads()
+            // RFIs are Q&A threads escalated to the office level — load only those,
+            // not every open Q&A thread (#1200). Status filtering stays client-side
+            // via the smart cards.
+            threads = try service.listQAThreads(levels: ["office"])
             supplierQuestions = try service.listSupplierQuestions()
         } catch {
             loadError = userFriendlyError(error, context: "load RFIs")

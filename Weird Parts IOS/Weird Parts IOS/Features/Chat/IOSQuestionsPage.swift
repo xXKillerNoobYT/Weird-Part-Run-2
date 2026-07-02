@@ -11,6 +11,8 @@ struct IOSQuestionsPage: View {
     // MARK: - State
 
     @State private var threads: [ChatService.QAThreadRow] = []
+    /// IDs of threads the current user (or their role) must act on — drives "Needs My Review".
+    @State private var reviewThreadIds: Set<Int64> = []
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var statusFilter: QAFilter = .all
@@ -100,7 +102,7 @@ struct IOSQuestionsPage: View {
         case .myQuestions:
             guard let currentUserId = appCore.currentUser?.id else { return 0 }
             return threads.filter { $0.askedById == currentUserId }.count
-        case .needsMyReview: return threads.filter { $0.status == "open" }.count
+        case .needsMyReview: return threads.filter { reviewThreadIds.contains($0.id) }.count
         case .resolved: return threads.filter { QAThreadStatusBuckets.isResolved($0.status) }.count
         }
     }
@@ -164,11 +166,25 @@ struct IOSQuestionsPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if filteredThreads.isEmpty {
-            EmptyStateView(
-                icon: "questionmark.circle",
-                title: "No Questions",
-                message: "No Q&A threads match your criteria."
-            )
+            if threads.isEmpty {
+                EmptyStateView(
+                    icon: "questionmark.circle",
+                    title: "No Questions",
+                    message: "No Q&A threads exist yet. Tap + to ask the first question."
+                )
+            } else if statusFilter == .needsMyReview {
+                EmptyStateView(
+                    icon: "checkmark.circle",
+                    title: "Nothing Needs Your Review",
+                    message: "No open questions are waiting on you or your role right now."
+                )
+            } else {
+                EmptyStateView(
+                    icon: "questionmark.circle",
+                    title: "No Matching Questions",
+                    message: "No Q&A threads match your current filter or search."
+                )
+            }
         } else {
             List(filteredThreads, id: \.id) { thread in
                 NavigationLink {
@@ -196,7 +212,7 @@ struct IOSQuestionsPage: View {
                 break
             }
             items = items.filter { $0.askedById == currentUserId }
-        case .needsMyReview: items = items.filter { $0.status == "open" }
+        case .needsMyReview: items = items.filter { reviewThreadIds.contains($0.id) }
         case .resolved: items = items.filter { QAThreadStatusBuckets.isResolved($0.status) }
         }
 
@@ -305,6 +321,14 @@ struct IOSQuestionsPage: View {
         do {
             // Load all threads — filtering is done client-side via smart cards
             threads = try service.listQAThreads()
+            // "Needs My Review" is ownership-aware: only threads at an escalation
+            // level the current user's role responds to (excluding their own
+            // questions unless pushed back to them). See ChatService (#1200).
+            if let currentUserId = appCore.currentUser?.id {
+                reviewThreadIds = Set(try service.listQAThreadsNeedingReview(userId: currentUserId).map(\.id))
+            } else {
+                reviewThreadIds = []
+            }
         } catch {
             loadError = userFriendlyError(error, context: "load questions")
         }
