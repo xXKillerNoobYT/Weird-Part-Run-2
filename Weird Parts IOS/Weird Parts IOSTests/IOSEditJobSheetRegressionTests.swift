@@ -49,10 +49,42 @@ final class IOSEditJobSheetRegressionTests: XCTestCase {
             "Edit job sheet should validate estimated hours and budget limit before updateJob so malformed text cannot be silently ignored."
         )
         XCTAssertTrue(
-            source.contains("guard Double(trimmed) != nil else")
+            source.contains("guard let number = Double(trimmed), number.isFinite else")
                 && source.contains("must be a plain number, like 8 or 8.5")
                 && source.contains("Clear the field to remove it."),
             "Malformed numeric input should show a clear error while still allowing users to clear an optional value."
+        )
+    }
+
+    /// Issue #1105: opening Edit Job on a workflow-less job must not draft the
+    /// default/first stage template. The picker baseline mirrors the job's saved
+    /// (possibly nil) template, an explicit "No Workflow" option represents that
+    /// state, and only a deliberate picker change routes through the
+    /// template-change confirmation on save.
+    func testEditingWorkflowLessJobDoesNotDraftDefaultStageTemplate() throws {
+        let source = try Self.readEditJobSheetSource()
+
+        XCTAssertTrue(
+            source.contains("_selectedStageTemplateId = State(initialValue: job.stageTemplateId)"),
+            "Picker baseline must mirror the job's saved template (nil included) so unrelated edits never register a template change."
+        )
+        XCTAssertFalse(
+            source.contains("stageTemplates.first(where: { $0.isDefault })?.id ?? stageTemplates.first?.id"),
+            "Edit sheet must not fall back to the default/first template for jobs without a workflow — that silently assigns a workflow on save."
+        )
+        XCTAssertTrue(
+            source.contains("Picker(\"Workflow\", selection: $selectedStageTemplateId)")
+                && source.contains("Text(\"No Workflow\").tag(Int64?.none)"),
+            "Workflow picker should bind the optional selection directly and show an explicit \"No Workflow\" option for jobs without a template."
+        )
+        XCTAssertFalse(
+            source.contains("selectedStageTemplateId ?? stageTemplates.first?.id ?? 0"),
+            "Picker display must not coerce a nil selection to the first template — that shows a workflow the user never chose."
+        )
+        XCTAssertTrue(
+            source.contains("if selectedStageTemplateId != job.stageTemplateId && !applyTemplateChange {")
+                && source.contains("showingTemplateChangeConfirmation = true"),
+            "Template assignment must stay behind the explicit change-confirmation path, keyed off the user's picker selection vs the saved baseline."
         )
     }
 
