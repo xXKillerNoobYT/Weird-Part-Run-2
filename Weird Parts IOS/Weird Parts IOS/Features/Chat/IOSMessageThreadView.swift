@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import UniformTypeIdentifiers
 import WiredPartCore
 import OSLog
 
@@ -38,11 +39,13 @@ struct IOSMessageThreadView: View {
     private enum ActiveSheet: Identifiable {
         case help
         case referencePicker(ReferenceType)
+        case pushBackReason
 
         var id: String {
             switch self {
             case .help: return "help"
             case .referencePicker(let type): return "refpicker-\(type.rawValue)"
+            case .pushBackReason: return "pushBackReason"
             }
         }
     }
@@ -53,8 +56,23 @@ struct IOSMessageThreadView: View {
         case job = "job_ref"
     }
 
-    // Toast
-    @State private var showComingSoon = false
+    // File attachment picker (#1191 — wired to a real document picker)
+    @State private var showFileImporter = false
+
+    // Escalate confirmation (#1191)
+    @State private var showEscalateConfirm = false
+    @State private var pushBackReason = ""
+
+    /// Thread quick actions this view can actually perform. Actions without a
+    /// wired flow (e.g. Add People) are hidden for beta instead of rendering
+    /// as dead-end buttons (#1191).
+    private static let supportedThreadActions: Set<ChatService.ThreadAction> = [
+        .markResolved, .escalate, .pushBack
+    ]
+
+    private var visibleThreadActions: [ChatService.ThreadAction] {
+        (threadInfo?.availableActions ?? []).filter { Self.supportedThreadActions.contains($0) }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -107,38 +125,48 @@ struct IOSMessageThreadView: View {
                         pendingAttachments.append(attachment)
                     }
                 )
+            case .pushBackReason:
+                PushBackReasonSheet(reason: $pushBackReason) {
+                    doPushBack()
+                }
+                .presentationDetents([.medium])
             }
         }
         .task {
             loadMessages()
             loadThreadInfo()
         }
-        .alert("Send Failed", isPresented: Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })) {
+        .alert("Action Failed", isPresented: Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })) {
             Button("OK") { actionError = nil }
         } message: {
             Text(actionError ?? "")
+        }
+        .fileImporter(
+            isPresented: $showFileImporter,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: true
+        ) { result in
+            switch result {
+            case .success(let urls):
+                importFiles(urls)
+            case .failure(let error):
+                actionError = userFriendlyError(error, context: "attach file")
+            }
         }
         .alert("Attachment Failed", isPresented: Binding(get: { attachmentError != nil }, set: { if !$0 { attachmentError = nil } })) {
             Button("OK") { attachmentError = nil }
         } message: {
             Text(attachmentError ?? "")
         }
-        .overlay(alignment: .bottom) {
-            if showComingSoon {
-                Text("File attachments coming in a future update")
-                    .font(.subheadline)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(.ultraThinMaterial)
-                    .cornerRadius(8)
-                    .padding(.bottom, 20)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .onAppear {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                            withAnimation { showComingSoon = false }
-                        }
-                    }
-            }
+        .confirmationDialog(
+            "Escalate this question to the next level?",
+            isPresented: $showEscalateConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Escalate") { doEscalate() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The question moves up one level (Worker → Lead → Manager → Office) for review.")
         }
     }
 
@@ -164,7 +192,7 @@ struct IOSMessageThreadView: View {
             .buttonStyle(.plain)
 
             if showInfoPanel, let info = threadInfo {
-                ThreadInfoPanel(info: info, onAction: handleAction)
+                ThreadInfoPanel(info: info, actions: visibleThreadActions, onAction: handleAction)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
 
@@ -276,7 +304,7 @@ struct IOSMessageThreadView: View {
             }
 
             // File button
-            Button { withAnimation { showComingSoon = true } } label: {
+            Button { showFileImporter = true } label: {
                 Image(systemName: "doc")
                     .foregroundStyle(.blue)
             }
@@ -473,8 +501,77 @@ struct IOSMessageThreadView: View {
             } catch {
                 actionError = userFriendlyError(error, context: "resolve thread")
             }
-        case .addPeople, .escalate, .pushBack, .approve, .reject:
-            break // Wired in later prompts (42D)
+        case .escalate:
+            showEscalateConfirm = true
+        case .pushBack:
+            pushBackReason = ""
+            activeSheet = .pushBackReason
+        case .addPeople, .approve, .reject:
+            // Not offered on iOS yet — these are filtered out of the rendered
+            // quick actions (see `supportedThreadActions`). Surface a visible
+            // message instead of silently ignoring if one ever slips through.
+            actionError = "This action isn't available on this device yet."
+        }
+    }
+
+    private func doEscalate() {
+        guard let service = appCore.chatService,
+              let userId = appCore.currentUser?.id else {
+            actionError = "Chat service unavailable"
+            return
+        }
+        do {
+            try service.escalateThreadByChannel(channelId: channelId, escalatedBy: userId, notes: nil)
+            loadThreadInfo()
+        } catch {
+            actionError = userFriendlyError(error, context: "escalate question")
+        }
+    }
+
+    private func doPushBack() {
+        guard let service = appCore.chatService,
+              let userId = appCore.currentUser?.id else {
+            actionError = "Chat service unavailable"
+            return
+        }
+        let reason = pushBackReason.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !reason.isEmpty else {
+            actionError = "A reason is required to push a question back."
+            return
+        }
+        do {
+            try service.pushBackThreadByChannel(channelId: channelId, pushedBackBy: userId, reason: reason)
+            pushBackReason = ""
+            loadThreadInfo()
+        } catch {
+            actionError = userFriendlyError(error, context: "push back question")
+        }
+    }
+
+    /// Copy picked files into a temp location and queue them as pending
+    /// attachments. Security-scoped access is required for files outside
+    /// the app sandbox (Files app, iCloud Drive, etc.).
+    private func importFiles(_ urls: [URL]) {
+        for url in urls {
+            let didAccess = url.startAccessingSecurityScopedResource()
+            defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+            do {
+                let tmpURL = FileManager.default.temporaryDirectory
+                    .appendingPathComponent(UUID().uuidString + "-" + url.lastPathComponent)
+                try FileManager.default.copyItem(at: url, to: tmpURL)
+                let attributes = try? FileManager.default.attributesOfItem(atPath: tmpURL.path)
+                let fileSize = (attributes?[.size] as? NSNumber)?.int64Value
+                let mimeType = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
+                pendingAttachments.append(ChatService.PendingAttachment(
+                    type: "file",
+                    filePath: tmpURL.path,
+                    fileName: url.lastPathComponent,
+                    fileSize: fileSize,
+                    mimeType: mimeType
+                ))
+            } catch {
+                actionError = userFriendlyError(error, context: "attach file")
+            }
         }
     }
 
@@ -570,8 +667,12 @@ struct AttachmentDisplay: View {
 // MARK: - Thread Info Panel
 
 /// Expandable inline panel showing thread context, people, and quick actions.
+///
+/// `actions` is the caller-filtered list of quick actions to render — only
+/// actions the hosting view can actually perform should be passed (#1191).
 struct ThreadInfoPanel: View {
     let info: ChatService.ThreadInfo
+    let actions: [ChatService.ThreadAction]
     let onAction: (ChatService.ThreadAction) -> Void
 
     var body: some View {
@@ -643,10 +744,10 @@ struct ThreadInfoPanel: View {
             }
 
             // Quick Actions
-            if !info.availableActions.isEmpty {
+            if !actions.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach(info.availableActions) { action in
+                        ForEach(actions) { action in
                             Button {
                                 onAction(action)
                             } label: {
@@ -890,6 +991,45 @@ private struct ReferencePickerSheet: View {
             } catch {
                 jobs = []
                 loadError = userFriendlyError(error, context: "load jobs")
+            }
+        }
+    }
+}
+
+// MARK: - Push Back Reason Sheet
+
+/// Collects the required feedback reason before pushing a Q&A thread back a level (#1191).
+private struct PushBackReasonSheet: View {
+    @Binding var reason: String
+    let onSubmit: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Reason for pushing back...", text: $reason, axis: .vertical)
+                        .lineLimit(3...6)
+                } header: {
+                    Text("Feedback")
+                } footer: {
+                    Text("Provide feedback explaining why the question is being sent back down a level.")
+                }
+            }
+            .navigationTitle("Push Back")
+            .navigationBarTitleDisplayMode(.inline)
+            .scrollDismissesKeyboard(.immediately)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Submit") {
+                        dismiss()
+                        onSubmit()
+                    }
+                    .disabled(reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
             }
         }
     }
