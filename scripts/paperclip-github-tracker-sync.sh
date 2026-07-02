@@ -91,6 +91,17 @@ hash_sha256() {
 }
 
 : "${PAPERCLIP_API_URL:?error: PAPERCLIP_API_URL is required}"
+
+# macOS ships no `timeout`; coreutils installs it as gtimeout. Resolve
+# whichever exists and degrade to unbounded (with a warning) when neither
+# does — a missing bound must not break the sync itself.
+TIMEOUT_BIN="$(command -v timeout || command -v gtimeout || true)"
+if [[ -z "$TIMEOUT_BIN" ]]; then
+  echo "warn: no timeout/gtimeout on PATH — gh calls run unbounded" >&2
+fi
+run_bounded() {
+  if [[ -n "$TIMEOUT_BIN" ]]; then "$TIMEOUT_BIN" 90 "$@"; else "$@"; fi
+}
 : "${PAPERCLIP_API_KEY:?error: PAPERCLIP_API_KEY is required}"
 : "${PAPERCLIP_COMPANY_ID:?error: PAPERCLIP_COMPANY_ID is required}"
 
@@ -145,6 +156,11 @@ echo "tracker-sync: fetching agents" >&2
 AGENTS_JSON="$(curl "${CURL_OPTS[@]}" \
   -H "Authorization: Bearer $PAPERCLIP_API_KEY" \
   "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/agents")"
+
+# Stage-by-stage progress (issue: run 28588728889 went silent for 10 minutes
+# somewhere after this point and was cancelled by the job timeout — every
+# stage now reports so the next hang is attributable).
+echo "tracker-sync: fetched $(printf '%s' "$ISSUES_JSON" | wc -c | tr -d ' ') bytes issues, $(printf '%s' "$AGENTS_JSON" | wc -c | tr -d ' ') bytes agents; building snapshot" >&2
 
 render_link() {
   local identifier="$1"
@@ -238,6 +254,7 @@ if [[ -n "$WEB_URL" ]]; then
   done < <(printf "%s\n" "$COMMENT_BODY")
 fi
 
+echo "tracker-sync: snapshot built ($(printf '%s' "$COMMENT_BODY" | wc -c | tr -d ' ') bytes); hashing" >&2
 CONTENT_HASH="$(printf "%s" "$SYNC_FINGERPRINT" | hash_sha256)"
 PREV_HASH=""
 if [[ -f "$STATE_PATH" ]]; then
@@ -255,7 +272,8 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
   exit 0
 fi
 
-COMMENTS_JSON="$(gh api "repos/$REPO/issues/$TRACKER_NUMBER/comments?per_page=100")"
+echo "tracker-sync: fetching existing tracker comments" >&2
+COMMENTS_JSON="$(run_bounded gh api "repos/$REPO/issues/$TRACKER_NUMBER/comments?per_page=100")"
 EXISTING_ID="$(
   jq -r '
     map(select(.body | startswith("# paperclip-tracker-sync:v1"))) |
@@ -266,13 +284,15 @@ EXISTING_ID="$(
 )"
 
 if [[ -n "$EXISTING_ID" ]]; then
-  gh api \
+  echo "tracker-sync: patching tracker comment $EXISTING_ID" >&2
+  run_bounded gh api \
     --method PATCH \
     "repos/$REPO/issues/comments/$EXISTING_ID" \
     -f "body=$COMMENT_BODY" >/dev/null
   echo "updated tracker comment id: $EXISTING_ID"
 else
-  gh issue comment "$TRACKER_NUMBER" --repo "$REPO" --body "$COMMENT_BODY" >/dev/null
+  echo "tracker-sync: creating tracker comment" >&2
+  run_bounded gh issue comment "$TRACKER_NUMBER" --repo "$REPO" --body "$COMMENT_BODY" >/dev/null
   echo "created tracker comment on $REPO#$TRACKER_NUMBER"
 fi
 
