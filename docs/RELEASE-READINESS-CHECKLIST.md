@@ -1,7 +1,7 @@
 # WiredPart v1.0 — Release Readiness Checklist
 
 > **Document Owner:** Release Manager
-> **Last Updated:** 2026-07-01 (metrics refresh, GitHub #1334)
+> **Last Updated:** 2026-07-02 (beta completion pass — core suite 2,344+ tests green; app-target build warnings burned to 0 per #1139/PR #1365; open issues reduced 38→~10 with dispositions)
 > **Team:** Solo owner + AI agents (role names below are gate responsibilities, not separate people)
 > **Target:** App Store submission (iOS) + Enterprise sideloading
 > **Status:** PRE-RELEASE GATE — All items must pass simultaneously before release
@@ -34,7 +34,7 @@
 |------|-------|--------|----------|
 | Code Quality & Architecture | Tech Lead | ☐ | __________ |
 | Data Persistence (GRDB) | Backend Lead | ☐ | __________ |
-| Unit/Integration Tests (2,224+ tests) | QA Lead | ☐ | __________ |
+| Unit/Integration Tests (2,344+ tests) | QA Lead | ☐ | __________ |
 | UI/UX Tests & Accessibility | Design Lead | ☐ | __________ |
 | Performance & Reliability | Performance Eng | ☐ | __________ |
 | Security & Privacy | Security Lead | ☐ | __________ |

@@ -1,6 +1,6 @@
 # WiredPart — Beta Tester Guide
 
-> Last updated: 2026-07-01 (GitHub #1334)
+> Last updated: 2026-07-02 (beta completion pass)
 > Audience: beta testers running WiredPart on their own iPhone or iPad.
 > What the app does: see [FEATURES.md](FEATURES.md). Build-from-source details: [SETUP.md](SETUP.md).
 
@@ -111,3 +111,14 @@ If you can't use GitHub, send the screenshot and the same details to the owner a
 - Anything else: open a GitHub issue titled `[Docs][Question] ...` or ask the owner directly.
 
 Thanks for testing — every report makes the release better.
+
+
+## Known Limitations (beta)
+
+Deliberate beta-scope decisions — these are not bugs to report:
+
+- **Payment Tracking** is hidden from Settings for beta (page returns when the feature is built — GH #851 decision).
+- **Formal numbered RFIs** are descoped; informal Q&A/RFI chat flows are the supported path (GH #79 decision).
+- **Parts-order bulk actions** and the **Remote Sync page controls** are hidden until their backing services ship (GH #1338).
+- **Chat file attachments**: sending and receiving work, but received files show as info chips without preview/share yet (GH #1372), and attachments don't survive iOS storage-pressure cleanup (GH #1371). Don't rely on chat as file storage.
+- **In-app bug reporting** (GH #574) isn't built yet — report via TestFlight feedback or GitHub as described above.
