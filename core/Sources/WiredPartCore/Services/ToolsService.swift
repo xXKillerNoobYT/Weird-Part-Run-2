@@ -119,6 +119,7 @@ public final class ToolsService: Sendable {
         case toolNotFound(Int64)
         case userNotFound(Int64)
         case requiredFieldEmpty(String)
+        case policyDisallowsAction(String)
     }
 
     // =========================================================================
@@ -352,6 +353,7 @@ public final class ToolsService: Sendable {
     /// Check out a tool to a user. No-op if the tool has been soft-deleted.
     public func checkoutTool(toolId: Int64, userId: Int64, notes: String? = nil) throws {
         try db.writer.write { dbConn in
+            let policy = try Self.readToolPolicy(in: dbConn)
             let toolExists = (try Int.fetchOne(dbConn, sql: """
                 SELECT COUNT(*) FROM tools WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [toolId]) ?? 0) > 0
@@ -370,13 +372,14 @@ public final class ToolsService: Sendable {
                     """,
                 arguments: [toolId]
             )
-            // Create checkout record
+            // Create checkout record — expected_return honors the policy's max checkout days.
             try dbConn.execute(
                 sql: """
-                    INSERT INTO tool_checkouts (tool_id, checked_out_by, checked_out_at, checkout_notes, created_at)
-                    VALUES (?, ?, datetime('now'), ?, datetime('now'))
+                    INSERT INTO tool_checkouts
+                    (tool_id, checked_out_by, checked_out_at, checkout_notes, expected_return, created_at)
+                    VALUES (?, ?, datetime('now'), ?, datetime('now', ?), datetime('now'))
                     """,
-                arguments: [toolId, userId, notes]
+                arguments: [toolId, userId, notes, "+\(policy.maxCheckoutDays) days"]
             )
         }
     }
@@ -384,6 +387,7 @@ public final class ToolsService: Sendable {
     /// Return a checked-out tool.
     public func returnTool(toolId: Int64, userId: Int64, notes: String? = nil) throws {
         try db.writer.write { dbConn in
+            let policy = try Self.readToolPolicy(in: dbConn)
             let toolExists = (try Int.fetchOne(dbConn, sql: """
                 SELECT COUNT(*) FROM tools WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [toolId]) ?? 0) > 0
@@ -402,14 +406,18 @@ public final class ToolsService: Sendable {
                     """,
                 arguments: [toolId]
             )
-            // Close the checkout record
+            // Close the checkout record. When the policy requires a return condition,
+            // default it to the checkout condition (or "Good") rather than leaving it null.
             try dbConn.execute(
                 sql: """
-                    UPDATE tool_checkouts SET checked_in_at = datetime('now'), checked_in_by = ?
+                    UPDATE tool_checkouts SET checked_in_at = datetime('now'), checked_in_by = ?,
+                        return_condition = CASE WHEN ? THEN COALESCE(return_condition, checkout_condition, 'Good') ELSE return_condition END,
+                        return_notes = ?
                     WHERE tool_id = ? AND checked_in_at IS NULL
                     """,
-                arguments: [userId, toolId]
+                arguments: [userId, policy.requireReturnCondition ? 1 : 0, notes, toolId]
             )
+            try Self.schedulePolicyMaintenanceIfDue(toolId: toolId, policy: policy, performedBy: userId, in: dbConn)
         }
     }
 
@@ -778,14 +786,16 @@ public final class ToolsService: Sendable {
     // MARK: - 8. Checkout/Return with Condition
     // =========================================================================
 
-    /// Checkout a tool with REQUIRED condition check. No-op if the tool has been soft-deleted.
+    /// Checkout a tool with condition check, required unless the policy disables it.
+    /// No-op if the tool has been soft-deleted.
     public func checkoutToolWithCondition(
         toolId: Int64, userId: Int64, condition: String, notes: String? = nil
     ) throws {
-        guard !condition.isBlankRequiredText else {
-            throw ToolsError.requiredFieldEmpty("condition")
-        }
         try db.writer.write { dbConn in
+            let policy = try Self.readToolPolicy(in: dbConn)
+            guard !policy.requireCheckoutCondition || !condition.isBlankRequiredText else {
+                throw ToolsError.requiredFieldEmpty("condition")
+            }
             let exists = (try Int.fetchOne(dbConn, sql: """
                 SELECT COUNT(*) FROM tools WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [toolId]) ?? 0) > 0
@@ -800,20 +810,21 @@ public final class ToolsService: Sendable {
             guard userExists else { throw ToolsError.userNotFound(userId) }
             try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "checkout_tools")
 
+            let storedCondition = condition.isBlankRequiredText ? "Not checked" : condition
             // Update tool status + condition rating
-            let conditionRating = Self.conditionToRating(condition)
+            let conditionRating = Self.conditionToRating(storedCondition)
             try dbConn.execute(sql: """
                 UPDATE tools SET status = 'checked_out', assigned_to = ?,
                        condition_rating = ?, updated_at = datetime('now')
                 WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [userId, conditionRating, toolId])
 
-            // Create checkout record with condition
+            // Create checkout record with condition — expected_return honors the policy's max checkout days.
             try dbConn.execute(sql: """
                 INSERT INTO tool_checkouts
-                (tool_id, checked_out_by, checked_out_at, checkout_condition, checkout_notes, created_at)
-                VALUES (?, ?, datetime('now'), ?, ?, datetime('now'))
-                """, arguments: [toolId, userId, condition, notes])
+                (tool_id, checked_out_by, checked_out_at, checkout_condition, checkout_notes, expected_return, created_at)
+                VALUES (?, ?, datetime('now'), ?, ?, datetime('now', ?), datetime('now'))
+                """, arguments: [toolId, userId, storedCondition, notes, "+\(policy.maxCheckoutDays) days"])
 
             // Log the change
             try dbConn.execute(sql: """
@@ -824,14 +835,15 @@ public final class ToolsService: Sendable {
         }
     }
 
-    /// Return a tool with REQUIRED condition check.
+    /// Return a tool with condition check, required unless the policy disables it.
     public func returnToolWithCondition(
         toolId: Int64, userId: Int64, condition: String, notes: String? = nil
     ) throws {
-        guard !condition.isBlankRequiredText else {
-            throw ToolsError.requiredFieldEmpty("condition")
-        }
         try db.writer.write { dbConn in
+            let policy = try Self.readToolPolicy(in: dbConn)
+            guard !policy.requireReturnCondition || !condition.isBlankRequiredText else {
+                throw ToolsError.requiredFieldEmpty("condition")
+            }
             let toolExists = (try Int.fetchOne(dbConn, sql: """
                 SELECT COUNT(*) FROM tools WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [toolId]) ?? 0) > 0
@@ -846,7 +858,8 @@ public final class ToolsService: Sendable {
             guard userExists else { throw ToolsError.userNotFound(userId) }
             try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "checkout_tools")
 
-            let conditionRating = Self.conditionToRating(condition)
+            let storedCondition = condition.isBlankRequiredText ? "Not checked" : condition
+            let conditionRating = Self.conditionToRating(storedCondition)
             try dbConn.execute(sql: """
                 UPDATE tools SET status = 'available', assigned_to = NULL,
                        condition_rating = ?, updated_at = datetime('now')
@@ -858,7 +871,7 @@ public final class ToolsService: Sendable {
                 UPDATE tool_checkouts SET checked_in_at = datetime('now'),
                        checked_in_by = ?, return_condition = ?, return_notes = ?
                 WHERE tool_id = ? AND checked_in_at IS NULL AND deleted_at IS NULL
-                """, arguments: [userId, condition, notes, toolId])
+                """, arguments: [userId, storedCondition, notes, toolId])
 
             // Log the change
             try dbConn.execute(sql: """
@@ -866,6 +879,7 @@ public final class ToolsService: Sendable {
                 (tool_id, changed_by, change_type, field_name, new_value, changed_at, verification_status)
                 VALUES (?, ?, 'return', 'status', 'available', datetime('now'), 'approved')
                 """, arguments: [toolId, userId])
+            try Self.schedulePolicyMaintenanceIfDue(toolId: toolId, policy: policy, performedBy: userId, in: dbConn)
         }
     }
 
@@ -898,7 +912,17 @@ public final class ToolsService: Sendable {
     public func editToolWithVerification(
         toolId: Int64, userId: Int64, changes: [String: String], hasPermission: Bool
     ) throws -> ToolEditResult {
-        let status = hasPermission ? "approved" : "pending_verification"
+        let policy = try db.writer.read { try Self.readToolPolicy(in: $0) }
+        let requiresVerification: Bool
+        switch policy.editVerificationMode {
+        case .pendingWithoutPermission:
+            requiresVerification = !hasPermission
+        case .alwaysPending:
+            requiresVerification = true
+        case .directEdits:
+            requiresVerification = false
+        }
+        let status = requiresVerification ? "pending_verification" : "approved"
         try db.writer.write { dbConn in
             // Guard: tool must exist and not be tombstoned — silent no-op keeps existing
             // semantics (matches `testEditToolWithVerification_noOpOnSoftDeletedTool`); the
@@ -934,7 +958,7 @@ public final class ToolsService: Sendable {
                     VALUES (?, ?, 'edit', ?, ?, ?, datetime('now'), ?)
                     """, arguments: [toolId, userId, field, oldValue, value, status])
 
-                if hasPermission {
+                if !requiresVerification {
                     // Direct update
                     try dbConn.execute(sql:
                         "UPDATE tools SET \(field) = ?, updated_at = datetime('now') WHERE id = ? AND deleted_at IS NULL",
@@ -942,7 +966,7 @@ public final class ToolsService: Sendable {
                 }
             }
         }
-        return ToolEditResult(status: status, requiresVerification: !hasPermission)
+        return ToolEditResult(status: status, requiresVerification: requiresVerification)
     }
 
     /// Approve a pending tool edit (manager QR scan verification).
@@ -1092,22 +1116,27 @@ public final class ToolsService: Sendable {
     }
 
     /// Initiate a tool trade. The tool must be checked out to the sender.
+    /// Throws `.policyDisallowsAction` if the tool policy disables trades.
     @discardableResult
     public func initiateTrade(
         toolId: Int64, fromUserId: Int64, toUserId: Int64,
         condition: String, notes: String? = nil
     ) throws -> Int64 {
-        // tool_trades.condition_at_send is NOT NULL — a blank string passes the constraint
-        // but poisons every downstream UI that shows the "condition at send" column.
-        guard !condition.isBlankRequiredText else {
-            throw ToolsError.requiredFieldEmpty("condition")
-        }
         // A self-trade is nonsensical (tool already assigned to fromUser) and the tool
         // checkout check below would pass, leaving a pending trade that can never resolve.
         guard fromUserId != toUserId else {
             throw ToolsError.requiredFieldEmpty("toUserId")
         }
         return try db.writer.write { dbConn in
+            let policy = try Self.readToolPolicy(in: dbConn)
+            guard policy.allowTrades else { throw ToolsError.policyDisallowsAction("trades") }
+            // tool_trades.condition_at_send is NOT NULL — a blank string passes the constraint
+            // but poisons every downstream UI that shows the "condition at send" column.
+            guard !policy.requireTradeCondition || !condition.isBlankRequiredText else {
+                throw ToolsError.requiredFieldEmpty("condition")
+            }
+            let storedCondition = condition.isBlankRequiredText ? "Not checked" : condition
+
             // Verify tool is currently assigned to sender
             let assigned = try Row.fetchOne(dbConn, sql: """
                 SELECT id FROM tools
@@ -1136,16 +1165,16 @@ public final class ToolsService: Sendable {
                 throw ToolsServiceError.tradePending
             }
 
-            // 7-day expiry
+            // Expiry per the policy's trade timeout window.
             let calendar = Calendar.current
-            let expiresDate = calendar.date(byAdding: .day, value: 7, to: Date()) ?? Date()
+            let expiresDate = calendar.date(byAdding: .day, value: policy.tradeTimeoutDays, to: Date()) ?? Date()
             let expiresStr = CoreFormatters.iso8601.string(from: expiresDate)
 
             try dbConn.execute(sql: """
                 INSERT INTO tool_trades
                 (tool_id, from_user_id, to_user_id, condition_at_send, send_notes, status, expires_at, created_at)
                 VALUES (?, ?, ?, ?, ?, 'pending', ?, datetime('now'))
-                """, arguments: [toolId, fromUserId, toUserId, condition, notes, expiresStr])
+                """, arguments: [toolId, fromUserId, toUserId, storedCondition, notes, expiresStr])
 
             return dbConn.lastInsertedRowID
         }
@@ -1339,6 +1368,16 @@ public final class ToolsService: Sendable {
             throw ToolsError.requiredFieldEmpty("description")
         }
         try db.writer.write { dbConn in
+            let policy = try Self.readToolPolicy(in: dbConn)
+            guard policy.allowLostStolenReports else {
+                throw ToolsError.policyDisallowsAction("lost_stolen_reports")
+            }
+            if policy.requireLostStolenLocation {
+                guard !(lastKnownLocation ?? "").isBlankRequiredText else {
+                    throw ToolsError.requiredFieldEmpty("lastKnownLocation")
+                }
+            }
+
             // Guard: tool must exist and not be tombstoned — silent no-op preserves
             // existing semantics (matches `testReportToolLostOrStolen_noOrphanForSoftDeletedTool`).
             let exists = (try Int.fetchOne(dbConn, sql: """
@@ -1369,12 +1408,14 @@ public final class ToolsService: Sendable {
                 """, arguments: [toolId, reportedBy, "report_\(reportType)", reportType,
                                  "\(description)\(lastKnownLocation.map { " | Location: \($0)" } ?? "")"])
 
-            // Close active checkout if any
-            try dbConn.execute(sql: """
-                UPDATE tool_checkouts SET checked_in_at = datetime('now'),
-                return_condition = ?, return_notes = ?
-                WHERE tool_id = ? AND checked_in_at IS NULL AND deleted_at IS NULL
-                """, arguments: [reportType, description, toolId])
+            // Close active checkout if any, unless the policy disables auto-close.
+            if policy.closeCheckoutOnLostStolen {
+                try dbConn.execute(sql: """
+                    UPDATE tool_checkouts SET checked_in_at = datetime('now'),
+                    return_condition = ?, return_notes = ?
+                    WHERE tool_id = ? AND checked_in_at IS NULL AND deleted_at IS NULL
+                    """, arguments: [reportType, description, toolId])
+            }
         }
     }
 
@@ -1768,6 +1809,67 @@ public final class ToolsService: Sendable {
         case 1: return "Damaged"
         default: return "Unknown"
         }
+    }
+
+    /// Read the current tool policy directly within an existing write/read transaction.
+    /// See issue #438 — enforces settings saved via `SettingsService.updateToolPolicies`.
+    private static func readToolPolicy(in dbConn: Database) throws -> SettingsService.ToolPolicySettings {
+        let rows = try Row.fetchAll(
+            dbConn,
+            sql: "SELECT key, value FROM settings WHERE category = ?",
+            arguments: ["tool_policy"]
+        )
+        var map: [String: String] = [:]
+        for row in rows {
+            let key: String = row["key"]
+            let value: String = row["value"] ?? ""
+            map[key] = value
+        }
+        return SettingsService.ToolPolicySettings.fromMap(map)
+    }
+
+    /// Auto-schedule maintenance once a tool has accumulated `maintenanceAfterCheckouts`
+    /// completed checkouts since its last maintenance date. No-op when the policy value
+    /// is 0 (disabled) or the tool is already in maintenance / tombstoned.
+    private static func schedulePolicyMaintenanceIfDue(
+        toolId: Int64,
+        policy: SettingsService.ToolPolicySettings,
+        performedBy: Int64,
+        in dbConn: Database
+    ) throws {
+        guard policy.maintenanceAfterCheckouts > 0 else { return }
+
+        let completedCheckouts = try Int.fetchOne(dbConn, sql: """
+            SELECT COUNT(*) FROM tool_checkouts
+            WHERE tool_id = ?
+              AND checked_in_at IS NOT NULL
+              AND deleted_at IS NULL
+              AND created_at > COALESCE((SELECT last_maintenance_date FROM tools WHERE id = ?), '0000-01-01')
+            """, arguments: [toolId, toolId]) ?? 0
+        guard completedCheckouts >= policy.maintenanceAfterCheckouts else { return }
+
+        let currentStatus = try String.fetchOne(dbConn, sql: """
+            SELECT status FROM tools
+            WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+            """, arguments: [toolId])
+        guard let currentStatus, currentStatus != "maintenance" else { return }
+
+        try dbConn.execute(sql: """
+            UPDATE tools SET status = 'maintenance', updated_at = datetime('now')
+            WHERE id = ? AND deleted_at IS NULL
+            """, arguments: [toolId])
+
+        try dbConn.execute(sql: """
+            INSERT INTO tool_change_log
+            (tool_id, changed_by, change_type, field_name, old_value, new_value, notes,
+             changed_at, verification_status)
+            VALUES (?, ?, 'maintenance', 'status', ?, 'maintenance', ?, datetime('now'), 'approved')
+            """, arguments: [
+                toolId,
+                performedBy,
+                currentStatus,
+                "Auto-scheduled after \(completedCheckouts) completed checkouts per tool policy",
+            ])
     }
 
     /// Execute a SELECT COUNT(*) query returning an Int.
