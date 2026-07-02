@@ -65,9 +65,6 @@ struct UserMenuSheet: View {
                 MenuItem(id: "settings-pdf", label: "PDF Settings", icon: "doc.fill",
                          tabId: "settings-pdf", permission: nil,
                          keywords: ["pdf", "documents", "print", "export", "templates", "logo"]),
-                MenuItem(id: "settings-payment-tracking", label: "Payment Tracking", icon: "banknote.fill",
-                         tabId: "settings-payment-tracking", permission: nil,
-                         keywords: ["payment", "tracking", "invoices", "receivables", "collections"]),
             ]),
 
             // 3. Operations

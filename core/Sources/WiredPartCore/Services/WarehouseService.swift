@@ -44,6 +44,14 @@ public final class WarehouseService: Sendable {
         /// A grid shrink would leave existing floor features/zones outside
         /// the new bounds (issue #1240). Counts identify how many of each.
         case gridShrinkWouldOrphanItems(features: Int, zones: Int)
+        /// Multi-user verification cannot proceed because there are not
+        /// enough eligible active counters after excluding the flagging
+        /// operator (issue #494).
+        case noEligibleVerificationCounters(required: Int, available: Int)
+        /// The part already has unresolved multi-user verification
+        /// assignments for this session (issue #494) — flagging it again
+        /// would create duplicate work assignments.
+        case partAlreadyFlaggedForVerification(partId: Int64)
     }
 
     // =========================================================================
@@ -2777,6 +2785,75 @@ public final class WarehouseService: Sendable {
         }
     }
 
+    /// Persist a parts-first (Parts Flow wizard) onboarding count to the
+    /// canonical stock records (issue #91).
+    ///
+    /// Unlike `adjustAuditCount`, this upserts the general warehouse stock
+    /// row (`location_type = 'warehouse'`, `location_id = 1`) because the
+    /// parts-first path runs before any floor plan or stock rows exist, and
+    /// it does not require audit permission — it is an onboarding count, not
+    /// an audit correction. A signed adjustment movement is recorded whenever
+    /// the quantity changes so the count is traceable in movement history.
+    ///
+    /// - Returns: The quantity delta applied to the stock record.
+    @discardableResult
+    public func recordPartsFirstSetupCount(
+        partId: Int64,
+        countedQty: Int,
+        performedBy: Int64
+    ) throws -> Int {
+        guard countedQty >= 0 else { throw WarehouseError.invalidQuantity }
+        return try db.writer.write { dbConn in
+            try Self.requireActiveUser(performedBy, dbConn: dbConn)
+
+            let partExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM parts WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [partId]) ?? 0) > 0
+            guard partExists else { throw WarehouseError.partNotFound(partId) }
+
+            let currentQty = try Int.fetchOne(dbConn, sql: """
+                SELECT qty FROM stock
+                WHERE part_id = ? AND location_type = 'warehouse' AND location_id = 1
+                  AND deleted_at IS NULL
+                """, arguments: [partId])
+
+            if currentQty != nil {
+                try dbConn.execute(sql: """
+                    UPDATE stock
+                    SET qty = ?, counted_qty = ?, last_counted = datetime('now'),
+                        updated_at = datetime('now')
+                    WHERE part_id = ? AND location_type = 'warehouse' AND location_id = 1
+                      AND deleted_at IS NULL
+                    """, arguments: [countedQty, countedQty, partId])
+            } else {
+                try dbConn.execute(sql: """
+                    INSERT INTO stock
+                        (part_id, location_type, location_id, qty, counted_qty, last_counted, updated_at)
+                    VALUES (?, 'warehouse', 1, ?, ?, datetime('now'), datetime('now'))
+                    """, arguments: [partId, countedQty, countedQty])
+            }
+
+            let delta = countedQty - (currentQty ?? 0)
+            guard delta != 0 else { return 0 }
+            let signedDelta = delta >= 0 ? "+\(delta)" : "\(delta)"
+            try dbConn.execute(sql: """
+                INSERT INTO stock_movements
+                    (part_id, qty, from_location_type, from_location_id,
+                     to_location_type, to_location_id, movement_type,
+                     reason, notes, performed_by, created_at)
+                VALUES (?, ?, 'warehouse', 1, 'warehouse', 1,
+                        '\(StockMovement.MovementType.adjustment.rawValue)', ?, ?, ?, datetime('now'))
+                """, arguments: [
+                    partId,
+                    delta,
+                    "Parts-first setup count",
+                    "Initial count: \(currentQty ?? 0) -> \(countedQty) (\(signedDelta))",
+                    performedBy,
+                ])
+            return delta
+        }
+    }
+
     /// Record an audit recount for a part at a specific location.
     public func recordAuditRecount(partId: Int64, locationType: String, locationId: Int64) throws {
         try db.writer.write { dbConn in
@@ -4962,7 +5039,28 @@ public final class WarehouseService: Sendable {
         guard !name.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
+        // Issue #1165: reject impossible physical/grid geometry at the service
+        // boundary, mirroring the zone/floor-feature validation approach.
+        if let widthInches, widthInches <= 0 { throw WarehouseError.invalidDimension }
+        if let depthInches, depthInches <= 0 { throw WarehouseError.invalidDimension }
+        if let heightInches, heightInches <= 0 { throw WarehouseError.invalidDimension }
+        if let gridX, gridX < 0 { throw WarehouseError.invalidDimension }
+        if let gridY, gridY < 0 { throw WarehouseError.invalidDimension }
+        if let gridWidth, gridWidth <= 0 { throw WarehouseError.invalidDimension }
+        if let gridHeight, gridHeight <= 0 { throw WarehouseError.invalidDimension }
         return try db.writer.write { dbConn in
+            // Issue #1165: when the unit is placed on the grid and the floor
+            // plan has saved grid bounds, the footprint must fit inside them.
+            if gridX != nil || gridY != nil || gridWidth != nil || gridHeight != nil {
+                let floorPlan = try WarehouseFloorPlan.fetchOne(dbConn, key: floorPlanId)
+                try validateFloorPlanGridPlacement(
+                    floorPlan: floorPlan,
+                    gridX: gridX ?? 0,
+                    gridY: gridY ?? 0,
+                    gridWidth: gridWidth ?? 1,
+                    gridHeight: gridHeight ?? 1
+                )
+            }
             var unit = WarehouseStorageUnit(
                 floorPlanId: floorPlanId,
                 name: name,
@@ -5009,10 +5107,28 @@ public final class WarehouseService: Sendable {
         if let name, name.isBlankRequiredText {
             throw WarehouseError.requiredFieldEmpty
         }
+        // Issue #1165: same grid-geometry guards as addStorageUnit.
+        if let gridX, gridX < 0 { throw WarehouseError.invalidDimension }
+        if let gridY, gridY < 0 { throw WarehouseError.invalidDimension }
+        if let gridWidth, gridWidth <= 0 { throw WarehouseError.invalidDimension }
+        if let gridHeight, gridHeight <= 0 { throw WarehouseError.invalidDimension }
 
         try db.writer.write { dbConn in
             guard var unit = try WarehouseStorageUnit.fetchOne(dbConn, key: id),
                   unit.deletedAt == nil else { return }
+            // Issue #1165: re-validate placement against the floor-plan grid
+            // bounds only when a placement field is actually changing, so
+            // unrelated updates (rename, configure) never trip on legacy rows.
+            if gridX != nil || gridY != nil || gridWidth != nil || gridHeight != nil {
+                let floorPlan = try WarehouseFloorPlan.fetchOne(dbConn, key: unit.floorPlanId)
+                try validateFloorPlanGridPlacement(
+                    floorPlan: floorPlan,
+                    gridX: gridX ?? unit.gridX ?? 0,
+                    gridY: gridY ?? unit.gridY ?? 0,
+                    gridWidth: gridWidth ?? unit.gridWidth ?? 1,
+                    gridHeight: gridHeight ?? unit.gridHeight ?? 1
+                )
+            }
             if let name = name { unit.name = name }
             if let unitType = unitType { unit.unitType = unitType }
             if let rowNumber = rowNumber { unit.rowNumber = rowNumber }
@@ -6159,6 +6275,66 @@ public final class WarehouseService: Sendable {
         return confidence.confidencePercent <= Self.quickVerificationTriggerConfidencePercent
     }
 
+    /// A part at an area that qualifies for a "While You're Here" quick audit
+    /// (issue #75): confidence at or below the quick-verification trigger.
+    public struct QuickAuditCandidate: Sendable, Identifiable {
+        public let partId: Int64
+        public let areaId: Int64
+        public let partName: String
+        public let partCode: String?
+        public let confidencePercent: Double
+        public let systemCount: Int
+
+        public var id: Int64 { partId }
+
+        public init(
+            partId: Int64, areaId: Int64, partName: String, partCode: String?,
+            confidencePercent: Double, systemCount: Int
+        ) {
+            self.partId = partId
+            self.areaId = areaId
+            self.partName = partName
+            self.partCode = partCode
+            self.confidencePercent = confidencePercent
+            self.systemCount = systemCount
+        }
+    }
+
+    /// "While You're Here" quick-audit candidates for an area (issue #75).
+    ///
+    /// Returns parts stored at `areaId` whose confidence is at or below the
+    /// quick-verification trigger (85%), lowest confidence first. Used to
+    /// offer an opportunistic ~10-second count when a user is physically at
+    /// an area for another task (e.g. after scanning its location QR).
+    public func getQuickAuditCandidates(areaId: Int64, limit: Int = 20) throws -> [QuickAuditCandidate] {
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT pc.part_id, pc.area_id, pc.confidence_percent, pc.system_count,
+                           p.name AS part_name, p.code AS part_code
+                    FROM part_confidence pc
+                    JOIN parts p ON p.id = pc.part_id AND p.deleted_at IS NULL
+                    WHERE pc.area_id = ? AND pc.confidence_percent <= ?
+                    ORDER BY pc.confidence_percent ASC, p.name ASC
+                    LIMIT ?
+                    """, arguments: [areaId, Self.quickVerificationTriggerConfidencePercent, limit])
+                return rows.map { row in
+                    QuickAuditCandidate(
+                        partId: row["part_id"] as Int64,
+                        areaId: row["area_id"] as Int64,
+                        partName: (row["part_name"] as String?) ?? "Unknown Part",
+                        partCode: row["part_code"] as String?,
+                        confidencePercent: row["confidence_percent"] as Double,
+                        systemCount: (row["system_count"] as Int?) ?? 0
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
     @discardableResult
     public func recordQuickVerificationCount(
         partId: Int64,
@@ -6984,6 +7160,14 @@ public final class WarehouseService: Sendable {
     ///   - flaggedBy: The user who flagged the discrepancy (excluded from assignments).
     ///   - requiredCounts: Number of independent counts needed (default 2, max 3).
     /// - Returns: The created assignments.
+    /// - Throws: `WarehouseError.partAlreadyFlaggedForVerification` when the
+    ///   part already has an assignment set for this session that is still
+    ///   collecting counts or can still reach consensus, and
+    ///   `WarehouseError.noEligibleVerificationCounters` when fewer eligible
+    ///   active counters exist than requested (issue #494). Fully-counted
+    ///   sets whose counts cannot reach consensus — and session-less sets,
+    ///   which `resolveMultiUserAudit` can never touch — are marked
+    ///   `superseded` and re-flagged instead of blocking forever.
     @discardableResult
     public func flagForMultiUserAudit(
         partId: Int64,
@@ -6993,6 +7177,47 @@ public final class WarehouseService: Sendable {
         requiredCounts: Int = 2
     ) throws -> [MultiUserAuditAssignment] {
         try db.writer.write { dbConn in
+            // Issue #494: block duplicate flagging while verification is
+            // genuinely in flight — counters still pending, or submitted
+            // counts that can reach consensus and just await resolution.
+            //
+            // PR #1364 review: a fully-counted set whose counts disagree is
+            // a dead end — resolveMultiUserAudit returns nil and leaves the
+            // rows 'counted' — and session-less sets have no resolution path
+            // at all. Blocking those made the part permanently un-flaggable,
+            // so dead-end sets are superseded and the re-flag proceeds.
+            var dupSql = """
+                SELECT * FROM multi_user_audit_assignments
+                WHERE part_id = ? AND status IN ('pending', 'counted')
+                """
+            var dupArgs: [DatabaseValueConvertible?] = [partId]
+            if let sessionId {
+                dupSql += " AND audit_session_id = ?"
+                dupArgs.append(sessionId)
+            } else {
+                dupSql += " AND audit_session_id IS NULL"
+            }
+            let unresolved = try MultiUserAuditAssignment.fetchAll(
+                dbConn, sql: dupSql, arguments: StatementArguments(dupArgs)
+            )
+            if !unresolved.isEmpty {
+                let stillCollecting = unresolved.contains { $0.status == "pending" }
+                // Session-less sets can never be resolved (resolution
+                // requires a session), so a fully-counted one is always a
+                // dead end regardless of whether the counts agree.
+                let resolvable = sessionId != nil && Self.consensusIsReachable(unresolved)
+                if stillCollecting || resolvable {
+                    throw WarehouseError.partAlreadyFlaggedForVerification(partId: partId)
+                }
+                // Dead end: every counter submitted but no consensus is
+                // possible. Supersede the stale rows (preserving them for
+                // history) so this retry can create a fresh assignment set.
+                for var assignment in unresolved {
+                    assignment.status = "superseded"
+                    try assignment.update(dbConn)
+                }
+            }
+
             // Get part info
             let partRow = try Row.fetchOne(dbConn, sql: """
                 SELECT p.name, COALESCE(wpa.area_id, 0) AS area_id,
@@ -7016,6 +7241,10 @@ public final class WarehouseService: Sendable {
                 userArgs.append(flaggedBy)
             }
 
+            // Multi-user consensus needs at least 2 independent counters and
+            // caps at 3 (issue #494).
+            let neededCounters = min(max(requiredCounts, 2), 3)
+
             let userRows = try Row.fetchAll(dbConn, sql: """
                 SELECT u.id, COALESCE(u.display_name, u.email, 'User') AS name,
                        COALESCE(uwr.accuracy_rating, 5.0) AS accuracy
@@ -7025,7 +7254,16 @@ public final class WarehouseService: Sendable {
                     \(excludeClause)
                 ORDER BY COALESCE(uwr.accuracy_rating, 5.0) DESC
                 LIMIT ?
-                """, arguments: StatementArguments(userArgs + [min(requiredCounts, 3)]))
+                """, arguments: StatementArguments(userArgs + [neededCounters]))
+
+            // Issue #494: fail loudly instead of silently creating fewer (or
+            // zero) assignments when not enough eligible counters exist.
+            guard userRows.count >= neededCounters else {
+                throw WarehouseError.noEligibleVerificationCounters(
+                    required: neededCounters,
+                    available: userRows.count
+                )
+            }
 
             var assignments: [MultiUserAuditAssignment] = []
 
@@ -7097,7 +7335,9 @@ public final class WarehouseService: Sendable {
     public func getMultiUserAuditAssignments(sessionId: Int64? = nil) throws -> [MultiUserAuditPartSummary] {
         do {
             return try db.writer.read { dbConn -> [MultiUserAuditPartSummary] in
-                var whereClauses = ["1=1"]
+                // Superseded rows are dead assignment sets replaced by a
+                // re-flag — history only, never active work.
+                var whereClauses = ["status != 'superseded'"]
                 var args: [DatabaseValueConvertible?] = []
 
                 if let sessionId {
@@ -7196,9 +7436,12 @@ public final class WarehouseService: Sendable {
                 SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [resolvedBy]) ?? 0) > 0
             guard userExists else { throw WarehouseError.userNotFound(resolvedBy) }
-            // Get all assignments for this part in this session
+            // Get all assignments for this part in this session, skipping
+            // superseded rows (dead sets replaced by a re-flag) so an old
+            // failed set never pollutes the consensus of its replacement.
             let assignments = try MultiUserAuditAssignment
-                .filter(Column("part_id") == partId && Column("audit_session_id") == sessionId)
+                .filter(Column("part_id") == partId && Column("audit_session_id") == sessionId
+                    && Column("status") != "superseded")
                 .fetchAll(dbConn)
 
             let countedAssignments = assignments.filter { $0.status == "counted" }
@@ -7351,6 +7594,23 @@ public final class WarehouseService: Sendable {
     }
 
     // MARK: - Helpers (Audit)
+
+    /// Whether an unresolved assignment set's submitted counts can still
+    /// reach consensus under the same rules `resolveMultiUserAudit` applies:
+    /// at least 2 counts, 2 counters must agree exactly, 3+ need a count
+    /// with a majority (>= 2 votes). Pending assignments are the caller's
+    /// concern — this only judges the counted rows.
+    private static func consensusIsReachable(_ assignments: [MultiUserAuditAssignment]) -> Bool {
+        let counted = assignments.filter { $0.status == "counted" }
+        guard counted.count >= 2 else { return false }
+        let counts = counted.compactMap { $0.countedQuantity }
+        // A counted row missing its quantity makes consensus impossible
+        // (mirrors the resolveMultiUserAudit guard).
+        guard counts.count == counted.count else { return false }
+        if counts.count == 2 { return counts[0] == counts[1] }
+        let countFreq = counts.reduce(into: [Int: Int]()) { $0[$1, default: 0] += 1 }
+        return (countFreq.values.max() ?? 0) >= 2
+    }
 
     private static func clampedConfidence(_ percent: Double, counted: Bool) -> Double {
         let lowerBound = counted ? minimumCountedConfidencePercent : 0

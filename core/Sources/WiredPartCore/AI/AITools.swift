@@ -14,6 +14,30 @@ import FoundationModels
 /// These tools are only available on macOS 26+ / iOS 26+ where the
 /// FoundationModels framework exists.
 
+// MARK: - User Session Guard
+
+/// Fail-closed session guard for AI tools that answer user-specific questions.
+///
+/// Companion-poll and voting tools must never run as a default or sentinel user:
+/// substituting user id 0 for a missing session turns an auth-loss state into a
+/// plausible-but-wrong answer (issue #724). `nil` (no signed-in user) and the
+/// legacy `0` sentinel both fail validation.
+///
+/// Defined outside the `canImport(FoundationModels)` gate so the fail-closed
+/// rule is unit-testable on every platform.
+public enum AIToolUserSession {
+    /// Message returned by user-specific tools when no authenticated user exists.
+    public static let notSignedInMessage =
+        "No signed-in user session — user-specific poll and voting data is unavailable. Ask the user to sign in again."
+
+    /// Returns the validated real user id, or `nil` when the session has no
+    /// authenticated user (including the legacy sentinel id `0` and negatives).
+    public static func validatedUserId(_ userId: Int64?) -> Int64? {
+        guard let userId, userId > 0 else { return nil }
+        return userId
+    }
+}
+
 #if canImport(FoundationModels)
 
 // MARK: - Search Parts Tool
@@ -221,9 +245,9 @@ public struct GetActiveCompanionPollsTool: FoundationModels.Tool {
 
     private let db: AppDatabase
     private let permissions: [String]
-    private let userId: Int64
+    private let userId: Int64?
 
-    public init(db: AppDatabase, permissions: [String], userId: Int64) {
+    public init(db: AppDatabase, permissions: [String], userId: Int64?) {
         self.db = db
         self.permissions = permissions
         self.userId = userId
@@ -232,6 +256,10 @@ public struct GetActiveCompanionPollsTool: FoundationModels.Tool {
     public func call(arguments: Arguments) async throws -> String {
         guard permissions.contains("view_parts_catalog") else {
             return "You don't have permission to view companion polls."
+        }
+        // Fail closed: never query user-specific vote state as a sentinel user (#724).
+        guard let userId = AIToolUserSession.validatedUserId(userId) else {
+            return AIToolUserSession.notSignedInMessage
         }
         let service = PartsService(db: db, auth: AuthService(db: db))
         let polls = try service.getActivePolls(userId: userId, isAdmin: false)
@@ -327,9 +355,9 @@ public struct GetVotingSummaryTool: FoundationModels.Tool {
 
     private let db: AppDatabase
     private let permissions: [String]
-    private let userId: Int64
+    private let userId: Int64?
 
-    public init(db: AppDatabase, permissions: [String], userId: Int64) {
+    public init(db: AppDatabase, permissions: [String], userId: Int64?) {
         self.db = db
         self.permissions = permissions
         self.userId = userId
@@ -338,6 +366,10 @@ public struct GetVotingSummaryTool: FoundationModels.Tool {
     public func call(arguments: Arguments) async throws -> String {
         guard permissions.contains("view_parts_catalog") else {
             return "You don't have permission to view voting data."
+        }
+        // Fail closed: never compute voting summaries as a sentinel user (#724).
+        guard let userId = AIToolUserSession.validatedUserId(userId) else {
+            return AIToolUserSession.notSignedInMessage
         }
         let service = PartsService(db: db, auth: AuthService(db: db))
         let results = try service.getLastWeekResults(userId: userId)

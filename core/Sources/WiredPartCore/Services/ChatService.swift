@@ -25,6 +25,7 @@ public final class ChatService: Sendable {
         case threadNotFound(Int64)
         case notChannelMember(channelId: Int64, userId: Int64)
         case requiredFieldEmpty
+        case invalidEscalationLevel(String)
     }
 
     // =========================================================================
@@ -398,8 +399,14 @@ public final class ChatService: Sendable {
     // MARK: - 3. Q&A Threads
     // =========================================================================
 
-    /// List Q&A threads with optional status filter.
-    public func listQAThreads(status: String? = nil) throws -> [QAThreadRow] {
+    /// List Q&A threads with optional status and escalation-level filters.
+    ///
+    /// - Parameters:
+    ///   - status: When set, only threads with this exact status are returned.
+    ///   - levels: When set, only threads whose `current_level` is in this list are
+    ///     returned (e.g. `["office"]` for the RFI queue). `nil` returns all levels.
+    public func listQAThreads(status: String? = nil, levels: [String]? = nil) throws -> [QAThreadRow] {
+        if let levels, levels.isEmpty { return [] }
         do {
             return try db.writer.read { dbConn -> [QAThreadRow] in
                 var whereClauses = ["qa.deleted_at IS NULL"]
@@ -408,6 +415,12 @@ public final class ChatService: Sendable {
                 if let status, !status.isEmpty {
                     whereClauses.append("qa.status = ?")
                     args.append(status)
+                }
+
+                if let levels {
+                    let placeholders = Array(repeating: "?", count: levels.count).joined(separator: ", ")
+                    whereClauses.append("qa.current_level IN (\(placeholders))")
+                    args.append(contentsOf: levels.map { $0 as DatabaseValueConvertible? })
                 }
 
                 let sql = """
@@ -431,7 +444,7 @@ public final class ChatService: Sendable {
                         askedById: row["asked_by"] as Int64?,
                         question: row["subject"] ?? "",
                         askedByName: row["asked_by_name"] ?? "Unknown",
-                        currentLevel: row["current_level"] ?? "field",
+                        currentLevel: row["current_level"] ?? "worker",
                         status: row["status"] ?? "open",
                         priority: row["priority"] ?? "normal",
                         dueDate: row["due_date"] as String?,
@@ -479,7 +492,120 @@ public final class ChatService: Sendable {
                         askedById: row["asked_by"] as Int64?,
                         question: row["subject"] ?? "",
                         askedByName: row["asked_by_name"] ?? "Unknown",
-                        currentLevel: row["current_level"] ?? "field",
+                        currentLevel: row["current_level"] ?? "worker",
+                        status: row["status"] ?? "open",
+                        priority: row["priority"] ?? "normal",
+                        dueDate: row["due_date"] as String?,
+                        answer: row["answer_text"] as String?,
+                        answeredByName: row["answered_by_name"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// The Q&A escalation chain, lowest to highest.
+    public static let qaEscalationLevels = ["worker", "lead", "manager", "office"]
+
+    /// SQL CASE expression mapping an escalation level column to its chain index.
+    /// Unknown levels map to -1 so they never satisfy ordering comparisons.
+    private static func levelIndexSQL(_ column: String) -> String {
+        """
+        (CASE \(column) WHEN 'worker' THEN 0 WHEN 'lead' THEN 1 \
+        WHEN 'manager' THEN 2 WHEN 'office' THEN 3 ELSE -1 END)
+        """
+    }
+
+    /// Map a user's active hats to the Q&A escalation levels they act on.
+    ///
+    /// Built-in hats map by name: Worker → worker, Lead → lead, Manager → manager,
+    /// Office → office. Admin oversees the entire chain. Other hats (Apprentice,
+    /// Grunt, custom) can ask questions but are not responders at any level.
+    public func actionableQALevels(userId: Int64) throws -> Set<String> {
+        do {
+            let hatNames = try db.writer.read { dbConn -> [String] in
+                try String.fetchAll(dbConn, sql: """
+                    SELECT DISTINCT h.name
+                    FROM user_hats uh
+                    JOIN hats h ON h.id = uh.hat_id
+                    JOIN users u ON u.id = uh.user_id
+                    WHERE uh.user_id = ?
+                      AND uh.is_active = 1
+                      AND uh.deleted_at IS NULL
+                      AND u.is_active = 1
+                      AND u.deleted_at IS NULL
+                    """, arguments: [userId])
+            }
+            var levels: Set<String> = []
+            for name in hatNames {
+                switch name.lowercased() {
+                case "admin": levels.formUnion(Self.qaEscalationLevels)
+                case "manager": levels.insert("manager")
+                case "office": levels.insert("office")
+                case "lead": levels.insert("lead")
+                case "worker": levels.insert("worker")
+                default: break
+                }
+            }
+            return levels
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// List open Q&A threads that require the given user's review.
+    ///
+    /// A thread needs the user's review when:
+    /// - it is still actionable (`open` or `escalated`), and
+    /// - its `current_level` is one the user's active hats respond at, and
+    /// - the user is not the asker — unless the thread was pushed back down to
+    ///   its current level (the asker must act on push-back feedback).
+    public func listQAThreadsNeedingReview(userId: Int64) throws -> [QAThreadRow] {
+        let levels = try actionableQALevels(userId: userId).sorted()
+        guard !levels.isEmpty else { return [] }
+        do {
+            return try db.writer.read { dbConn -> [QAThreadRow] in
+                let levelPlaceholders = Array(repeating: "?", count: levels.count).joined(separator: ", ")
+                let sql = """
+                    SELECT qa.id, COALESCE(qa.job_id, 0) AS job_id, qa.asked_by, qa.subject, qa.current_level, qa.status, qa.priority,
+                           qa.answer_text, j.due_date,
+                           COALESCE(ua.display_name, ua.email, 'Unknown') AS asked_by_name,
+                           COALESCE(ub.display_name, ub.email) AS answered_by_name
+                    FROM qa_threads qa
+                    LEFT JOIN jobs j ON j.id = qa.job_id AND j.deleted_at IS NULL
+                    LEFT JOIN users ua ON ua.id = qa.asked_by AND ua.deleted_at IS NULL
+                    LEFT JOIN users ub ON ub.id = qa.answered_by AND ub.deleted_at IS NULL
+                    WHERE qa.deleted_at IS NULL
+                      AND qa.status IN ('open', 'escalated')
+                      AND qa.current_level IN (\(levelPlaceholders))
+                      AND (
+                            qa.asked_by IS NULL
+                            OR qa.asked_by <> ?
+                            OR EXISTS (
+                                 SELECT 1 FROM qa_escalations qe
+                                 WHERE qe.thread_id = qa.id
+                                   AND qe.to_level = qa.current_level
+                                   AND \(Self.levelIndexSQL("qe.from_level")) > \(Self.levelIndexSQL("qe.to_level"))
+                            )
+                          )
+                    ORDER BY qa.created_at DESC
+                    """
+
+                var args: [DatabaseValueConvertible?] = levels.map { $0 as DatabaseValueConvertible? }
+                args.append(userId)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
+                return rows.map { row in
+                    QAThreadRow(
+                        id: row["id"] ?? 0,
+                        jobId: row["job_id"] ?? 0,
+                        askedById: row["asked_by"] as Int64?,
+                        question: row["subject"] ?? "",
+                        askedByName: row["asked_by_name"] ?? "Unknown",
+                        currentLevel: row["current_level"] ?? "worker",
                         status: row["status"] ?? "open",
                         priority: row["priority"] ?? "normal",
                         dueDate: row["due_date"] as String?,
@@ -495,24 +621,35 @@ public final class ChatService: Sendable {
     }
 
     /// Create a new Q&A thread. Returns the inserted row ID.
+    ///
+    /// - Parameter level: Escalation level the thread starts at. Defaults to
+    ///   `"worker"` (the bottom of the chain, used by the Q&A page). The RFI
+    ///   page passes `"office"` so the new thread is an RFI immediately and
+    ///   shows up in the office-level RFI list. Must be one of
+    ///   ``qaEscalationLevels``; anything else throws
+    ///   ``ChatError/invalidEscalationLevel(_:)``.
     @discardableResult
     public func createQAThread(
         jobId: Int64,
         askedBy: Int64,
         subject: String,
-        priority: String = "normal"
+        priority: String = "normal",
+        level: String = "worker"
     ) throws -> Int64 {
         guard !subject.isBlankRequiredText else {
             throw ChatError.requiredFieldEmpty
+        }
+        guard Self.qaEscalationLevels.contains(level) else {
+            throw ChatError.invalidEscalationLevel(level)
         }
         return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     INSERT INTO qa_threads
                     (job_id, asked_by, subject, current_level, status, priority, created_at, updated_at)
-                    VALUES (?, ?, ?, 'worker', 'open', ?, datetime('now'), datetime('now'))
+                    VALUES (?, ?, ?, ?, 'open', ?, datetime('now'), datetime('now'))
                     """,
-                arguments: [jobId, askedBy, subject, priority]
+                arguments: [jobId, askedBy, subject, level, priority]
             )
             return dbConn.lastInsertedRowID
         }
@@ -1294,6 +1431,10 @@ public final class ChatService: Sendable {
 
     /// Push a Q&A thread back down one level with feedback.
     public func pushBackThread(threadId: Int64, pushedBackBy: Int64, reason: String) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: pushedBackBy, permissionKey: "moderate_chat")
+        }
+
         try db.writer.write { dbConn in
             guard let row = try Row.fetchOne(dbConn, sql: """
                 SELECT current_level FROM qa_threads WHERE id = ? AND deleted_at IS NULL
@@ -1328,6 +1469,38 @@ public final class ChatService: Sendable {
                 WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [resolvedBy, threadId])
         }
+    }
+
+    /// Resolve the id of the newest Q&A thread linked to a channel.
+    /// Returns nil when the channel has no Q&A thread.
+    public func qaThreadId(forChannelId channelId: Int64) throws -> Int64? {
+        try db.writer.read { dbConn in
+            try Int64.fetchOne(dbConn, sql: """
+                SELECT id FROM qa_threads
+                WHERE channel_id = ? AND deleted_at IS NULL
+                ORDER BY created_at DESC LIMIT 1
+                """, arguments: [channelId])
+        }
+    }
+
+    /// Escalate the Q&A thread linked to a specific channel.
+    /// Uses `channel_id` to find the correct thread — same pattern as `resolveQAThreadByChannel`.
+    /// Throws `ChatError.threadNotFound` (carrying the channel id) when the channel has no Q&A thread.
+    public func escalateThreadByChannel(channelId: Int64, escalatedBy: Int64, notes: String?) throws {
+        guard let threadId = try qaThreadId(forChannelId: channelId) else {
+            throw ChatError.threadNotFound(channelId)
+        }
+        try escalateThread(threadId: threadId, escalatedBy: escalatedBy, notes: notes)
+    }
+
+    /// Push back the Q&A thread linked to a specific channel.
+    /// Uses `channel_id` to find the correct thread — same pattern as `resolveQAThreadByChannel`.
+    /// Throws `ChatError.threadNotFound` (carrying the channel id) when the channel has no Q&A thread.
+    public func pushBackThreadByChannel(channelId: Int64, pushedBackBy: Int64, reason: String) throws {
+        guard let threadId = try qaThreadId(forChannelId: channelId) else {
+            throw ChatError.threadNotFound(channelId)
+        }
+        try pushBackThread(threadId: threadId, pushedBackBy: pushedBackBy, reason: reason)
     }
 
     /// Resolve the Q&A thread linked to a specific channel.

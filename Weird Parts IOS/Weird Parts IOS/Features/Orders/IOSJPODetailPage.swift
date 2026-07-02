@@ -401,9 +401,17 @@ struct IOSJPODetailPage: View {
                     Text(line.partName ?? "Unknown Part")
                         .font(.subheadline)
                         .fontWeight(.medium)
-                    Text("Qty: \(line.quantity)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        Text("Qty: \(line.quantity)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if line.brandSelectionMode == "general" {
+                            // Brand deferred to PO creation (#242)
+                            Label("General", systemImage: "circle.dashed")
+                                .font(.caption2)
+                                .foregroundStyle(.teal)
+                        }
+                    }
                 }
 
                 Spacer()

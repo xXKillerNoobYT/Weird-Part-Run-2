@@ -183,7 +183,7 @@ struct JobsListPage: View {
             }
         } message: {
             if let target = quickStatusTarget {
-                Text("Job: \(target.job.jobName ?? target.job.jobNumber)"  )
+                Text("Job: \(target.job.jobName)")
             }
         }
         .onChange(of: searchText) { loadJobs() }

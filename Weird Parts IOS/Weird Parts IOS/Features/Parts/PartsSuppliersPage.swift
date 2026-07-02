@@ -358,7 +358,7 @@ struct PartsSuppliersPage: View {
     @ViewBuilder
     private var emptyState: some View {
         let isSearching = !searchText.isEmpty
-        return VStack(spacing: 16) {
+        VStack(spacing: 16) {
             Image(systemName: isSearching ? "magnifyingglass" : "building.2")
                 .decorativeIconFont(48)
                 .foregroundStyle(.secondary)
@@ -1041,6 +1041,35 @@ private struct SupplierDetailSheet: View {
                     .environmentObject(appCore)
                 }
             }
+            .confirmationDialog(
+                "Remove this contact?",
+                isPresented: $showRemoveContactConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Remove Contact", role: .destructive) { removeContact() }
+                Button("Cancel", role: .cancel) { contactToRemove = nil }
+            } message: {
+                if let contact = contactToRemove {
+                    Text("\(contact.firstName) \(contact.lastName) will be unlinked from \(supplier.name). The person is not deleted — only the link to this supplier.")
+                }
+            }
+        }
+    }
+
+    /// #1338: the Remove swipe action previously set state that nothing was
+    /// bound to. Confirm, then soft-delete the contact link via core.
+    private func removeContact() {
+        guard let contact = contactToRemove else { return }
+        contactToRemove = nil
+        guard let service = appCore.partsService else {
+            loadError = "Parts service not available."
+            return
+        }
+        do {
+            try service.removeSupplierContact(contactId: contact.contactId)
+            contacts = try service.getSupplierContacts(supplierId: supplier.id)
+        } catch {
+            loadError = userFriendlyError(error, context: "remove contact")
         }
     }
 

@@ -41,6 +41,12 @@ public final class OrdersService: Sendable {
             attemptedSupplierId: Int64,
             attemptedSupplierName: String?
         )
+        case generalBrandUnresolved(
+            partId: Int64,
+            partName: String?,
+            supplierId: Int64,
+            supplierName: String?
+        )
         case insufficientStock(partId: Int64, available: Int, requested: Int)
         case overMaxPullRequired(partId: Int64, overage: Int)
         case invalidQuantity(Int)
@@ -73,6 +79,10 @@ public final class OrdersService: Sendable {
                 let lockedText = lockedSupplierName.map { "\($0) (#\(lockedSupplierId))" } ?? "#\(lockedSupplierId)"
                 let attemptedText = attemptedSupplierName.map { "\($0) (#\(attemptedSupplierId))" } ?? "#\(attemptedSupplierId)"
                 return "Generic part \(partText) for job \(jobText) is locked to supplier \(lockedText), not supplier \(attemptedText)"
+            case .generalBrandUnresolved(let partId, let partName, let supplierId, let supplierName):
+                let partText = partName.map { "\($0) (#\(partId))" } ?? "part #\(partId)"
+                let supplierText = supplierName.map { "\($0) (#\(supplierId))" } ?? "Supplier #\(supplierId)"
+                return "\(supplierText) doesn't carry a brand for \(partText) — pick another supplier"
             case .insufficientStock(let partId, let available, let requested):
                 return "Part #\(partId) has \(available) available on warehouse shelves, but \(requested) was requested"
             case .overMaxPullRequired(let partId, let overage):
@@ -375,6 +385,8 @@ public final class OrdersService: Sendable {
         public let chatThreadId: Int64?
         public let poLineId: Int64?
         public let transferId: Int64?
+        /// 'specific' (default) or 'general' — brand deferred to PO creation. (PE-COLORS Phase 3, #242)
+        public let brandSelectionMode: String
         public let createdAt: String?
 
         public init(
@@ -383,7 +395,8 @@ public final class OrdersService: Sendable {
             notes: String?, priority: String, createdAt: String?,
             lineStatus: String = "pending", holdReason: String? = nil,
             rejectReason: String? = nil, chatThreadId: Int64? = nil,
-            poLineId: Int64? = nil, transferId: Int64? = nil
+            poLineId: Int64? = nil, transferId: Int64? = nil,
+            brandSelectionMode: String = "specific"
         ) {
             self.id = id
             self.jpoId = jpoId
@@ -400,6 +413,7 @@ public final class OrdersService: Sendable {
             self.chatThreadId = chatThreadId
             self.poLineId = poLineId
             self.transferId = transferId
+            self.brandSelectionMode = brandSelectionMode
             self.createdAt = createdAt
         }
     }
@@ -523,6 +537,12 @@ public final class OrdersService: Sendable {
         public let jobId: Int64?
         public let jobName: String?
         public let source: String?  // "job", "forecast", "wishlist", "general"
+        /// Brand persisted on the PO line at creation time. Set when a general-mode
+        /// JPO line was auto-resolved against the supplier. (PE-COLORS Phase 3, #243)
+        public let brandId: Int64?
+        public let brandName: String?
+        /// 'specific' (default) or 'general' — kept for auditability of auto-resolutions.
+        public let brandSelectionMode: String
 
         // Computed line-level status for display
         public var lineStatus: String { status }
@@ -532,7 +552,9 @@ public final class OrdersService: Sendable {
             partName: String?, description: String?,
             quantityOrdered: Int, quantityReceived: Int, unitPrice: Double?,
             status: String, notes: String?, createdAt: String?,
-            jobId: Int64? = nil, jobName: String? = nil, source: String? = nil
+            jobId: Int64? = nil, jobName: String? = nil, source: String? = nil,
+            brandId: Int64? = nil, brandName: String? = nil,
+            brandSelectionMode: String = "specific"
         ) {
             self.id = id
             self.poId = poId
@@ -549,6 +571,9 @@ public final class OrdersService: Sendable {
             self.jobId = jobId
             self.jobName = jobName
             self.source = source
+            self.brandId = brandId
+            self.brandName = brandName
+            self.brandSelectionMode = brandSelectionMode
         }
     }
 
@@ -756,7 +781,8 @@ public final class OrdersService: Sendable {
                     rejectReason: lr["reject_reason"] as String?,
                     chatThreadId: lr["chat_thread_id"] as Int64?,
                     poLineId: lr["po_line_id"] as Int64?,
-                    transferId: lr["transfer_id"] as Int64?
+                    transferId: lr["transfer_id"] as Int64?,
+                    brandSelectionMode: lr["brand_selection_mode"] ?? "specific"
                 )
             }
 
@@ -1287,7 +1313,8 @@ public final class OrdersService: Sendable {
         deliveryOption: String,
         notes: String?,
         lines: [(partId: Int64, quantity: Int)],
-        lineNotes: [String?]? = nil
+        lineNotes: [String?]? = nil,
+        brandSelectionModes: [String]? = nil
     ) throws -> Int64 {
         try db.writer.write { dbConn in
             // Guard: job and requesting user must exist and not be tombstoned (mirrors createJPO).
@@ -1307,9 +1334,19 @@ public final class OrdersService: Sendable {
                 }
             }
 
-            // Guard: every line must have qty > 0 and a live part.
-            for line in lines {
+            if let brandSelectionModes {
+                guard brandSelectionModes.count == lines.count else {
+                    throw OrdersError.invalidStatus("Brand selection mode count must match JPO line count (expected \(lines.count), got \(brandSelectionModes.count))")
+                }
+            }
+
+            // Guard: every line must have qty > 0, a live part, and a valid brand mode.
+            for (index, line) in lines.enumerated() {
                 guard line.quantity > 0 else { throw OrdersError.invalidQuantity(line.quantity) }
+                let brandSelectionMode = brandSelectionModes?[index] ?? "specific"
+                guard brandSelectionMode == "specific" || brandSelectionMode == "general" else {
+                    throw OrdersError.invalidStatus("Invalid brand selection mode: \(brandSelectionMode)")
+                }
                 let partExists = (try Int.fetchOne(dbConn, sql: """
                     SELECT COUNT(*) FROM parts WHERE id = ? AND deleted_at IS NULL
                     """, arguments: [line.partId]) ?? 0) > 0
@@ -1329,11 +1366,12 @@ public final class OrdersService: Sendable {
             // 2. Insert each line and smart-route
             for (index, line) in lines.enumerated() {
                 let note = lineNotes?[index]
+                let brandSelectionMode = brandSelectionModes?[index] ?? "specific"
                 try dbConn.execute(sql: """
                     INSERT INTO jpo_line_items
-                    (jpo_id, part_id, qty_requested, priority, notes, created_at)
-                    VALUES (?, ?, ?, ?, ?, datetime('now'))
-                    """, arguments: [jpoId, line.partId, line.quantity, priority, note])
+                    (jpo_id, part_id, qty_requested, priority, notes, brand_selection_mode, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+                    """, arguments: [jpoId, line.partId, line.quantity, priority, note, brandSelectionMode])
                 let lineId = dbConn.lastInsertedRowID
 
                 // Check shop stock for smart routing
@@ -2657,9 +2695,11 @@ public final class OrdersService: Sendable {
                     var remainingQty = item.quantity
                     for jpoLineId in item.jpoLineIds where remainingQty > 0 {
                         let lineRow = try Row.fetchOne(dbConn, sql: """
-                            SELECT part_id, qty_requested
-                            FROM jpo_line_items
-                            WHERE id = ? AND deleted_at IS NULL
+                            SELECT jl.part_id, jl.qty_requested, jl.brand_selection_mode,
+                                   p.name AS part_name
+                            FROM jpo_line_items jl
+                            LEFT JOIN parts p ON p.id = jl.part_id AND p.deleted_at IS NULL
+                            WHERE jl.id = ? AND jl.deleted_at IS NULL
                             """, arguments: [jpoLineId])
                         guard let lineRow else { throw OrdersError.invalidStatus("JPO line #\(jpoLineId) not found or has been deleted") }
                         let sourcePartId: Int64 = lineRow["part_id"] ?? item.partId
@@ -2669,13 +2709,38 @@ public final class OrdersService: Sendable {
                         guard lineQty > 0 else { continue }
                         remainingQty -= lineQty
 
+                        // General-mode lines carry no brand — resolve one against the
+                        // chosen supplier and persist it on the PO line. The mode stays
+                        // 'general' so audits can see this was an auto-resolution. (#243)
+                        let brandSelectionMode: String = lineRow["brand_selection_mode"] ?? "specific"
+                        var resolvedBrandId: Int64? = nil
+                        if brandSelectionMode == "general" {
+                            switch try Self.resolveGeneralLineItem(
+                                jpoLineId: jpoLineId, supplierId: supplierId, dbConn: dbConn
+                            ) {
+                            case .resolved(let brandId, _):
+                                resolvedBrandId = brandId
+                            case .noMatch:
+                                throw OrdersError.generalBrandUnresolved(
+                                    partId: item.partId,
+                                    partName: lineRow["part_name"] as String?,
+                                    supplierId: supplierId,
+                                    supplierName: try supplierName(for: supplierId)
+                                )
+                            case .alreadySpecific:
+                                break
+                            }
+                        }
+
                         try dbConn.execute(
                             sql: """
                                 INSERT INTO po_line_items
-                                (po_id, jpo_line_id, part_id, qty_ordered, unit_cost, created_at)
-                                VALUES (?, ?, ?, ?, ?, datetime('now'))
+                                (po_id, jpo_line_id, part_id, qty_ordered, unit_cost,
+                                 brand_id, brand_selection_mode, created_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
                                 """,
-                            arguments: [poId, jpoLineId, item.partId, lineQty, item.unitCost]
+                            arguments: [poId, jpoLineId, item.partId, lineQty, item.unitCost,
+                                        resolvedBrandId, brandSelectionMode]
                         )
                         let poLineId = dbConn.lastInsertedRowID
                         totalLines += 1
@@ -2951,6 +3016,12 @@ public final class OrdersService: Sendable {
 
     /// Generate a Purchase Order from an approved JPO. Creates a new PO and links its
     /// line items to the JPO line items, then marks the JPO as "ordered".
+    ///
+    /// General-mode lines (`brand_selection_mode = 'general'`) are resolved to a concrete
+    /// brand for the chosen supplier via the same core as `generatePOsFromProcurement`;
+    /// the resolved `brand_id` is persisted and the mode is kept as `'general'` for
+    /// auditability. Throws `OrdersError.generalBrandUnresolved` (rolling back the whole
+    /// transaction) when the supplier carries no matching brand. (#243)
     @discardableResult
     public func generatePOFromJPO(jpoId: Int64, supplierId: Int64) throws -> Int64 {
         try db.writer.write { dbConn in
@@ -2969,11 +3040,12 @@ public final class OrdersService: Sendable {
             }
 
             // Guard: supplier must exist and not be tombstoned — a PO against a deleted
-            // supplier won't surface in supplier-filtered list views.
-            let supplierExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM suppliers WHERE id = ? AND deleted_at IS NULL
-                """, arguments: [supplierId]) ?? 0) > 0
-            guard supplierExists else { throw OrdersError.supplierNotFound(supplierId) }
+            // supplier won't surface in supplier-filtered list views. Fetching the name
+            // (rather than COUNT) also feeds the generalBrandUnresolved error below.
+            guard let supplierName = try String.fetchOne(dbConn, sql: """
+                SELECT name FROM suppliers WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [supplierId])
+            else { throw OrdersError.supplierNotFound(supplierId) }
 
             // Generate PO number (MAX-based to prevent duplicates after deletions)
             let maxNum = try Int.fetchOne(
@@ -2997,9 +3069,11 @@ public final class OrdersService: Sendable {
             let lines = try Row.fetchAll(
                 dbConn,
                 sql: """
-                    SELECT id, part_id, qty_requested
-                    FROM jpo_line_items
-                    WHERE jpo_id = ? AND deleted_at IS NULL
+                    SELECT jl.id, jl.part_id, jl.qty_requested, jl.brand_selection_mode,
+                           p.name AS part_name
+                    FROM jpo_line_items jl
+                    LEFT JOIN parts p ON p.id = jl.part_id AND p.deleted_at IS NULL
+                    WHERE jl.jpo_id = ? AND jl.deleted_at IS NULL
                     """,
                 arguments: [jpoId]
             )
@@ -3007,13 +3081,40 @@ public final class OrdersService: Sendable {
                 let partId: Int64 = line["part_id"] ?? 0
                 let qty: Int = line["qty_requested"] ?? 1
                 let jpoLineId: Int64 = line["id"] ?? 0
+
+                // General-mode lines carry no brand — resolve one against the chosen
+                // supplier and persist it on the PO line. The mode stays 'general' so
+                // audits can see this was an auto-resolution. Mirrors
+                // generatePOsFromProcurement — both JPO-to-PO paths share one invariant. (#243)
+                let brandSelectionMode: String = line["brand_selection_mode"] ?? "specific"
+                var resolvedBrandId: Int64? = nil
+                if brandSelectionMode == "general" {
+                    switch try Self.resolveGeneralLineItem(
+                        jpoLineId: jpoLineId, supplierId: supplierId, dbConn: dbConn
+                    ) {
+                    case .resolved(let brandId, _):
+                        resolvedBrandId = brandId
+                    case .noMatch:
+                        throw OrdersError.generalBrandUnresolved(
+                            partId: partId,
+                            partName: line["part_name"] as String?,
+                            supplierId: supplierId,
+                            supplierName: supplierName
+                        )
+                    case .alreadySpecific:
+                        break
+                    }
+                }
+
                 try dbConn.execute(
                     sql: """
                         INSERT INTO po_line_items
-                        (po_id, jpo_line_id, part_id, qty_ordered, created_at)
-                        VALUES (?, ?, ?, ?, datetime('now'))
+                        (po_id, jpo_line_id, part_id, qty_ordered,
+                         brand_id, brand_selection_mode, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
                         """,
-                    arguments: [poId, jpoLineId, partId, qty]
+                    arguments: [poId, jpoLineId, partId, qty,
+                                resolvedBrandId, brandSelectionMode]
                 )
                 let poLineId = dbConn.lastInsertedRowID
                 try dbConn.execute(
@@ -3119,6 +3220,7 @@ public final class OrdersService: Sendable {
             let linesSql = """
                 SELECT pl.*,
                        p.name AS part_name,
+                       b.name AS resolved_brand_name,
                        j.id AS job_id,
                        COALESCE(j.job_name,
                            CASE WHEN pl.notes LIKE '%forecast%' THEN 'Forecast Restock'
@@ -3133,6 +3235,7 @@ public final class OrdersService: Sendable {
                        END AS source
                 FROM po_line_items pl
                 LEFT JOIN parts p ON p.id = pl.part_id AND p.deleted_at IS NULL
+                LEFT JOIN brands b ON b.id = pl.brand_id AND b.deleted_at IS NULL
                 LEFT JOIN jpo_line_items jli ON jli.id = pl.jpo_line_id
                 LEFT JOIN job_parts_orders jpo ON jpo.id = jli.jpo_id
                 LEFT JOIN jobs j ON j.id = jpo.job_id AND j.deleted_at IS NULL
@@ -3156,7 +3259,10 @@ public final class OrdersService: Sendable {
                     createdAt: lr["created_at"] as String?,
                     jobId: lr["job_id"] as Int64?,
                     jobName: lr["job_name"] as String?,
-                    source: lr["source"] as String?
+                    source: lr["source"] as String?,
+                    brandId: lr["brand_id"] as Int64?,
+                    brandName: lr["resolved_brand_name"] as String?,
+                    brandSelectionMode: lr["brand_selection_mode"] ?? "specific"
                 )
             }
 
@@ -4029,78 +4135,89 @@ public final class OrdersService: Sendable {
     public func resolveGeneralLineItem(jpoLineId: Int64, supplierId: Int64) throws -> BrandResolutionResult {
         do {
             return try db.writer.read { dbConn in
-                // 1. Load the line item and its associated part
-                guard let lineRow = try Row.fetchOne(dbConn, sql: """
-                    SELECT jli.brand_selection_mode, p.color_id, p.type_id
-                    FROM jpo_line_items jli
-                    JOIN parts p ON p.id = jli.part_id AND p.deleted_at IS NULL
-                    WHERE jli.id = ? AND jli.deleted_at IS NULL
-                    """, arguments: [jpoLineId])
-                else { return .noMatch }
-
-                let mode: String = lineRow["brand_selection_mode"] ?? "specific"
-                guard mode == "general" else { return .alreadySpecific }
-
-                let colorId: Int64? = lineRow["color_id"]
-                let typeId: Int64? = lineRow["type_id"]
-                guard let colorId, let typeId else { return .noMatch }
-
-                // 2. Find brands the supplier carries that have a SKU for (color, type)
-                let candidateRows = try Row.fetchAll(dbConn, sql: """
-                    SELECT b.id AS brand_id, b.name AS brand_name
-                    FROM brand_supplier_links bsl
-                    JOIN brands b ON b.id = bsl.brand_id AND b.deleted_at IS NULL
-                    JOIN color_brand_skus cbs
-                        ON cbs.brand_id = b.id
-                       AND cbs.color_id = ?
-                       AND cbs.type_id  = ?
-                       AND cbs.deleted_at IS NULL
-                       AND cbs.is_active = 1
-                    WHERE bsl.supplier_id = ?
-                      AND bsl.deleted_at IS NULL
-                      AND bsl.is_active = 1
-                    ORDER BY b.name ASC
-                    """, arguments: [colorId, typeId, supplierId])
-
-                switch candidateRows.count {
-                case 0:
-                    return .noMatch
-                case 1:
-                    let brandId: Int64 = candidateRows[0]["brand_id"]
-                    return .resolved(brandId: brandId, confidence: .exclusive)
-                default:
-                    // 3. History tiebreak — most recently received brand for this supplier
-                    let candidateBrandIds = candidateRows.map { $0["brand_id"] as Int64 }
-                    let placeholders = candidateBrandIds.map { _ in "?" }.joined(separator: ", ")
-                    var histArgs: [DatabaseValueConvertible] = [supplierId, colorId, typeId]
-                    histArgs.append(contentsOf: candidateBrandIds)
-
-                    if let histRow = try Row.fetchOne(dbConn, sql: """
-                        SELECT p.brand_id
-                        FROM po_line_items poli
-                        JOIN purchase_orders po ON po.id = poli.po_id
-                        JOIN parts p ON p.id = poli.part_id AND p.deleted_at IS NULL
-                        WHERE po.supplier_id = ?
-                          AND p.color_id = ?
-                          AND p.type_id  = ?
-                          AND p.brand_id IN (\(placeholders))
-                          AND po.deleted_at IS NULL
-                          AND poli.deleted_at IS NULL
-                        ORDER BY po.order_date DESC
-                        LIMIT 1
-                        """, arguments: StatementArguments(histArgs)) {
-                        let brandId: Int64 = histRow["brand_id"]
-                        return .resolved(brandId: brandId, confidence: .byHistory)
-                    }
-
-                    // No history — pick first alphabetically (already sorted)
-                    let brandId: Int64 = candidateRows[0]["brand_id"]
-                    return .resolved(brandId: brandId, confidence: .arbitrary)
-                }
+                try Self.resolveGeneralLineItem(jpoLineId: jpoLineId, supplierId: supplierId, dbConn: dbConn)
             }
         } catch {
             if isTableNotFoundError(error) { return .noMatch }
             throw error
+        }
+    }
+
+    /// Connection-scoped resolution core — shared by the public read-only API and the
+    /// two JPO-to-PO conversion paths (`generatePOsFromProcurement` and
+    /// `generatePOFromJPO`), which run inside write transactions. (#243)
+    private static func resolveGeneralLineItem(
+        jpoLineId: Int64,
+        supplierId: Int64,
+        dbConn: Database
+    ) throws -> BrandResolutionResult {
+        // 1. Load the line item and its associated part
+        guard let lineRow = try Row.fetchOne(dbConn, sql: """
+            SELECT jli.brand_selection_mode, p.color_id, p.type_id
+            FROM jpo_line_items jli
+            JOIN parts p ON p.id = jli.part_id AND p.deleted_at IS NULL
+            WHERE jli.id = ? AND jli.deleted_at IS NULL
+            """, arguments: [jpoLineId])
+        else { return .noMatch }
+
+        let mode: String = lineRow["brand_selection_mode"] ?? "specific"
+        guard mode == "general" else { return .alreadySpecific }
+
+        let colorId: Int64? = lineRow["color_id"]
+        let typeId: Int64? = lineRow["type_id"]
+        guard let colorId, let typeId else { return .noMatch }
+
+        // 2. Find brands the supplier carries that have a SKU for (color, type)
+        let candidateRows = try Row.fetchAll(dbConn, sql: """
+            SELECT b.id AS brand_id, b.name AS brand_name
+            FROM brand_supplier_links bsl
+            JOIN brands b ON b.id = bsl.brand_id AND b.deleted_at IS NULL
+            JOIN color_brand_skus cbs
+                ON cbs.brand_id = b.id
+               AND cbs.color_id = ?
+               AND cbs.type_id  = ?
+               AND cbs.deleted_at IS NULL
+               AND cbs.is_active = 1
+            WHERE bsl.supplier_id = ?
+              AND bsl.deleted_at IS NULL
+              AND bsl.is_active = 1
+            ORDER BY b.name ASC
+            """, arguments: [colorId, typeId, supplierId])
+
+        switch candidateRows.count {
+        case 0:
+            return .noMatch
+        case 1:
+            let brandId: Int64 = candidateRows[0]["brand_id"]
+            return .resolved(brandId: brandId, confidence: .exclusive)
+        default:
+            // 3. History tiebreak — most recently received brand for this supplier
+            let candidateBrandIds = candidateRows.map { $0["brand_id"] as Int64 }
+            let placeholders = candidateBrandIds.map { _ in "?" }.joined(separator: ", ")
+            var histArgs: [DatabaseValueConvertible] = [supplierId, colorId, typeId]
+            histArgs.append(contentsOf: candidateBrandIds)
+
+            if let histRow = try Row.fetchOne(dbConn, sql: """
+                SELECT p.brand_id
+                FROM po_line_items poli
+                JOIN purchase_orders po ON po.id = poli.po_id
+                JOIN parts p ON p.id = poli.part_id AND p.deleted_at IS NULL
+                WHERE po.supplier_id = ?
+                  AND p.color_id = ?
+                  AND p.type_id  = ?
+                  AND p.brand_id IN (\(placeholders))
+                  AND po.deleted_at IS NULL
+                  AND poli.deleted_at IS NULL
+                ORDER BY po.order_date DESC
+                LIMIT 1
+                """, arguments: StatementArguments(histArgs)) {
+                let brandId: Int64 = histRow["brand_id"]
+                return .resolved(brandId: brandId, confidence: .byHistory)
+            }
+
+            // No history — pick first alphabetically (already sorted)
+            let brandId: Int64 = candidateRows[0]["brand_id"]
+            return .resolved(brandId: brandId, confidence: .arbitrary)
         }
     }
 

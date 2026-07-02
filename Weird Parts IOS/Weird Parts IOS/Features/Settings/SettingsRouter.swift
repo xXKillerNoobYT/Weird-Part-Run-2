@@ -110,18 +110,10 @@ struct SettingsRouter: View {
             IOSReportTemplatesPage()
         case "settings-job-stage-templates":
             IOSJobStageTemplatesSettingsPage()
-        case "settings-payment-tracking":
-            comingSoonPage("Payment Tracking", icon: "banknote.fill")
-
         default:
             Text("Unknown settings page: \(tabId)")
                 .foregroundStyle(.secondary)
         }
-    }
-
-    private func comingSoonPage(_ title: String, icon: String) -> some View {
-        EmptyStateView(icon: icon, title: title, message: "This page is being built.")
-            .navigationTitle(title)
     }
 
     private var settingsPageContext: String {
