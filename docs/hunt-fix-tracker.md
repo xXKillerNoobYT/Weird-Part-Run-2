@@ -2189,3 +2189,25 @@ The page-rebuild-enforcer completed PE-040 (warehouse wizard drag-and-drop) and 
 **Build:** ✅ 0 errors, 0 warnings
 **Tests:** ✅ 1588/1588 passing
 **Remaining open:** 14
+
+---
+
+## Iteration 69 — 2026-07-02 — Beta-Readiness Push, Iteration 1 (6-hour loop)
+
+**Hunt class:** Full-repo beta-readiness audit — 80 open issues triaged against code with 8 parallel scanners + 4 specialist auditors, then priority-ordered fix batches per the Paperclip beta-blocker goals.
+
+**Focus area:** whole program (supersedes area rotation while the 6-hour beta loop runs). Plan: `docs/plans/beta-readiness-issue-resolution-2026-07.md`.
+
+**Issue movement:** 80 open → 37 open (43 resolved: 19 already-fixed closed with evidence, 24 fixed via 15 merged PRs #1343–#1358 range). Owner decisions consolidated in #1348 (7 items). New issues filed: #1348 (decisions), #1355 (main iOS build break — found and fixed same iteration).
+
+**Merged PRs:** #1343 silent-load wave 1 · #1344 soft-delete filters · #1345 docs overhaul + resolution plan · #1346 validation gaps · #1347 CI/train fixes · #1349 sheet lifecycle (#735/#736/#714) · #1350 timesheet corrections (#1097) · #1351 job-edit template (#1105) · #1352 silent-load wave 2 (5 issues) · #1353 scanning reliability (#1208/#1080/#700) · #1354 dashboard/onboarding polish (#1067/#1098/#1099/#708) · #1356 hardening trivia (#711/#712/#1314/#43/#1355) · #1357 tracker-sync bounds
+
+**Systemic findings fixed:**
+- Merge train could never merge: GitHub's pulls **list** endpoint never populates `mergeable_state`, so every PR routed to a no-op rebase (root cause of the historical #596 backlog). Fixed in #1347.
+- `GITHUB_TOKEN`-authored branch updates leave PR checks held at `action_required` — PAT fallback shipped; owner mints `PR_MAINTENANCE_PAT` (decision 7 in #1348).
+- Main iOS build was broken (MainActor call in `Task.detached`, IOSWishlistPage) — cloud PR gates don't run full Xcode builds, so it slipped; caught by batch agent's simulator build (#1355, fixed in #1356).
+- Badge aging parsed SQLite UTC timestamps in device-local tz — UTC parse path added with tz-sensitivity tests (#1354).
+
+**Build:** ✅ full iOS simulator build succeeded (verified on #1356's branch)
+**Tests:** ✅ 2258/2258 passing in 68 suites on merged main (was 2230 pre-iteration; +28 batch regression tests)
+**Remaining open:** 37 (next batches queued: dead-end controls H, colors/SKU C, warehouse integrity G, accessibility M, Q&A filters N, notebooks K)
