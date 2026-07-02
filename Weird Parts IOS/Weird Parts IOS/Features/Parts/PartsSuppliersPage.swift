@@ -944,6 +944,7 @@ private struct SupplierDetailSheet: View {
     @State private var recentPOs: [(poId: Int64, poNumber: String, status: String, total: Double, date: String)] = []
     @State private var supplierScores: PartsService.SupplierScores?
     @State private var contacts: [PartsService.SupplierContact] = []
+    @State private var supplierTrace: [PartsService.TraceStep] = []
     @State private var partCount = 0
     @State private var isLoading = true
     @State private var activeSheet: ActiveSheet?
@@ -992,7 +993,10 @@ private struct SupplierDetailSheet: View {
                 // Section 9: Recent Orders
                 recentOrdersSection
 
-                // Section 10: Notes
+                // Section 10: Traceability — receipts from / returns to this supplier
+                traceabilitySection
+
+                // Section 11: Notes
                 if let notes = supplier.notes, !notes.isEmpty {
                     Section("Notes") {
                         Text(notes)
@@ -1492,6 +1496,70 @@ private struct SupplierDetailSheet: View {
         }
     }
 
+    // MARK: - Traceability
+
+    @ViewBuilder
+    private var traceabilitySection: some View {
+        Section {
+            if supplierTrace.isEmpty {
+                Text("No tracked movements for this supplier yet. Receipts and supplier returns appear here once parts are received or sent back.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(supplierTrace, id: \.movementId) { step in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Image(systemName: StockMovement.MovementType.systemImageName(forRawValue: step.movementType))
+                                .font(.caption)
+                                .foregroundStyle(Color.accentColor)
+                                .accessibilityHidden(true)
+                            Text(step.partName ?? "Part #\(step.partId)")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .lineLimit(1)
+                            Spacer()
+                            Text("×\(step.qty)")
+                                .font(.caption)
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                        HStack(spacing: 4) {
+                            Text(StockMovement.MovementType.displayName(forRawValue: step.movementType))
+                                .font(.caption2)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.accentColor.opacity(0.1))
+                                .clipShape(Capsule())
+                            Text("\(step.fromLocation) → \(step.toLocation)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        HStack {
+                            Text(String(step.date.prefix(10)))
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                            if let ref = step.referenceNumber, !ref.isEmpty {
+                                Text(ref)
+                                    .font(.caption2)
+                                    .monospaced()
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityElement(children: .combine)
+                }
+            }
+        } header: {
+            Text("Traceability")
+        } footer: {
+            if !supplierTrace.isEmpty {
+                Text("Last \(supplierTrace.count) movements linked to this supplier — receipts into the warehouse and returns sent back.")
+            }
+        }
+    }
+
     // MARK: - Helpers
 
     @ViewBuilder
@@ -1530,6 +1598,7 @@ private struct SupplierDetailSheet: View {
             partCount = try service.getSupplierPartCount(supplierId: supplier.id)
             contacts = try service.getSupplierContacts(supplierId: supplier.id)
             supplierScores = try service.calculateSupplierScores(supplierId: supplier.id)
+            supplierTrace = try service.getSupplierTrace(supplierId: supplier.id, limit: 10)
 
             // Check for existing supplier channel
             if let chatService = appCore.chatService,
@@ -1540,6 +1609,7 @@ private struct SupplierDetailSheet: View {
 
             isLoading = false
         } catch {
+            loadError = userFriendlyError(error, context: "load supplier details")
             isLoading = false
         }
     }

@@ -1083,7 +1083,8 @@ struct ReceivingRoutingFlow: View {
                 qty: receivedQty,
                 jobId: link.jobId,
                 performedBy: userId,
-                notes: "Received via PO, staged for \(link.jobName)"
+                notes: "Received via PO, staged for \(link.jobName)",
+                receivingSessionId: item.sessionId
             )
             try service.markReceivingSessionItemRouted(
                 itemId: item.id,
@@ -1123,7 +1124,8 @@ struct ReceivingRoutingFlow: View {
                 qty: qtyToStage,
                 jobId: demand.jobId,
                 performedBy: userId,
-                notes: "Cross-job staging from receiving for \(demand.jobName)"
+                notes: "Cross-job staging from receiving for \(demand.jobName)",
+                receivingSessionId: item.sessionId
             )
             try service.markReceivingSessionItemRouted(
                 itemId: item.id,
@@ -1163,7 +1165,8 @@ struct ReceivingRoutingFlow: View {
                 qty: receivedQty,
                 returnType: action.rawValue.lowercased(),
                 performedBy: userId,
-                notes: "Damaged on arrival, requesting \(action.rawValue.lowercased())"
+                notes: "Damaged on arrival, requesting \(action.rawValue.lowercased())",
+                receivingSessionId: item.sessionId
             )
             try service.markReceivingSessionItemRouted(
                 itemId: item.id,
