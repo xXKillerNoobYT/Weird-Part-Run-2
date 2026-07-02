@@ -1,8 +1,8 @@
 # WiredPart v1.0 — Release Readiness Checklist
 
 > **Document Owner:** Release Manager
-> **Last Updated:** 2026-03-27
-> **Team Size:** 36+ members across Engineering, QA, Security, Design, DevOps, Product
+> **Last Updated:** 2026-07-01 (metrics refresh, GitHub #1334)
+> **Team:** Solo owner + AI agents (role names below are gate responsibilities, not separate people)
 > **Target:** App Store submission (iOS) + Enterprise sideloading
 > **Status:** PRE-RELEASE GATE — All items must pass simultaneously before release
 
@@ -34,7 +34,7 @@
 |------|-------|--------|----------|
 | Code Quality & Architecture | Tech Lead | ☐ | __________ |
 | Data Persistence (GRDB) | Backend Lead | ☐ | __________ |
-| Unit/Integration Tests (545+ tests) | QA Lead | ☐ | __________ |
+| Unit/Integration Tests (2,224+ tests) | QA Lead | ☐ | __________ |
 | UI/UX Tests & Accessibility | Design Lead | ☐ | __________ |
 | Performance & Reliability | Performance Eng | ☐ | __________ |
 | Security & Privacy | Security Lead | ☐ | __________ |
@@ -90,11 +90,11 @@
 
 | # | Check | Owner | Status |
 |---|-------|-------|--------|
-| 3.1.1 | All 61 migrations (000–060) register and run on fresh in-memory DB | Backend Lead | ☐ |
-| 3.1.2 | `AppDatabase.schemaVersion == 61` verified in DatabaseTests | QA Lead | ☐ |
+| 3.1.1 | All 109 registered migrations (`000_change_log` → `105_job_records_local_first`, as of 2026-07-01 — verify: `grep -c 'registerMigration(' core/Sources/WiredPartCore/Database/AppDatabase+Migrations.swift`) register and run on fresh in-memory DB | Backend Lead | ☐ |
+| 3.1.2 | `AppDatabase.schemaVersion == 105` verified in DatabaseTests | QA Lead | ☐ |
 | 3.1.3 | Migration test verifies every table exists after full migration chain | QA Lead | ☐ |
-| 3.1.4 | Schema upgrade path tested: v0 → v61 (clean install) | QA Lead | ☐ |
-| 3.1.5 | Schema upgrade path tested: v50 → v61 (update from prior beta) | QA Lead | ☐ |
+| 3.1.4 | Schema upgrade path tested: v0 → v105 (clean install) | QA Lead | ☐ |
+| 3.1.5 | Schema upgrade path tested: v61 → v105 (update from prior beta) | QA Lead | ☐ |
 | 3.1.6 | No migrations use `ALTER TABLE ... DROP COLUMN` (SQLite limitation) | Backend Lead | ☐ |
 | 3.1.7 | All foreign keys have `ON DELETE CASCADE` or explicit handling | Backend Lead | ☐ |
 | 3.1.8 | `eraseDatabaseOnSchemaChange` is `true` only in DEBUG, `false` in RELEASE | Backend Lead | ☐ |
@@ -137,39 +137,44 @@ Stage 9 beta field-test smoke package: [`docs/testing/wei-3091-stage-9-beta-smok
 
 | # | Check | Metric | Status |
 |---|-------|--------|--------|
-| 4.1.1 | `swift test` — zero failures | 545/545 pass | ☐ |
-| 4.1.2 | All 40 test suites pass | 40/40 suites | ☐ |
-| 4.1.3 | Test run completes in < 60 seconds | Target: < 45s | ☐ |
+| 4.1.1 | `swift test` — zero failures | 2,224/2,224 pass (as of 2026-07-01; treat as ≥2,224) | ☐ |
+| 4.1.2 | All 67 test suites pass | 67/67 suites | ☐ |
+| 4.1.3 | Test run completes in < 3 minutes | Target: < 2.5 min (current ~113s) | ☐ |
 | 4.1.4 | Zero test warnings or deprecation notices | 0 warnings | ☐ |
 
 ### 4.2 Test Coverage by Service
 
-| Service | Test File | Tests | Status |
+<!-- Counts as of 2026-07-01 (per-file @Test counts). Verify:
+     cd core/Tests/WiredPartCoreTests && for f in *.swift; do echo "$(grep -c '@Test' "$f") $f"; done | sort -rn -->
+
+| Service | Test File(s) | Tests | Status |
 |---------|-----------|-------|--------|
-| AuthService | AuthServiceTests.swift | 22 | ☐ |
-| PartsService | E2EPartsCatalogTests.swift | ~30 | ☐ |
-| WarehouseService | E2EWarehouseTests.swift + WarehouseAuditTests.swift + WarehouseFloorPlanTests.swift | ~60 | ☐ |
-| JobsService | E2EJobsLaborTests.swift | ~20 | ☐ |
-| OrdersService | E2EOrdersTests.swift | ~25 | ☐ |
-| FleetService | E2EFleetPeopleTests.swift | ~20 | ☐ |
-| PeopleService | E2EFleetPeopleTests.swift | ~15 | ☐ |
-| SchedulingService | SchedulingServiceTests.swift | ~30 | ☐ |
-| ChatService | E2ECrossServiceTests.swift | ~10 | ☐ |
-| NotebooksService | NotebooksServiceTests.swift | ~15 | ☐ |
-| ToolsService | ToolsServiceTests.swift | ~35 | ☐ |
-| ReportsService | E2ESettingsReportsTests.swift | ~15 | ☐ |
-| SettingsService | SettingsServiceTests.swift | ~15 | ☐ |
-| DashboardService | DashboardServiceTests.swift | 22 | ☐ |
-| BreakService | BreakServiceTests.swift | 11 | ☐ |
-| WishlistService | WishlistServiceTests.swift | 11 | ☐ |
-| BackgroundTaskService | BackgroundTaskServiceTests.swift | 8 | ☐ |
-| JobEstimationService | JobEstimationServiceTests.swift | 17 | ☐ |
-| DailyReportGenerator | DailyReportGeneratorTests.swift | 3 | ☐ |
-| DeviceResetService | DeviceResetServiceTests.swift | ~5 | ☐ |
+| AuthService | AuthServiceTests.swift + E2EAuthBootstrapTests.swift | 83 | ☐ |
+| PartsService | PartsServiceExt/Advanced/Inventory/Coverage/CompanionIntel + E2EPartsCatalog + PartsOCRImportPreview + PricingCascade (8 files) | ~339 | ☐ |
+| WarehouseService | WarehouseServiceExt + WarehouseAudit + WarehouseFloorPlan + WarehouseLocation + WarehouseWalkingPath + GuidedInventoryMovement + E2EWarehouse (7 files) | ~283 | ☐ |
+| JobsService | JobsServiceTests.swift + E2EJobsLaborTests.swift | 160 | ☐ |
+| OrdersService | OrdersServiceTests.swift + E2EOrdersTests.swift | 125 | ☐ |
+| FleetService | FleetServiceTests.swift (+ shared E2EFleetPeopleTests.swift) | 71 | ☐ |
+| PeopleService | PeopleServiceTests.swift (+ shared E2EFleetPeopleTests.swift) | 80 | ☐ |
+| SchedulingService | SchedulingServiceTests.swift | 177 | ☐ |
+| ChatService | ChatServiceTests.swift (+ shared E2ECrossServiceTests.swift) | 60 | ☐ |
+| NotebooksService | NotebooksServiceTests.swift + PanelScheduleTests.swift | 69 | ☐ |
+| ToolsService | ToolsServiceTests.swift | 117 | ☐ |
+| ReportsService | ReportsServiceTests.swift (+ shared E2ESettingsReportsTests.swift) | 50 | ☐ |
+| SettingsService | SettingsServiceTests.swift (+ shared E2ESettingsReportsTests.swift) | 62 | ☐ |
+| DashboardService | DashboardServiceTests.swift | 57 | ☐ |
+| BreakService | BreakServiceTests.swift | 26 | ☐ |
+| WishlistService | WishlistServiceTests.swift | 38 | ☐ |
+| BackgroundTaskService | BackgroundTaskServiceTests.swift | 9 | ☐ |
+| JobEstimationService | JobEstimationServiceTests.swift | 27 | ☐ |
+| DailyReportGenerator | DailyReportGeneratorTests.swift | 8 | ☐ |
+| DeviceResetService | DeviceResetServiceTests.swift | 22 | ☐ |
+| BadgeCountService | BadgeCountServiceTests.swift | 19 | ☐ |
+| AIDispatchService | AIDispatchServiceTests.swift | 5 | ☐ |
 | BaseRepository | BaseRepositoryTests.swift | 17 | ☐ |
-| Sync Infrastructure | 8 sync test files | ~80 | ☐ |
-| AI/Vision | QRCodec + OCR + ImageMatcher + TextPredictor | ~30 | ☐ |
-| Database | DatabaseTests.swift + ModelTests.swift | ~15 | ☐ |
+| Sync Infrastructure | 11 sync test files (SyncServer, SyncCrypto, PeerManager, ConflictResolver, BinarySync, ChangeTracker, SyncPriorityQueue, SyncIntegration, SyncEngine, PeerDiscovery, Multipeer) | ~133 | ☐ |
+| AI/Vision | FoundationModels + ImageMatcher + QRCodec + OCRProcessor + TextPredictor + QRLabelGenerator + OnboardAIRuntimeBootstrap | ~74 | ☐ |
+| Database | DatabaseTests + ModelTests + AppDatabaseCipherTests + BackupRestoreDataSafetyTests | ~50 | ☐ |
 
 ### 4.3 Test Quality Requirements
 
@@ -360,8 +365,8 @@ Stage 9 beta field-test smoke package: [`docs/testing/wei-3091-stage-9-beta-smok
 
 | # | Check | Owner | Status |
 |---|-------|-------|--------|
-| 8.1.1 | Targets iOS 18.0+ (current release minus 1) | iOS Lead | ☐ |
-| 8.1.2 | Built with Xcode 16+ and latest Swift compiler | iOS Lead | ☐ |
+| 8.1.1 | Targets iOS 26.2 (`IPHONEOS_DEPLOYMENT_TARGET = 26.2` in project.pbxproj) | iOS Lead | ☐ |
+| 8.1.2 | Built with Xcode 26.2+ (repo verified with Xcode 26.5) and Swift 6 | iOS Lead | ☐ |
 | 8.1.3 | Universal binary (arm64) — no x86_64 slices | DevOps | ☐ |
 | 8.1.4 | Info.plist complete with all required keys | iOS Lead | ☐ |
 | 8.1.5 | Entitlements file matches app capabilities | iOS Lead | ☐ |
@@ -456,8 +461,8 @@ Stage 9 beta field-test smoke package: [`docs/testing/wei-3091-stage-9-beta-smok
 |---|-------|-------|--------|
 | 10.1.1 | `README.md` with setup instructions, architecture overview, and getting started | Tech Writer | ☐ |
 | 10.1.2 | `SETUP.md` with environment requirements, dependencies, build steps | Tech Writer | ☐ |
-| 10.1.3 | API documentation for all 21 core services | Tech Writer | ☐ |
-| 10.1.4 | Database schema documentation (all 61 migrations, table relationships) | Backend Lead | ☐ |
+| 10.1.3 | API documentation for all 22 core services | Tech Writer | ☐ |
+| 10.1.4 | Database schema documentation (all 109 migrations, table relationships) | Backend Lead | ☐ |
 | 10.1.5 | Sync protocol documentation (message formats, conflict resolution rules) | Sync Lead | ☐ |
 | 10.1.6 | Architecture Decision Records (ADRs) for key design choices | Tech Lead | ☐ |
 | 10.1.7 | `CONTRIBUTING.md` with code style, PR process, test requirements | Engineering Manager | ☐ |
@@ -559,7 +564,7 @@ Each team lead must sign off on their domain. **All signatures required before r
 
 | # | Criterion | Yes/No |
 |---|-----------|--------|
-| 1 | All 545+ core tests pass simultaneously (`swift test` = 0 failures) | ☐ |
+| 1 | All 2,224+ core tests pass simultaneously (`swift test` = 0 failures) | ☐ |
 | 2 | All iOS UI tests pass (XCUITest suite) | ☐ |
 | 3 | Zero known P0/P1 bugs in issue tracker | ☐ |
 | 4 | All P2 bugs triaged with documented workarounds or scheduled fixes | ☐ |
@@ -589,37 +594,45 @@ Each team lead must sign off on their domain. **All signatures required before r
 
 ## Appendix A: Test Infrastructure Summary
 
-**Current State (as of 2026-03-27):**
+**Current State (as of 2026-07-01):**
+
+<!-- Verify: cd core && swift test 2>&1 | tail -1 ; find core/Tests -name '*.swift' | wc -l -->
 
 | Metric | Value |
 |--------|-------|
-| Core test suites | 40 |
-| Core tests | 545 |
+| Core test suites | 67 |
+| Core tests | 2,224 |
 | Core test pass rate | 100% |
-| Test run time | ~34 seconds |
-| Test files | 41 Swift files |
-| Service coverage | 21/21 services |
+| Test run time | ~113 seconds |
+| Test files | 70 Swift files |
+| Service coverage | 22/22 services |
 | Production bugs found by tests | 10+ (all fixed) |
 | SQL column mismatches fixed | 8 |
 | Data integrity bugs fixed | 3 |
-| iOS UI test suites | 0 (pending) |
+| iOS app test files | 42 (`Weird Parts IOSTests`) + 6 XCUITest (`Weird Parts IOSUITests`) |
 
 **Test Framework:** Swift Testing (`@Suite`, `@Test`, `#expect()`)
 **Test Pattern:** Fresh in-memory GRDB database per test (full isolation)
-**Test Helper:** `E2ETestHelpers.TestEnvironment` — pre-initializes all 13 services + admin user
+**Test Helper:** `E2ETestHelpers.TestEnvironment` — pre-initializes the core services + admin user
 
 ## Appendix B: Codebase Statistics
 
+<!-- Verify (as of 2026-07-01, from repo root):
+  find . -name '*.swift' -not -path './.git/*' -not -path '*/.build/*' | wc -l
+  find "Weird Parts IOS/Weird Parts IOS" -name '*.swift' | wc -l
+  find core/Sources -name '*.swift' | wc -l
+  grep -c 'registerMigration(' core/Sources/WiredPartCore/Database/AppDatabase+Migrations.swift -->
+
 | Metric | Count |
 |--------|-------|
-| Swift source files | ~897 |
-| iOS app files | ~310 |
-| Core library files | ~180 |
-| Core services | 21 |
-| Database migrations | 61 (000-060) |
+| Swift source files | ~537 |
+| iOS app files | ~340 |
+| Core library files | 78 |
+| Core services | 22 (26 Swift files including extensions) |
+| Database migrations | 109 (`000_change_log` → `105_job_records_local_first`; `schemaVersion` 105) |
 | Feature modules | 14 |
-| Settings pages | 25+ |
-| Test files | 41 |
+| Settings pages | 30+ |
+| Core test files | 70 |
 
 ## Appendix C: Known Production Bugs Fixed During Testing
 
