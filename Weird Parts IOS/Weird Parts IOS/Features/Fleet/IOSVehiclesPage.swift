@@ -52,7 +52,14 @@ struct IOSVehiclesPage: View {
             // by filtering the list to its number/name.
             if let route = QRScanRouteStore.shared.consume(for: "fleet-vehicles"),
                route.entityType == .vehicle {
-                searchText = route.searchHint ?? route.code
+                let query = route.searchHint ?? route.code
+                if !query.isEmpty, query != searchText {
+                    // Setting searchText fires .onChange(of: searchText) →
+                    // loadData(), so skip the direct load to avoid loading
+                    // the vehicle list twice on first appear.
+                    searchText = query
+                    return
+                }
             }
             loadData()
         }

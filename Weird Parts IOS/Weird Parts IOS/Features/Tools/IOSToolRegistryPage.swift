@@ -115,7 +115,14 @@ struct IOSToolRegistryPage: View {
             // page's own tool scanner sheet.
             if let route = QRScanRouteStore.shared.consume(for: "tools-registry"),
                route.entityType == .tool {
-                searchText = route.searchHint ?? route.code
+                let query = route.searchHint ?? route.code
+                if !query.isEmpty, query != searchText {
+                    // Setting searchText fires .onChange(of: searchText) →
+                    // loadData(), so skip the direct load to avoid loading
+                    // the registry twice on first appear.
+                    searchText = query
+                    return
+                }
             }
             await loadData()
         }
