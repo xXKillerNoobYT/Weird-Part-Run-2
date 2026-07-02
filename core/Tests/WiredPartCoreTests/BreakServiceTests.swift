@@ -93,6 +93,120 @@ struct BreakServiceTests {
         })
     }
 
+    @Test("10-hour presets differ from 8-hour presets where state law differs")
+    func testTenHourPresetsDifferWhereLawDiffers() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+
+        func policy(_ state: String, _ type: String, _ hours: Int) throws -> BreakPolicy? {
+            try breakService.getBreakPolicy(stateCode: state, dayHours: hours)
+                .first { $0.policyType == type && $0.workDayHours == hours }
+        }
+
+        // CA rest: 10 min per 4 hours or major fraction — 2 breaks at 8h, 3 at 10h.
+        #expect(try policy("CA", "state_required_paid", 8)?.breakCount == 2)
+        #expect(try policy("CA", "state_required_paid", 10)?.breakCount == 3)
+        #expect(try policy("CA", "state_required_paid", 10)?.breakMinutes == 10)
+
+        // CA meal: second 30-minute meal period on the 10+ hour row.
+        #expect(try policy("CA", "state_required_offered", 8)?.lunchMinutes == 30)
+        #expect(try policy("CA", "state_required_offered", 10)?.lunchMinutes == 60)
+
+        // Same per-4-hour rest rule for the other rest-break states.
+        for state in ["CO", "KY", "NV", "OR", "WA"] {
+            #expect(try policy(state, "state_required_paid", 8)?.breakCount == 2)
+            #expect(try policy(state, "state_required_paid", 10)?.breakCount == 3)
+        }
+
+        // MD: additional 15-minute break applies only to shifts longer than 10 hours.
+        #expect(try policy("MD", "state_required_offered", 8)?.breakCount == 0)
+        #expect(try policy("MD", "state_required_offered", 10)?.breakCount == 1)
+        #expect(try policy("MD", "state_required_offered", 10)?.breakMinutes == 15)
+
+        // NY: additional 20-minute break on 10+ hour days only.
+        #expect(try policy("NY", "state_required_offered", 8)?.breakCount == 0)
+        #expect(try policy("NY", "state_required_offered", 10)?.breakCount == 1)
+        #expect(try policy("NY", "state_required_offered", 10)?.breakMinutes == 20)
+    }
+
+    @Test("Seeding presets re-links existing break bonuses to the replacement rows")
+    func testSeedRelinksBonusesToReplacementPresetRows() throws {
+        let env = try freshEnv()
+
+        // Simulate a pre-preset install: only the migration-042 WY row exists,
+        // with a configured lunch bonus attached to it.
+        try env.db.writer.write { db in
+            try db.execute(sql: "DELETE FROM break_bonuses")
+            try db.execute(sql: "DELETE FROM break_policies")
+            try db.execute(sql: """
+                INSERT INTO break_policies
+                    (state_code, policy_type, work_day_hours, lunch_minutes, break_count, break_minutes, data_source, data_date)
+                VALUES ('WY', 'state_required_paid', 8, 30, 2, 15, 'us_dept_of_labor', date('now'))
+                """)
+            try db.execute(sql: """
+                INSERT INTO break_bonuses (policy_id, bonus_type, bonus_amount, description, is_enabled)
+                VALUES ((SELECT id FROM break_policies WHERE state_code = 'WY'), 'lunch', 5.0, 'Lunch compliance bonus', 1)
+                """)
+            try AppDatabase.seedBreakPolicyPresets(db)
+        }
+
+        let (replacementId, bonusPolicyId, oldRowDeleted) = try env.db.writer.read { db -> (Int64?, Int64?, Bool) in
+            let replacementId = try Int64.fetchOne(db, sql: """
+                SELECT id FROM break_policies
+                WHERE deleted_at IS NULL
+                  AND state_code = 'WY'
+                  AND policy_type = 'state_required_paid'
+                  AND work_day_hours = 8
+                """)
+            let bonusPolicyId = try Int64.fetchOne(db, sql: """
+                SELECT policy_id FROM break_bonuses WHERE bonus_type = 'lunch'
+                """)
+            let oldRowDeleted = try Bool.fetchOne(db, sql: """
+                SELECT deleted_at IS NOT NULL FROM break_policies
+                WHERE data_source = 'us_dept_of_labor'
+                """) ?? false
+            return (replacementId, bonusPolicyId, oldRowDeleted)
+        }
+
+        #expect(replacementId != nil)
+        #expect(bonusPolicyId == replacementId)
+        #expect(oldRowDeleted)
+
+        // The bonus must be resolvable through the id the Settings page now uses.
+        let breakService = BreakService(db: env.db)
+        let bonuses = try breakService.getBreakBonuses(policyId: replacementId ?? -1)
+        #expect(bonuses.count == 1)
+        #expect(bonuses.first?.bonusType == "lunch")
+        #expect(bonuses.first?.isEnabled == true)
+    }
+
+    @Test("Paid lunch timer falls back to 30 minutes when the state lists no paid lunch")
+    func testPaidLunchTimerNeverZeroFromSeededPresets() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+
+        // Default company state (WY): seeded state_required_paid row has lunch 0,
+        // but the timer must never start at 0 minutes.
+        #expect(try breakService.paidLunchTimerMinutes() == 30)
+
+        // Same for every other seeded jurisdiction (none mandate a paid lunch).
+        try breakService.updateCompanyBreakSettings(stateCode: "CA")
+        #expect(try breakService.paidLunchTimerMinutes() == 30)
+
+        // A positive state paid-lunch value, when present, wins over the default.
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                UPDATE break_policies
+                SET lunch_minutes = 45
+                WHERE deleted_at IS NULL
+                  AND state_code = 'CA'
+                  AND policy_type = 'state_required_paid'
+                  AND work_day_hours = 8
+                """)
+        }
+        #expect(try breakService.paidLunchTimerMinutes() == 45)
+    }
+
     @Test("Company extra policies remain separate from state-required presets")
     func testCompanyPoliciesRemainSeparateFromStatePresets() throws {
         let env = try freshEnv()
@@ -430,6 +544,54 @@ struct BreakServiceTests {
 
         let compliance = try breakService.calculateBreakCompliance(userId: env.adminUserId)
         #expect(compliance.takenLunchMinutes == 30)
+    }
+
+    @Test("Break compliance keeps 2-break/30-minute defaults when state presets list zero")
+    func testBreakComplianceDefaultsNotNeuteredBySeededPresets() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+
+        // Default state (WY) presets list 0 required breaks / 0 lunch. Compliance must
+        // keep the historical 2-break / 30-minute requirements, not become trivially
+        // compliant — and bonus eligibility must not invert to "took zero breaks".
+        let empty = try breakService.calculateBreakCompliance(userId: env.adminUserId)
+        #expect(empty.requiredBreaks == 2)
+        #expect(empty.requiredLunchMinutes == 30)
+        #expect(!empty.isCompliant)
+        #expect(!empty.bonusEligible)
+
+        // Taking the required breaks + lunch (manually, not auto-filled) is compliant
+        // and bonus-eligible, matching pre-preset behavior.
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO break_records
+                    (user_id, break_type, started_at, ended_at, duration_minutes, is_paid, auto_filled)
+                VALUES
+                    (?, 'break', date('now') || 'T10:00:00', date('now') || 'T10:15:00', 15, 1, 0),
+                    (?, 'break', date('now') || 'T14:30:00', date('now') || 'T14:45:00', 15, 1, 0),
+                    (?, 'lunch_paid', date('now') || 'T12:00:00', date('now') || 'T12:30:00', 30, 1, 0)
+                """, arguments: [env.adminUserId, env.adminUserId, env.adminUserId])
+        }
+
+        let met = try breakService.calculateBreakCompliance(userId: env.adminUserId)
+        #expect(met.takenBreaks == 2)
+        #expect(met.takenLunchMinutes == 30)
+        #expect(met.isCompliant)
+        #expect(met.bonusEligible)
+    }
+
+    @Test("Break compliance uses positive seeded state requirements when present")
+    func testBreakComplianceUsesSeededStateRequirements() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+
+        // IL seeds 2 x 15 paid rest breaks and a 20-minute meal period.
+        try breakService.updateCompanyBreakSettings(stateCode: "IL", autoFillBreaks: false)
+
+        let compliance = try breakService.calculateBreakCompliance(userId: env.adminUserId)
+        #expect(compliance.requiredBreaks == 2)
+        #expect(compliance.requiredLunchMinutes == 20)
+        #expect(!compliance.isCompliant)
     }
 
     // MARK: - Auto Fill

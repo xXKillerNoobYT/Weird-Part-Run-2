@@ -156,6 +156,25 @@ public final class BreakService: Sendable {
         }
     }
 
+    /// Default paid-lunch timer length in minutes. Matches the behavior that shipped
+    /// with migration 042 (WY seeded a 30-minute paid lunch and every other state fell
+    /// back to 30).
+    public static let defaultPaidLunchMinutes = 30
+
+    /// Resolve the paid-lunch timer duration for the company's configured state.
+    ///
+    /// The seeded `state_required_paid` preset rows carry `lunch_minutes = 0` for
+    /// jurisdictions with no paid-lunch mandate (most of them), but the clock and
+    /// dashboard lunch buttons still start a paid timer. Use the state value only when
+    /// it is positive; otherwise fall back to the 30-minute company default so paid
+    /// lunches never start with a 0-minute timer.
+    public func paidLunchTimerMinutes(dayHours: Int = 8) throws -> Int {
+        let settings = try getCompanyBreakSettings()
+        let policies = try getBreakPolicy(stateCode: settings.stateCode, dayHours: dayHours)
+        let statePaidLunch = policies.first { $0.policyType == "state_required_paid" }?.lunchMinutes ?? 0
+        return statePaidLunch > 0 ? statePaidLunch : Self.defaultPaidLunchMinutes
+    }
+
     // =========================================================================
     // MARK: - Break Bonuses
     // =========================================================================
@@ -326,9 +345,17 @@ public final class BreakService: Sendable {
         let settings = try getCompanyBreakSettings()
         let policies = try getBreakPolicy(stateCode: settings.stateCode)
 
-        let requiredPolicy = policies.first { $0.policyType == "state_required_paid" }
-        let requiredBreaks = requiredPolicy?.breakCount ?? 2
-        let requiredLunchMinutes = requiredPolicy?.lunchMinutes ?? 30
+        // State presets split requirements across the paid and offered rows and list 0
+        // where a state specifies no requirement. Use the strongest seeded requirement,
+        // and keep the historical 2-break / 30-minute-lunch defaults when the state
+        // specifies none so compliance tracking and bonus eligibility retain their
+        // pre-preset behavior (WY's migration-042 row was 2 breaks / 30-minute lunch).
+        let paidPolicy = policies.first { $0.policyType == "state_required_paid" }
+        let offeredPolicy = policies.first { $0.policyType == "state_required_offered" }
+        let seededRequiredBreaks = max(paidPolicy?.breakCount ?? 0, offeredPolicy?.breakCount ?? 0)
+        let seededRequiredLunch = max(paidPolicy?.lunchMinutes ?? 0, offeredPolicy?.lunchMinutes ?? 0)
+        let requiredBreaks = seededRequiredBreaks > 0 ? seededRequiredBreaks : 2
+        let requiredLunchMinutes = seededRequiredLunch > 0 ? seededRequiredLunch : 30
 
         let breakRecords = records.filter { $0.breakType == "break" }
         let lunchRecords = records.filter { $0.breakType.hasPrefix("lunch") }

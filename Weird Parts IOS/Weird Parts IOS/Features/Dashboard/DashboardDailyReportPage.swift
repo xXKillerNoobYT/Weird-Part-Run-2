@@ -496,14 +496,14 @@ struct DashboardDailyReportPage: View {
                     fastActionFeedback = (.info, "Lunch ended", "Your daily report hours are refreshed.")
                 }
             } else if let entryId = activeLaborEntryId {
-                let settings = try breakSvc.getCompanyBreakSettings()
-                let policies = try breakSvc.getBreakPolicy(stateCode: settings.stateCode)
-                let lunchPolicy = policies.first { $0.policyType == "state_required_paid" }
+                // paidLunchTimerMinutes never returns 0 — state presets list 0 paid
+                // lunch for most states; the service falls back to the 30-min default.
+                let paidMin = try breakSvc.paidLunchTimerMinutes()
                 let record = try breakSvc.startBreak(
                     userId: userId,
                     breakType: "lunch_paid",
                     laborEntryId: entryId,
-                    timerMinutes: lunchPolicy?.lunchMinutes ?? 30
+                    timerMinutes: paidMin
                 )
                 await MainActor.run {
                     activeBreakRecord = record
