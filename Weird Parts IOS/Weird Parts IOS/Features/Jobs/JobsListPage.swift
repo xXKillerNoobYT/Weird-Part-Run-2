@@ -192,7 +192,16 @@ struct JobsListPage: View {
         .onChange(of: customEnd) { applyFilterAndSort() }
         .onChange(of: sortOption) { applyFilterAndSort() }
         .refreshable { loadJobs() }
-        .task { loadJobs() }
+        .task {
+            // QR quick action "View Job" (#700): open the scanned job's detail
+            // sheet directly instead of landing on the generic list.
+            if let route = QRScanRouteStore.shared.consume(for: "jobs-list"),
+               route.entityType == .job,
+               let jobId = route.entityId {
+                activeSheet = .jobDetail(jobId)
+            }
+            loadJobs()
+        }
         .onAppear {
             NotificationCenter.default.post(
                 name: .jobsListPageActive,

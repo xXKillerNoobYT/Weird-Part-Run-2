@@ -5564,6 +5564,9 @@ public final class WarehouseService: Sendable {
     /// Location info from a QR code scan.
     public struct LocationScanInfo: Sendable {
         public let areaId: Int64
+        /// Storage unit containing the scanned area — lets QR quick actions land
+        /// on the right unit in the floor plan (issue #700).
+        public let unitId: Int64
         public let fullLocationCode: String
         public let unitName: String
         public let levelName: String
@@ -5576,7 +5579,7 @@ public final class WarehouseService: Sendable {
         try db.writer.read { dbConn in
             guard let row = try Row.fetchOne(dbConn, sql: """
                 SELECT sa.id as area_id, sa.full_location_code, sa.area_code,
-                       su.name as unit_name,
+                       su.id as unit_id, su.name as unit_name,
                        COALESCE(sl.level_name, sl.level_code) as level_name
                 FROM warehouse_storage_areas sa
                 JOIN warehouse_storage_levels sl ON sl.id = sa.level_id
@@ -5585,10 +5588,15 @@ public final class WarehouseService: Sendable {
                 """, arguments: [qrCode]) else { return nil }
 
             let areaId: Int64 = row["area_id"]
+            // Required column: su.id is an inner-joined primary key, so it can
+            // never be NULL. Extract it like area_id above — defaulting to 0
+            // would mask a schema/SQL mismatch and break floor-plan landing.
+            let unitId: Int64 = row["unit_id"]
             let parts = try getAreaContentsList(areaId: areaId, dbConn: dbConn)
 
             return LocationScanInfo(
                 areaId: areaId,
+                unitId: unitId,
                 fullLocationCode: row["full_location_code"] ?? qrCode,
                 unitName: row["unit_name"] ?? "",
                 levelName: row["level_name"] ?? "",

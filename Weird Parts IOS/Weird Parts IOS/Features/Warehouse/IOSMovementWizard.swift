@@ -10,6 +10,9 @@ import WiredPartCore
 /// 4. **Notes** — reason, notes, reference number
 /// 5. **Preview & Execute** — summary table, confirm, execute
 struct IOSMovementWizard: View {
+    /// Part to preselect in step 2 — set by the QR scanner's "Move Stock"
+    /// quick action so the wizard starts with the scanned part (#700).
+    var prefillPartId: Int64? = nil
     var onComplete: () -> Void = {}
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
@@ -149,7 +152,10 @@ struct IOSMovementWizard: View {
                     }
                 }
             }
-            .task { restoreDraft() }
+            .task {
+                restoreDraft()
+                prefillScannedPart()
+            }
             .interactiveDismissDisabled(isExecuting)
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
@@ -1110,6 +1116,26 @@ struct IOSMovementWizard: View {
 
     private func clearDraft() {
         MovementWizardDraftStore.clear(userId: appCore.currentUser?.id)
+    }
+
+    /// Preload the scanned part from a QR quick action (#700).
+    ///
+    /// Runs after `restoreDraft()` and only when no draft selections exist, so a
+    /// saved in-progress movement is never clobbered by a stale scan context.
+    private func prefillScannedPart() {
+        guard let partId = prefillPartId,
+              selectedParts.isEmpty,
+              let service = appCore.partsService,
+              let details = try? service.getPart(id: partId) else { return }
+
+        let availableQty = (try? service.getPartStockSummary(partId: partId).total) ?? 0
+        selectedParts.append(WizardPart(
+            partId: partId,
+            name: details.part.name,
+            code: details.part.code,
+            qty: 1,
+            availableQty: availableQty
+        ))
     }
 }
 

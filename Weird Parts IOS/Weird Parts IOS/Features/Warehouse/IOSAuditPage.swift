@@ -171,6 +171,21 @@ struct IOSAuditPage: View {
         }
         .refreshable { loadData() }
         .task {
+            // QR quick actions for scanned warehouse locations (#700):
+            // - "Quick Audit" filters the audit queue to the scanned location code.
+            // - "Assign Part" opens the misplaced-part flow with the scanned area preselected.
+            if let route = QRScanRouteStore.shared.consume(for: "warehouse-audit") {
+                switch route.action {
+                case .audit:
+                    if let hint = route.searchHint {
+                        searchText = hint
+                    }
+                case .assignPart:
+                    activeSheet = .misplacedPart(partId: nil, areaId: route.entityId)
+                default:
+                    break
+                }
+            }
             loadData()
             appCore.onboardingManager?.markCompleted("wh-audit-view")
         }

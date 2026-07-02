@@ -22,6 +22,13 @@ struct IOSCameraMatchView: View {
 
     private let featureAdapter = IOSImageFeatureAdapter()
 
+    /// Whether this device can present the system camera. False on Simulator,
+    /// camera-less hardware, and restricted devices — presenting a `.camera`
+    /// picker in those environments crashes or shows a dead system flow (#1080).
+    private var isCameraAvailable: Bool {
+        UIImagePickerController.isSourceTypeAvailable(.camera)
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
@@ -48,11 +55,24 @@ struct IOSCameraMatchView: View {
                 // Action buttons
                 HStack(spacing: 16) {
                     Button {
+                        // Defense in depth: the button is disabled when the camera is
+                        // unavailable, but never present a `.camera` picker without the
+                        // hardware check (#1080).
+                        guard isCameraAvailable else {
+                            errorMessage = "Camera is not available on this device. Use Photos instead."
+                            return
+                        }
                         showCamera = true
                     } label: {
                         Label("Camera", systemImage: "camera.fill")
                     }
                     .buttonStyle(.bordered)
+                    .disabled(!isCameraAvailable)
+                    .accessibilityHint(
+                        isCameraAvailable
+                            ? "Take a photo of the part to match."
+                            : "Camera is not available on this device. Use Photos instead."
+                    )
 
                     PhotosPicker(
                         selection: $photoPickerItem,
@@ -71,6 +91,19 @@ struct IOSCameraMatchView: View {
                         .buttonStyle(.borderedProminent)
                         .disabled(isProcessing)
                     }
+                }
+
+                // Fallback guidance when no camera hardware is present (#1080)
+                if !isCameraAvailable {
+                    HStack(spacing: 8) {
+                        Image(systemName: "camera.badge.ellipsis")
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                        Text("Camera isn't available on this device — use Photos to select an image instead.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
                 if isProcessing {
@@ -227,7 +260,15 @@ struct CameraCapture: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
-        picker.sourceType = .camera
+        // Never force `.camera` when the hardware isn't available (Simulator,
+        // camera-less or restricted devices) — UIImagePickerController raises an
+        // exception for unavailable source types. Fall back to the photo library
+        // so the flow stays usable instead of crashing (#1080).
+        if UIImagePickerController.isSourceTypeAvailable(.camera) {
+            picker.sourceType = .camera
+        } else {
+            picker.sourceType = .photoLibrary
+        }
         picker.delegate = context.coordinator
         return picker
     }

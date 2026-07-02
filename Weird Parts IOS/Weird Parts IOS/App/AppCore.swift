@@ -428,6 +428,9 @@ final class AppCore: ObservableObject {
         permissions = []
         onboardingManager = nil
         badgeCountManager.setUserId(nil)
+        // Drop any unconsumed QR quick-action context so it cannot leak into
+        // the next user's session on a shared device (#700).
+        QRScanRouteStore.shared.clearAll()
         NotificationCenter.default.post(name: .appDidLogout, object: self)
     }
 

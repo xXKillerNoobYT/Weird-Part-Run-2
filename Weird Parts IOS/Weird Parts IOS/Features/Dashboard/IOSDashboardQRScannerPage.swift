@@ -436,34 +436,50 @@ struct IOSDashboardQRScannerPage: View {
     private func quickActions(for result: ScanResultData) -> some View {
         if result.isLocation {
             DSQuickActionButton(title: "Quick Audit", icon: "checklist", color: .orange) {
-                autoLockAction { navigateToModule("warehouse") }
+                autoLockAction {
+                    navigateToScannedEntity(moduleId: "warehouse", tabId: "warehouse-audit", action: .audit, result: result)
+                }
             }
             DSQuickActionButton(title: "Assign Part", icon: "plus.circle", color: .green) {
-                autoLockAction { navigateToModule("warehouse") }
+                autoLockAction {
+                    navigateToScannedEntity(moduleId: "warehouse", tabId: "warehouse-audit", action: .assignPart, result: result)
+                }
             }
             DSQuickActionButton(title: "Floor Plan", icon: "map", color: .blue) {
-                autoLockAction { navigateToModule("warehouse") }
+                autoLockAction {
+                    navigateToScannedEntity(moduleId: "warehouse", tabId: "warehouse-locations", action: .floorPlan, result: result)
+                }
             }
         } else {
             switch result.entityType {
             case .part:
                 DSQuickActionButton(title: "Move Stock", icon: "arrow.left.arrow.right", color: .orange) {
-                    autoLockAction { navigateToModule("warehouse") }
+                    autoLockAction {
+                        navigateToScannedEntity(moduleId: "warehouse", tabId: "warehouse-movements", action: .moveStock, result: result)
+                    }
                 }
                 DSQuickActionButton(title: "View Part", icon: "info.circle", color: .blue) {
-                    autoLockAction { navigateToModule("parts") }
+                    autoLockAction {
+                        navigateToScannedEntity(moduleId: "parts", tabId: "parts-catalog", action: .view, result: result)
+                    }
                 }
             case .tool:
                 DSQuickActionButton(title: "Check Status", icon: "wrench.and.screwdriver", color: .blue) {
-                    autoLockAction { navigateToModule("tools") }
+                    autoLockAction {
+                        navigateToScannedEntity(moduleId: "tools", tabId: "tools-registry", action: .view, result: result)
+                    }
                 }
             case .job:
                 DSQuickActionButton(title: "View Job", icon: "hammer", color: .orange) {
-                    autoLockAction { navigateToModule("jobs") }
+                    autoLockAction {
+                        navigateToScannedEntity(moduleId: "jobs", tabId: "jobs-list", action: .view, result: result)
+                    }
                 }
             case .vehicle:
                 DSQuickActionButton(title: "View Fleet", icon: "car", color: .green) {
-                    autoLockAction { navigateToModule("fleet") }
+                    autoLockAction {
+                        navigateToScannedEntity(moduleId: "fleet", tabId: "fleet-vehicles", action: .view, result: result)
+                    }
                 }
             default:
                 DSQuickActionButton(title: "Details", icon: "info.circle", color: .blue) {
@@ -563,7 +579,9 @@ struct IOSDashboardQRScannerPage: View {
                         DetailField(key: "Level", value: locationInfo.levelName),
                         DetailField(key: "Area", value: locationInfo.areaCode)
                     ],
-                    isLocation: true
+                    isLocation: true,
+                    searchHint: locationInfo.fullLocationCode,
+                    locationUnitId: locationInfo.unitId
                 )
 
                 // Compute directions from user's last known position
@@ -612,7 +630,8 @@ struct IOSDashboardQRScannerPage: View {
                 entityId: result.entityId,
                 entityTitle: title,
                 stockLocations: stockLocations,
-                detailFields: detailFields
+                detailFields: detailFields,
+                searchHint: buildSearchHint(result: result)
             )
 
             await MainActor.run {
@@ -665,6 +684,20 @@ struct IOSDashboardQRScannerPage: View {
         case .bin: return fields["label"] ?? fields["code"] ?? "Bin"
         case .po: return fields["po_number"] ?? "Purchase Order"
         case .none: return fields["name"] ?? fields["code"] ?? "Entity"
+        }
+    }
+
+    /// Searchable identifier for quick-action destinations that land via a
+    /// search filter (parts catalog, tool registry, vehicle list) — built here
+    /// while the auto-fill fields are still in scope (#700).
+    private func buildSearchHint(result: QRAutoFillResult) -> String? {
+        guard result.isFound else { return nil }
+        let fields = result.fields
+        switch result.entityType {
+        case .part: return fields["code"] ?? fields["name"]
+        case .tool: return fields["serial_number"] ?? fields["tool_name"]
+        case .vehicle: return fields["vehicle_number"] ?? fields["vehicle_name"]
+        default: return nil
         }
     }
 
@@ -773,8 +806,43 @@ struct IOSDashboardQRScannerPage: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
-    private func navigateToModule(_ moduleId: String) {
-        NotificationCenter.default.post(name: .navigateToModule, object: nil, userInfo: ["moduleId": moduleId])
+    /// Navigate to a module/tab while preserving the scanned entity context (#700).
+    ///
+    /// The context is stashed in `QRScanRouteStore` (keyed by the destination tab)
+    /// BEFORE the navigation notification is posted, so the destination page can
+    /// consume it when it appears and land directly on the scanned entity. The
+    /// notification also carries the entity keys for any listener that wants them.
+    private func navigateToScannedEntity(
+        moduleId: String,
+        tabId: String,
+        action: QRScanAction,
+        result: ScanResultData
+    ) {
+        QRScanRouteStore.shared.stash(
+            QRScanRouteContext(
+                entityType: result.entityType,
+                entityId: result.entityId,
+                code: result.code,
+                searchHint: result.searchHint,
+                locationUnitId: result.locationUnitId,
+                action: action
+            ),
+            for: tabId
+        )
+
+        var userInfo: [String: Any] = [
+            "moduleId": moduleId,
+            "tabId": tabId,
+            "action": action.rawValue,
+            "code": result.code
+        ]
+        if let entityType = result.entityType {
+            userInfo["entityType"] = entityType.rawValue
+        }
+        if let entityId = result.entityId {
+            userInfo["entityId"] = entityId
+        }
+        NotificationCenter.default.post(name: .navigateToModule, object: nil, userInfo: userInfo)
     }
 }
 
@@ -789,6 +857,12 @@ private struct ScanResultData {
     let stockLocations: [StockLocation]?
     let detailFields: [DetailField]
     var isLocation: Bool = false
+    /// Searchable identifier (part code, tool serial, vehicle number, location
+    /// code) carried into quick-action navigation so destination pages can land
+    /// on the scanned entity (#700).
+    var searchHint: String?
+    /// Storage unit containing a scanned warehouse area (floor-plan landing, #700).
+    var locationUnitId: Int64?
 }
 
 private struct StockLocation {
