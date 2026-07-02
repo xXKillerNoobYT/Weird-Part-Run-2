@@ -422,7 +422,7 @@ For each of the 14 feature modules, verify:
 3. Manual smoke test on physical iPhone + iPad
 4. Dark mode spot check on 5 random pages
 5. Sync test between 2 physical devices
-6. Verify no new SwiftLint warnings
+6. Verify no new Xcode build warnings (SwiftLint is not currently configured in this repo — see the tools table)
 
 ### 8.2 Before Every PR Merge
 
@@ -474,7 +474,7 @@ For each of the 14 feature modules, verify:
 | Swift | 6.0+ | Compilation |
 | iOS Simulator | iOS 26.2+ (matches app deployment target) | Automated testing |
 | Instruments | Latest | Performance profiling |
-| SwiftLint | Latest | Code quality |
+| SwiftLint | Not currently configured (no `.swiftlint.yml` / CI) — optional; use Xcode's built-in warnings | Code quality |
 | TestFlight | Latest | Beta distribution |
 
 ### 10.3 Test Data

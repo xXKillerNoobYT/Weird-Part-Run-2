@@ -49,7 +49,14 @@ cd Weird-Part-Run-2
 open "Weird Parts IOS/Weird Parts.xcodeproj"
 ```
 
-Tip: the repo's git history is large (GitHub #1339). For a much faster first clone, use a partial clone — it fetches file contents on demand: `git clone --filter=blob:none git@github.com:xXKillerNoobYT/Weird-Part-Run-2.git`
+Tip: the repo's git history is large (GitHub #1339). For a much faster first clone, use a partial clone — it fetches file contents on demand:
+
+```bash
+# SSH (needs configured SSH keys)
+git clone --filter=blob:none git@github.com:xXKillerNoobYT/Weird-Part-Run-2.git
+# HTTPS (no key setup — copy/paste friendly)
+git clone --filter=blob:none https://github.com/xXKillerNoobYT/Weird-Part-Run-2.git
+```
 
 The app target lives under `Weird Parts IOS/`. The shared package lives under `core/` and is the preferred place for business logic, persistence, sync, QR/OCR, and service tests.
 

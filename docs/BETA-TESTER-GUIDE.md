@@ -76,7 +76,7 @@ Full capability list: [FEATURES.md](FEATURES.md). A quick loop to touch the main
 
 ## 5. How to Report Bugs
 
-Bug reports go to **GitHub Issues** — this replaces the old `docs/Problomes/` screenshots folder.
+Bug reports go to **GitHub Issues**. Owner problem-screenshots may also be dropped in `docs/problems/` (renamed from the old misspelled `docs/Problomes ` folder), where the triage loop picks them up.
 
 1. **Take a screenshot** (or screen recording) of the problem the moment you see it.
 2. Open a new issue at <https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues> and attach the screenshot.
