@@ -93,6 +93,11 @@ public final class AIDispatchService: Sendable {
 
     /// Generate 3 dispatch options for a given date.
     public func generateSuggestions(date: String) throws -> [DispatchSuggestion] {
+        let preferences = try SettingsService(db: db).getDispatchPreferences()
+        guard preferences.aiSuggestionsEnabled else {
+            return []
+        }
+
         let weights = loadWeights()
         let workers = try getAvailableWorkers(date: date)
         let jobs = try getJobsNeedingWorkers(date: date)
@@ -113,7 +118,7 @@ public final class AIDispatchService: Sendable {
         // Sort by score descending
         scoreMatrix.sort { $0.score > $1.score }
 
-        // Generate 3 different arrangements
+        // Generate different arrangements
         var suggestions: [DispatchSuggestion] = []
 
         // Option 1: Greedy best-score assignment
@@ -121,19 +126,23 @@ public final class AIDispatchService: Sendable {
         suggestions.append(makeSuggestion(rank: 1, assignments: opt1))
 
         // Option 2: Prioritize team continuity (re-weight and assign)
-        var teamMatrix = scoreMatrix
-        for i in teamMatrix.indices {
-            if teamMatrix[i].factors.contains(where: { $0.category == "team" && $0.isPositive }) {
-                teamMatrix[i].score += 5
+        if preferences.aiSuggestionCount >= 2 {
+            var teamMatrix = scoreMatrix
+            for i in teamMatrix.indices {
+                if teamMatrix[i].factors.contains(where: { $0.category == "team" && $0.isPositive }) {
+                    teamMatrix[i].score += 5
+                }
             }
+            teamMatrix.sort { $0.score > $1.score }
+            let opt2 = greedyAssign(matrix: teamMatrix, workers: workers, jobs: jobs)
+            suggestions.append(makeSuggestion(rank: 2, assignments: opt2))
         }
-        teamMatrix.sort { $0.score > $1.score }
-        let opt2 = greedyAssign(matrix: teamMatrix, workers: workers, jobs: jobs)
-        suggestions.append(makeSuggestion(rank: 2, assignments: opt2))
 
         // Option 3: Spread workers across more jobs (diversity)
-        let opt3 = diverseAssign(matrix: scoreMatrix, workers: workers, jobs: jobs)
-        suggestions.append(makeSuggestion(rank: 3, assignments: opt3))
+        if preferences.aiSuggestionCount >= 3 {
+            let opt3 = diverseAssign(matrix: scoreMatrix, workers: workers, jobs: jobs)
+            suggestions.append(makeSuggestion(rank: 3, assignments: opt3))
+        }
 
         // Sort by total points
         suggestions.sort { $0.totalPoints > $1.totalPoints }
@@ -158,6 +167,11 @@ public final class AIDispatchService: Sendable {
 
     /// Record which suggestion the dispatcher chose (for future weight adjustment).
     public func recordDispatcherChoice(date: String, chosenRank: Int, wasModified: Bool) throws {
+        let preferences = try SettingsService(db: db).getDispatchPreferences()
+        guard preferences.aiLearningEnabled else {
+            return
+        }
+
         do {
             try db.writer.write { dbConn in
                 try dbConn.execute(
