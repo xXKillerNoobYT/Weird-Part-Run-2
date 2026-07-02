@@ -22,16 +22,20 @@ final class WarehouseLeaderboardSearchRegressionTests: XCTestCase {
         let source = try Self.readLeaderboardSource()
 
         XCTAssertTrue(
-            source.contains("leaderboardRow(rank: overallRank(of: rating), rating: rating)"),
-            "Filtered rows must display the user's overall rank, not a renumbered filtered position."
+            source.contains("if let rank = ranks[rating.userId] {"),
+            "Filtered rows must display the user's overall rank and omit rows with no known rank instead of fabricating one."
         )
         XCTAssertTrue(
-            source.contains("leaderboard.firstIndex(where: { $0.userId == rating.userId })"),
-            "overallRank must be derived from the unfiltered leaderboard."
+            source.contains("Dictionary(uniqueKeysWithValues: leaderboard.enumerated().map { ($0.element.userId, $0.offset + 1) })"),
+            "Overall ranks must be derived once from the unfiltered leaderboard (O(1) per-row lookup)."
         )
         XCTAssertFalse(
             source.contains("leaderboardRow(rank: index + 1"),
             "Rows must not be renumbered from the filtered array's indices."
+        )
+        XCTAssertFalse(
+            source.contains("?? 0) + 1"),
+            "Rank lookups must not fall back to fabricating rank #1 for unknown users."
         )
     }
 

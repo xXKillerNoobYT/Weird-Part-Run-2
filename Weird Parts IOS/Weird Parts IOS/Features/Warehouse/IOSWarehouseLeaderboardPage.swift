@@ -38,10 +38,13 @@ struct IOSWarehouseLeaderboardPage: View {
         }
     }
 
-    /// The user's position in the overall (unfiltered) leaderboard, so a
+    /// Each user's position in the overall (unfiltered) leaderboard, so a
     /// search-narrowed list never renumbers matches from #1 (issue #1244).
-    private func overallRank(of rating: UserWarehouseRating) -> Int {
-        (leaderboard.firstIndex(where: { $0.userId == rating.userId }) ?? 0) + 1
+    /// Built once per render — O(1) row lookups instead of a linear scan per
+    /// row — and returns nil (row omitted) rather than fabricating a rank if
+    /// a rating somehow isn't in the overall list.
+    private var overallRankByUserId: [Int64: Int] {
+        Dictionary(uniqueKeysWithValues: leaderboard.enumerated().map { ($0.element.userId, $0.offset + 1) })
     }
 
     private var isManager: Bool {
@@ -125,16 +128,19 @@ struct IOSWarehouseLeaderboardPage: View {
 
             // Full list — retitled during search so the narrowed scope is clear
             Section(searchText.isEmpty ? "Rankings" : "Search Results") {
+                let ranks = overallRankByUserId
                 ForEach(filteredLeaderboard, id: \.userId) { rating in
                     // Rank stays the user's overall standing even in filtered
                     // results — a search match must not be renumbered as #1.
-                    leaderboardRow(rank: overallRank(of: rating), rating: rating)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            if isManager {
-                                activeSheet = .userDetail(rating)
+                    if let rank = ranks[rating.userId] {
+                        leaderboardRow(rank: rank, rating: rating)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                if isManager {
+                                    activeSheet = .userDetail(rating)
+                                }
                             }
-                        }
+                    }
                 }
             }
 
