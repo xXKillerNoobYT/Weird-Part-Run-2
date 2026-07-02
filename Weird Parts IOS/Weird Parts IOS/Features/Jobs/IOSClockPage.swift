@@ -1555,10 +1555,9 @@ struct IOSClockPage: View {
         }
 
         do {
-            let settings = try breakSvc.getCompanyBreakSettings()
-            let policies = try breakSvc.getBreakPolicy(stateCode: settings.stateCode)
-            let lunchPolicy = policies.first { $0.policyType == "state_required_paid" }
-            let paidMin = minutes ?? lunchPolicy?.lunchMinutes ?? 30
+            // paidLunchTimerMinutes never returns 0 — state presets list 0 paid lunch
+            // for most states, and the service falls back to the 30-minute default.
+            let paidMin = try minutes ?? breakSvc.paidLunchTimerMinutes()
 
             let record = try breakSvc.startBreak(
                 userId: userId,
@@ -2106,11 +2105,9 @@ struct IOSClockPage: View {
             var lunchPaid = 30
             if let breakSvc = appCore.breakService {
                 currentBreak = try? breakSvc.getActiveBreak(userId: userId)
-                if let settings = try? breakSvc.getCompanyBreakSettings() {
-                    let policies = try? breakSvc.getBreakPolicy(stateCode: settings.stateCode)
-                    let lunchPolicy = policies?.first { $0.policyType == "state_required_paid" }
-                    lunchPaid = lunchPolicy?.lunchMinutes ?? 30
-                }
+                // Service-level resolution: uses the state paid-lunch value only when
+                // positive, otherwise the 30-minute default (never 0).
+                lunchPaid = (try? breakSvc.paidLunchTimerMinutes()) ?? 30
             }
 
             // Load to-dos for the active job

@@ -34,7 +34,7 @@ public final class BreakService: Sendable {
                 try BreakPolicy
                     .filter(Column("state_code") == stateCode && Column("deleted_at") == nil)
                     .filter(Column("work_day_hours") <= dayHours)
-                    .order(Column("policy_type").asc)
+                    .order(Column("policy_type").asc, Column("work_day_hours").desc)
                     .fetchAll(dbConn)
             }
         } catch {
@@ -49,7 +49,7 @@ public final class BreakService: Sendable {
             return try db.writer.read { dbConn in
                 try BreakPolicy
                     .filter(Column("deleted_at") == nil)
-                    .order(Column("state_code").asc, Column("policy_type").asc)
+                    .order(Column("state_code").asc, Column("policy_type").asc, Column("work_day_hours").asc)
                     .fetchAll(dbConn)
             }
         } catch {
@@ -71,15 +71,76 @@ public final class BreakService: Sendable {
     ) throws -> BreakPolicy {
         do {
             return try db.writer.write { dbConn in
-                var policy = BreakPolicy(
-                    id: nil, stateCode: stateCode, policyType: policyType,
-                    workDayHours: workDayHours, lunchMinutes: lunchMinutes,
-                    breakCount: breakCount, breakMinutes: breakMinutes,
-                    dataSource: dataSource, dataDate: Self.todayString(),
-                    createdAt: nil, updatedAt: nil, deletedAt: nil
+                let dataDate = Self.todayString()
+                let matchingPolicySQL = """
+                    SELECT id
+                    FROM break_policies
+                    WHERE deleted_at IS NULL
+                      AND policy_type = ?
+                      AND work_day_hours = ?
+                      AND ((? IS NULL AND state_code IS NULL) OR state_code = ?)
+                    ORDER BY id ASC
+                    """
+                let matchingIds = try Int64.fetchAll(
+                    dbConn,
+                    sql: matchingPolicySQL,
+                    arguments: [policyType, workDayHours, stateCode, stateCode]
                 )
-                try policy.insert(dbConn)
-                return policy
+
+                if let policyId = matchingIds.first {
+                    try dbConn.execute(sql: """
+                        UPDATE break_policies
+                        SET state_code = ?,
+                            policy_type = ?,
+                            work_day_hours = ?,
+                            lunch_minutes = ?,
+                            break_count = ?,
+                            break_minutes = ?,
+                            data_source = ?,
+                            data_date = ?,
+                            updated_at = datetime('now'),
+                            deleted_at = NULL
+                        WHERE id = ?
+                        """, arguments: [
+                            stateCode, policyType, workDayHours, lunchMinutes,
+                            breakCount, breakMinutes, dataSource, dataDate, policyId
+                        ])
+
+                    if matchingIds.count > 1 {
+                        try dbConn.execute(sql: """
+                            UPDATE break_policies
+                            SET deleted_at = datetime('now'),
+                                updated_at = datetime('now')
+                            WHERE id IN (
+                                SELECT id
+                                FROM break_policies
+                                WHERE deleted_at IS NULL
+                                  AND policy_type = ?
+                                  AND work_day_hours = ?
+                                  AND ((? IS NULL AND state_code IS NULL) OR state_code = ?)
+                                  AND id <> ?
+                            )
+                            """, arguments: [policyType, workDayHours, stateCode, stateCode, policyId])
+                    }
+
+                    return try BreakPolicy.fetchOne(dbConn, key: policyId) ?? BreakPolicy(
+                        id: policyId, stateCode: stateCode, policyType: policyType,
+                        workDayHours: workDayHours, lunchMinutes: lunchMinutes,
+                        breakCount: breakCount, breakMinutes: breakMinutes,
+                        dataSource: dataSource, dataDate: dataDate,
+                        createdAt: nil, updatedAt: nil, deletedAt: nil
+                    )
+                } else {
+                    var policy = BreakPolicy(
+                        id: nil, stateCode: stateCode, policyType: policyType,
+                        workDayHours: workDayHours, lunchMinutes: lunchMinutes,
+                        breakCount: breakCount, breakMinutes: breakMinutes,
+                        dataSource: dataSource, dataDate: dataDate,
+                        createdAt: nil, updatedAt: nil, deletedAt: nil
+                    )
+                    try policy.insert(dbConn)
+                    return policy
+                }
             }
         } catch {
             if isTableNotFoundError(error) {
@@ -93,6 +154,25 @@ public final class BreakService: Sendable {
             }
             throw error
         }
+    }
+
+    /// Default paid-lunch timer length in minutes. Matches the behavior that shipped
+    /// with migration 042 (WY seeded a 30-minute paid lunch and every other state fell
+    /// back to 30).
+    public static let defaultPaidLunchMinutes = 30
+
+    /// Resolve the paid-lunch timer duration for the company's configured state.
+    ///
+    /// The seeded `state_required_paid` preset rows carry `lunch_minutes = 0` for
+    /// jurisdictions with no paid-lunch mandate (most of them), but the clock and
+    /// dashboard lunch buttons still start a paid timer. Use the state value only when
+    /// it is positive; otherwise fall back to the 30-minute company default so paid
+    /// lunches never start with a 0-minute timer.
+    public func paidLunchTimerMinutes(dayHours: Int = 8) throws -> Int {
+        let settings = try getCompanyBreakSettings()
+        let policies = try getBreakPolicy(stateCode: settings.stateCode, dayHours: dayHours)
+        let statePaidLunch = policies.first { $0.policyType == "state_required_paid" }?.lunchMinutes ?? 0
+        return statePaidLunch > 0 ? statePaidLunch : Self.defaultPaidLunchMinutes
     }
 
     // =========================================================================
@@ -259,15 +339,52 @@ public final class BreakService: Sendable {
     // MARK: - Break Compliance
     // =========================================================================
 
+    /// Total scheduled hours (regular + overtime) worked by a user on a given UTC day,
+    /// summed across every labor entry whose `clock_in` falls on that date. Used to pick
+    /// the correct preset tier (8h vs 10h) in `getBreakPolicy` — without this, long days
+    /// were always evaluated against the 8-hour requirement even when a 10+ hour preset
+    /// row (e.g. CA's 10+ hour meal requirement) applied.
+    private func scheduledDayHours(userId: Int64, date: Date) throws -> Int {
+        let dateStr = Self.formatDateUTC(date)
+        do {
+            let totalHours = try db.writer.read { dbConn -> Double in
+                try Double.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(SUM(regular_hours + overtime_hours), 0)
+                    FROM labor_entries
+                    WHERE user_id = ?
+                      AND deleted_at IS NULL
+                      AND substr(clock_in, 1, 10) = ?
+                    """, arguments: [userId, dateStr]) ?? 0
+            }
+            // Round up so a day that just crosses 8 hours (e.g. 8.25h) still qualifies
+            // for the 10-hour preset tier's stronger requirements once actually reached,
+            // while still using getBreakPolicy's own `<= dayHours` filter to pick the
+            // closest applicable tier (8 or 10).
+            return totalHours > 8 ? 10 : 8
+        } catch {
+            if isTableNotFoundError(error) { return 8 }
+            throw error
+        }
+    }
+
     /// Calculate break compliance for a user on a given day.
     public func calculateBreakCompliance(userId: Int64, date: Date = Date()) throws -> BreakComplianceSummary {
         let records = try getBreakRecordsForDay(userId: userId, date: date)
         let settings = try getCompanyBreakSettings()
-        let policies = try getBreakPolicy(stateCode: settings.stateCode)
+        let dayHours = try scheduledDayHours(userId: userId, date: date)
+        let policies = try getBreakPolicy(stateCode: settings.stateCode, dayHours: dayHours)
 
-        let requiredPolicy = policies.first { $0.policyType == "state_required_paid" }
-        let requiredBreaks = requiredPolicy?.breakCount ?? 2
-        let requiredLunchMinutes = requiredPolicy?.lunchMinutes ?? 30
+        // State presets split requirements across the paid and offered rows and list 0
+        // where a state specifies no requirement. Use the strongest seeded requirement,
+        // and keep the historical 2-break / 30-minute-lunch defaults when the state
+        // specifies none so compliance tracking and bonus eligibility retain their
+        // pre-preset behavior (WY's migration-042 row was 2 breaks / 30-minute lunch).
+        let paidPolicy = policies.first { $0.policyType == "state_required_paid" }
+        let offeredPolicy = policies.first { $0.policyType == "state_required_offered" }
+        let seededRequiredBreaks = max(paidPolicy?.breakCount ?? 0, offeredPolicy?.breakCount ?? 0)
+        let seededRequiredLunch = max(paidPolicy?.lunchMinutes ?? 0, offeredPolicy?.lunchMinutes ?? 0)
+        let requiredBreaks = seededRequiredBreaks > 0 ? seededRequiredBreaks : 2
+        let requiredLunchMinutes = seededRequiredLunch > 0 ? seededRequiredLunch : 30
 
         let breakRecords = records.filter { $0.breakType == "break" }
         let lunchRecords = records.filter { $0.breakType.hasPrefix("lunch") }
