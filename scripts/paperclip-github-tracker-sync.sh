@@ -162,25 +162,25 @@ AGENTS_JSON="$(curl "${CURL_OPTS[@]}" \
 # stage now reports so the next hang is attributable).
 echo "tracker-sync: fetched $(printf '%s' "$ISSUES_JSON" | wc -c | tr -d ' ') bytes issues, $(printf '%s' "$AGENTS_JSON" | wc -c | tr -d ' ') bytes agents; building snapshot" >&2
 
-render_link() {
-  local identifier="$1"
-  if [[ -n "$WEB_URL" ]]; then
-    local prefix="${identifier%%-*}"
-    printf "[%s](%s/%s/issues/%s)" "$identifier" "$WEB_URL" "$prefix" "$identifier"
-  else
-    printf "%s" "$identifier"
-  fi
-}
-
 _issues_file=$(mktemp); _agents_file=$(mktemp)
 printf '%s' "$ISSUES_JSON" > "$_issues_file"
 printf '%s' "$AGENTS_JSON" > "$_agents_file"
 
+# Links are rendered inside jq: the old post-hoc bash rewrite loop did an
+# O(body-length) substring replacement per issue line, which took effectively
+# forever once the active-issue payload grew large (run 28589871223 hung in
+# "building snapshot" for 10 minutes on a 560 KB issues payload).
+# The bullet list is also capped: GitHub issue comments max out at 65,536
+# characters, so beyond MAX_LISTED issues the snapshot lists the first
+# MAX_LISTED (sorted by identifier) and summarizes the rest.
+MAX_LISTED=300
 COMMENT_BODY="$(
   jq -nr \
     --slurpfile issues "$_issues_file" \
     --slurpfile agents "$_agents_file" \
-    --arg stamp "$STAMP" '
+    --arg stamp "$STAMP" \
+    --arg web "$WEB_URL" \
+    --argjson max "$MAX_LISTED" '
     def agent_name($id):
       ($agents[0] | map(select(.id == $id)) | .[0].name) // "unassigned";
 
@@ -190,6 +190,7 @@ COMMENT_BODY="$(
       $issues[0]
       | map({
           identifier,
+          id,
           title,
           status,
           priority,
@@ -202,25 +203,42 @@ COMMENT_BODY="$(
       | sort_by(issue_sort_key);
 
     def blocker_summary($issue):
+      # entries are scalar ids after normalization; tolerate objects too
       if (($issue.blockedByIssueIds // []) | length) == 0 then "none"
-      else (($issue.blockedByIssueIds // []) | map(.identifier // .id // tostring) | join(", "))
+      else (($issue.blockedByIssueIds // [])
+        | map(if type == "object" then (.identifier // .id // "?" | tostring) else tostring end)
+        | join(", "))
       end;
 
-    "# paperclip-tracker-sync:v1\n" +
+    def render_id($raw):
+      ($raw | tostring) as $id
+      # only WEI-123-style identifiers produce internal links; anything
+      # else (missing identifier, raw uuid id) renders as plain text
+      | if $web == "" or ($id | test("^[A-Za-z]+-[0-9]+$") | not) then $id
+        else "[" + $id + "](" + $web + "/" + ($id | split("-")[0]) + "/issues/" + $id + ")"
+        end;
+
+    normalized as $all
+    | ($all | length) as $total
+    | ($all | .[0:$max]) as $listed
+    | "# paperclip-tracker-sync:v1\n" +
     "## Paperclip Active Issues Snapshot\n\n" +
     "- Synced at (UTC): `" + $stamp + "`\n" +
     "- Active statuses: `todo`, `in_progress`, `in_review`, `blocked`\n" +
-    "- Issue count: `" + ((normalized | length) | tostring) + "`\n\n" +
+    "- Issue count: `" + ($total | tostring) + "`" +
+    (if $total > $max then " (listing first " + ($max | tostring) + ")" else "" end) + "\n\n" +
     "### Active Issues\n\n" +
     (
-      (normalized | map(
-        "- " + (.identifier // .id) +
+      ($listed | map(
+        "- " + render_id(.identifier // .id // "?") +
         " | **" + (.status // "unknown") + "**" +
         " | owner: `" + (agent_name(.assigneeAgentId)) + "`" +
         " | blockers: `" + blocker_summary(.) + "`" +
         " | " + (.title // "(untitled)")
       )) | join("\n")
-    ) + "\n"
+    ) +
+    (if $total > $max then "\n\n_…and " + (($total - $max) | tostring) + " more active issues not listed (comment size cap)._" else "" end) +
+    "\n"
   '
 )"
 
@@ -242,17 +260,6 @@ SYNC_FINGERPRINT="$(
     | sort_by(.identifier // .id // "")
   '
 )"
-
-# Convert bare identifiers in bullet lines to markdown links when WEB URL is present.
-if [[ -n "$WEB_URL" ]]; then
-  while IFS= read -r line; do
-    if [[ "$line" =~ ^-\ ([A-Z]+-[0-9]+)\ \| ]]; then
-      id="${BASH_REMATCH[1]}"
-      linked="$(render_link "$id")"
-      COMMENT_BODY="${COMMENT_BODY/- $id |/- $linked |}"
-    fi
-  done < <(printf "%s\n" "$COMMENT_BODY")
-fi
 
 echo "tracker-sync: snapshot built ($(printf '%s' "$COMMENT_BODY" | wc -c | tr -d ' ') bytes); hashing" >&2
 CONTENT_HASH="$(printf "%s" "$SYNC_FINGERPRINT" | hash_sha256)"
