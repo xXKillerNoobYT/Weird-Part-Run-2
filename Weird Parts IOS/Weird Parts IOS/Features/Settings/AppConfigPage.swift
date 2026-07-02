@@ -121,7 +121,7 @@ struct AppConfigPage: View {
 
             if configLoadFailed {
                 Section {
-                    Label("Settings couldn't load, so the values shown are defaults. Saving is disabled to protect your saved configuration.", systemImage: "exclamationmark.triangle")
+                    Label("Settings didn't load completely — some values shown may be defaults rather than your saved configuration. Saving is disabled to protect your saved settings.", systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.red)
                         .font(.callout)
                     Button {
@@ -255,10 +255,11 @@ struct AppConfigPage: View {
     }
 
     private func saveConfig() {
-        // #1335 data-loss guard: after a failed load the form holds defaults, not
-        // the user's real settings — saving would overwrite good values in the DB.
+        // #1335 data-loss guard: after an incomplete load the form may hold
+        // defaults for some fields — saving would overwrite good values in
+        // the DB with those defaults.
         guard !configLoadFailed else {
-            actionError = "Settings couldn't load, so saving is disabled to protect your saved configuration. Tap Retry Load first."
+            actionError = "Settings didn't load completely, so saving is disabled to protect your saved configuration. Tap Retry Load first."
             return
         }
         guard let service = appCore.settingsService else {

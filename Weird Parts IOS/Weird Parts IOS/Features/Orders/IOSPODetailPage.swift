@@ -48,6 +48,9 @@ struct IOSPODetailPage: View {
     /// Section-level error for the receiving audit trail — a failed history read
     /// must not render as "no receipts" on a PO that has been received (#1335).
     @State private var receiptHistoryError: String?
+    /// Per-session item-detail failure — kept separate from the list-level
+    /// error so an item load failure never blanks already-loaded sessions.
+    @State private var receiptItemsError: String?
 
     // Update ETA
     @State private var etaDate = Date()
@@ -692,6 +695,17 @@ struct IOSPODetailPage: View {
                     }
                 } else {
                     List {
+                        // Non-blocking item-detail failure banner — sessions stay
+                        // visible; expanding a session retries the item load.
+                        if let itemsError = receiptItemsError {
+                            Section {
+                                Label(itemsError, systemImage: "exclamationmark.triangle")
+                                    .font(.caption)
+                                    .foregroundStyle(.red)
+                                    .accessibilityIdentifier("receiptItemsError")
+                            }
+                        }
+
                         // Summary
                         Section {
                             let totalReceived = receiptBatches.reduce(0) { $0 + $1.totalReceived }
@@ -2243,10 +2257,12 @@ struct IOSPODetailPage: View {
         guard let service = appCore.ordersService else { loadError = "Service not available"; return }
         do {
             receiptEntryItems[sessionId] = try service.getReceiptHistoryItems(sessionId: sessionId)
+            receiptItemsError = nil
         } catch {
             // Leave the entry un-cached so expanding it again retries, and surface
-            // the failure in the section instead of showing an empty item list (#1335).
-            receiptHistoryError = userFriendlyError(error, context: "load receipt details")
+            // the failure inline — via the SEPARATE item-level error so already-
+            // loaded sessions stay visible instead of blanking the sheet (#1335).
+            receiptItemsError = userFriendlyError(error, context: "load receipt details")
         }
     }
 

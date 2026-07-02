@@ -60,8 +60,16 @@ final class SilentLoadFailureSurfacingRegressionTests: XCTestCase {
             "Receipt history load failures must set receiptHistoryError instead of defaulting to empty lists."
         )
         XCTAssertTrue(
-            source.contains("receiptHistoryError = userFriendlyError(error, context: \"load receipt details\")"),
-            "Per-session receipt item load failures must also surface via receiptHistoryError."
+            source.contains("receiptItemsError = userFriendlyError(error, context: \"load receipt details\")"),
+            "Per-session receipt item load failures must surface via the SEPARATE item-level error so loaded sessions never blank."
+        )
+        XCTAssertTrue(
+            source.contains("@State private var receiptItemsError: String?"),
+            "PO detail must carry a distinct per-session item error state."
+        )
+        XCTAssertTrue(
+            source.contains(".accessibilityIdentifier(\"receiptItemsError\")"),
+            "The item-detail failure banner must render inline in the sheet, not as a full-sheet error."
         )
         XCTAssertTrue(
             source.contains("if hasEntries || hasBatches || receiptHistoryError != nil {"),
