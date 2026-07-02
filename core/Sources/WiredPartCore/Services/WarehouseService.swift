@@ -5588,11 +5588,15 @@ public final class WarehouseService: Sendable {
                 """, arguments: [qrCode]) else { return nil }
 
             let areaId: Int64 = row["area_id"]
+            // Required column: su.id is an inner-joined primary key, so it can
+            // never be NULL. Extract it like area_id above — defaulting to 0
+            // would mask a schema/SQL mismatch and break floor-plan landing.
+            let unitId: Int64 = row["unit_id"]
             let parts = try getAreaContentsList(areaId: areaId, dbConn: dbConn)
 
             return LocationScanInfo(
                 areaId: areaId,
-                unitId: row["unit_id"] ?? 0,
+                unitId: unitId,
                 fullLocationCode: row["full_location_code"] ?? qrCode,
                 unitName: row["unit_name"] ?? "",
                 levelName: row["level_name"] ?? "",
