@@ -39,9 +39,19 @@ struct DeliveryTimelineBar: View {
     // MARK: - Computed Properties
 
     /// Days remaining until expected delivery (negative = overdue).
+    ///
+    /// Both sides are normalized to local calendar-day boundaries so a
+    /// date-only ETA behaves as a date: an ETA of today reads "Due today"
+    /// until local midnight, and tomorrow's ETA never reads as due today
+    /// (issue #1204).
     var daysRemaining: Int? {
         guard let expected = expectedDate else { return nil }
-        return Calendar.current.dateComponents([.day], from: Date(), to: expected).day
+        let cal = Calendar.current
+        return cal.dateComponents(
+            [.day],
+            from: cal.startOfDay(for: Date()),
+            to: cal.startOfDay(for: expected)
+        ).day
     }
 
     /// Progress from 0.0 to 1.0 based on elapsed time vs total expected time.
@@ -72,10 +82,15 @@ struct DeliveryTimelineBar: View {
         return "\(days)d remaining"
     }
 
-    /// Days elapsed since order date.
+    /// Days elapsed since order date, in local calendar days.
     var daysElapsed: Int {
         guard let order = orderDate else { return 0 }
-        return max(0, Calendar.current.dateComponents([.day], from: order, to: Date()).day ?? 0)
+        let cal = Calendar.current
+        return max(0, cal.dateComponents(
+            [.day],
+            from: cal.startOfDay(for: order),
+            to: cal.startOfDay(for: Date())
+        ).day ?? 0)
     }
 
     // MARK: - Body
@@ -110,11 +125,13 @@ struct DeliveryTimelineBar: View {
 
     // MARK: - Helpers
 
-    /// Parse an ISO-8601 date string (first 10 characters) into a Date.
+    /// Parse a date string (first 10 characters, yyyy-MM-dd) as a LOCAL
+    /// calendar date. ISO8601DateFormatter(.withFullDate) returned midnight
+    /// UTC, which shifted same-day ETAs into "overdue" late in the local day
+    /// for timezones west of UTC (issue #1204). Matches the parsing idiom in
+    /// TimelinePriorityColor.
     private static func parseDate(_ str: String?) -> Date? {
         guard let str, !str.isEmpty else { return nil }
-        let fmt = ISO8601DateFormatter()
-        fmt.formatOptions = [.withFullDate]
-        return fmt.date(from: String(str.prefix(10)))
+        return Formatters.localDateFormatter.date(from: String(str.prefix(10)))
     }
 }
