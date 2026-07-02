@@ -47,7 +47,13 @@ enum ReportCategory: String, CaseIterable {
 struct IOSReportsRouter: View {
     let tabId: String
     @EnvironmentObject private var appCore: AppCore
-    @State private var selectedCategory: ReportCategory = .labor
+
+    @State private var selectedCategory: ReportCategory
+
+    init(tabId: String, initialCategory: ReportCategory = .labor) {
+        self.tabId = tabId
+        _selectedCategory = State(initialValue: initialCategory)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -58,6 +64,11 @@ struct IOSReportsRouter: View {
             categoryContent
         }
         .navigationTitle("Reports")
+        .onAppear {
+            if !visibleCategories.contains(selectedCategory) {
+                selectedCategory = visibleCategories.first ?? .labor
+            }
+        }
     }
 
     // MARK: - Category Picker

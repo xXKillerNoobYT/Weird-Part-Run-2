@@ -82,6 +82,87 @@ final class PeerBrowserTargetedSyncRegressionTests: XCTestCase {
         )
     }
 
+    func testMultipeerConnectingStateStaysAlignedWithBrowserBranches() throws {
+        let syncSource = try Self.readSyncManagerSource()
+
+        // IOSSyncManager must emit "connecting" as a distinct display state
+        // (issue #1317: it previously collapsed found/connecting into "multipeer",
+        // leaving the browser's connecting branch unreachable).
+        XCTAssertTrue(
+            syncSource.contains("case \"connecting\": return \"connecting\""),
+            "multipeerDisplayState should preserve the connecting state instead of collapsing it into the waiting row."
+        )
+        XCTAssertTrue(
+            syncSource.contains("state: Self.multipeerDisplayState(peer.state.rawValue)"),
+            "Multipeer peer rows should derive their display state through multipeerDisplayState."
+        )
+        XCTAssertTrue(
+            syncSource.contains("? Self.multipeerDisplayState(peer.multipeerState)"),
+            "PeerManager-merged multipeer rows should also derive their display state through multipeerDisplayState."
+        )
+        XCTAssertTrue(
+            syncSource.contains("peer.state == \"multipeer\" || peer.state == \"connecting\""),
+            "isMultipeerDiscoveredPeer must treat connecting rows as Multipeer-discovered so merge/removal bookkeeping stays correct."
+        )
+
+        let browserSource = try Self.readPeerBrowserSource()
+        XCTAssertTrue(
+            browserSource.contains("peer.state == \"connecting\""),
+            "The peer browser should keep a distinct in-progress branch for connecting peers."
+        )
+        XCTAssertTrue(
+            browserSource.contains("else if peer.state == \"connected\""),
+            "The connected checkmark must be gated on the explicit connected state, not shown as a fallback for arbitrary unsyncable states."
+        )
+        XCTAssertTrue(
+            browserSource.contains("Text(\"Unavailable\")"),
+            "Unsyncable states that are neither connecting, waiting, nor connected need a neutral fallback row."
+        )
+    }
+
+    func testBluetoothPageRowsUseTargetedSyncAndConnectingState() throws {
+        let source = try Self.readBluetoothPageSource()
+
+        XCTAssertTrue(
+            source.contains("if peer.isManuallySyncable"),
+            "Bluetooth page rows should gate Sync on the explicit per-peer capability, matching IOSPeerBrowser."
+        )
+        XCTAssertTrue(
+            source.contains("syncManager.syncWithPeer(peerDeviceId: peer.id)"),
+            "Bluetooth page row Sync must target the selected peer."
+        )
+        XCTAssertFalse(
+            source.contains("Task { await syncManager.syncNow() }"),
+            "Bluetooth page rows must not dispatch the global syncNow fan-out path."
+        )
+        XCTAssertTrue(
+            source.contains("case \"connecting\": return \"Connecting\""),
+            "Bluetooth page should label the connecting display state explicitly."
+        )
+        XCTAssertTrue(
+            source.contains("else if peer.state == \"connected\""),
+            "The connected checkmark must be gated on the explicit connected state, not shown as a fallback for arbitrary unsyncable states."
+        )
+        XCTAssertTrue(
+            source.contains("accessibilityLabel(\"Status: Connecting\")"),
+            "The in-progress spinner needs an accessibility label so VoiceOver users can read the row status."
+        )
+    }
+
+    private static func readBluetoothPageSource(
+        file: StaticString = #filePath
+    ) throws -> String {
+        let projectRoot = URL(fileURLWithPath: "\(file)")
+            .deletingLastPathComponent() // Weird Parts IOSTests
+            .deletingLastPathComponent() // Weird Parts IOS
+        let sourceURL = projectRoot
+            .appendingPathComponent("Weird Parts IOS")
+            .appendingPathComponent("Features")
+            .appendingPathComponent("Settings")
+            .appendingPathComponent("BluetoothPage.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
     private static func readPeerBrowserSource(
         file: StaticString = #filePath
     ) throws -> String {
