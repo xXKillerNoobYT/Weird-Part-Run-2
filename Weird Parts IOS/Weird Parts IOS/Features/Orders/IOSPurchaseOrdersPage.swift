@@ -80,8 +80,10 @@ struct IOSPurchaseOrdersPage: View {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button { activeSheet = .qrScanner } label: { Image(systemName: "qrcode.viewfinder") }
                     .accessibilityLabel("Scan QR code")
+                    .accessibilityIdentifier("poScanQRButton")
                 Button { activeSheet = .createPO } label: { Image(systemName: "plus") }
                     .accessibilityLabel("Create purchase order")
+                    .accessibilityIdentifier("poCreateButton")
             }
             ToolbarItem(placement: .secondaryAction) {
                 Menu {

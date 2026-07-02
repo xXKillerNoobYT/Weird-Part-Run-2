@@ -175,6 +175,7 @@ struct PartsCatalogPage: View {
                     Image(systemName: "plus")
                 }
                 .accessibilityLabel("Add new part")
+                .accessibilityIdentifier("catalogAddPartButton")
             }
         }
         .onChange(of: showPricing) {

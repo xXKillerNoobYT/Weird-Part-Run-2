@@ -325,6 +325,8 @@ struct IOSMainView: View {
                     } label: {
                         Image(systemName: "person.circle")
                     }
+                    .accessibilityLabel("Account and settings")
+                    .accessibilityIdentifier("userMenuButton")
                 }
             }
         }
@@ -645,6 +647,7 @@ struct IOSMainView: View {
                 .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
         }
         .dsMinTapTarget()
+        .accessibilityLabel("AI Assistant")
         .accessibilityIdentifier("aiAssistantButton")
         .padding(.trailing, DS.Space.lg)
         .padding(.bottom, bottomPadding)
@@ -764,6 +767,8 @@ struct ModuleHostView: View {
                 } label: {
                     Image(systemName: "person.circle")
                 }
+                .accessibilityLabel("Account and settings")
+                .accessibilityIdentifier("userMenuButton")
             }
         }
         .sheet(isPresented: $showUserMenu) {
