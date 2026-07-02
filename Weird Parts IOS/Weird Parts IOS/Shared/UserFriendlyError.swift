@@ -40,7 +40,9 @@ func userFriendlyError(_ error: Error, context: String = "load data") -> String 
             return "Not enough eligible counters: \(required) needed, \(available) available besides you. Add active users or lower the required count."
         case .partAlreadyFlaggedForVerification:
             // Issue #494: fixed string — no part identifiers (see security note).
-            return "This part is already out for verification. Wait for those counts to be resolved before sending it again."
+            // Only thrown while counts are still coming in or a consensus is
+            // waiting to be resolved — dead-end sets are superseded instead.
+            return "This part is already out for verification. Wait for the counts to come in, or resolve the submitted counts, before sending it again."
         default:
             break
         }

@@ -7100,9 +7100,13 @@ public final class WarehouseService: Sendable {
     ///   - requiredCounts: Number of independent counts needed (default 2, max 3).
     /// - Returns: The created assignments.
     /// - Throws: `WarehouseError.partAlreadyFlaggedForVerification` when the
-    ///   part already has unresolved assignments for this session, and
+    ///   part already has an assignment set for this session that is still
+    ///   collecting counts or can still reach consensus, and
     ///   `WarehouseError.noEligibleVerificationCounters` when fewer eligible
-    ///   active counters exist than requested (issue #494).
+    ///   active counters exist than requested (issue #494). Fully-counted
+    ///   sets whose counts cannot reach consensus — and session-less sets,
+    ///   which `resolveMultiUserAudit` can never touch — are marked
+    ///   `superseded` and re-flagged instead of blocking forever.
     @discardableResult
     public func flagForMultiUserAudit(
         partId: Int64,
@@ -7112,12 +7116,17 @@ public final class WarehouseService: Sendable {
         requiredCounts: Int = 2
     ) throws -> [MultiUserAuditAssignment] {
         try db.writer.write { dbConn in
-            // Issue #494: block duplicate flagging. An unresolved assignment
-            // set (pending or counted) for the same part/session means the
-            // part is already out for verification — inserting more rows
-            // would create duplicate work assignments.
+            // Issue #494: block duplicate flagging while verification is
+            // genuinely in flight — counters still pending, or submitted
+            // counts that can reach consensus and just await resolution.
+            //
+            // PR #1364 review: a fully-counted set whose counts disagree is
+            // a dead end — resolveMultiUserAudit returns nil and leaves the
+            // rows 'counted' — and session-less sets have no resolution path
+            // at all. Blocking those made the part permanently un-flaggable,
+            // so dead-end sets are superseded and the re-flag proceeds.
             var dupSql = """
-                SELECT COUNT(*) FROM multi_user_audit_assignments
+                SELECT * FROM multi_user_audit_assignments
                 WHERE part_id = ? AND status IN ('pending', 'counted')
                 """
             var dupArgs: [DatabaseValueConvertible?] = [partId]
@@ -7127,11 +7136,25 @@ public final class WarehouseService: Sendable {
             } else {
                 dupSql += " AND audit_session_id IS NULL"
             }
-            let unresolvedCount = try Int.fetchOne(
+            let unresolved = try MultiUserAuditAssignment.fetchAll(
                 dbConn, sql: dupSql, arguments: StatementArguments(dupArgs)
-            ) ?? 0
-            guard unresolvedCount == 0 else {
-                throw WarehouseError.partAlreadyFlaggedForVerification(partId: partId)
+            )
+            if !unresolved.isEmpty {
+                let stillCollecting = unresolved.contains { $0.status == "pending" }
+                // Session-less sets can never be resolved (resolution
+                // requires a session), so a fully-counted one is always a
+                // dead end regardless of whether the counts agree.
+                let resolvable = sessionId != nil && Self.consensusIsReachable(unresolved)
+                if stillCollecting || resolvable {
+                    throw WarehouseError.partAlreadyFlaggedForVerification(partId: partId)
+                }
+                // Dead end: every counter submitted but no consensus is
+                // possible. Supersede the stale rows (preserving them for
+                // history) so this retry can create a fresh assignment set.
+                for var assignment in unresolved {
+                    assignment.status = "superseded"
+                    try assignment.update(dbConn)
+                }
             }
 
             // Get part info
@@ -7251,7 +7274,9 @@ public final class WarehouseService: Sendable {
     public func getMultiUserAuditAssignments(sessionId: Int64? = nil) throws -> [MultiUserAuditPartSummary] {
         do {
             return try db.writer.read { dbConn -> [MultiUserAuditPartSummary] in
-                var whereClauses = ["1=1"]
+                // Superseded rows are dead assignment sets replaced by a
+                // re-flag — history only, never active work.
+                var whereClauses = ["status != 'superseded'"]
                 var args: [DatabaseValueConvertible?] = []
 
                 if let sessionId {
@@ -7350,9 +7375,12 @@ public final class WarehouseService: Sendable {
                 SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [resolvedBy]) ?? 0) > 0
             guard userExists else { throw WarehouseError.userNotFound(resolvedBy) }
-            // Get all assignments for this part in this session
+            // Get all assignments for this part in this session, skipping
+            // superseded rows (dead sets replaced by a re-flag) so an old
+            // failed set never pollutes the consensus of its replacement.
             let assignments = try MultiUserAuditAssignment
-                .filter(Column("part_id") == partId && Column("audit_session_id") == sessionId)
+                .filter(Column("part_id") == partId && Column("audit_session_id") == sessionId
+                    && Column("status") != "superseded")
                 .fetchAll(dbConn)
 
             let countedAssignments = assignments.filter { $0.status == "counted" }
@@ -7505,6 +7533,23 @@ public final class WarehouseService: Sendable {
     }
 
     // MARK: - Helpers (Audit)
+
+    /// Whether an unresolved assignment set's submitted counts can still
+    /// reach consensus under the same rules `resolveMultiUserAudit` applies:
+    /// at least 2 counts, 2 counters must agree exactly, 3+ need a count
+    /// with a majority (>= 2 votes). Pending assignments are the caller's
+    /// concern — this only judges the counted rows.
+    private static func consensusIsReachable(_ assignments: [MultiUserAuditAssignment]) -> Bool {
+        let counted = assignments.filter { $0.status == "counted" }
+        guard counted.count >= 2 else { return false }
+        let counts = counted.compactMap { $0.countedQuantity }
+        // A counted row missing its quantity makes consensus impossible
+        // (mirrors the resolveMultiUserAudit guard).
+        guard counts.count == counted.count else { return false }
+        if counts.count == 2 { return counts[0] == counts[1] }
+        let countFreq = counts.reduce(into: [Int: Int]()) { $0[$1, default: 0] += 1 }
+        return (countFreq.values.max() ?? 0) >= 2
+    }
 
     private static func clampedConfidence(_ percent: Double, counted: Bool) -> Double {
         let lowerBound = counted ? minimumCountedConfidencePercent : 0

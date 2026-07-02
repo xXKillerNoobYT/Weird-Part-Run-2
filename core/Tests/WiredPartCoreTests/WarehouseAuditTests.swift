@@ -1267,6 +1267,160 @@ struct WarehouseAuditTests {
         #expect(second.count == 2)
     }
 
+    @Test("flagForMultiUserAudit supersedes a dead-end set when counts disagree")
+    func testFlagForMultiUserAuditReflagAfterConsensusFailure() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10)
+
+        let session = try env.warehouse.startAuditSession(startedBy: env.adminUserId)
+        let sessionId = session.id!
+        _ = try env.auth.createUser(displayName: "Counter Two", pin: "5678")
+
+        let first = try env.warehouse.flagForMultiUserAudit(
+            partId: partId, expectedQty: 10, sessionId: sessionId,
+            flaggedBy: nil, requiredCounts: 2
+        )
+        // Two counters disagree — consensus is impossible for this set.
+        try env.warehouse.submitMultiUserCount(
+            assignmentId: first[0].id!, quantity: 8, userId: first[0].assignedUserId
+        )
+        try env.warehouse.submitMultiUserCount(
+            assignmentId: first[1].id!, quantity: 12, userId: first[1].assignedUserId
+        )
+        let failed = try env.warehouse.resolveMultiUserAudit(
+            partId: partId, sessionId: sessionId, resolvedBy: env.adminUserId
+        )
+        #expect(failed == nil)
+
+        // PR #1364 review: this used to throw partAlreadyFlaggedForVerification
+        // forever. The dead-end set must be superseded and re-flag allowed.
+        let second = try env.warehouse.flagForMultiUserAudit(
+            partId: partId, expectedQty: 10, sessionId: sessionId,
+            flaggedBy: nil, requiredCounts: 2
+        )
+        #expect(second.count == 2)
+        #expect(second.allSatisfy { $0.status == "pending" })
+
+        // Old rows survive as history, marked superseded.
+        let superseded = try env.db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM multi_user_audit_assignments
+                WHERE part_id = ? AND status = 'superseded'
+                """, arguments: [partId]) ?? 0
+        }
+        #expect(superseded == 2)
+
+        // The summary only shows the fresh set.
+        let grouped = try env.warehouse.getMultiUserAuditAssignments(sessionId: sessionId)
+        #expect(grouped.count == 1)
+        #expect(grouped[0].assignments.count == 2)
+
+        // The replacement set resolves normally — superseded rows must not
+        // pollute its consensus.
+        try env.warehouse.submitMultiUserCount(
+            assignmentId: second[0].id!, quantity: 9, userId: second[0].assignedUserId
+        )
+        try env.warehouse.submitMultiUserCount(
+            assignmentId: second[1].id!, quantity: 9, userId: second[1].assignedUserId
+        )
+        let resolved = try env.warehouse.resolveMultiUserAudit(
+            partId: partId, sessionId: sessionId, resolvedBy: env.adminUserId
+        )
+        #expect(resolved == 9)
+    }
+
+    @Test("flagForMultiUserAudit still blocks while submitted counts can reach consensus")
+    func testFlagForMultiUserAuditBlocksWhileConsensusReachable() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10)
+
+        let session = try env.warehouse.startAuditSession(startedBy: env.adminUserId)
+        let sessionId = session.id!
+        _ = try env.auth.createUser(displayName: "Counter Two", pin: "5678")
+
+        let assignments = try env.warehouse.flagForMultiUserAudit(
+            partId: partId, expectedQty: 10, sessionId: sessionId,
+            flaggedBy: nil, requiredCounts: 2
+        )
+        // One count in, one still pending — set is collecting, so block.
+        try env.warehouse.submitMultiUserCount(
+            assignmentId: assignments[0].id!, quantity: 10, userId: assignments[0].assignedUserId
+        )
+        #expect(throws: WarehouseService.WarehouseError.partAlreadyFlaggedForVerification(partId: partId)) {
+            _ = try env.warehouse.flagForMultiUserAudit(
+                partId: partId, expectedQty: 10, sessionId: sessionId,
+                flaggedBy: nil, requiredCounts: 2
+            )
+        }
+
+        // Both counts agree — consensus is reachable and just awaits
+        // resolution, so re-flagging must still be blocked.
+        try env.warehouse.submitMultiUserCount(
+            assignmentId: assignments[1].id!, quantity: 10, userId: assignments[1].assignedUserId
+        )
+        #expect(throws: WarehouseService.WarehouseError.partAlreadyFlaggedForVerification(partId: partId)) {
+            _ = try env.warehouse.flagForMultiUserAudit(
+                partId: partId, expectedQty: 10, sessionId: sessionId,
+                flaggedBy: nil, requiredCounts: 2
+            )
+        }
+        // No duplicate or superseded rows were created by the rejections.
+        let grouped = try env.warehouse.getMultiUserAuditAssignments(sessionId: sessionId)
+        #expect(grouped.count == 1)
+        #expect(grouped[0].assignments.count == 2)
+    }
+
+    @Test("flagForMultiUserAudit re-flags a fully counted session-less set")
+    func testFlagForMultiUserAuditNullSessionDeadEndReflag() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10)
+        _ = try env.auth.createUser(displayName: "Counter Two", pin: "5678")
+
+        // Session-less flag (the QueueSendForVerificationSheet path when no
+        // audit session is active).
+        let first = try env.warehouse.flagForMultiUserAudit(
+            partId: partId, expectedQty: 10, sessionId: nil,
+            flaggedBy: nil, requiredCounts: 2
+        )
+        // Still collecting — blocked.
+        #expect(throws: WarehouseService.WarehouseError.partAlreadyFlaggedForVerification(partId: partId)) {
+            _ = try env.warehouse.flagForMultiUserAudit(
+                partId: partId, expectedQty: 10, sessionId: nil,
+                flaggedBy: nil, requiredCounts: 2
+            )
+        }
+
+        // Even agreeing counts are a dead end without a session:
+        // resolveMultiUserAudit requires a session id, so nothing can ever
+        // resolve this set. Re-flagging must supersede it, not throw.
+        try env.warehouse.submitMultiUserCount(
+            assignmentId: first[0].id!, quantity: 10, userId: first[0].assignedUserId
+        )
+        try env.warehouse.submitMultiUserCount(
+            assignmentId: first[1].id!, quantity: 10, userId: first[1].assignedUserId
+        )
+        let second = try env.warehouse.flagForMultiUserAudit(
+            partId: partId, expectedQty: 10, sessionId: nil,
+            flaggedBy: nil, requiredCounts: 2
+        )
+        #expect(second.count == 2)
+        #expect(second.allSatisfy { $0.status == "pending" })
+
+        let superseded = try env.db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM multi_user_audit_assignments
+                WHERE part_id = ? AND audit_session_id IS NULL AND status = 'superseded'
+                """, arguments: [partId]) ?? 0
+        }
+        #expect(superseded == 2)
+    }
+
     // MARK: - "While You're Here" Quick Audit Candidates (#75)
 
     @Test("getQuickAuditCandidates returns only low-confidence parts at the area")
