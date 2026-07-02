@@ -129,7 +129,10 @@ struct IOSEditJobSheet: View {
 
                 Section("Stage Template") {
                     if stageTemplates.isEmpty {
-                        Text("No stage templates available. Create one in Settings → Job Stage Templates.")
+                        // Copy reflects the stageCount > 0 filter in
+                        // loadStageTemplates(): stage-less templates exist but
+                        // are not offerable here.
+                        Text("No stage templates with stages available. Create or complete one in Settings → Job Stage Templates.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
@@ -143,7 +146,7 @@ struct IOSEditJobSheet: View {
                             if job.stageTemplateId == nil {
                                 Text("No Workflow").tag(Int64?.none)
                             }
-                            ForEach(stageTemplates.filter { $0.stageCount > 0 }) { template in
+                            ForEach(stageTemplates) { template in
                                 Text(template.name).tag(Int64?.some(template.id))
                             }
                         }
