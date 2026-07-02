@@ -2531,7 +2531,9 @@ private struct SupplierProfileSummaryView: View {
                 profileRow("Account", supplier.accountNumber)
                 profileRow("Website", supplier.website)
                 profileRow("Address", supplier.address)
-                profileRow("Status", supplier.isActive == 0 ? "Inactive" : "Active")
+                // isActive is optional in the schema — hide the row when unknown
+                // instead of implying the supplier is active.
+                profileRow("Status", supplier.isActive.map { $0 == 0 ? "Inactive" : "Active" })
             }
 
             Section("Contacts") {

@@ -105,8 +105,12 @@ struct IOSFleetDashboardPage: View {
                 // Recent maintenance activity
                 recentActivitySection
 
-                // Fleet reports link
-                fleetReportsSection
+                // Fleet reports link — IOSReportsRouter hides the Fleet category
+                // without this permission, so the link would silently land on a
+                // non-fleet reports page. Hide it instead.
+                if appCore.hasPermission("view_fleet_financials") {
+                    fleetReportsSection
+                }
             }
             .padding()
         }

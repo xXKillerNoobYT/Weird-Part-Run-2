@@ -42,9 +42,14 @@ struct NavigationPlaceholderRegressionTests {
     }
 
     private func containsBareTextNavigationDestination(_ content: String) -> Bool {
+        // A placeholder destination is a lone Text("..."), optionally followed by
+        // view modifiers (e.g. .font(...), .foregroundStyle(...), .bold). The
+        // modifier pattern tolerates one level of nested parentheses so chains
+        // like .font(.system(size: 12)) still match.
+        let modifierChain = #"(?:\s*\.\w+\s*(?:\((?:[^()]|\([^()]*\))*\))?)*"#
         let patterns = [
-            #"NavigationLink\s*\{\s*Text\s*\(\s*\"[^\"]+\"\s*\)\s*\}"#,
-            #"NavigationLink\s*\(\s*destination\s*:\s*Text\s*\(\s*\"[^\"]+\"\s*\)"#
+            #"NavigationLink\s*\{\s*Text\s*\(\s*\"[^\"]*\"\s*\)"# + modifierChain + #"\s*\}"#,
+            #"NavigationLink\s*\(\s*destination\s*:\s*Text\s*\(\s*\"[^\"]*\"\s*\)"#
         ]
 
         return patterns.contains { pattern in
