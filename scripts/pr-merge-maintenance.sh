@@ -195,7 +195,9 @@ while IFS= read -r pr; do
     # state). We probe once and treat empty/failed output as "not satisfied".
     # Review nodes carry author login + state so a PENDING/DISMISSED review
     # cannot satisfy the gate.
-    review_state="$(gh api graphql -f query="query { repository(owner: \"$repo_owner\", name: \"$repo_name\") { pullRequest(number: $number) { latestReviews: reviews(first: 100) { nodes { author { login } state } } reviewThreads(first: 100) { totalCount nodes { isResolved } } } } }" 2>/dev/null || echo "")"
+    # reviews(last: 100) — the MOST RECENT reviews, so a Copilot review is
+    # never missed on PRs whose total review history exceeds one page.
+    review_state="$(gh api graphql -f query="query { repository(owner: \"$repo_owner\", name: \"$repo_name\") { pullRequest(number: $number) { latestReviews: reviews(last: 100) { nodes { author { login } state } } reviewThreads(first: 100) { totalCount nodes { isResolved } } } } }" 2>/dev/null || echo "")"
 
     if [[ -z "$review_state" ]]; then
       echo "    skip: could not read review state (API failure) — not merging on unknown review status"
@@ -220,9 +222,14 @@ while IFS= read -r pr; do
         --jq '[.requested_reviewers[]?.login | select(. == "Copilot" or . == "copilot-pull-request-reviewer[bot]")] | length' 2>/dev/null || echo "0")"
       if [[ ! "$already_requested" =~ ^[0-9]+$ ]]; then already_requested="0"; fi
       if [[ "$already_requested" -eq 0 ]]; then
-        run_or_log gh api -X POST "repos/$REPO/pulls/$number/requested_reviewers" \
-          -f 'reviewers[]=copilot-pull-request-reviewer[bot]' >/dev/null 2>&1 || true
-        echo "    skip: requested Copilot review — waiting for it before merge"
+        # Surface request failures honestly — a silently failed request would
+        # stall the train with a log line claiming the review was requested.
+        if run_or_log gh api -X POST "repos/$REPO/pulls/$number/requested_reviewers" \
+          -f 'reviewers[]=copilot-pull-request-reviewer[bot]' >/dev/null; then
+          echo "    skip: requested Copilot review — waiting for it before merge"
+        else
+          echo "    skip: FAILED to request Copilot review (API error above) — PR needs a manual review request"
+        fi
       else
         echo "    skip: Copilot review pending — waiting before merge"
       fi
