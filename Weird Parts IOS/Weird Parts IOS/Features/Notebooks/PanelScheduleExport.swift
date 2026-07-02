@@ -85,7 +85,11 @@ struct PanelSchedulePDFExporter {
         return "\((safePanelName.isEmpty ? "Panel_Schedule" : safePanelName))_\(date).pdf"
     }
 
-    private func renderPDF(schedule: PanelSchedule) -> Data {
+    // `internal` (not `private`) so tests can call this directly with a raw,
+    // un-normalized schedule — `writeToTemporaryFile()` always normalizes
+    // first, so that entry point alone can never exercise the negative-
+    // `totalSpaces` guard in `drawScheduleTable` below.
+    func renderPDF(schedule: PanelSchedule) -> Data {
         let pageSize = options.paperSize.pageSize
         let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: pageSize))
         let margin: CGFloat = 36
@@ -192,7 +196,14 @@ struct PanelSchedulePDFExporter {
 
         // max(..., 0) mirrors the same guard PanelScheduleBuilder's grid uses
         // (#1239) so a malformed non-positive totalSpaces can never produce a
-        // negative range here either.
+        // negative range here either. In practice `writeToTemporaryFile()`
+        // always renders a `normalizedForPersistence()` copy, whose
+        // `clampingTotalSpacesToSupportedRange()` step already forces
+        // totalSpaces positive — so this is defense-in-depth for any future
+        // caller of `renderPDF(schedule:)` that skips normalization, not a
+        // path reachable through the current export/print UI. See
+        // `PanelSchedulePDFExporterTests.testRenderPDFGuardsAgainstNegativeTotalSpacesWhenCalledDirectly`
+        // for direct coverage of this guard (bypassing normalization).
         for row in 0..<max(schedule.totalSpaces / 2, 0) {
             if y + rowHeight > pageSize.height - margin - 38 {
                 break

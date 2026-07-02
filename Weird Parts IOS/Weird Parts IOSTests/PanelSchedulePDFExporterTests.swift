@@ -39,10 +39,17 @@ final class PanelSchedulePDFExporterTests: XCTestCase {
         XCTAssertTrue(blankURL.lastPathComponent.hasPrefix("Panel_Schedule_"), "Blank panel names should fall back to a default filename stem.")
     }
 
-    func testExportRendersAgainstNormalizedScheduleNotRawInput() throws {
-        // A malformed totalSpaces (mirrors #1239) must not crash rendering; the
-        // exporter should normalize before drawing the table, same as the
-        // builder's Save action does.
+    func testExportNormalizesMalformedTotalSpacesBeforeRendering() throws {
+        // A malformed totalSpaces (mirrors #1239) must not crash rendering.
+        // `writeToTemporaryFile()` always renders a `normalizedForPersistence()`
+        // copy, so this exercises the *normalization* path — by the time
+        // `renderPDF`/`drawScheduleTable` see the schedule, totalSpaces has
+        // already been clamped up to a positive supported size (20, the
+        // default). It does NOT exercise the negative-totalSpaces guard
+        // inside `drawScheduleTable` itself; see
+        // `testRenderPDFGuardsAgainstNegativeTotalSpacesWhenCalledDirectly`
+        // below for a test that bypasses normalization to cover that guard
+        // directly.
         var schedule = PanelSchedule(panelName: "Bad Panel", totalSpaces: -4)
         schedule.circuits = [CircuitEntry(spaceNumber: 1, breakerAmps: 20, circuitDescription: "Test", isSpare: false)]
 
@@ -52,5 +59,22 @@ final class PanelSchedulePDFExporterTests: XCTestCase {
 
         let data = try Data(contentsOf: url)
         XCTAssertGreaterThan(data.count, 0, "Exporting a schedule with a malformed totalSpaces should still normalize and render, not crash or produce an empty file.")
+    }
+
+    func testRenderPDFGuardsAgainstNegativeTotalSpacesWhenCalledDirectly() throws {
+        // Directly exercises the `max(schedule.totalSpaces / 2, 0)` guard in
+        // `drawScheduleTable` by calling the `internal` `renderPDF(schedule:)`
+        // entry point with a raw, un-normalized negative `totalSpaces` —
+        // bypassing `writeToTemporaryFile()`'s `normalizedForPersistence()`
+        // step entirely, since that step would otherwise clamp the value to
+        // a positive size (20) before rendering and make this branch
+        // unreachable through the normal export/print flow.
+        var schedule = PanelSchedule(panelName: "Bad Panel", totalSpaces: -4)
+        schedule.circuits = [CircuitEntry(spaceNumber: 1, breakerAmps: 20, circuitDescription: "Test", isSpare: false)]
+
+        let exporter = PanelSchedulePDFExporter(schedule: schedule, options: PanelScheduleExportOptions())
+        let data = exporter.renderPDF(schedule: schedule)
+
+        XCTAssertGreaterThan(data.count, 0, "Rendering directly with a negative totalSpaces must not crash and must still produce PDF output.")
     }
 }

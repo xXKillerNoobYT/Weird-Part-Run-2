@@ -12,6 +12,10 @@ struct PanelScheduleBuilder: View {
     @State private var exportOptions = PanelScheduleExportOptions()
     @State private var exportURL: URL?
     @State private var exportMessage: String?
+    // Anchor rect (in the window's coordinate space) for the Export menu's
+    // Print PDF button, so the iPad popover presentation of
+    // UIPrintInteractionController has a source to point at.
+    @State private var exportMenuAnchorRect: CGRect = .zero
 
     private enum ActiveSheet: Identifiable {
         case circuitEditor
@@ -283,6 +287,15 @@ struct PanelScheduleBuilder: View {
                     .font(.caption)
             }
             .buttonStyle(.bordered)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear
+                        .onAppear { exportMenuAnchorRect = proxy.frame(in: .global) }
+                        .onChange(of: proxy.frame(in: .global)) { _, newValue in
+                            exportMenuAnchorRect = newValue
+                        }
+                }
+            )
 
             Button {
                 if schedule.circuitsOutsideTotalSpaces.isEmpty {
@@ -347,14 +360,50 @@ struct PanelScheduleBuilder: View {
             printInfo.outputType = .general
             printController.printInfo = printInfo
             printController.printingItem = url
-            printController.present(animated: true) { _, _, error in
+
+            let completion: UIPrintInteractionController.CompletionHandler = { _, _, error in
                 if let error {
                     exportMessage = userFriendlyError(error, context: "print panel schedule")
                 }
             }
+
+            // `present(animated:completionHandler:)` is documented as
+            // iPhone/iPod-touch only and raises "this method is not supported
+            // on the iPad idiom" at runtime on iPad. The app ships
+            // TARGETED_DEVICE_FAMILY = "1,2" (iPhone + iPad), so both paths
+            // must be handled: iPad requires the popover-anchored
+            // `present(from:in:animated:completionHandler:)`.
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                guard let rootViewController = Self.activeRootViewController() else {
+                    exportMessage = userFriendlyError(
+                        PanelScheduleExportError.outputPathUnavailable,
+                        context: "print panel schedule"
+                    )
+                    return
+                }
+                let anchorRect = exportMenuAnchorRect == .zero
+                    ? CGRect(x: rootViewController.view.bounds.midX, y: rootViewController.view.bounds.midY, width: 1, height: 1)
+                    : rootViewController.view.convert(exportMenuAnchorRect, from: nil)
+                printController.present(
+                    from: anchorRect,
+                    in: rootViewController.view,
+                    animated: true,
+                    completionHandler: completion
+                )
+            } else {
+                printController.present(animated: true, completionHandler: completion)
+            }
         } catch {
             exportMessage = userFriendlyError(error, context: "print panel schedule")
         }
+    }
+
+    /// The current key window's root view controller, used to anchor the
+    /// iPad popover presentation of `UIPrintInteractionController`.
+    private static func activeRootViewController() -> UIViewController? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+        return scene?.windows.first { $0.isKeyWindow }?.rootViewController
     }
 }
 
