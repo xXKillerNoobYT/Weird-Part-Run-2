@@ -1,6 +1,7 @@
 import SwiftUI
 import Charts
 import Combine
+import os
 import WiredPartCore
 
 /// Main dashboard view with KPI cards, charts, alerts, and quick actions.
@@ -11,6 +12,8 @@ import WiredPartCore
 struct DashboardView: View {
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private let logger = Logger(subsystem: "com.wiredpart.ios", category: "DashboardView")
 
     // KPI + alerts state
     @State private var stats = DashboardStats()
@@ -1060,10 +1063,15 @@ struct DashboardView: View {
             return
         }
         do {
-            // Labor hours for past 7 days
+            // Labor hours for past 7 days. Skip rows whose stored date does
+            // not parse — falling back to Date() mislabeled malformed rows as
+            // today in the seven-day chart (issue #1247).
             let laborRows = try service.getLaborChartData()
-            let laborDays = laborRows.map { row in
-                let date = Formatters.localDateFormatter.date(from: row.dateString) ?? Date()
+            let laborDays = laborRows.compactMap { row -> LaborDayData? in
+                guard let date = Formatters.localDateFormatter.date(from: row.dateString) else {
+                    logger.error("[Dashboard] Skipping labor chart row with malformed date: \(row.dateString, privacy: .public)")
+                    return nil
+                }
                 return LaborDayData(
                     dayLabel: Formatters.dayOfWeekFormatter.string(from: date),
                     date: row.dateString,
