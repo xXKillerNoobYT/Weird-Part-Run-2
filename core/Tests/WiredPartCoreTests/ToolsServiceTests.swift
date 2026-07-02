@@ -815,6 +815,42 @@ struct ToolsServiceTests {
         #expect(contents.isEmpty)
     }
 
+    @Test("getKitContents ignores verification results from soft-deleted sessions")
+    func testGetKitContentsIgnoresSoftDeletedSessions() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let toolId = try insertTool(env, toolNumber: "T-KVS", name: "Verified Kit Tool", hasKit: 1)
+        let templateId = try insertKitTemplate(env, toolId: toolId, componentName: "Chuck Key", componentType: "accessory")
+
+        // Record a verification that marks the component missing
+        let sessionId: Int64 = try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO kit_verification_sessions
+                (tool_id, verified_by, trigger_type, is_complete, missing_count, created_at)
+                VALUES (?, ?, 'manual', 0, 1, datetime('now'))
+                """, arguments: [toolId, env.adminUserId])
+            let sessionId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO kit_verification_items (session_id, template_item_id, is_present)
+                VALUES (?, ?, 0)
+                """, arguments: [sessionId, templateId])
+            return sessionId
+        }
+
+        // Live session: the missing verification drives the status
+        let before = try env.tools.getKitContents(toolId: toolId)
+        #expect(before.first?.status == "missing")
+
+        // Soft-delete the session: its results must no longer misreport kit completeness
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE kit_verification_sessions SET deleted_at = datetime('now') WHERE id = ?", arguments: [sessionId])
+        }
+
+        let after = try env.tools.getKitContents(toolId: toolId)
+        #expect(after.first?.status == "present")
+        #expect(after.first?.lastChecked == nil)
+    }
+
     // =========================================================================
     // MARK: - Edit with Verification
     // =========================================================================
