@@ -40,7 +40,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      GH_TOKEN: ${{ github.token }}
+      # Use a PAT when configured: GITHUB_TOKEN-authored update-branch merge
+      # commits leave PR checks stuck at action_required (bot-actor approval),
+      # which jammed the train on #1343-#1346. Falls back to github.token
+      # until the owner creates the fine-grained PAT (Contents + PRs, R/W).
+      GH_TOKEN: ${{ secrets.PR_MAINTENANCE_PAT || github.token }}
       PR_MAINTENANCE_BASE: main
       PR_MAINTENANCE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true && '1' || '0' }}
 

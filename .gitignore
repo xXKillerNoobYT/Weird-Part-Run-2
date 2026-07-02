@@ -79,3 +79,10 @@ docs/github-flow-heartbeat.md.bak
 # GitHub issue fisher run outputs are operational evidence, not source.
 docs/github-issue-fisher/*
 !docs/github-issue-fisher/.gitkeep
+
+# Agent/tooling junk that has appeared at the repo root (2026-07-02 audit) —
+# ignore so the artifact guard's tracked-file check stays the only gate needed.
+=
+[object Object]/
+.playwright-mcp/
+docs/testing/artifacts/
