@@ -54,6 +54,13 @@ struct IOSProcurementPage: View {
     // General-mode brand resolution per part against the selected supplier (#243).
     // Recomputed alongside cachedReadyToGenerate; keyed by ProcurementItem.id.
     @State private var brandResolutions: [Int64: GeneralBrandResolution] = [:]
+    // True while a background brand-resolution pass is running; generation stays
+    // blocked (see hasUnresolvedGeneralBrand) so a stale/incomplete result can't
+    // slip a mis-branded line through while DB reads are still in flight.
+    @State private var isResolvingBrands = false
+    // Monotonically increasing token so a slow, superseded resolution pass can't
+    // clobber brandResolutions after a newer pass has already completed.
+    @State private var brandResolutionToken: Int = 0
 
     /// Outcome of resolving a part's general-mode JPO lines against the selected supplier.
     private enum GeneralBrandResolution: Equatable {
@@ -355,11 +362,50 @@ struct IOSProcurementPage: View {
     /// Resolve general-mode JPO lines against each part's selected supplier (#243).
     /// `.resolved` drives the teal pill; `.unresolved` shows the red warning and
     /// blocks generation (the service also rejects unresolved lines as a backstop).
+    ///
+    /// The actual DB reads run off the main thread — with preferred suppliers
+    /// auto-selected for many rows, this loop can issue several SQLite reads per
+    /// checked part, and doing that synchronously on every checkbox/supplier
+    /// `onChange` could stall the UI on larger procurement lists. `isResolvingBrands`
+    /// keeps generation blocked (fail closed) while a pass is in flight, and
+    /// `brandResolutionToken` discards results from a superseded pass.
     private func updateBrandResolutions() {
         guard let service = appCore.ordersService else {
             brandResolutions = [:]
+            isResolvingBrands = false
             return
         }
+        let snapshotItems = items
+        let snapshotSuppliers = selectedSupplier
+        let partsService = appCore.partsService
+
+        brandResolutionToken += 1
+        let token = brandResolutionToken
+        isResolvingBrands = true
+
+        Task {
+            let resolutions = await Self.resolveBrands(
+                items: snapshotItems,
+                selectedSupplier: snapshotSuppliers,
+                ordersService: service,
+                partsService: partsService
+            )
+            await MainActor.run {
+                guard token == brandResolutionToken else { return }
+                brandResolutions = resolutions
+                isResolvingBrands = false
+            }
+        }
+    }
+
+    /// Off-main-thread core of `updateBrandResolutions`. Static + explicit params
+    /// so it can't accidentally touch `@State` from a background context.
+    private static func resolveBrands(
+        items: [OrdersService.ProcurementItem],
+        selectedSupplier: [Int64: Int64],
+        ordersService: OrdersService,
+        partsService: PartsService?
+    ) async -> [Int64: GeneralBrandResolution] {
         var resolutions: [Int64: GeneralBrandResolution] = [:]
         for item in items {
             guard let supplierId = selectedSupplier[item.id] else { continue }
@@ -370,7 +416,7 @@ struct IOSProcurementPage: View {
             var hasUnresolved = false
             for lineId in jpoLineIds {
                 do {
-                    switch try service.resolveGeneralLineItem(jpoLineId: lineId, supplierId: supplierId) {
+                    switch try ordersService.resolveGeneralLineItem(jpoLineId: lineId, supplierId: supplierId) {
                     case .alreadySpecific:
                         continue
                     case .resolved(let brandId, _):
@@ -387,14 +433,14 @@ struct IOSProcurementPage: View {
             if hasUnresolved {
                 resolutions[item.id] = .unresolved
             } else if let brandId = resolvedBrandId {
-                resolutions[item.id] = .resolved(brandName: brandName(for: brandId))
+                resolutions[item.id] = .resolved(brandName: brandName(for: brandId, partsService: partsService))
             }
         }
-        brandResolutions = resolutions
+        return resolutions
     }
 
-    private func brandName(for brandId: Int64) -> String {
-        guard let parts = appCore.partsService else { return "Brand #\(brandId)" }
+    private static func brandName(for brandId: Int64, partsService: PartsService?) -> String {
+        guard let parts = partsService else { return "Brand #\(brandId)" }
         do {
             return try parts.getBrand(id: brandId).name
         } catch {
@@ -404,8 +450,10 @@ struct IOSProcurementPage: View {
 
     /// True when any checked, supplier-selected part still has an unresolved
     /// general-mode line — generation is blocked until the supplier changes.
+    /// Also true while a resolution pass is in flight: fail closed rather than
+    /// letting generation proceed on a stale/incomplete brandResolutions snapshot.
     private var hasUnresolvedGeneralBrand: Bool {
-        cachedReadyToGenerate.contains { brandResolutions[$0.id] == .unresolved }
+        isResolvingBrands || cachedReadyToGenerate.contains { brandResolutions[$0.id] == .unresolved }
     }
 
     /// The effective order quantity for a part, accounting for any pull decision.

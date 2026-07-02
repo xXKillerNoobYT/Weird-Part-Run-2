@@ -80,8 +80,8 @@ public final class OrdersService: Sendable {
                 let attemptedText = attemptedSupplierName.map { "\($0) (#\(attemptedSupplierId))" } ?? "#\(attemptedSupplierId)"
                 return "Generic part \(partText) for job \(jobText) is locked to supplier \(lockedText), not supplier \(attemptedText)"
             case .generalBrandUnresolved(let partId, let partName, let supplierId, let supplierName):
-                let partText = partName ?? "part #\(partId)"
-                let supplierText = supplierName ?? "Supplier #\(supplierId)"
+                let partText = partName.map { "\($0) (#\(partId))" } ?? "part #\(partId)"
+                let supplierText = supplierName.map { "\($0) (#\(supplierId))" } ?? "Supplier #\(supplierId)"
                 return "\(supplierText) doesn't carry a brand for \(partText) — pick another supplier"
             case .insufficientStock(let partId, let available, let requested):
                 return "Part #\(partId) has \(available) available on warehouse shelves, but \(requested) was requested"
