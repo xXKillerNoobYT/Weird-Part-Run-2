@@ -112,11 +112,24 @@ fi
 STAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 WEB_URL="${PAPERCLIP_WEB_URL:-}"
 
-ISSUES_JSON="$(curl -fsS \
+# Bounded curls: the configured PAPERCLIP_API_URL can be a trycloudflare
+# tunnel that goes NXDOMAIN mid-life; without timeouts these curls hung until
+# the 10-minute workflow timeout cancelled every run (15/15 cancelled). If the
+# configured URL is unreachable, fall back to the local Paperclip instance —
+# the runner lives on the same Mac.
+CURL_OPTS=(-fsS --connect-timeout 10 --max-time 120 --retry 2)
+if ! curl "${CURL_OPTS[@]}" -o /dev/null "$PAPERCLIP_API_URL/api/health" 2>/dev/null; then
+  echo "warn: $PAPERCLIP_API_URL unreachable, falling back to http://localhost:3100" >&2
+  PAPERCLIP_API_URL="http://localhost:3100"
+fi
+
+echo "tracker-sync: fetching issues/agents from $PAPERCLIP_API_URL" >&2
+
+ISSUES_JSON="$(curl "${CURL_OPTS[@]}" \
   -H "Authorization: Bearer $PAPERCLIP_API_KEY" \
   "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/issues?status=todo,in_progress,in_review,blocked")"
 
-AGENTS_JSON="$(curl -fsS \
+AGENTS_JSON="$(curl "${CURL_OPTS[@]}" \
   -H "Authorization: Bearer $PAPERCLIP_API_KEY" \
   "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/agents")"
 
