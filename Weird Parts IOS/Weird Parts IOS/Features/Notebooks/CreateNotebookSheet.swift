@@ -39,6 +39,10 @@ struct CreateNotebookSheet: View {
     @State private var isSaving = false
     @State private var saveError: String?
     @State private var jobsLoadError: String?
+    /// Load-error state for the template picker (#1174) — a failed template
+    /// load must never look like "no templates exist", or a field tech can
+    /// silently create a blank notebook missing template-backed sections.
+    @State private var templatesLoadError: String?
     @State private var wasAutoFilled = false
 
     private let typeOptions = ["general", "job", "daily_report", "checklist"]
@@ -94,13 +98,26 @@ struct CreateNotebookSheet: View {
                     }
                 }
 
-                // Template picker
-                if !templates.isEmpty {
+                // Template picker — the section stays visible on a load failure
+                // (#1174) so the error can render; the true "no templates" state
+                // (no section) only applies after a successful empty load.
+                if !templates.isEmpty || templatesLoadError != nil {
                     Section {
-                        Picker("Start from Template", selection: $selectedTemplateId) {
-                            Text("Blank Notebook").tag(nil as Int64?)
-                            ForEach(templates) { template in
-                                Text(template.name).tag(template.id as Int64?)
+                        if let templatesLoadError {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(templatesLoadError)
+                                    .foregroundStyle(.red)
+                                    .font(.caption)
+                                Button("Retry loading templates") {
+                                    loadTemplates()
+                                }
+                            }
+                        } else {
+                            Picker("Start from Template", selection: $selectedTemplateId) {
+                                Text("Blank Notebook").tag(nil as Int64?)
+                                ForEach(templates) { template in
+                                    Text(template.name).tag(template.id as Int64?)
+                                }
                             }
                         }
                     } header: {
@@ -163,10 +180,17 @@ struct CreateNotebookSheet: View {
 
     private func loadTemplates() {
         guard let service = appCore.notebooksService else {
-            saveError = "Notebooks service not available"
+            templatesLoadError = "Notebooks service not available. Try again after app services finish loading."
             return
         }
-        templates = (try? service.getTemplates(templateType: "job")) ?? []
+        // Explicit do/catch (#1174): template load failures are tracked
+        // separately from saveError and from a genuinely empty template list.
+        do {
+            templates = try service.getTemplates(templateType: "job")
+            templatesLoadError = nil
+        } catch {
+            templatesLoadError = userFriendlyError(error, context: "load notebook templates")
+        }
     }
 
     private func autoFillFromClockEntry() {
