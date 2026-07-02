@@ -244,6 +244,15 @@ struct WarehouseLocationsPage: View {
         .background(DS.Background.page)
         .task {
             loadData()
+            // QR quick action "Floor Plan" (#700): open the storage unit that
+            // contains the scanned area. Runs after loadData() so the unit list
+            // is populated before we look up the scanned unit.
+            if let route = QRScanRouteStore.shared.consume(for: "warehouse-locations"),
+               route.action == .floorPlan,
+               let unitId = route.locationUnitId,
+               let unit = storageUnits.first(where: { $0.id == unitId }) {
+                activeSheet = .unitDetail(unit)
+            }
             appCore.onboardingManager?.markCompleted("wh-locations-view")
         }
         .onDisappear {

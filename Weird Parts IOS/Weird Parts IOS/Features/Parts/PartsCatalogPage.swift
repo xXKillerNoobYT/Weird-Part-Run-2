@@ -294,7 +294,16 @@ struct PartsCatalogPage: View {
                 resetAndLoad()
             }
         }
-        .task { await loadLookups(); await loadData(); await loadCascadePriceCache() }
+        .task {
+            // QR quick action "View Part" (#700): land on the scanned part by
+            // filtering the catalog to its code — same behavior as this page's
+            // own QR scan sheet. Setting searchText triggers resetAndLoad().
+            if let route = QRScanRouteStore.shared.consume(for: "parts-catalog"),
+               route.entityType == .part {
+                searchText = route.searchHint ?? route.code
+            }
+            await loadLookups(); await loadData(); await loadCascadePriceCache()
+        }
         .alert("Error", isPresented: Binding<Bool>(
             get: { actionError != nil },
             set: { if !$0 { actionError = nil } }

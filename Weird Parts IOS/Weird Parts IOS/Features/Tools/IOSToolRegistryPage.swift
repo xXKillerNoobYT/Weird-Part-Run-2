@@ -109,7 +109,16 @@ struct IOSToolRegistryPage: View {
         }
         .onChange(of: searchText) { Task { await loadData() } }
         .refreshable { await loadData() }
-        .task { await loadData() }
+        .task {
+            // QR quick action "Check Status" (#700): land on the scanned tool by
+            // filtering the registry to its serial/name — same behavior as this
+            // page's own tool scanner sheet.
+            if let route = QRScanRouteStore.shared.consume(for: "tools-registry"),
+               route.entityType == .tool {
+                searchText = route.searchHint ?? route.code
+            }
+            await loadData()
+        }
         .onAppear {
             NotificationCenter.default.post(
                 name: .toolRegistryPageActive,

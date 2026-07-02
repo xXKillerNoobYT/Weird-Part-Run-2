@@ -204,6 +204,12 @@ let appModules: [AppModule] = [
 extension Notification.Name {
     /// Posted when a view wants to navigate to a specific module tab.
     /// `userInfo` should contain `"moduleId"` (String) and optionally `"tabId"` (String).
+    ///
+    /// QR-scan quick actions additionally include `"entityType"` (String,
+    /// `QREntityType.rawValue`), `"entityId"` (Int64), `"code"` (String), and
+    /// `"action"` (String, `QRScanAction.rawValue`); the full scanned-entity
+    /// context is stashed in `QRScanRouteStore` keyed by the destination tab id
+    /// so the destination page can land on the scanned entity (issue #700).
     static let navigateToModule = Notification.Name("WiredPart.navigateToModule")
 
     /// Posted when AppCore logs out the current user so user-scoped UI state can be cleared.

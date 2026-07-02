@@ -64,7 +64,8 @@ struct WarehouseMovementsPage: View {
 
     private enum ActiveSheet: Identifiable {
         case movementDetail(WarehouseService.MovementRow)
-        case newMovement
+        /// `prefillPartId` preselects a scanned part in the wizard (QR quick action, #700).
+        case newMovement(prefillPartId: Int64?)
         case quickLog
         case qrScanner
         case help
@@ -72,7 +73,7 @@ struct WarehouseMovementsPage: View {
         var id: String {
             switch self {
             case .movementDetail(let m): "detail-\(m.id)"
-            case .newMovement: "newMovement"
+            case .newMovement(let partId): "newMovement-\(partId.map(String.init) ?? "none")"
             case .quickLog: "quickLog"
             case .qrScanner: "qrScanner"
             case .help: "help"
@@ -111,7 +112,7 @@ struct WarehouseMovementsPage: View {
                 }
                 .accessibilityLabel("Quick log movement")
                 .accessibilityIdentifier("whMovement_quickLog")
-                Button { activeSheet = .newMovement } label: {
+                Button { activeSheet = .newMovement(prefillPartId: nil) } label: {
                     Image(systemName: "plus")
                 }
                 .accessibilityLabel("New movement")
@@ -129,6 +130,14 @@ struct WarehouseMovementsPage: View {
         }
         .background(DS.Background.page)
         .task {
+            // QR quick action "Move Stock" (#700): open the movement wizard with
+            // the scanned part preselected instead of landing on the bare list.
+            if let route = QRScanRouteStore.shared.consume(for: "warehouse-movements"),
+               route.action == .moveStock,
+               route.entityType == .part,
+               let partId = route.entityId {
+                activeSheet = .newMovement(prefillPartId: partId)
+            }
             loadData()
             appCore.onboardingManager?.markCompleted("wh-movements-view")
         }
@@ -150,12 +159,12 @@ struct WarehouseMovementsPage: View {
         switch sheet {
         case .movementDetail(let movement):
             MovementDetailSheet(movement: movement)
-        case .newMovement:
-            IOSMovementWizard(onComplete: { loadData() })
+        case .newMovement(let prefillPartId):
+            IOSMovementWizard(prefillPartId: prefillPartId, onComplete: { loadData() })
                 .environmentObject(appCore)
         case .quickLog:
             QuickLogMovementSheet(openFullMovementWizard: {
-                activeSheet = .newMovement
+                activeSheet = .newMovement(prefillPartId: nil)
             })
         case .qrScanner:
             QRScanSheet(expectedType: .part) { result in
@@ -370,7 +379,7 @@ struct WarehouseMovementsPage: View {
             actionIcon: "plus",
             actionAccessibilityIdentifier: "whMovement_emptyNewMovement"
         ) {
-            activeSheet = .newMovement
+            activeSheet = .newMovement(prefillPartId: nil)
         }
     }
 

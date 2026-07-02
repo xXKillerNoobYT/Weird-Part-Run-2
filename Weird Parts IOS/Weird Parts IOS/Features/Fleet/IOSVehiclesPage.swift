@@ -47,7 +47,15 @@ struct IOSVehiclesPage: View {
         .searchable(text: $searchText, prompt: "Search vehicles...")
         .onChange(of: searchText) { loadData() }
         .refreshable { loadData() }
-        .task { loadData() }
+        .task {
+            // QR quick action "View Fleet" (#700): land on the scanned vehicle
+            // by filtering the list to its number/name.
+            if let route = QRScanRouteStore.shared.consume(for: "fleet-vehicles"),
+               route.entityType == .vehicle {
+                searchText = route.searchHint ?? route.code
+            }
+            loadData()
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { loadData() }
         }
