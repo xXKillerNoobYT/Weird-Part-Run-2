@@ -1731,6 +1731,16 @@ struct MaintenanceConfigSheet: View {
         ("condition_triggered", "Condition-Triggered", "exclamationmark.triangle.fill"),
     ]
 
+    /// A zero/negative usage threshold makes the due-detection math flag the
+    /// tool permanently overdue, so require strictly positive hours.
+    private var usageThresholdValidationMessage: String? {
+        guard selectedType == "usage_based" else { return nil }
+        guard usageThreshold.isFinite, usageThreshold > 0 else {
+            return "Usage threshold must be greater than zero hours."
+        }
+        return nil
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -1768,7 +1778,7 @@ struct MaintenanceConfigSheet: View {
                     Button("Save") {
                         Task { await saveConfig() }
                     }
-                    .disabled(isSaving)
+                    .disabled(isSaving || usageThresholdValidationMessage != nil)
                 }
             }
             .alert("Discard changes?", isPresented: $showDiscardAlert) {
@@ -1798,6 +1808,11 @@ struct MaintenanceConfigSheet: View {
                         .frame(width: 80)
                         .onChange(of: usageThreshold) { _, _ in isDirty = true }
                     Text("hours of use")
+                }
+                if let message = usageThresholdValidationMessage {
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                        .font(.caption)
                 }
             }
         case "schedule_based":
@@ -1851,6 +1866,11 @@ struct MaintenanceConfigSheet: View {
 
     @MainActor
     func saveConfig() async {
+        // Backstop for the disabled Save button.
+        if let message = usageThresholdValidationMessage {
+            saveError = message
+            return
+        }
         isSaving = true
         saveError = nil
         guard let service = appCore.toolsService else {

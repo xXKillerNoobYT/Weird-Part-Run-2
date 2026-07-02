@@ -1028,7 +1028,7 @@ private struct AddWishlistItemSheet: View {
                         ProgressView()
                     } else {
                         Button("Add") { saveItem() }
-                            .disabled(partName.trimmingCharacters(in: .whitespaces).isEmpty)
+                            .disabled(partName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             .fontWeight(.semibold)
                     }
                 }
@@ -1052,7 +1052,7 @@ private struct AddWishlistItemSheet: View {
             return
         }
 
-        let trimmedName = partName.trimmingCharacters(in: .whitespaces)
+        let trimmedName = partName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {
             saveError = "Part name is required"
             return

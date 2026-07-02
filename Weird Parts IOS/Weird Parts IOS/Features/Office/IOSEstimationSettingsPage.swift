@@ -401,7 +401,7 @@ private struct AddEstimationQuestionSheet: View {
                         ProgressView()
                     } else {
                         Button("Save") { Task { await save() } }
-                            .disabled(questionText.trimmingCharacters(in: .whitespaces).isEmpty)
+                            .disabled(questionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
             }
@@ -418,13 +418,13 @@ private struct AddEstimationQuestionSheet: View {
         }
         do {
             let choices: [String]? = if answerType == "choice" && !choicesText.isEmpty {
-                choicesText.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+                choicesText.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             } else {
                 nil
             }
 
             try svc.createQuestion(
-                text: questionText.trimmingCharacters(in: .whitespaces),
+                text: questionText.trimmingCharacters(in: .whitespacesAndNewlines),
                 group: group, stage: stage, answerType: answerType,
                 choices: choices, weight: weight
             )
@@ -499,7 +499,7 @@ private struct EditEstimationQuestionSheet: View {
                         ProgressView()
                     } else {
                         Button("Save") { Task { await save() } }
-                            .disabled(questionText.trimmingCharacters(in: .whitespaces).isEmpty)
+                            .disabled(questionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
             }
@@ -518,7 +518,7 @@ private struct EditEstimationQuestionSheet: View {
         do {
             try svc.updateQuestion(
                 questionId: qid,
-                text: questionText.trimmingCharacters(in: .whitespaces),
+                text: questionText.trimmingCharacters(in: .whitespacesAndNewlines),
                 weight: weight
             )
             dismiss()

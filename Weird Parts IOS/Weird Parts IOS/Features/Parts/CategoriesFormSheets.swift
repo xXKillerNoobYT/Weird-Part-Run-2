@@ -63,7 +63,7 @@ struct CategoryFormSheet: View {
                             Text("Save")
                         }
                     }
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
                     .accessibilityIdentifier("categoryFormSaveButton")
                 }
             }
@@ -93,7 +93,7 @@ struct CategoryFormSheet: View {
     }
 
     private func save() async throws {
-        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {
             throw NSError(domain: "WiredPart", code: 0, userInfo: [NSLocalizedDescriptionKey: "Name cannot be empty"])
         }
@@ -163,7 +163,7 @@ struct StyleFormSheet: View {
                             Text("Save")
                         }
                     }
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
                     .accessibilityIdentifier("styleFormSaveButton")
                 }
             }
@@ -193,7 +193,7 @@ struct StyleFormSheet: View {
     }
 
     private func save() async throws {
-        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {
             throw NSError(domain: "WiredPart", code: 0, userInfo: [NSLocalizedDescriptionKey: "Name cannot be empty"])
         }
@@ -263,7 +263,7 @@ struct TypeFormSheet: View {
                             Text("Save")
                         }
                     }
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
                     .accessibilityIdentifier("typeFormSaveButton")
                 }
             }
@@ -293,7 +293,7 @@ struct TypeFormSheet: View {
     }
 
     private func save() async throws {
-        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {
             throw NSError(domain: "WiredPart", code: 0, userInfo: [NSLocalizedDescriptionKey: "Name cannot be empty"])
         }
@@ -466,7 +466,7 @@ struct ColorFormSheet: View {
                             Text("Save")
                         }
                     }
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
                     .accessibilityIdentifier("colorFormSaveButton")
                 }
             }
@@ -551,7 +551,7 @@ struct ColorFormSheet: View {
     }
 
     private func save() async throws {
-        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {
             throw NSError(domain: "WiredPart", code: 0, userInfo: [NSLocalizedDescriptionKey: "Name cannot be empty"])
         }
@@ -560,7 +560,7 @@ struct ColorFormSheet: View {
             throw NSError(domain: "WiredPart", code: 0, userInfo: [NSLocalizedDescriptionKey: "Parts service not available"])
         }
         let hex: String? = hasColor ? hexStringFromColor(selectedColor) : nil
-        let trimmedPN = partNumber.trimmingCharacters(in: .whitespaces)
+        let trimmedPN = partNumber.trimmingCharacters(in: .whitespacesAndNewlines)
         if let existing = color, let id = existing.id {
             // Pass empty hex to clear visible colors back to a named-only variant.
             try service.updateColor(id: id, name: trimmedName, hexCode: hex ?? "", partNumber: trimmedPN.isEmpty ? "" : trimmedPN, sortOrder: sortOrder)

@@ -22,7 +22,7 @@ struct IOSQAQuestionForm: View {
     private let priorities = ["low", "normal", "high", "urgent"]
 
     private var isValid: Bool {
-        !question.trimmingCharacters(in: .whitespaces).isEmpty && selectedJobId != nil
+        !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedJobId != nil
     }
 
     var body: some View {
@@ -76,7 +76,7 @@ struct IOSQAQuestionForm: View {
             .navigationTitle("Ask a Question")
             .navigationBarTitleDisplayMode(.inline)
             .scrollDismissesKeyboard(.immediately)
-            .interactiveDismissDisabled(!question.trimmingCharacters(in: .whitespaces).isEmpty)
+            .interactiveDismissDisabled(!question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -144,7 +144,7 @@ struct IOSQAQuestionForm: View {
             try service.createQAThread(
                 jobId: jobId,
                 askedBy: userId,
-                subject: question.trimmingCharacters(in: .whitespaces),
+                subject: question.trimmingCharacters(in: .whitespacesAndNewlines),
                 priority: priority
             )
             isSaving = false

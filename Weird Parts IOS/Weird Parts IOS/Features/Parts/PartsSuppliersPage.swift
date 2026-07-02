@@ -613,7 +613,7 @@ private struct SupplierFormSheet: View {
                     } label: {
                         if isSaving { ProgressView() } else { Text("Save") }
                     }
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
                 }
             }
             .onAppear {
@@ -679,7 +679,7 @@ private struct SupplierFormSheet: View {
     }
 
     private func save() async throws {
-        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {
             throw NSError(domain: "WiredPart", code: 0, userInfo: [NSLocalizedDescriptionKey: "Supplier name is required"])
         }
@@ -1714,8 +1714,8 @@ private struct AddSupplierContactSheet: View {
                     } label: {
                         if isSaving { ProgressView() } else { Text("Save") }
                     }
-                    .disabled(firstName.trimmingCharacters(in: .whitespaces).isEmpty
-                              || lastName.trimmingCharacters(in: .whitespaces).isEmpty
+                    .disabled(firstName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                              || lastName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                               || isSaving)
                 }
             }
@@ -1733,8 +1733,8 @@ private struct AddSupplierContactSheet: View {
             }
             try service.addSupplierContact(
                 supplierId: supplierId,
-                firstName: firstName.trimmingCharacters(in: .whitespaces),
-                lastName: lastName.trimmingCharacters(in: .whitespaces),
+                firstName: firstName.trimmingCharacters(in: .whitespacesAndNewlines),
+                lastName: lastName.trimmingCharacters(in: .whitespacesAndNewlines),
                 role: role.isEmpty ? nil : role,
                 phone: phone.isEmpty ? nil : phone,
                 email: email.isEmpty ? nil : email,

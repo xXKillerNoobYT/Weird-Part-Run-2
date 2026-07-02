@@ -24,8 +24,8 @@ struct AddNotebookEntrySheet: View {
 
     private var isEditing: Bool { editingEntry != nil }
     private var hasUnsavedContent: Bool {
-        !title.trimmingCharacters(in: .whitespaces).isEmpty ||
-        !content.trimmingCharacters(in: .whitespaces).isEmpty ||
+        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
         !checklistItems.isEmpty
     }
 
@@ -278,11 +278,11 @@ struct AddNotebookEntrySheet: View {
 
     private var isSaveDisabled: Bool {
         switch blockType {
-        case "heading": return title.trimmingCharacters(in: .whitespaces).isEmpty
-        case "todo": return title.trimmingCharacters(in: .whitespaces).isEmpty
+        case "heading": return title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case "todo": return title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case "divider": return false
         case "checklist": return checklistItems.filter({ !$0.text.isEmpty }).isEmpty
-        default: return title.trimmingCharacters(in: .whitespaces).isEmpty && content.trimmingCharacters(in: .whitespaces).isEmpty
+        default: return title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
     }
 

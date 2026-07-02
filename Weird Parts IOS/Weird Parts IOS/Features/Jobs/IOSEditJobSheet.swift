@@ -54,7 +54,19 @@ struct IOSEditJobSheet: View {
     }
 
     private var isValid: Bool {
-        !jobName.trimmingCharacters(in: .whitespaces).isEmpty
+        !jobName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && estimatedHoursValidationMessage == nil
+            && budgetLimitValidationMessage == nil
+    }
+
+    /// Live validation so negative or malformed numeric drafts disable Save
+    /// instead of persisting (or only failing at save time).
+    private var estimatedHoursValidationMessage: String? {
+        numericValidationMessage(for: estimatedHours, label: "Estimated Hours")
+    }
+
+    private var budgetLimitValidationMessage: String? {
+        numericValidationMessage(for: budgetLimit, label: "Budget Limit")
     }
 
     var body: some View {
@@ -96,8 +108,18 @@ struct IOSEditJobSheet: View {
                 Section("Budget") {
                     TextField("Estimated Hours", text: $estimatedHours)
                         .keyboardType(.decimalPad)
+                    if let message = estimatedHoursValidationMessage {
+                        Label(message, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                    }
                     TextField("Budget Limit ($)", text: $budgetLimit)
                         .keyboardType(.decimalPad)
+                    if let message = budgetLimitValidationMessage {
+                        Label(message, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                    }
                 }
 
                 Section("Stage Template") {
@@ -226,7 +248,7 @@ struct IOSEditJobSheet: View {
     }
 
     private func changedRequiredText(_ value: String, original: String) -> String? {
-        let trimmed = value.trimmingCharacters(in: .whitespaces)
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed == original ? nil : trimmed
     }
 
@@ -235,7 +257,7 @@ struct IOSEditJobSheet: View {
     }
 
     private func changedDouble(_ value: String, original: Double?) -> Double? {
-        let trimmed = value.trimmingCharacters(in: .whitespaces)
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         let originalValue = original.map { String($0) } ?? ""
         if trimmed == originalValue || trimmed.isEmpty {
             return nil
@@ -244,7 +266,7 @@ struct IOSEditJobSheet: View {
     }
 
     private func shouldClearDouble(_ value: String, original: Double?) -> Bool {
-        value.trimmingCharacters(in: .whitespaces).isEmpty && original != nil
+        value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && original != nil
     }
 
     private func validateNumericFields() -> Bool {
@@ -260,10 +282,13 @@ struct IOSEditJobSheet: View {
     }
 
     private func numericValidationMessage(for value: String, label: String) -> String? {
-        let trimmed = value.trimmingCharacters(in: .whitespaces)
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        guard Double(trimmed) != nil else {
+        guard let number = Double(trimmed), number.isFinite else {
             return "\(label) must be a plain number, like 8 or 8.5. Clear the field to remove it."
+        }
+        guard number > 0 else {
+            return "\(label) must be greater than zero. Clear the field to remove it."
         }
         return nil
     }

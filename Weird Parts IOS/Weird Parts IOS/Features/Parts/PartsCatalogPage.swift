@@ -1349,7 +1349,7 @@ private struct QuickEditSheet: View {
                     Button("Save") {
                         Task { await save() }
                     }
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || pricingValidationMessage != nil || isSaving)
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || pricingValidationMessage != nil || isSaving)
                 }
             }
             .interactiveDismissDisabled(isDirty || isSaving)
@@ -1375,7 +1375,7 @@ private struct QuickEditSheet: View {
     }
 
     private func save() async {
-        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { return }
         guard let service = appCore.partsService else {
             saveError = "Service not available"
@@ -1529,7 +1529,7 @@ private struct PartFormSheet: View {
                                 }
                             }
                         }
-                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || selectedCategoryId == 0 || pricingValidationMessage != nil)
+                        .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selectedCategoryId == 0 || pricingValidationMessage != nil)
                     }
                 }
             }
@@ -1557,7 +1557,7 @@ private struct PartFormSheet: View {
     }
 
     private func save() async {
-        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty, selectedCategoryId > 0 else { return }
         let cost: Double
         let markup: Double

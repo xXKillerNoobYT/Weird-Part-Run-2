@@ -131,7 +131,7 @@ struct IOSPODetailPage: View {
             Button("Keep Order", role: .cancel) { cancelReason = "" }
             Button("Cancel PO", role: .destructive) {
                 Task {
-                    guard !cancelReason.trimmingCharacters(in: .whitespaces).isEmpty else {
+                    guard !cancelReason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                         actionMessage = "Cancellation reason is required."
                         return
                     }
@@ -148,7 +148,7 @@ struct IOSPODetailPage: View {
             Button("Keep Remaining", role: .cancel) { cancelReason = "" }
             Button("Cancel Remaining", role: .destructive) {
                 Task {
-                    guard !cancelReason.trimmingCharacters(in: .whitespaces).isEmpty else {
+                    guard !cancelReason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                         actionMessage = "Cancellation reason is required."
                         return
                     }
@@ -372,7 +372,7 @@ struct IOSPODetailPage: View {
                                             .foregroundStyle(Color.accentColor)
                                     }
                                     .accessibilityLabel("Send message")
-                                    .disabled(newSupplierMessage.trimmingCharacters(in: .whitespaces).isEmpty)
+                                    .disabled(newSupplierMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                                 }
                             }
                         }
@@ -644,7 +644,7 @@ struct IOSPODetailPage: View {
                             Spacer()
                         }
                     }
-                    .disabled(issueDescription.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(issueDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .tint(.orange)
                 }
 
@@ -1083,7 +1083,7 @@ struct IOSPODetailPage: View {
             loadError = "Chat service not available"
             return
         }
-        let text = newSupplierMessage.trimmingCharacters(in: .whitespaces)
+        let text = newSupplierMessage.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         do {
             _ = try chatService.sendSupplierMessage(
@@ -1193,7 +1193,7 @@ struct IOSPODetailPage: View {
             loadError = "Orders service not available"
             return
         }
-        let description = issueDescription.trimmingCharacters(in: .whitespaces)
+        let description = issueDescription.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !description.isEmpty else { return }
         guard let author = currentPONoteAuthor() else {
             actionMessage = "User session unavailable. Sign in again."
@@ -1998,14 +1998,14 @@ struct IOSPODetailPage: View {
                     TextField("Add a note...", text: $newNoteText)
                         .textFieldStyle(.roundedBorder)
                     Button {
-                        guard !newNoteText.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+                        guard !newNoteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
                         Task { await addPONote() }
                     } label: {
                         Image(systemName: "arrow.up.circle.fill")
                             .font(.title3)
                             .foregroundStyle(Color.accentColor)
                     }
-                    .disabled(newNoteText.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(newNoteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .accessibilityLabel("Add note")
                 }
 

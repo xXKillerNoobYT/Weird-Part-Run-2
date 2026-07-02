@@ -195,7 +195,7 @@ struct GeofenceAlertView: View {
                     .controlSize(.large)
                     .disabled(selectedReason == nil || isProcessing ||
                               (selectedReason == .anotherJob && targetJobId == nil) ||
-                              (selectedReason == .other && otherNotes.trimmingCharacters(in: .whitespaces).isEmpty))
+                              (selectedReason == .other && otherNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
                     .padding(.horizontal, 20)
                     .padding(.bottom, 32)
                 }

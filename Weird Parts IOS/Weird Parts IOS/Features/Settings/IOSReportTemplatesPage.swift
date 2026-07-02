@@ -224,14 +224,14 @@ struct IOSReportTemplatesPage: View {
             .scrollDismissesKeyboard(.immediately)
             .navigationTitle("New Template")
             .navigationBarTitleDisplayMode(.inline)
-            .interactiveDismissDisabled(!newName.trimmingCharacters(in: .whitespaces).isEmpty)
+            .interactiveDismissDisabled(!newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { activeSheet = nil }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") { createTemplate() }
-                        .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
@@ -262,7 +262,7 @@ struct IOSReportTemplatesPage: View {
             return
         }
 
-        let trimmed = newName.trimmingCharacters(in: .whitespaces)
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
         do {

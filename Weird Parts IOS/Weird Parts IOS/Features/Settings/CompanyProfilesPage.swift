@@ -232,14 +232,14 @@ private struct CompanyProfileEditor: View {
             .scrollDismissesKeyboard(.immediately)
             .navigationTitle(profile == nil ? "New Profile" : "Edit Profile")
             .navigationBarTitleDisplayMode(.inline)
-            .interactiveDismissDisabled(!companyName.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
+            .interactiveDismissDisabled(!companyName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(companyName.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
+                        .disabled(companyName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
                 }
             }
             .onAppear { loadFromProfile() }
@@ -267,7 +267,7 @@ private struct CompanyProfileEditor: View {
         defer { isSaving = false }
         var record = CompanyProfile(
             id: profile?.id,
-            companyName: companyName.trimmingCharacters(in: .whitespaces),
+            companyName: companyName.trimmingCharacters(in: .whitespacesAndNewlines),
             addressStreet: addressStreet.isEmpty ? nil : addressStreet,
             addressCity: addressCity.isEmpty ? nil : addressCity,
             addressState: addressState.isEmpty ? nil : addressState,

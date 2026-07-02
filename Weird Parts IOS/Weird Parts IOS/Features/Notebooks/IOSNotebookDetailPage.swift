@@ -1926,7 +1926,7 @@ private struct NameInputSheet: View {
                         onSave(name)
                         dismiss()
                     }
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .fontWeight(.semibold)
                 }
             }

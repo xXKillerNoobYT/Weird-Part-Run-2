@@ -187,14 +187,14 @@ struct IOSClockOutQuestionsPage: View {
             .scrollDismissesKeyboard(.immediately)
             .navigationTitle("Add Question")
             .navigationBarTitleDisplayMode(.inline)
-            .interactiveDismissDisabled(!newQuestionText.trimmingCharacters(in: .whitespaces).isEmpty)
+            .interactiveDismissDisabled(!newQuestionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { activeSheet = nil }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { saveNewQuestion() }
-                        .disabled(newQuestionText.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(newQuestionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
@@ -225,14 +225,14 @@ struct IOSClockOutQuestionsPage: View {
             .scrollDismissesKeyboard(.immediately)
             .navigationTitle("Edit Question")
             .navigationBarTitleDisplayMode(.inline)
-            .interactiveDismissDisabled(!newQuestionText.trimmingCharacters(in: .whitespaces).isEmpty)
+            .interactiveDismissDisabled(!newQuestionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { activeSheet = nil }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { saveEditedQuestion(question) }
-                        .disabled(newQuestionText.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(newQuestionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
@@ -269,7 +269,7 @@ struct IOSClockOutQuestionsPage: View {
         let nextOrder = (questions.last?.sortOrder ?? 0) + 1
         do {
             try settingsService.addClockOutQuestion(
-                text: newQuestionText.trimmingCharacters(in: .whitespaces),
+                text: newQuestionText.trimmingCharacters(in: .whitespacesAndNewlines),
                 type: newQuestionType,
                 isRequired: newQuestionRequired,
                 sortOrder: nextOrder
@@ -289,7 +289,7 @@ struct IOSClockOutQuestionsPage: View {
         do {
             try settingsService.updateClockOutQuestion(
                 id: question.id,
-                text: newQuestionText.trimmingCharacters(in: .whitespaces),
+                text: newQuestionText.trimmingCharacters(in: .whitespacesAndNewlines),
                 type: newQuestionType,
                 isRequired: newQuestionRequired
             )

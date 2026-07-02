@@ -1083,7 +1083,10 @@ public final class OrdersService: Sendable {
         holdReason: String,
         userId: Int64
     ) throws -> [Int64: Int64] {
-        let trimmedReason = holdReason.trimmingCharacters(in: .whitespaces)
+        // .whitespacesAndNewlines (via trimmedRequiredText) so a newline-only
+        // reason cannot pass the required-field guard and persist as a
+        // blank-looking hold reason / chat message (issue #1166 class).
+        let trimmedReason = holdReason.trimmedRequiredText
         guard !trimmedReason.isEmpty else {
             throw OrdersError.requiredFieldEmpty("holdReason")
         }

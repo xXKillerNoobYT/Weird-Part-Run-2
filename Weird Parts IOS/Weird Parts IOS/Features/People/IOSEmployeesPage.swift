@@ -320,7 +320,7 @@ private struct AddEmployeeSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(displayName.trimmingCharacters(in: .whitespaces).isEmpty || pin.count < 4)
+                        .disabled(displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || pin.count < 4)
                 }
             }
             .alert("Discard changes?", isPresented: $showDiscardAlert) {
@@ -338,7 +338,7 @@ private struct AddEmployeeSheet: View {
             errorMessage = "Auth service unavailable"
             return
         }
-        let trimmedName = displayName.trimmingCharacters(in: .whitespaces)
+        let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {
             errorMessage = "Name is required."
             return

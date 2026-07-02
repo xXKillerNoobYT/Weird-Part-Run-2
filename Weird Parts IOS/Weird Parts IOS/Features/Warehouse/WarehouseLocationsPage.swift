@@ -836,7 +836,7 @@ private struct CreateFloorPlanSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") { createPlan() }
-                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
@@ -849,7 +849,7 @@ private struct CreateFloorPlanSheet: View {
         }
         do {
             _ = try service.createFloorPlan(
-                name: name.trimmingCharacters(in: .whitespaces),
+                name: name.trimmingCharacters(in: .whitespacesAndNewlines),
                 widthInches: widthFeet * 12,
                 lengthInches: lengthFeet * 12
             )
@@ -970,7 +970,7 @@ private struct AddStorageUnitSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") { create() }
-                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
@@ -1002,7 +1002,7 @@ private struct AddStorageUnitSheet: View {
         do {
             let unit = try service.addStorageUnit(
                 floorPlanId: floorPlanId,
-                name: name.trimmingCharacters(in: .whitespaces),
+                name: name.trimmingCharacters(in: .whitespacesAndNewlines),
                 unitType: unitType,
                 rowNumber: rowNumber.isEmpty ? nil : rowNumber,
                 unitNumber: unitNumber.isEmpty ? nil : unitNumber,

@@ -220,7 +220,7 @@ private struct EditContactSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { saveContact() }
-                        .disabled(firstName.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(firstName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .alert("Discard changes?", isPresented: $showDiscardAlert) {
@@ -261,11 +261,11 @@ private struct EditContactSheet: View {
         do {
             try service.updateContact(
                 id: contactId,
-                firstName: firstName.trimmingCharacters(in: .whitespaces),
-                lastName: lastName.trimmingCharacters(in: .whitespaces),
-                phone: phone.trimmingCharacters(in: .whitespaces),
-                email: email.trimmingCharacters(in: .whitespaces).isEmpty ? nil : email.trimmingCharacters(in: .whitespaces),
-                role: role.trimmingCharacters(in: .whitespaces).isEmpty ? nil : role.trimmingCharacters(in: .whitespaces)
+                firstName: firstName.trimmingCharacters(in: .whitespacesAndNewlines),
+                lastName: lastName.trimmingCharacters(in: .whitespacesAndNewlines),
+                phone: phone.trimmingCharacters(in: .whitespacesAndNewlines),
+                email: email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : email.trimmingCharacters(in: .whitespacesAndNewlines),
+                role: role.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : role.trimmingCharacters(in: .whitespacesAndNewlines)
             )
             dismiss()
             onSave()
