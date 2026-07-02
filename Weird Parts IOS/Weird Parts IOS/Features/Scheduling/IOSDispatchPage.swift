@@ -342,6 +342,10 @@ struct IOSDispatchPage: View {
                                 .font(.caption2)
                                 .foregroundStyle(.gray)
                         }
+                        // Keep the compact 24pt visual, but give touch a
+                        // 44pt hit area per HIG / issue #1184.
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Assign worker")

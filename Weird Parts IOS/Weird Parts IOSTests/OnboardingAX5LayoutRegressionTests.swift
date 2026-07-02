@@ -85,6 +85,39 @@ final class OnboardingAX5LayoutRegressionTests: XCTestCase {
         )
     }
 
+    func testPostLoginWalkthroughAdaptsToAccessibilityDynamicType() throws {
+        let source = try Self.readSource("Auth/OnboardingWalkthroughView.swift")
+
+        XCTAssertTrue(
+            source.contains("@Environment(\\.dynamicTypeSize) private var dynamicTypeSize"),
+            "The post-login walkthrough should read Dynamic Type so it can adapt at AX sizes (issue #1311)."
+        )
+        XCTAssertTrue(
+            source.contains("ScrollView {"),
+            "The walkthrough welcome screen should scroll at AX5 instead of clipping copy and buttons."
+        )
+        XCTAssertTrue(
+            source.contains(".frame(minHeight: proxy.size.height)"),
+            "The welcome screen should keep its centered layout at regular sizes while remaining scrollable."
+        )
+        XCTAssertTrue(
+            source.contains("if !dynamicTypeSize.isAccessibilitySize {"),
+            "The walkthrough should not spend scarce AX5 vertical space on centering spacers."
+        )
+        XCTAssertTrue(
+            source.contains("HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center, spacing: 12)"),
+            "Key-feature rows should top-align when text wraps at accessibility sizes."
+        )
+        XCTAssertTrue(
+            source.contains(".fixedSize(horizontal: false, vertical: true)"),
+            "Wrapped walkthrough copy should keep its full vertical height instead of compressing."
+        )
+        XCTAssertTrue(
+            source.contains("navigationFooterButtons(module: module, fullWidth: true)"),
+            "Back/Skip/Next should stack vertically at accessibility sizes so every control stays reachable."
+        )
+    }
+
     func testNotStartedFixtureSuppressesModuleTourForChecklistEvidence() throws {
         let source = try Self.readSource("App/AppCore.swift")
 
