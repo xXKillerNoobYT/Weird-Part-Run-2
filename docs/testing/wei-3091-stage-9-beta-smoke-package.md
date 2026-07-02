@@ -37,7 +37,7 @@ swift test
 cd ..
 
 xcodebuild \
-  -workspace "Wierd Parts.xcworkspace" \
+  -workspace "Weird Parts.xcworkspace" \
   -scheme "WiredPart-iOS" \
   -destination 'generic/platform=iOS Simulator' \
   build
@@ -52,7 +52,7 @@ Run the deterministic UI smoke on at least one compact phone and one tablet. The
 
 ```bash
 xcodebuild \
-  -workspace "Wierd Parts.xcworkspace" \
+  -workspace "Weird Parts.xcworkspace" \
   -scheme "WiredPart-iOS-Stage9-Smokes" \
   -destination 'platform=iOS Simulator,name=WEI-2499 QA iPhone SE 375 26.4.1' \
   -only-testing:'Weird PartsUITests/Weird_Parts_IOSUITests/testWEI3295Stage8ReportsViewportHarness' \
@@ -63,7 +63,7 @@ For tablet evidence, use an installed iPad destination and keep the same targete
 
 ```bash
 xcodebuild \
-  -workspace "Wierd Parts.xcworkspace" \
+  -workspace "Weird Parts.xcworkspace" \
   -scheme "WiredPart-iOS-Stage9-Smokes" \
   -destination 'platform=iOS Simulator,name=iPad (A16)' \
   -only-testing:'Weird PartsUITests/Weird_Parts_IOSUITests/testWEI3295Stage8ReportsViewportHarness' \
@@ -74,7 +74,7 @@ Optional but recommended for Stage 6 coverage:
 
 ```bash
 xcodebuild \
-  -workspace "Wierd Parts.xcworkspace" \
+  -workspace "Weird Parts.xcworkspace" \
   -scheme "WiredPart-iOS-Stage9-Smokes" \
   -destination 'platform=iOS Simulator,name=WEI-2499 QA iPhone SE 375 26.4.1' \
   -only-testing:'Weird PartsUITests/Weird_Parts_IOSUITests/testWEI3144JobMaterialsWalkthroughEvidence' \
@@ -153,10 +153,10 @@ Commands run:
 | --- | --- | --- |
 | `git diff --check` | Pass | No whitespace errors in the Stage 9 docs diff |
 | `python3 scripts/guard-tracked-artifacts.py` | Pass | `No tracked Paperclip/Xcode runtime artifacts found.` |
-| `xcodebuild -list -workspace "Wierd Parts.xcworkspace"` | Pass | Workspace schemes are `GRDB-Package`, `WiredPart-iOS`, `WiredPart-iOS-Stage9-Smokes`, `WiredPart-macOS`, and `WiredPartCore` |
+| `xcodebuild -list -workspace "Weird Parts.xcworkspace"` | Pass | Workspace schemes are `GRDB-Package`, `WiredPart-iOS`, `WiredPart-iOS-Stage9-Smokes`, `WiredPart-macOS`, and `WiredPartCore` |
 | `cd core && swift test` | Inconclusive | Built successfully and started suites, then the SwiftPM test helper stopped producing output and was terminated after a bounded wait |
 | Focused `swift test --filter 'JobsServiceTests|OrdersServiceTests|ReportsServiceTests|Database Migration Tests'` | Inconclusive | Built immediately, then the same SwiftPM test helper no-output behavior recurred and was terminated |
-| `xcodebuild -workspace "Wierd Parts.xcworkspace" -scheme "WiredPart-iOS" -destination 'generic/platform=iOS Simulator' build` | Pass | Simulator app build succeeded; warnings were pre-existing deprecation/result-builder/concurrency warnings |
+| `xcodebuild -workspace "Weird Parts.xcworkspace" -scheme "WiredPart-iOS" -destination 'generic/platform=iOS Simulator' build` | Pass | Simulator app build succeeded; warnings were pre-existing deprecation/result-builder/concurrency warnings |
 | `xcodebuild ... -only-testing:Weird_Parts_IOSUITests/.../testWEI3295Stage8ReportsViewportHarness test` | Blocked | `Weird_Parts_IOSUITests` is not a member of the active `WiredPart-iOS` scheme/test plan |
 | WEI-3374 Xcode scheme repair | Pass | Added shared `WiredPart-iOS-Stage9-Smokes` scheme with `Stage9DeterministicUISmokes.xctestplan`; `xcodebuild -showTestPlans` reports `Stage9DeterministicUISmokes`, and `xcodebuild ... -scheme "WiredPart-iOS-Stage9-Smokes" ... build-for-testing` passed on the compact phone simulator |
 | Direct phone install/launch smoke | Pass | Installed and launched built app on `WEI-2499 QA iPhone SE 375 26.4.1` (`145DE584-9492-43FE-8C19-A9573D24DC7F`) with `-UITesting -UITestingWEI936AutoLogin -UITestingStage8Reports -UITestingStage8PreBilling`; `simctl launch` returned pid `24213`, and `ps` showed the process still running |
@@ -187,7 +187,7 @@ Commands and results:
 - `git diff --check`: PASS.
 - `python3 scripts/guard-tracked-artifacts.py`: PASS (`No tracked Paperclip/Xcode runtime artifacts found.`).
 - `cd core && swift test`: INCONCLUSIVE/NO-GO. Build completed and many suites started, but the run did not complete within the 600s bound and was terminated by the harness; log: `/tmp/wei-3389-stage9-smoke/swift-test.log`.
-- `xcodebuild -workspace "Wierd Parts.xcworkspace" -scheme "WiredPart-iOS" -destination 'generic/platform=iOS Simulator' build`: PASS (`** BUILD SUCCEEDED **`); log: `/tmp/wei-3389-stage9-smoke/xcodebuild-ios-build.log`.
+- `xcodebuild -workspace "Weird Parts.xcworkspace" -scheme "WiredPart-iOS" -destination 'generic/platform=iOS Simulator' build`: PASS (`** BUILD SUCCEEDED **`); log: `/tmp/wei-3389-stage9-smoke/xcodebuild-ios-build.log`.
 - Phone Stage 6+8 full Stage9 scheme on iPhone SE: FAIL. Result bundle: `/tmp/wei-3389-stage9-smoke/phone-stage9-smokes.xcresult`. `testWEI3144JobMaterialsWalkthroughEvidence` crashed/killed before completing.
 - Phone Stage 8 only on iPhone SE: FAIL. Result bundle: `/tmp/wei-3389-stage9-smoke/phone-stage8.xcresult`. Reports hub, Pre-Billing, Bookkeeper Export started, then `testWEI3295Stage8ReportsViewportHarness` crashed/killed during the Audit Summary discrepancy step.
 - Phone Stage 8 only on iPhone 13 mini: FAIL. Result bundle: `/tmp/wei-3389-stage9-smoke/phone13mini-stage8.xcresult`. Failed at `Weird_Parts_IOSUITests.swift:277` because Pre-Billing did not render seeded row `WEI-3295 Stage 8 Billing QA Job`.
@@ -224,7 +224,7 @@ Commands and results:
 - `git diff --check`: PASS.
 - `python3 scripts/guard-tracked-artifacts.py`: PASS.
 - `cd core && swift test`: PASS, 2106 tests in 62 suites after 69.336s.
-- `xcodebuild -workspace "Wierd Parts.xcworkspace" -scheme "WiredPart-iOS" -destination 'generic/platform=iOS Simulator' build`: PASS.
+- `xcodebuild -workspace "Weird Parts.xcworkspace" -scheme "WiredPart-iOS" -destination 'generic/platform=iOS Simulator' build`: PASS.
 - Phone Stage 9 deterministic smokes: PASS, 2 tests / 0 failures.
 - Tablet Stage 9 deterministic smokes: PASS, 2 tests / 0 failures.
 

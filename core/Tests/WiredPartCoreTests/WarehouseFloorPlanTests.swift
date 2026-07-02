@@ -806,4 +806,78 @@ struct WarehouseFloorPlanTests {
             "getAllPartConfidenceLevels must return the same total as 11 per-level calls")
         #expect(all.count >= 2, "both inserted records should be present")
     }
+
+    // MARK: - Grid Shrink Safety (issue #1240)
+
+    @Test("Grid shrink is rejected when a feature would fall out of bounds")
+    func testGridShrinkRejectedForOrphanedFeature() throws {
+        let env = try freshEnv()
+
+        let plan = try env.warehouse.createFloorPlan(name: "Shrink Guard", widthInches: 200, lengthInches: 200)
+        try env.warehouse.updateFloorPlanGrid(floorPlanId: plan.id!, rows: 4, cols: 4)
+        _ = try env.warehouse.addFloorFeature(
+            floorPlanId: plan.id!, featureType: "office", label: "Back office",
+            gridX: 3, gridY: 3, gridWidth: 1, gridHeight: 1
+        )
+
+        #expect(throws: WarehouseService.WarehouseError.gridShrinkWouldOrphanItems(features: 1, zones: 0)) {
+            try env.warehouse.updateFloorPlanGrid(floorPlanId: plan.id!, rows: 2, cols: 2)
+        }
+
+        // The plan must keep its previous, consistent grid.
+        let unchanged = try env.warehouse.getFloorPlan(id: plan.id!)
+        #expect(unchanged?.gridRows == 4)
+        #expect(unchanged?.gridCols == 4)
+    }
+
+    @Test("Grid shrink is rejected when a zone would fall out of bounds")
+    func testGridShrinkRejectedForOrphanedZone() throws {
+        let env = try freshEnv()
+
+        let plan = try env.warehouse.createFloorPlan(name: "Zone Guard", widthInches: 200, lengthInches: 200)
+        try env.warehouse.updateFloorPlanGrid(floorPlanId: plan.id!, rows: 8, cols: 8)
+        _ = try env.warehouse.addZone(
+            floorPlanId: plan.id!, zoneType: "staging", label: "Staging",
+            gridX: 4, gridY: 4, gridWidth: 4, gridHeight: 4
+        )
+
+        #expect(throws: WarehouseService.WarehouseError.gridShrinkWouldOrphanItems(features: 0, zones: 1)) {
+            try env.warehouse.updateFloorPlanGrid(floorPlanId: plan.id!, rows: 4, cols: 4)
+        }
+    }
+
+    @Test("Grid shrink succeeds when everything still fits")
+    func testGridShrinkAllowedWhenContentsFit() throws {
+        let env = try freshEnv()
+
+        let plan = try env.warehouse.createFloorPlan(name: "Safe Shrink", widthInches: 200, lengthInches: 200)
+        try env.warehouse.updateFloorPlanGrid(floorPlanId: plan.id!, rows: 8, cols: 8)
+        _ = try env.warehouse.addFloorFeature(
+            floorPlanId: plan.id!, featureType: "door", label: "Entry",
+            gridX: 0, gridY: 0, gridWidth: 1, gridHeight: 1
+        )
+
+        try env.warehouse.updateFloorPlanGrid(floorPlanId: plan.id!, rows: 4, cols: 4)
+        let shrunk = try env.warehouse.getFloorPlan(id: plan.id!)
+        #expect(shrunk?.gridRows == 4)
+        #expect(shrunk?.gridCols == 4)
+    }
+
+    @Test("Grid shrink ignores soft-deleted features")
+    func testGridShrinkIgnoresSoftDeletedFeatures() throws {
+        let env = try freshEnv()
+
+        let plan = try env.warehouse.createFloorPlan(name: "Deleted Guard", widthInches: 200, lengthInches: 200)
+        try env.warehouse.updateFloorPlanGrid(floorPlanId: plan.id!, rows: 4, cols: 4)
+        let feature = try env.warehouse.addFloorFeature(
+            floorPlanId: plan.id!, featureType: "office", label: "Old office",
+            gridX: 3, gridY: 3, gridWidth: 1, gridHeight: 1
+        )
+        try env.warehouse.deleteFloorFeature(id: feature.id!)
+
+        try env.warehouse.updateFloorPlanGrid(floorPlanId: plan.id!, rows: 2, cols: 2)
+        let shrunk = try env.warehouse.getFloorPlan(id: plan.id!)
+        #expect(shrunk?.gridRows == 2)
+        #expect(shrunk?.gridCols == 2)
+    }
 }
