@@ -33,6 +33,11 @@ struct IOSDashboardQRScannerPage: View {
     @State private var directionResult: WarehouseService.DirectionResult?
     @State private var userPositionAreaId: Int64?
 
+    // "While You're Here" quick audit (#75): low-confidence parts at the
+    // scanned area, offered as an opportunistic ~10-second count.
+    @State private var quickAuditCandidates: [WarehouseService.QuickAuditCandidate] = []
+    @State private var showQuickAuditPrompt = false
+
     // Manual entry
     @State private var manualCode = ""
     @State private var activeSheet: ActiveSheet?
@@ -40,10 +45,12 @@ struct IOSDashboardQRScannerPage: View {
     private enum ActiveSheet: Identifiable {
         case help
         case scannedDetail
+        case quickAudit
         var id: String {
             switch self {
             case .help: return "help"
             case .scannedDetail: return "scannedDetail"
+            case .quickAudit: return "quickAudit"
             }
         }
     }
@@ -130,6 +137,15 @@ struct IOSDashboardQRScannerPage: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+            case .quickAudit:
+                QuickAuditCountSheet(
+                    candidates: quickAuditCandidates,
+                    locationCode: currentLocationInfo?.fullLocationCode ?? ""
+                ) {
+                    quickAuditCandidates = []
+                }
+                .environmentObject(appCore)
+                .presentationDetents([.medium, .large])
             }
         }
         .onAppear {
@@ -264,6 +280,11 @@ struct IOSDashboardQRScannerPage: View {
                 // Location contents (warehouse locations)
                 if result.isLocation, let locInfo = currentLocationInfo {
                     locationContentsSection(locInfo)
+                }
+
+                // "While You're Here" quick audit prompt (#75)
+                if result.isLocation, showQuickAuditPrompt, !quickAuditCandidates.isEmpty {
+                    quickAuditPromptRow
                 }
 
                 // Direction guidance
@@ -600,6 +621,21 @@ struct IOSDashboardQRScannerPage: View {
                     }
                 }
 
+                // "While You're Here" quick audit (#75): being at this area is
+                // the trigger — offer a quick count of its low-confidence
+                // (≤85%) parts, at most once per area per day.
+                var auditCandidates: [WarehouseService.QuickAuditCandidate] = []
+                if let service = appCore.warehouseService,
+                   QuickAuditPromptStore.shouldPrompt(areaId: locationInfo.areaId, userId: appCore.currentUser?.id) {
+                    do {
+                        auditCandidates = try service.getQuickAuditCandidates(areaId: locationInfo.areaId)
+                    } catch {
+                        // Non-critical: the scan result still shows; log so the
+                        // failure is visible instead of silently swallowed.
+                        qrScannerLog.error("getQuickAuditCandidates failed (non-critical): \(error.localizedDescription, privacy: .public)")
+                    }
+                }
+
                 await MainActor.run {
                     currentLocationInfo = locationInfo
                     directionResult = directions
@@ -608,6 +644,18 @@ struct IOSDashboardQRScannerPage: View {
                     lastResult = scanData
                     isProcessing = false
                     if autoLock { isLocked = true }
+                    if !auditCandidates.isEmpty {
+                        quickAuditCandidates = auditCandidates
+                        showQuickAuditPrompt = true
+                        // Mark at display time: "only asks once per area per day".
+                        QuickAuditPromptStore.markPrompted(
+                            areaId: locationInfo.areaId,
+                            userId: appCore.currentUser?.id
+                        )
+                    } else {
+                        quickAuditCandidates = []
+                        showQuickAuditPrompt = false
+                    }
                 }
                 return
             }
@@ -637,6 +685,8 @@ struct IOSDashboardQRScannerPage: View {
             await MainActor.run {
                 currentLocationInfo = nil
                 directionResult = nil
+                quickAuditCandidates = []
+                showQuickAuditPrompt = false
                 currentResult = scanData
                 lastResult = scanData // Remember it
                 isProcessing = false
@@ -786,6 +836,53 @@ struct IOSDashboardQRScannerPage: View {
         }
     }
 
+    // MARK: - "While You're Here" Quick Audit (#75)
+
+    /// Opportunistic quick-count offer shown after scanning a location whose
+    /// parts include low-confidence (≤85%) entries. Asked at most once per
+    /// area per day (gated by `QuickAuditPromptStore`).
+    @ViewBuilder
+    private var quickAuditPromptRow: some View {
+        HStack(spacing: DS.Space.sm) {
+            Image(systemName: "checklist")
+                .foregroundStyle(.orange)
+                .accessibilityHidden(true)
+
+            Text("\(quickAuditCandidates.count) part\(quickAuditCandidates.count == 1 ? "" : "s") here need\(quickAuditCandidates.count == 1 ? "s" : "") a quick count.")
+                .font(.caption)
+                .fontWeight(.medium)
+
+            Spacer()
+
+            Button("Count Now") {
+                showQuickAuditPrompt = false
+                isLocked = true
+                activeSheet = .quickAudit
+            }
+            .font(.caption)
+            .fontWeight(.semibold)
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .tint(.orange)
+            .frame(minHeight: 44)
+
+            Button("Not Now") {
+                showQuickAuditPrompt = false
+                quickAuditCandidates = []
+            }
+            .font(.caption)
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .frame(minHeight: 44)
+        }
+        .padding(.horizontal, DS.Space.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("quick-audit-prompt")
+    }
+
     // MARK: - Direction Guidance
 
     @ViewBuilder
@@ -873,4 +970,178 @@ private struct StockLocation {
 private struct DetailField {
     let key: String
     let value: String
+}
+
+// MARK: - "While You're Here" Quick Audit (#75)
+
+/// Once-per-area-per-day gate for the "While You're Here" quick-audit prompt
+/// (issue #75). Stored in UserDefaults keyed per user so switching operators
+/// on a shared device does not suppress each other's prompts.
+enum QuickAuditPromptStore {
+    static func storageKey(userId: Int64?) -> String {
+        guard let userId else { return "quickAuditPrompts_anonymous" }
+        return "quickAuditPrompts_user_\(userId)"
+    }
+
+    private static func todayString() -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: Date())
+    }
+
+    /// True when the prompt has not been shown for this area today.
+    static func shouldPrompt(areaId: Int64, userId: Int64?) -> Bool {
+        let saved = (UserDefaults.standard.dictionary(forKey: storageKey(userId: userId)) as? [String: String]) ?? [:]
+        return saved["\(areaId)"] != todayString()
+    }
+
+    /// Record that the prompt was shown for this area today. Stale entries
+    /// from previous days are dropped so the dictionary stays small.
+    static func markPrompted(areaId: Int64, userId: Int64?) {
+        let today = todayString()
+        var saved = (UserDefaults.standard.dictionary(forKey: storageKey(userId: userId)) as? [String: String]) ?? [:]
+        saved = saved.filter { $0.value == today }
+        saved["\(areaId)"] = today
+        UserDefaults.standard.set(saved, forKey: storageKey(userId: userId))
+    }
+}
+
+/// Quick-count entry sheet for the "While You're Here" audit (#75).
+///
+/// Lists the low-confidence parts at the scanned area with a count field
+/// each. System counts stay hidden while counting (audit rule). Submitting
+/// records each entered count via `recordQuickVerificationCount`, which
+/// resets confidence to 100% and clears the movement decay factor.
+private struct QuickAuditCountSheet: View {
+    @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
+
+    let candidates: [WarehouseService.QuickAuditCandidate]
+    let locationCode: String
+    let onFinished: () -> Void
+
+    @State private var countsText: [Int64: String] = [:]
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+
+    private var enteredCounts: [(candidate: WarehouseService.QuickAuditCandidate, qty: Int)] {
+        candidates.compactMap { candidate in
+            guard let text = countsText[candidate.partId]?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !text.isEmpty, let qty = Int(text), qty >= 0 else { return nil }
+            return (candidate, qty)
+        }
+    }
+
+    private var hasInvalidEntry: Bool {
+        candidates.contains { candidate in
+            guard let text = countsText[candidate.partId]?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !text.isEmpty else { return false }
+            guard let qty = Int(text) else { return true }
+            return qty < 0
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text("Count what you physically see for each part. Leave a part blank to skip it.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    if !locationCode.isEmpty {
+                        Text("Quick count at \(locationCode)")
+                    } else {
+                        Text("Quick count")
+                    }
+                }
+
+                Section("Parts") {
+                    ForEach(candidates) { candidate in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(candidate.partName)
+                                    .font(.subheadline)
+                                if let code = candidate.partCode, !code.isEmpty {
+                                    Text(code)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                            // Audit rule: the system count stays hidden while
+                            // the user counts, so it is deliberately not shown.
+                            TextField("Count", text: Binding(
+                                get: { countsText[candidate.partId] ?? "" },
+                                set: { countsText[candidate.partId] = $0 }
+                            ))
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 80, height: 44)
+                            .textFieldStyle(.roundedBorder)
+                            .accessibilityLabel("Count for \(candidate.partName)")
+                        }
+                    }
+                }
+
+                if let errorMessage {
+                    Section {
+                        Text(errorMessage)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle("Quick Audit")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Button("Submit") { submit() }
+                            .fontWeight(.semibold)
+                            .disabled(enteredCounts.isEmpty || hasInvalidEntry)
+                    }
+                }
+            }
+            .interactiveDismissDisabled(isSaving)
+        }
+    }
+
+    private func submit() {
+        guard let service = appCore.warehouseService,
+              let userId = appCore.currentUser?.id else {
+            errorMessage = "Service or user unavailable."
+            return
+        }
+        guard hasInvalidEntry == false else {
+            errorMessage = "Counts must be whole numbers of zero or more."
+            return
+        }
+
+        isSaving = true
+        errorMessage = nil
+        do {
+            for entry in enteredCounts {
+                _ = try service.recordQuickVerificationCount(
+                    partId: entry.candidate.partId,
+                    areaId: entry.candidate.areaId,
+                    countedQuantity: entry.qty,
+                    verifiedBy: userId
+                )
+            }
+            isSaving = false
+            dismiss()
+            onFinished()
+        } catch {
+            isSaving = false
+            errorMessage = userFriendlyError(error, context: "save quick audit counts")
+        }
+    }
 }
