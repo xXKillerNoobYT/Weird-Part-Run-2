@@ -65,7 +65,7 @@ struct IOSVerificationSubmitSheet: View {
                     } else {
                         Button("Submit") { submit() }
                             .fontWeight(.semibold)
-                            .disabled(countInput.trimmingCharacters(in: .whitespaces).isEmpty)
+                            .disabled(countInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
             }
@@ -77,7 +77,7 @@ struct IOSVerificationSubmitSheet: View {
         guard let service = appCore.warehouseService,
               let userId = appCore.currentUser?.id,
               let assignmentId = assignment.id,
-              let qty = Int(countInput.trimmingCharacters(in: .whitespaces)) else {
+              let qty = Int(countInput.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             errorMessage = "Enter a valid count before submitting."
             return
         }

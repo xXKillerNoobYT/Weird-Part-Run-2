@@ -15,7 +15,7 @@ struct BootstrapView: View {
     @State private var isLoading = false
 
     private var isValid: Bool {
-        !displayName.trimmingCharacters(in: .whitespaces).isEmpty
+        !displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && pin.count >= 4
             && pin == confirmPin
     }
@@ -101,7 +101,7 @@ struct BootstrapView: View {
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(200))
             let result = await appCore.seedFirstAdmin(
-                displayName: displayName.trimmingCharacters(in: .whitespaces),
+                displayName: displayName.trimmingCharacters(in: .whitespacesAndNewlines),
                 pin: pin
             )
             isLoading = false

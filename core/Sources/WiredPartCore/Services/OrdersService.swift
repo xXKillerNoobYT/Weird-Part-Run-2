@@ -1083,7 +1083,10 @@ public final class OrdersService: Sendable {
         holdReason: String,
         userId: Int64
     ) throws -> [Int64: Int64] {
-        let trimmedReason = holdReason.trimmingCharacters(in: .whitespaces)
+        // .whitespacesAndNewlines (via trimmedRequiredText) so a newline-only
+        // reason cannot pass the required-field guard and persist as a
+        // blank-looking hold reason / chat message (issue #1166 class).
+        let trimmedReason = holdReason.trimmedRequiredText
         guard !trimmedReason.isEmpty else {
             throw OrdersError.requiredFieldEmpty("holdReason")
         }
@@ -1455,7 +1458,8 @@ public final class OrdersService: Sendable {
                         JOIN suppliers s ON s.id = po.supplier_id AND s.deleted_at IS NULL
                         LEFT JOIN parts p ON p.id = jl.part_id AND p.deleted_at IS NULL
                         LEFT JOIN brands b ON b.id = p.brand_id AND b.deleted_at IS NULL
-                        WHERE (b.name IS NULL OR b.name = 'General')
+                        WHERE pli.deleted_at IS NULL
+                          AND (b.name IS NULL OR b.name = 'General')
                           AND (jpo.job_id || ':' || jl.part_id) IN (\(lockPlaceholders))
                         ORDER BY COALESCE(pli.created_at, po.created_at) DESC, pli.id DESC
                         """, arguments: StatementArguments(Array(genericJobPartKeys)))

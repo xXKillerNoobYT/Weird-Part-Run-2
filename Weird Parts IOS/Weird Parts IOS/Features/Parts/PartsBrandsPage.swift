@@ -382,7 +382,7 @@ private struct BrandFormSheet: View {
                             Text("Save")
                         }
                     }
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
                 }
             }
             .onAppear {
@@ -438,7 +438,7 @@ private struct BrandFormSheet: View {
     }
 
     private func save() async throws {
-        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { return }
         guard let service = appCore.partsService else {
             saveError = "Parts service not available"

@@ -23,15 +23,15 @@ struct IOSCreateVehicleSheet: View {
     private let vehicleTypes = ["truck", "van", "car", "suv", "trailer", "other"]
 
     private var isDirty: Bool {
-        !vehicleNumber.trimmingCharacters(in: .whitespaces).isEmpty ||
-        !vehicleName.trimmingCharacters(in: .whitespaces).isEmpty ||
+        !vehicleNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !vehicleName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
         vehicleType != "truck" ||
-        !make.trimmingCharacters(in: .whitespaces).isEmpty ||
-        !model.trimmingCharacters(in: .whitespaces).isEmpty ||
-        !yearText.trimmingCharacters(in: .whitespaces).isEmpty ||
-        !color.trimmingCharacters(in: .whitespaces).isEmpty ||
-        !vin.trimmingCharacters(in: .whitespaces).isEmpty ||
-        !licensePlate.trimmingCharacters(in: .whitespaces).isEmpty ||
+        !make.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !yearText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !color.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !vin.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !licensePlate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
         !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
@@ -147,8 +147,8 @@ struct IOSCreateVehicleSheet: View {
         do {
             _ = try fleet.createVehicle(
                 actorId: actorId,
-                vehicleNumber: vehicleNumber.trimmingCharacters(in: .whitespaces),
-                vehicleName: vehicleName.trimmingCharacters(in: .whitespaces),
+                vehicleNumber: vehicleNumber.trimmingCharacters(in: .whitespacesAndNewlines),
+                vehicleName: vehicleName.trimmingCharacters(in: .whitespacesAndNewlines),
                 vehicleType: vehicleType,
                 make: make.isEmpty ? nil : make,
                 model: model.isEmpty ? nil : model,

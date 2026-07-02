@@ -447,7 +447,7 @@ private struct AddCustomerContactSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(firstName.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
+                        .disabled(firstName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
                 }
             }
         }
@@ -464,8 +464,8 @@ private struct AddCustomerContactSheet: View {
             try service.createContact(
                 entityType: "customer",
                 entityId: customerId,
-                firstName: firstName.trimmingCharacters(in: .whitespaces),
-                lastName: lastName.trimmingCharacters(in: .whitespaces),
+                firstName: firstName.trimmingCharacters(in: .whitespacesAndNewlines),
+                lastName: lastName.trimmingCharacters(in: .whitespacesAndNewlines),
                 role: role.isEmpty ? "contact" : role,
                 phone: phone,
                 email: email.isEmpty ? nil : email
@@ -526,7 +526,7 @@ private struct AddCommunicationSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(content.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
+                        .disabled(content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
                 }
             }
         }
@@ -547,7 +547,7 @@ private struct AddCommunicationSheet: View {
             try service.addCommunicationEntry(
                 customerId: customerId,
                 commType: commType,
-                content: content.trimmingCharacters(in: .whitespaces),
+                content: content.trimmingCharacters(in: .whitespacesAndNewlines),
                 createdBy: userId
             )
             dismiss()

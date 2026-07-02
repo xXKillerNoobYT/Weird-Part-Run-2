@@ -438,6 +438,10 @@ struct IOSScheduleConfigPage: View {
             return
         }
 
+        // Clear any prior failure so a successful retry doesn't leave a stale
+        // red error section (the sub-loads below re-set it if they fail).
+        loadErrorMsg = nil
+
         // Load settings
         do {
             let s = try settings.getSettingsByCategory("scheduling")
@@ -464,15 +468,24 @@ struct IOSScheduleConfigPage: View {
             loadErrorMsg = userFriendlyError(error, context: "load settings")
         }
 
-        // Load shift templates
+        // Load shift templates + holidays — surface failures via loadErrorMsg so an
+        // admin can tell "load failed" apart from "no templates configured" (#1335).
         if let svc = appCore.schedulingService {
-            shiftTemplates = (try? svc.getShiftTemplates()) ?? []
-            holidays = (try? svc.getHolidays()) ?? []
+            do {
+                shiftTemplates = try svc.getShiftTemplates()
+                holidays = try svc.getHolidays()
+            } catch {
+                loadErrorMsg = userFriendlyError(error, context: "load shift templates and holidays")
+            }
         }
 
-        // Load hats for supervisor picker
+        // Load hats for supervisor picker — same error surfacing (#1335).
         if let people = appCore.peopleService {
-            allHats = (try? people.listHats()) ?? []
+            do {
+                allHats = try people.listHats()
+            } catch {
+                loadErrorMsg = userFriendlyError(error, context: "load supervisor hats")
+            }
         }
     }
 
@@ -659,11 +672,12 @@ struct ShiftTemplateEditSheet: View {
     @State private var baselineSignature = ""
 
     /// Signature over every persisted field so edits to any of them —
-    /// not just the name — mark the sheet dirty (issue #1248).
+    /// not just the name — mark the sheet dirty (issue #1248). Name is
+    /// trimmed with .whitespacesAndNewlines to match save validation (#1337).
     private var formSignature: String {
         let days = dayOrder.filter { selectedDays.contains($0) }.joined(separator: ",")
         return [
-            name.trimmingCharacters(in: .whitespaces),
+            name.trimmingCharacters(in: .whitespacesAndNewlines),
             String(selectedHatId),
             days,
             Formatters.timeHHmmFormatter.string(from: startTime),
@@ -772,7 +786,7 @@ struct ShiftTemplateEditSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .scrollDismissesKeyboard(.interactively)
@@ -822,7 +836,7 @@ struct ShiftTemplateEditSheet: View {
 
         if onSave(TemplateData(
             existingId: existing?.id,
-            name: name.trimmingCharacters(in: .whitespaces),
+            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             hatId: selectedHatId == 0 ? nil : selectedHatId,
             workDays: daysJSON,
             startTime: Formatters.timeHHmmFormatter.string(from: startTime),
@@ -864,10 +878,11 @@ struct HolidayEditSheet: View {
     @State private var baselineSignature = ""
 
     /// Signature over every persisted field so edits to any of them —
-    /// not just the name — mark the sheet dirty (issue #1248).
+    /// not just the name — mark the sheet dirty (issue #1248). Name is
+    /// trimmed with .whitespacesAndNewlines to match save validation (#1337).
     private var formSignature: String {
         [
-            name.trimmingCharacters(in: .whitespaces),
+            name.trimmingCharacters(in: .whitespacesAndNewlines),
             Formatters.localDateFormatter.string(from: selectedDate),
             String(isPaid),
             String(isRecurring)
@@ -920,7 +935,7 @@ struct HolidayEditSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .onAppear { populateFromExisting() }
@@ -956,7 +971,7 @@ struct HolidayEditSheet: View {
     private func save() {
         if onSave(HolidayData(
             existingId: existing?.id,
-            name: name.trimmingCharacters(in: .whitespaces),
+            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             date: Formatters.localDateFormatter.string(from: selectedDate),
             isPaid: isPaid,
             isRecurring: isRecurring

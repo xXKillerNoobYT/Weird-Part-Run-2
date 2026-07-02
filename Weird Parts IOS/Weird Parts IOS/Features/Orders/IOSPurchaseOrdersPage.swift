@@ -122,7 +122,7 @@ struct IOSPurchaseOrdersPage: View {
                 poToCancel = nil
             }
             Button(poToCancel?.status == "draft" ? "Delete" : "Cancel PO", role: .destructive) {
-                guard !cancelReason.trimmingCharacters(in: .whitespaces).isEmpty else {
+                guard !cancelReason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                     actionMessage = "Reason is required."
                     return
                 }

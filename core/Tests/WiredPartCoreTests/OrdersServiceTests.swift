@@ -574,6 +574,39 @@ struct OrdersServiceTests {
         #expect(item.suppliers.map(\.id) == [lockedSupplierId])
     }
 
+    @Test("Generic supplier lock ignores soft-deleted PO line items")
+    func testGenericProcurementDemandIgnoresSoftDeletedPOLineLock() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Generic Bracket", categoryId: catId)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-GEN-3", name: "Stale Lock Job")
+        let priorSupplierId = try E2ETestHelpers.seedSupplier(env, name: "Stale Supplier")
+        let otherSupplierId = try E2ETestHelpers.seedSupplier(env, name: "Fresh Supplier")
+        _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: priorSupplierId, costPrice: 2.00)
+        _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: otherSupplierId, costPrice: 1.00)
+        let priorLineId = try approvedJPOLine(env, jobId: jobId, partId: partId, quantity: 2)
+        _ = try env.orders.generatePOsFromProcurement(items: [
+            OrdersService.ProcurementGenerateItem(partId: partId, supplierId: priorSupplierId, quantity: 2, jpoLineIds: [priorLineId])
+        ])
+        _ = try approvedJPOLine(env, jobId: jobId, partId: partId, quantity: 5)
+
+        // Lock is active while the prior PO line is live
+        let locked = try #require(env.orders.getProcurementDemand().first { $0.partId == partId })
+        #expect(locked.lockedSupplierId == priorSupplierId)
+
+        // Soft-delete the prior PO line: the stale lock must not dictate the supplier
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE po_line_items SET deleted_at = datetime('now') WHERE jpo_line_id = ?",
+                arguments: [priorLineId]
+            )
+        }
+
+        let item = try #require(env.orders.getProcurementDemand().first { $0.partId == partId })
+        #expect(item.lockedSupplierId == nil)
+        #expect(Set(item.suppliers.map(\.id)) == Set([priorSupplierId, otherSupplierId]))
+    }
+
     @Test("Branded procurement demand remains freely selectable despite prior PO history")
     func testBrandedProcurementDemandDoesNotLockToPriorSupplier() throws {
         let env = try E2ETestHelpers.setUp()
@@ -1458,6 +1491,48 @@ struct OrdersServiceTests {
             #expect(channelCount == 2)
             #expect(messageCount == 2)
         }
+    }
+
+    @Test("bulkHoldJPOLinesWithChat rejects whitespace- and newline-only hold reasons")
+    func testBulkHoldJPOLinesWithChatRejectsBlankReasons() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
+        let lineId = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId, quantity: 1, notes: nil)
+
+        // Newline-only reason must fail the required-field guard (issue #1166
+        // class: .whitespaces trimming let "\n" through and persisted a
+        // blank-looking hold reason + chat message).
+        for blankReason in ["", "   ", "\n", " \n\t "] {
+            #expect(throws: OrdersService.OrdersError.requiredFieldEmpty("holdReason")) {
+                try env.orders.bulkHoldJPOLinesWithChat(
+                    lineIds: [lineId],
+                    holdReason: blankReason,
+                    userId: env.adminUserId
+                )
+            }
+        }
+
+        // Line must be untouched after the rejected attempts.
+        let status = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT line_status FROM jpo_line_items WHERE id = ?", arguments: [lineId])
+        }
+        #expect(status == "pending")
+
+        // A reason that is blank only after trimming newlines persists trimmed.
+        let channels = try env.orders.bulkHoldJPOLinesWithChat(
+            lineIds: [lineId],
+            holdReason: "\nWaiting on voltage spec\n",
+            userId: env.adminUserId
+        )
+        #expect(channels.count == 1)
+        let storedReason = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT hold_reason FROM jpo_line_items WHERE id = ?", arguments: [lineId])
+        }
+        #expect(storedReason == "Waiting on voltage spec")
     }
 
     // MARK: - generatePOsFromProcurement

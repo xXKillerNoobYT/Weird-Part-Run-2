@@ -717,8 +717,9 @@ struct IOSEmployeeDetailPage: View {
         }
         do {
             try service.toggleHatAssignment(employeeId: employeeId, hatId: hatId, assign: assign)
-            // Reload hats
-            allHats = (try? service.getAllHatsWithAssignment(employeeId: employeeId)) ?? []
+            // Reload hats — a reload failure now surfaces via loadError and keeps
+            // the previous list instead of showing zero hats assigned (#1335).
+            allHats = try service.getAllHatsWithAssignment(employeeId: employeeId)
         } catch {
             loadError = userFriendlyError(error, context: "update hat")
         }
@@ -851,7 +852,7 @@ private struct EditEmployeeContactSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(isSaving || displayName.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(isSaving || displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .alert("Discard changes?", isPresented: $showDiscardAlert) {
@@ -866,7 +867,7 @@ private struct EditEmployeeContactSheet: View {
 
     private func save() {
         isSaving = true
-        let trimmedName = displayName.trimmingCharacters(in: .whitespaces)
+        let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
             try onSave(trimmedName, email, phone)
             dismiss()
@@ -955,7 +956,7 @@ private struct AddCertificationSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(isSaving || certType.trimmingCharacters(in: .whitespaces).isEmpty || certName.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(isSaving || certType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || certName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .alert("Discard changes?", isPresented: $showDiscardAlert) {
@@ -972,10 +973,10 @@ private struct AddCertificationSheet: View {
         isSaving = true
         errorMessage = nil
 
-        let trimmedType = certType.trimmingCharacters(in: .whitespaces)
-        let trimmedName = certName.trimmingCharacters(in: .whitespaces)
-        let trimmedAuthority = issuingAuthority.trimmingCharacters(in: .whitespaces)
-        let trimmedNumber = certNumber.trimmingCharacters(in: .whitespaces)
+        let trimmedType = certType.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedName = certName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedAuthority = issuingAuthority.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedNumber = certNumber.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
 
         do {
@@ -1051,7 +1052,7 @@ private struct AddSkillSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(isSaving || skillName.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(isSaving || skillName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .alert("Discard changes?", isPresented: $showDiscardAlert) {
@@ -1067,8 +1068,8 @@ private struct AddSkillSheet: View {
     private func save() {
         isSaving = true
         errorMessage = nil
-        let trimmedName = skillName.trimmingCharacters(in: .whitespaces)
-        let trimmedYears = yearsExperience.trimmingCharacters(in: .whitespaces)
+        let trimmedName = skillName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedYears = yearsExperience.trimmingCharacters(in: .whitespacesAndNewlines)
         let parsedYears: Double?
 
         if trimmedYears.isEmpty {

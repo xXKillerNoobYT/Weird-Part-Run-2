@@ -1239,7 +1239,9 @@ public final class FleetService: Sendable {
                                JOIN tools t ON tc.tool_id = t.id
                                WHERE tc.checked_out_by = ?
                                  AND tc.checked_in_at IS NULL
+                                 AND tc.deleted_at IS NULL
                                  AND t.deleted_at IS NULL
+                                 AND t.is_active = 1
                            ) AS tool_count,
                            (
                                SELECT COALESCE(SUM(quantity), 0)
@@ -1406,7 +1408,9 @@ public final class FleetService: Sendable {
                     SELECT COUNT(*) FROM tool_checkouts tc
                     JOIN tools t ON tc.tool_id = t.id
                     WHERE tc.checked_out_by = ? AND tc.checked_in_at IS NULL
+                    AND tc.deleted_at IS NULL
                     AND t.deleted_at IS NULL
+                    AND t.is_active = 1
                     """, arguments: [userId]) ?? 0
 
                 // Truck stock (permanent parts)
@@ -1563,9 +1567,10 @@ public final class FleetService: Sendable {
                            COALESCE(tc.checkout_condition, 'good') AS condition,
                            tc.checked_out_at
                     FROM tool_checkouts tc
-                    JOIN tools t ON tc.tool_id = t.id
+                    JOIN tools t ON tc.tool_id = t.id AND t.deleted_at IS NULL AND t.is_active = 1
                     LEFT JOIN users u ON tc.checked_out_by = u.id AND u.deleted_at IS NULL
                     WHERE tc.checked_in_at IS NULL
+                    AND tc.deleted_at IS NULL
                     AND tc.checked_out_by IN (
                         SELECT user_id FROM vehicle_assignments
                         WHERE vehicle_id = ? AND is_active = 1 AND deleted_at IS NULL

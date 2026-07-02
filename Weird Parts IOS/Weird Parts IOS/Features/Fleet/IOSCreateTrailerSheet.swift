@@ -16,7 +16,7 @@ struct IOSCreateTrailerSheet: View {
     private let trailerTypes = ["flatbed", "enclosed", "utility", "dump", "lowboy", "other"]
 
     private var isDirty: Bool {
-        !trailerNumber.trimmingCharacters(in: .whitespaces).isEmpty ||
+        !trailerNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
         trailerType != "flatbed" ||
         !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -91,7 +91,7 @@ struct IOSCreateTrailerSheet: View {
         do {
             _ = try fleet.createTrailer(
                 actorId: actorId,
-                trailerNumber: trailerNumber.trimmingCharacters(in: .whitespaces),
+                trailerNumber: trailerNumber.trimmingCharacters(in: .whitespacesAndNewlines),
                 trailerType: trailerType,
                 notes: notes.isEmpty ? nil : notes
             )

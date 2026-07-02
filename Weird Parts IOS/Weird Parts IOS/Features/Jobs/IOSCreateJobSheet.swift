@@ -52,8 +52,42 @@ struct IOSCreateJobSheet: View {
     private let priorities = ["low", "normal", "high", "urgent"]
 
     private var isValid: Bool {
-        !jobNumber.trimmingCharacters(in: .whitespaces).isEmpty
-            && !jobName.trimmingCharacters(in: .whitespaces).isEmpty
+        !jobNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !jobName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && estimatedHoursValidationMessage == nil
+            && budgetLimitValidationMessage == nil
+    }
+
+    /// Live validation for Estimated Hours: optional, but when present it must
+    /// parse and be positive so unparseable text is never silently dropped.
+    private var estimatedHoursValidationMessage: String? {
+        positiveNumberValidationMessage(for: estimatedHours, label: "Estimated Hours")
+    }
+
+    /// Live validation for Budget Limit: same rule, so budget alerts can't be
+    /// silently disabled by a typo or a negative amount.
+    private var budgetLimitValidationMessage: String? {
+        positiveNumberValidationMessage(for: budgetLimit, label: "Budget Limit")
+    }
+
+    private func positiveNumberValidationMessage(for value: String, label: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard let number = Double(trimmed), number.isFinite else {
+            return "\(label) must be a plain number, like 8 or 8.5. Clear the field to remove it."
+        }
+        guard number > 0 else {
+            return "\(label) must be greater than zero. Clear the field to remove it."
+        }
+        return nil
+    }
+
+    /// Parses an optional positive numeric field for persistence.
+    /// Only called after validation passes, so nil here always means "not set".
+    private func parsedPositiveDouble(_ value: String) -> Double? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let number = Double(trimmed), number.isFinite, number > 0 else { return nil }
+        return number
     }
 
     var body: some View {
@@ -139,8 +173,18 @@ struct IOSCreateJobSheet: View {
                 Section("Budget") {
                     TextField("Estimated Hours", text: $estimatedHours)
                         .keyboardType(.decimalPad)
+                    if let message = estimatedHoursValidationMessage {
+                        Label(message, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                    }
                     TextField("Budget Limit ($)", text: $budgetLimit)
                         .keyboardType(.decimalPad)
+                    if let message = budgetLimitValidationMessage {
+                        Label(message, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                    }
                 }
 
                 // Notes
@@ -199,6 +243,12 @@ struct IOSCreateJobSheet: View {
             errorMessage = "Service not available"
             return
         }
+        // Backstop for the disabled Create button: never persist a job with
+        // malformed or non-positive numeric budget fields.
+        if let message = estimatedHoursValidationMessage ?? budgetLimitValidationMessage {
+            errorMessage = message
+            return
+        }
         isSaving = true
         errorMessage = nil
 
@@ -207,8 +257,8 @@ struct IOSCreateJobSheet: View {
 
         do {
             let jobId = try service.createJob(
-                jobNumber: jobNumber.trimmingCharacters(in: .whitespaces),
-                jobName: jobName.trimmingCharacters(in: .whitespaces),
+                jobNumber: jobNumber.trimmingCharacters(in: .whitespacesAndNewlines),
+                jobName: jobName.trimmingCharacters(in: .whitespacesAndNewlines),
                 customerName: customerName.isEmpty ? nil : customerName,
                 addressLine1: addressLine1.isEmpty ? nil : addressLine1,
                 city: city.isEmpty ? nil : city,
@@ -217,11 +267,11 @@ struct IOSCreateJobSheet: View {
                 status: status,
                 priority: priority,
                 jobType: jobType,
-                estimatedHours: Double(estimatedHours),
+                estimatedHours: parsedPositiveDouble(estimatedHours),
                 startDate: hasStartDate ? dateFormatter.string(from: startDate) : nil,
                 dueDate: hasDueDate ? dateFormatter.string(from: dueDate) : nil,
                 notes: notes.isEmpty ? nil : notes,
-                budgetLimit: Double(budgetLimit),
+                budgetLimit: parsedPositiveDouble(budgetLimit),
                 createdBy: appCore.currentUser?.id,
                 jobClassification: jobClassification
             )

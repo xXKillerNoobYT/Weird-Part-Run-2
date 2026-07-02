@@ -230,7 +230,7 @@ private struct AddCustomerSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .alert("Discard changes?", isPresented: $showDiscardAlert) {
@@ -250,7 +250,7 @@ private struct AddCustomerSheet: View {
         }
         do {
             try service.createCustomer(
-                name: name.trimmingCharacters(in: .whitespaces),
+                name: name.trimmingCharacters(in: .whitespacesAndNewlines),
                 companyName: companyName.isEmpty ? nil : companyName,
                 email: email.isEmpty ? nil : email,
                 phone: phone.isEmpty ? nil : phone,

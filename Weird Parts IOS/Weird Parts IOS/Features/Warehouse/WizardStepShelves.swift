@@ -204,7 +204,7 @@ struct AddLevelSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") { save() }
-                        .disabled(levelCode.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(levelCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
@@ -212,10 +212,10 @@ struct AddLevelSheet: View {
 
     private func save() {
         do {
-            let name = levelName.trimmingCharacters(in: .whitespaces).isEmpty ? nil : levelName.trimmingCharacters(in: .whitespaces)
+            let name = levelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : levelName.trimmingCharacters(in: .whitespacesAndNewlines)
             _ = try appCore.warehouseService?.addStorageLevel(
                 unitId: unitId,
-                levelCode: levelCode.trimmingCharacters(in: .whitespaces),
+                levelCode: levelCode.trimmingCharacters(in: .whitespacesAndNewlines),
                 levelName: name
             )
             dismiss()

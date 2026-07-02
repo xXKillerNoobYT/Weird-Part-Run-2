@@ -271,7 +271,7 @@ struct IOSEscalationTimeline: View {
             actionError = "Service unavailable"
             return
         }
-        let reason = pushBackReason.trimmingCharacters(in: .whitespaces)
+        let reason = pushBackReason.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !reason.isEmpty else {
             actionError = "Push back requires a reason"
             return
@@ -328,7 +328,7 @@ private struct PushBackSheet: View {
             }
             .navigationTitle("Push Back")
             .navigationBarTitleDisplayMode(.inline)
-            .interactiveDismissDisabled(!reason.trimmingCharacters(in: .whitespaces).isEmpty || isSubmitting)
+            .interactiveDismissDisabled(!reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
             .scrollDismissesKeyboard(.immediately)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -340,7 +340,7 @@ private struct PushBackSheet: View {
                         onSubmit()
                         isSubmitting = false
                     }
-                    .disabled(reason.trimmingCharacters(in: .whitespaces).isEmpty || isSubmitting)
+                    .disabled(reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
                 }
             }
         }

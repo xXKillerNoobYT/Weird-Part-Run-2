@@ -109,7 +109,7 @@ struct IOSJPODetailPage: View {
             TextField("Reason (required)", text: $rejectReason)
             Button("Cancel", role: .cancel) { rejectReason = "" }
             Button("Reject", role: .destructive) {
-                guard !rejectReason.trimmingCharacters(in: .whitespaces).isEmpty else {
+                guard !rejectReason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                     actionError = "Rejection reason is required."
                     return
                 }
@@ -128,7 +128,7 @@ struct IOSJPODetailPage: View {
             TextField("Your question...", text: $holdQuestion)
             Button("Cancel", role: .cancel) { holdQuestion = "" }
             Button("Hold + Send Question") {
-                guard !holdQuestion.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+                guard !holdQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
                 createHoldWithChat()
             }
         } message: {
@@ -235,11 +235,11 @@ struct IOSJPODetailPage: View {
                         Button("Hold All") {
                             Task { await bulkHoldAllItems() }
                         }
-                        .disabled(bulkHoldReason.trimmingCharacters(in: .whitespaces).isEmpty || isBulkHolding)
+                        .disabled(bulkHoldReason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isBulkHolding)
                     }
                 }
                 .scrollDismissesKeyboard(.interactively)
-                .interactiveDismissDisabled(!bulkHoldReason.trimmingCharacters(in: .whitespaces).isEmpty || isBulkHolding)
+                .interactiveDismissDisabled(!bulkHoldReason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isBulkHolding)
             }
         case .help:
             PageHelpSheet(
@@ -925,7 +925,7 @@ struct IOSJPODetailPage: View {
             return
         }
 
-        let reason = bulkHoldReason.trimmingCharacters(in: .whitespaces)
+        let reason = bulkHoldReason.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !reason.isEmpty else { return }
 
         isBulkHolding = true

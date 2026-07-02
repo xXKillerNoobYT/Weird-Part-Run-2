@@ -277,7 +277,7 @@ struct DevicePairingView: View {
             // Pair with the shop — stores address and keys
             try await syncManager.pairWithShop(
                 shopAddress: shop.address,
-                pairingCode: pairingCode.trimmingCharacters(in: .whitespaces)
+                pairingCode: pairingCode.trimmingCharacters(in: .whitespacesAndNewlines)
             )
 
             // Navigate to the sync waiting screen for initial download

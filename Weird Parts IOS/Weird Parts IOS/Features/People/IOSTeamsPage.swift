@@ -304,7 +304,7 @@ private struct AddTeamSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(teamName.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(teamName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .alert("Discard changes?", isPresented: $showDiscardAlert) {
@@ -324,7 +324,7 @@ private struct AddTeamSheet: View {
         }
         do {
             try service.createTeam(
-                name: teamName.trimmingCharacters(in: .whitespaces),
+                name: teamName.trimmingCharacters(in: .whitespacesAndNewlines),
                 description: teamDescription.isEmpty ? nil : teamDescription
             )
             dismiss()

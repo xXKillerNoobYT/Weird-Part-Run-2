@@ -630,6 +630,7 @@ public final class NotebooksService: Sendable {
                     LEFT JOIN jobs j ON j.id = n.job_id AND j.deleted_at IS NULL
                     LEFT JOIN users u ON u.id = ne.created_by AND u.deleted_at IS NULL
                     WHERE ne.deleted_at IS NULL
+                      AND ns.deleted_at IS NULL
                       AND n.deleted_at IS NULL
                       AND ne.work_classification IS NOT NULL
                       AND COALESCE(ne.classification_reviewed, 0) = 0

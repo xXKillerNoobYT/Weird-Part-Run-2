@@ -65,6 +65,38 @@ struct CascadePriceEditSheet: View {
         }
     }
 
+    // MARK: - Draft Validation
+
+    /// Live validation message for the type-default cost draft.
+    /// Blank text is allowed (it explicitly clears the saved default);
+    /// anything else must pass ManualPricingInputValidator.
+    private var typeDefaultValidationMessage: String? {
+        costValidationMessage(for: typeDefaultText, fieldName: "Default Cost")
+    }
+
+    /// Live validation message for the color-override cost draft.
+    private var colorOverrideValidationMessage: String? {
+        costValidationMessage(for: colorOverrideText, fieldName: "Override Cost")
+    }
+
+    private func costValidationMessage(for text: String, fieldName: String) -> String? {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        do {
+            _ = try ManualPricingInputValidator.parseMoney(text, fieldName: fieldName)
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    /// Parses a cost draft for persistence. Blank text maps to nil (an explicit
+    /// clear); malformed or negative text throws so the saved value is never
+    /// silently wiped by a typo.
+    private func parseCostDraft(_ text: String, fieldName: String) throws -> Double? {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return try ManualPricingInputValidator.parseMoney(text, fieldName: fieldName)
+    }
+
     // MARK: - Form Content
 
     @ViewBuilder
@@ -107,10 +139,16 @@ struct CascadePriceEditSheet: View {
                 }
                 .frame(minHeight: 44)
 
+                if let message = typeDefaultValidationMessage {
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                        .font(.caption)
+                }
+
                 Button("Save Type Default") {
                     Task { await saveTypeDefault() }
                 }
-                .disabled(isSaving)
+                .disabled(isSaving || typeDefaultValidationMessage != nil)
             } header: {
                 Text("Type Default")
             } footer: {
@@ -131,6 +169,12 @@ struct CascadePriceEditSheet: View {
                 }
                 .frame(minHeight: 44)
 
+                if let message = colorOverrideValidationMessage {
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                        .font(.caption)
+                }
+
                 if colorOverrideText.isEmpty, let typeCost = resolvedCost?.typeDefaultCost {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.down.circle")
@@ -147,7 +191,7 @@ struct CascadePriceEditSheet: View {
                     Button("Save Color Override") {
                         Task { await saveColorOverride() }
                     }
-                    .disabled(isSaving)
+                    .disabled(isSaving || colorOverrideValidationMessage != nil)
 
                     Spacer()
 
@@ -293,10 +337,20 @@ struct CascadePriceEditSheet: View {
             return
         }
 
+        // Validate through the shared pricing validator BEFORE touching the
+        // service: a typo like "1O.50" or "$10" must surface an error and keep
+        // the saved value, never silently clear it, and negatives must not persist.
+        let cost: Double?
+        do {
+            cost = try parseCostDraft(typeDefaultText, fieldName: "Default Cost")
+        } catch {
+            saveError = error.localizedDescription
+            return
+        }
+
         isSaving = true
         saveError = nil
         do {
-            let cost = Double(typeDefaultText)
             try service.setPriceForType(typeId: tId, unitCost: cost)
             await onSave()
             await loadData()
@@ -312,10 +366,19 @@ struct CascadePriceEditSheet: View {
             return
         }
 
+        // Same validator gate as the type default: malformed input must never
+        // clear the saved override, and negative costs must not persist.
+        let cost: Double?
+        do {
+            cost = try parseCostDraft(colorOverrideText, fieldName: "Override Cost")
+        } catch {
+            saveError = error.localizedDescription
+            return
+        }
+
         isSaving = true
         saveError = nil
         do {
-            let cost = Double(colorOverrideText)
             try service.setPriceForColor(colorId: colorId, unitCost: cost)
             await onSave()
             await loadData()

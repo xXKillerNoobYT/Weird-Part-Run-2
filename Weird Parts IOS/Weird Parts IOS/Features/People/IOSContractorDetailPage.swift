@@ -337,7 +337,7 @@ private struct AddContractorNoteSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(content.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .alert("Discard changes?", isPresented: $showDiscardAlert) {
@@ -362,7 +362,7 @@ private struct AddContractorNoteSheet: View {
         do {
             try service.addContractorNote(
                 contractorId: contractorId,
-                content: content.trimmingCharacters(in: .whitespaces),
+                content: content.trimmingCharacters(in: .whitespacesAndNewlines),
                 createdBy: userId
             )
             dismiss()
