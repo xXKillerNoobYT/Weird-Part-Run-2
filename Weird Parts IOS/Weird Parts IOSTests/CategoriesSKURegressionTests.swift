@@ -13,8 +13,8 @@ final class CategoriesSKURegressionTests: XCTestCase {
             "Tapping a SKU row should select that SKU for the right-side editor panel."
         )
         XCTAssertTrue(
-            source.contains("ContentUnavailableView") && source.contains("No SKU Rows Yet"),
-            "Expanded type/brand nodes with zero SKU rows should show a ContentUnavailableView empty state."
+            source.contains("EmptyStateView(") && source.contains("No SKU Rows Yet"),
+            "Expanded type/brand nodes with zero SKU rows should show the standard EmptyStateView empty state."
         )
     }
 
