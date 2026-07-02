@@ -226,7 +226,7 @@ struct IOSPODetailPage: View {
                     po: po,
                     supplierContacts: supplierContacts
                 ) {
-                    Task { await loadData() }   // refresh PO status after confirmed send
+                    Task { loadData() }   // refresh PO status after confirmed send (loadData is synchronous)
                 }
                 .environmentObject(appCore)
             }
