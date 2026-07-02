@@ -145,6 +145,7 @@ extension AppDatabase {
         registerMigration103TimesheetCorrectionAudit(&migrator)
         registerMigration104AuthTokenSessionDeviceId(&migrator)
         registerMigration105JobRecordsLocalFirst(&migrator)
+        registerMigration106POLineItemsBrandId(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5858,6 +5859,23 @@ extension AppDatabase {
                           on: "auth_token_sessions",
                           columns: ["parent_refresh_id"],
                           ifNotExists: true)
+        }
+    }
+
+    private static func registerMigration106POLineItemsBrandId(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("106_po_line_items_brand_id") { db in
+            // PE-COLORS Phase 3 (#243) — persist the brand resolved at PO-creation time.
+            // General-mode JPO lines (brand_selection_mode = 'general') carry no brand;
+            // the brand chosen via resolveGeneralLineItem against the selected supplier
+            // is written here so the PO shows it and future audits can see the
+            // auto-resolution (brand_selection_mode stays 'general' on the PO line).
+            try addColumnIfMissing(db, table: "po_line_items", column: "brand_id", type: .integer)
+            try db.create(
+                index: "idx_po_lines_brand",
+                on: "po_line_items",
+                columns: ["brand_id"],
+                ifNotExists: true
+            )
         }
     }
 
