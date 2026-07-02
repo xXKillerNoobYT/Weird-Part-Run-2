@@ -103,7 +103,7 @@ public enum AIConversationPersistenceError: LocalizedError, Sendable, Equatable 
 struct AIChatSessionIdentity: Equatable, Sendable {
     let conversationId: String
     let databaseIdentity: String
-    let userId: Int64
+    let userId: Int64?
     let permissionKeys: [String]
     let navigationContext: String
 
@@ -111,7 +111,7 @@ struct AIChatSessionIdentity: Equatable, Sendable {
         conversationId: String,
         db: AppDatabase,
         permissions: [String],
-        userId: Int64,
+        userId: Int64?,
         navigationContext: String
     ) {
         self.conversationId = conversationId
@@ -399,6 +399,9 @@ public actor FoundationModelsService {
     ///   - query: The user's question.
     ///   - db: The app database for tool queries.
     ///   - permissions: The current user's permission keys.
+    ///   - userId: The signed-in user's id, or `nil` when no user session exists.
+    ///     When `nil` (or the legacy `0` sentinel), user-specific tools fail closed
+    ///     with a not-signed-in message instead of querying as user 0 (#724).
     ///   - navigationContext: A string describing the app's module/tab layout with access annotations.
     ///   - conversationId: Identifier for this conversation thread. Defaults to `"default"`.
     /// - Returns: An `AIResult` containing the assistant's response.
@@ -406,7 +409,7 @@ public actor FoundationModelsService {
         query: String,
         db: AppDatabase,
         permissions: [String],
-        userId: Int64 = 0,
+        userId: Int64? = nil,
         navigationContext: String,
         conversationId: String = "default"
     ) async -> AIResult {
