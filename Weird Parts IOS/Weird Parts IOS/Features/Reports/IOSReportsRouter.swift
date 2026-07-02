@@ -444,29 +444,10 @@ private struct SharedReportsView: View {
                 }
             }
 
-            // Public report viewer link
-            Section {
-                NavigationLink {
-                    IOSPublicReportView(reportToken: "")
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "globe")
-                            .font(.title3)
-                            .foregroundStyle(.pink)
-                            .frame(width: 30)
-                            .accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("View Public Report")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                            Text("Open a report shared via public link")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(.vertical, 2)
-                }
-            }
+            // NOTE (#1206): the "View Public Report" row was removed for beta.
+            // IOSPublicReportView is a stub that always errors, so navigating to
+            // it with an empty token was a guaranteed dead end. Re-add a token
+            // entry/viewer flow here once public report sharing ships.
 
             if sharedReports.isEmpty {
                 Section {

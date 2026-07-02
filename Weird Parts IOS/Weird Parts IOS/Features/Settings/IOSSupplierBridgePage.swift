@@ -23,6 +23,10 @@ struct IOSSupplierBridgePage: View {
             if isLoading {
                 ProgressView("Loading supplier bridges...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = errorMessage {
+                // #1338: surface load failures instead of masquerading as an
+                // empty "No Supplier Bridges" state.
+                ErrorStateView(message: error) { loadData() }
             } else if bridges.isEmpty {
                 EmptyStateView(
                     icon: "building.2",
@@ -119,10 +123,11 @@ struct IOSSupplierBridgePage: View {
             isLoading = false
             return
         }
+        errorMessage = nil
         do {
             bridges = try chatService.listSupplierBridges()
         } catch {
-            errorMessage = userFriendlyError(error, context: "load")
+            errorMessage = userFriendlyError(error, context: "load supplier bridges")
             bridges = []
         }
         isLoading = false

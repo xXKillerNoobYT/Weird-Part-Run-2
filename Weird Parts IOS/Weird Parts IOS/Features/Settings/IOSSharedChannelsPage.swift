@@ -22,14 +22,9 @@ struct IOSSharedChannelsPage: View {
                 )
             }
 
-            Section {
-                Button {
-                    // Create shared channel
-                } label: {
-                    Label("Create Shared Channel", systemImage: "plus.circle.fill")
-                }
-                .disabled(true) // Enabled with sync infrastructure
-            }
+            // NOTE (#1338): the permanently disabled "Create Shared Channel"
+            // placeholder button was removed for beta. Re-add the action here
+            // once shared-channel creation is wired to sync infrastructure.
         }
         .listStyle(.insetGrouped)
         .navigationTitle("Shared Channels")
