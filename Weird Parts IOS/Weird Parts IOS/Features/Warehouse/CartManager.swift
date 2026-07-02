@@ -290,7 +290,7 @@ struct CartSheetView: View {
             var placed: Set<UUID> = []
 
             for item in items {
-                guard currentPlacements[item.id]?.trimmingCharacters(in: .whitespaces).isEmpty == false else { continue }
+                guard currentPlacements[item.id]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else { continue }
                 placed.insert(item.id)
             }
 
