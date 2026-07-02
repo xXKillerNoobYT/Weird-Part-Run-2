@@ -145,7 +145,8 @@ extension AppDatabase {
         registerMigration103TimesheetCorrectionAudit(&migrator)
         registerMigration104AuthTokenSessionDeviceId(&migrator)
         registerMigration105JobRecordsLocalFirst(&migrator)
-        registerMigration106BreakPolicyPresets(&migrator)
+        registerMigration106POLineItemsBrandId(&migrator)
+        registerMigration107BreakPolicyPresets(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5862,6 +5863,23 @@ extension AppDatabase {
         }
     }
 
+    private static func registerMigration106POLineItemsBrandId(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("106_po_line_items_brand_id") { db in
+            // PE-COLORS Phase 3 (#243) — persist the brand resolved at PO-creation time.
+            // General-mode JPO lines (brand_selection_mode = 'general') carry no brand;
+            // the brand chosen via resolveGeneralLineItem against the selected supplier
+            // is written here so the PO shows it and future audits can see the
+            // auto-resolution (brand_selection_mode stays 'general' on the PO line).
+            try addColumnIfMissing(db, table: "po_line_items", column: "brand_id", type: .integer)
+            try db.create(
+                index: "idx_po_lines_brand",
+                on: "po_line_items",
+                columns: ["brand_id"],
+                ifNotExists: true
+            )
+        }
+    }
+
     private static func registerMigration105JobRecordsLocalFirst(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("105_job_records_local_first") { db in
             try addColumnIfMissing(db, table: "jobs", column: "stable_id", type: .text)
@@ -5906,10 +5924,10 @@ private func registerMigration100POEmailRequestType(_ migrator: inout DatabaseMi
     }
 }
 
-// MARK: - Migration 106: Break/lunch policy presets — 50 states + DC (re-lands #436)
+// MARK: - Migration 107: Break/lunch policy presets — 50 states + DC (re-lands #436)
 
-private func registerMigration106BreakPolicyPresets(_ migrator: inout DatabaseMigrator) {
-    migrator.registerMigration("106_break_policy_presets") { db in
+private func registerMigration107BreakPolicyPresets(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("107_break_policy_presets") { db in
         try AppDatabase.seedBreakPolicyPresets(db)
     }
 }
