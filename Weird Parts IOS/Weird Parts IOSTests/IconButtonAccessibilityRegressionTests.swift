@@ -75,9 +75,31 @@ final class IconButtonAccessibilityRegressionTests: XCTestCase {
             source.contains(".accessibilityLabel(\"Assign worker\")"),
             "The dispatch-grid empty day cell must announce itself as an assign action."
         )
+        // Height: the empty-cell button keeps a 44pt-tall hit area.
         XCTAssertTrue(
-            source.contains(".frame(minHeight: 44)"),
-            "The dispatch-grid empty day cell must provide a 44pt hit area (issue #1184)."
+            source.contains(".frame(minWidth: minDayColumnWidth, minHeight: 44)"),
+            "The dispatch-grid empty day cell must provide a 44x44pt hit area (issue #1184)."
+        )
+        // Width: day columns must never shrink below the 44pt HIG minimum —
+        // dayColumnWidth(forAvailableWidth:) clamps to minDayColumnWidth and
+        // the grid overflows into a horizontal scroller on narrow phones.
+        // Without this, a 390pt iPhone squeezes the 7 shared columns to
+        // ~38pt, silently breaking acceptance criterion 2 of issue #1184.
+        XCTAssertTrue(
+            source.contains("private let minDayColumnWidth: CGFloat = 44"),
+            "The dispatch grid must declare a 44pt minimum day-column width (issue #1184)."
+        )
+        XCTAssertTrue(
+            source.contains("max(minDayColumnWidth, flexibleWidth)"),
+            "dayColumnWidth(forAvailableWidth:) must clamp day columns to the 44pt minimum (issue #1184)."
+        )
+        XCTAssertTrue(
+            source.contains("ScrollView(.horizontal)"),
+            "The dispatch grid must scroll horizontally when 44pt-wide day columns overflow narrow screens (issue #1184)."
+        )
+        XCTAssertFalse(
+            source.contains(".frame(maxWidth: .infinity, minHeight: 24)"),
+            "Day cells must use the clamped fixed column width, not an unconstrained flexible width that can compress below 44pt (issue #1184)."
         )
     }
 

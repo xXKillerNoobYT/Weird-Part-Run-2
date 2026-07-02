@@ -66,6 +66,31 @@ struct IOSDispatchPage: View {
 
     private let calendar = Calendar.current
 
+    // MARK: - Grid Metrics
+
+    /// Fixed width of the leading job-name column.
+    private let jobColumnWidth: CGFloat = 100
+    /// Spacing between grid columns (must match the `HStack(spacing:)` used by
+    /// the day header row and the job rows).
+    private let gridColumnSpacing: CGFloat = 1
+    /// Horizontal padding applied to the day header row and each job row.
+    private let gridRowHorizontalPadding: CGFloat = 8
+    /// Minimum width of a day column: HIG 44pt touch target (issue #1184).
+    private let minDayColumnWidth: CGFloat = 44
+
+    /// Width of each of the 7 day columns. The columns share the viewport
+    /// width when there is room (iPad / landscape), but never shrink below
+    /// 44pt — on narrow phones the grid scrolls horizontally instead, so the
+    /// empty-cell "Assign worker" buttons keep a full 44x44pt tap target
+    /// (issue #1184, acceptance criterion 2).
+    private func dayColumnWidth(forAvailableWidth availableWidth: CGFloat) -> CGFloat {
+        let fixedWidth = jobColumnWidth
+            + 7 * gridColumnSpacing
+            + 2 * gridRowHorizontalPadding
+        let flexibleWidth = (availableWidth - fixedWidth) / 7
+        return max(minDayColumnWidth, flexibleWidth)
+    }
+
     private var weekStart: Date {
         calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: weekStartDate)) ?? weekStartDate
     }
@@ -200,37 +225,50 @@ struct IOSDispatchPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    // Day headers
-                    dayHeaderRow
+            GeometryReader { proxy in
+                let dayWidth = dayColumnWidth(forAvailableWidth: proxy.size.width)
 
-                    if jobRows.isEmpty {
-                        EmptyStateView(
-                            icon: "wrench.and.screwdriver",
-                            title: "No Active Jobs",
-                            message: "No jobs available for dispatch this week."
-                        )
-                        .padding()
-                    } else {
-                        // Job rows
-                        ForEach(jobRows, id: \.id) { row in
-                            jobRowView(row)
-                            Divider()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        // Day headers + job rows share one horizontal
+                        // scroller so the 7 day columns keep a >=44pt tap
+                        // width on narrow phones without losing column
+                        // alignment (issue #1184). On wider screens the
+                        // columns fill the viewport and nothing scrolls.
+                        ScrollView(.horizontal) {
+                            VStack(alignment: .leading, spacing: 0) {
+                                dayHeaderRow(dayWidth: dayWidth)
+
+                                // Job rows
+                                ForEach(jobRows, id: \.id) { row in
+                                    jobRowView(row, dayWidth: dayWidth)
+                                    Divider()
+                                }
+                            }
                         }
-                    }
 
-                    // Unassigned workers section
-                    if !unassignedWorkers.isEmpty {
-                        unassignedSection
-                    }
-
-                    // Action error
-                    if let error = actionError {
-                        Text(error)
-                            .font(.caption)
-                            .foregroundStyle(.red)
+                        if jobRows.isEmpty {
+                            EmptyStateView(
+                                icon: "wrench.and.screwdriver",
+                                title: "No Active Jobs",
+                                message: "No jobs available for dispatch this week."
+                            )
                             .padding()
+                            .frame(maxWidth: .infinity)
+                        }
+
+                        // Unassigned workers section
+                        if !unassignedWorkers.isEmpty {
+                            unassignedSection
+                        }
+
+                        // Action error
+                        if let error = actionError {
+                            Text(error)
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                                .padding()
+                        }
                     }
                 }
             }
@@ -239,10 +277,10 @@ struct IOSDispatchPage: View {
 
     // MARK: - Day Header Row
 
-    private var dayHeaderRow: some View {
-        HStack(spacing: 1) {
+    private func dayHeaderRow(dayWidth: CGFloat) -> some View {
+        HStack(spacing: gridColumnSpacing) {
             Text("Job")
-                .frame(width: 100, alignment: .leading)
+                .frame(width: jobColumnWidth, alignment: .leading)
                 .font(.caption)
                 .fontWeight(.bold)
 
@@ -254,7 +292,7 @@ struct IOSDispatchPage: View {
                         .font(.caption)
                         .fontWeight(.bold)
                 }
-                .frame(maxWidth: .infinity)
+                .frame(width: dayWidth)
                 .padding(.vertical, 4)
                 .background(
                     calendar.isDateInToday(day)
@@ -263,17 +301,17 @@ struct IOSDispatchPage: View {
                 )
             }
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, gridRowHorizontalPadding)
         .padding(.vertical, 6)
         .background(Color(.systemGray6))
     }
 
     // MARK: - Job Row
 
-    private func jobRowView(_ row: SchedulingService.DispatchJobRow) -> some View {
+    private func jobRowView(_ row: SchedulingService.DispatchJobRow, dayWidth: CGFloat) -> some View {
         let isDropTarget = dropTargetJobId == row.id
 
-        return HStack(spacing: 1) {
+        return HStack(spacing: gridColumnSpacing) {
             // Job name column
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.jobName)
@@ -287,7 +325,7 @@ struct IOSDispatchPage: View {
                         .lineLimit(1)
                 }
             }
-            .frame(width: 100, alignment: .leading)
+            .frame(width: jobColumnWidth, alignment: .leading)
             .contextMenu {
                 Text(row.jobName)
                 if let stage = row.stageName {
@@ -299,10 +337,10 @@ struct IOSDispatchPage: View {
 
             // Day cells
             ForEach(weekDays, id: \.self) { day in
-                dayCellForJob(row: row, day: day)
+                dayCellForJob(row: row, day: day, width: dayWidth)
             }
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, gridRowHorizontalPadding)
         .padding(.vertical, 4)
         .background(
             RoundedRectangle(cornerRadius: 6)
@@ -321,7 +359,7 @@ struct IOSDispatchPage: View {
         }
     }
 
-    private func dayCellForJob(row: SchedulingService.DispatchJobRow, day: Date) -> some View {
+    private func dayCellForJob(row: SchedulingService.DispatchJobRow, day: Date, width: CGFloat) -> some View {
         let dayStr = dateString(day)
         let workers = assignments.filter { $0.jobId == row.id && $0.date == dayStr }
 
@@ -343,8 +381,11 @@ struct IOSDispatchPage: View {
                                 .foregroundStyle(.gray)
                         }
                         // Keep the compact 24pt visual, but give touch a
-                        // 44pt hit area per HIG / issue #1184.
-                        .frame(minHeight: 44)
+                        // 44pt hit area per HIG / issue #1184. The 44pt
+                        // width comes from the enclosing day column, which
+                        // dayColumnWidth(forAvailableWidth:) never lets
+                        // drop below minDayColumnWidth (44pt).
+                        .frame(minWidth: minDayColumnWidth, minHeight: 44)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -368,7 +409,7 @@ struct IOSDispatchPage: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 24)
+        .frame(minWidth: width, maxWidth: width, minHeight: 24)
         .dropDestination(for: DraggableWorker.self) { workers, _ in
             guard let worker = workers.first else { return false }
             createAssignment(jobId: row.id, userId: worker.id, date: dayStr, timeSlot: "full")
