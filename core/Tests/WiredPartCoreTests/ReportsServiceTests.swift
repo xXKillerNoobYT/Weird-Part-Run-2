@@ -320,6 +320,65 @@ struct ReportsServiceTests {
         #expect(!outsidePeriod.contains { $0.segmentId == laborEntryId })
     }
 
+    @Test("Timesheet correction history survives entry moving into reviewed period")
+    func testTimesheetCorrectionHistorySurvivesMoveIntoReviewedPeriod() throws {
+        try withDenverTimeZone {
+            let env = try E2ETestHelpers.setUp()
+            let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-HIST-MOVE", name: "History Move Job")
+            // Entry originally worked on 2026-04-09 (15:00Z-19:00Z = 09:00-13:00 Denver).
+            let laborEntryId = try env.db.writer.write { db -> Int64 in
+                try db.execute(sql: """
+                    INSERT INTO labor_entries
+                        (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                    VALUES (?, ?, '2026-04-09T15:00:00Z', '2026-04-09T19:00:00Z', 4.0, 0.0, 'completed', datetime('now'))
+                    """, arguments: [env.adminUserId, jobId])
+                return db.lastInsertedRowID
+            }
+
+            // Manager moves the entry across the day boundary to 2026-04-10.
+            _ = try env.reports.saveTimesheetCorrection(
+                ReportsService.TimesheetCorrectionRequest(
+                    laborEntryId: laborEntryId,
+                    adjustedClockIn: "2026-04-10T15:00:00Z",
+                    adjustedClockOut: "2026-04-10T19:00:00Z",
+                    clientPreviewRegularHours: 4.0,
+                    clientPreviewOvertimeHours: 0.0,
+                    reason: "Entry was logged on the wrong day; moved per supervisor note.",
+                    actorUserId: env.adminUserId
+                )
+            )
+
+            // The corrected segment lands in the destination period...
+            let destinationSegments = try env.reports.getTimesheetSegments(
+                startDate: "2026-04-10",
+                endDate: "2026-04-10"
+            )
+            #expect(destinationSegments.contains { $0.id == laborEntryId })
+
+            // ...so its correction history must be reviewable there too (#1097:
+            // filtering by original_clock_in alone hid the audit trail here).
+            let destinationHistory = try env.reports.getTimesheetCorrectionHistory(
+                startDate: "2026-04-10",
+                endDate: "2026-04-10"
+            )
+            #expect(destinationHistory.contains { $0.segmentId == laborEntryId })
+
+            // The origin period keeps the audit trail for the original work date.
+            let originHistory = try env.reports.getTimesheetCorrectionHistory(
+                startDate: "2026-04-09",
+                endDate: "2026-04-09"
+            )
+            #expect(originHistory.contains { $0.segmentId == laborEntryId })
+
+            // Periods touching neither date still return nothing.
+            let unrelatedHistory = try env.reports.getTimesheetCorrectionHistory(
+                startDate: "2026-04-11",
+                endDate: "2026-04-11"
+            )
+            #expect(!unrelatedHistory.contains { $0.segmentId == laborEntryId })
+        }
+    }
+
     // MARK: - Daily Report Summary
 
     @Test("Daily report summary empty on fresh DB")
