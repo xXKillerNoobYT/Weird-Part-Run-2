@@ -2,6 +2,12 @@ import Foundation
 import Testing
 
 struct NavigationPlaceholderRegressionTests {
+    /// Documented intentional exceptions, as paths relative to the repo root
+    /// (e.g. "Weird Parts IOS/Weird Parts IOS/Features/Foo/Bar.swift").
+    /// Keep this empty unless a product decision explicitly calls for a stub
+    /// destination — add the path here with a comment explaining why.
+    private static let allowedPlaceholderFiles: Set<String> = []
+
     @Test func visibleNavigationLinksDoNotUseBareTextDestinations() throws {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent() // Weird Parts IOSTests
@@ -17,7 +23,9 @@ struct NavigationPlaceholderRegressionTests {
         for file in sourceFiles {
             let content = try String(contentsOf: file, encoding: .utf8)
             if containsBareTextNavigationDestination(content) {
-                violations.append(file.path.replacingOccurrences(of: repoRoot.path + "/", with: ""))
+                let relativePath = file.path.replacingOccurrences(of: repoRoot.path + "/", with: "")
+                guard !Self.allowedPlaceholderFiles.contains(relativePath) else { continue }
+                violations.append(relativePath)
             }
         }
 

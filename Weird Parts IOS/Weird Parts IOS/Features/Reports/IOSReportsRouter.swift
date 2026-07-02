@@ -46,14 +46,12 @@ enum ReportCategory: String, CaseIterable {
 /// Warehouse, Scheduling, Custom, Shared.
 struct IOSReportsRouter: View {
     let tabId: String
-    let initialCategory: ReportCategory
     @EnvironmentObject private var appCore: AppCore
 
     @State private var selectedCategory: ReportCategory
 
     init(tabId: String, initialCategory: ReportCategory = .labor) {
         self.tabId = tabId
-        self.initialCategory = initialCategory
         _selectedCategory = State(initialValue: initialCategory)
     }
 
