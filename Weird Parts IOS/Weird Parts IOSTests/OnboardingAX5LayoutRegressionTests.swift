@@ -92,18 +92,26 @@ final class OnboardingAX5LayoutRegressionTests: XCTestCase {
             source.contains("@Environment(\\.dynamicTypeSize) private var dynamicTypeSize"),
             "The post-login walkthrough should read Dynamic Type so it can adapt at AX sizes (issue #1311)."
         )
+
+        let welcomeScreen = try Self.extractSection(
+            from: source,
+            startingAt: "private var welcomeScreen: some View {",
+            upTo: "// MARK: - Step View"
+        )
+
         XCTAssertTrue(
-            source.contains("ScrollView {"),
-            "The walkthrough welcome screen should scroll at AX5 instead of clipping copy and buttons."
+            welcomeScreen.contains("ScrollView {"),
+            "The walkthrough welcome screen should scroll at AX5 instead of clipping copy and buttons (issue #1311)."
         )
         XCTAssertTrue(
-            source.contains(".frame(minHeight: proxy.size.height)"),
+            welcomeScreen.contains(".frame(minHeight: proxy.size.height)"),
             "The welcome screen should keep its centered layout at regular sizes while remaining scrollable."
         )
         XCTAssertTrue(
-            source.contains("if !dynamicTypeSize.isAccessibilitySize {"),
-            "The walkthrough should not spend scarce AX5 vertical space on centering spacers."
+            welcomeScreen.contains("if !dynamicTypeSize.isAccessibilitySize {"),
+            "The welcome screen should not spend scarce AX5 vertical space on centering spacers."
         )
+
         XCTAssertTrue(
             source.contains("HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center, spacing: 12)"),
             "Key-feature rows should top-align when text wraps at accessibility sizes."
@@ -140,5 +148,28 @@ final class OnboardingAX5LayoutRegressionTests: XCTestCase {
             .appendingPathComponent("Weird Parts IOS")
             .appendingPathComponent(relativePath)
         return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    /// Slices `source` to the substring between `start` (inclusive) and the
+    /// next occurrence of `end` after it, so assertions about a specific
+    /// view/property can't be satisfied by unrelated code elsewhere in the
+    /// file that happens to contain the same snippet.
+    private static func extractSection(
+        from source: String,
+        startingAt start: String,
+        upTo end: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws -> String {
+        guard let startRange = source.range(of: start) else {
+            XCTFail("Could not locate section start marker '\(start)'", file: file, line: line)
+            return ""
+        }
+        let remainder = source[startRange.upperBound...]
+        guard let endRange = remainder.range(of: end) else {
+            XCTFail("Could not locate section end marker '\(end)' after '\(start)'", file: file, line: line)
+            return ""
+        }
+        return String(remainder[..<endRange.lowerBound])
     }
 }

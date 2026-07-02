@@ -184,8 +184,6 @@ struct ZoneGridCanvas: View {
         }
             .buttonStyle(.plain)
             .contentShape(Rectangle())
-            .accessibilityLabel("Resize \(zone.label ?? zone.zoneType) zone")
-            .accessibilityHint("Double tap to grow the zone by one row and one column.")
             .highPriorityGesture(
                 DragGesture(minimumDistance: 6)
                     .onEnded { value in
