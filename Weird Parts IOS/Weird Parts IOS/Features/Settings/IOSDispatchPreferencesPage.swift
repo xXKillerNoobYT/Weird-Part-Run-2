@@ -20,8 +20,12 @@ struct IOSDispatchPreferencesPage: View {
     @State private var showConfidenceScores = false
 
     // Flex Pool
-    @State private var enableFlexSelfAssign = false
-    @State private var requireManagerApproval = true
+    // Defaults mirror SettingsService.DispatchPreferenceSettings.defaults so a
+    // fresh install's toggle state matches what getDispatchPreferences() (and
+    // therefore SchedulingService.fetchFlexPool/claimFlexJob) actually enforces
+    // before any explicit save.
+    @State private var enableFlexSelfAssign = true
+    @State private var requireManagerApproval = false
 
     // Pipeline Targets
     @State private var startAnytimeTarget: Int = 3
@@ -198,8 +202,12 @@ struct IOSDispatchPreferencesPage: View {
             enableAILearning = parser.bool(map, key: "dispatch_ai_learning_enabled", default: true)
             showConfidenceScores = parser.bool(map, key: "dispatch_show_confidence_scores", default: false)
 
-            enableFlexSelfAssign = parser.bool(map, key: "dispatch_flex_self_assign_enabled", default: false)
-            requireManagerApproval = parser.bool(map, key: "dispatch_flex_require_approval", default: true)
+            // Defaults must match SettingsService.DispatchPreferenceSettings.defaults
+            // (flexSelfAssignEnabled: true, flexRequireApproval: false) -- that struct
+            // is what getDispatchPreferences() returns, and what SchedulingService's
+            // fetchFlexPool/claimFlexJob gate on, when no value has ever been saved.
+            enableFlexSelfAssign = parser.bool(map, key: "dispatch_flex_self_assign_enabled", default: true)
+            requireManagerApproval = parser.bool(map, key: "dispatch_flex_require_approval", default: false)
 
             startAnytimeTarget = parser.int(map, key: "dispatch_pipeline_start_anytime_target", default: 3)
             scheduleNeededTarget = parser.int(map, key: "dispatch_pipeline_schedule_needed_target", default: 2)
@@ -223,20 +231,21 @@ struct IOSDispatchPreferencesPage: View {
         }
 
         do {
-            let data: [String: String] = [
-                "dispatch_ai_suggestions_enabled": enableAISuggestions ? "true" : "false",
-                "dispatch_ai_learning_enabled": enableAILearning ? "true" : "false",
-                "dispatch_show_confidence_scores": showConfidenceScores ? "true" : "false",
-                "dispatch_flex_self_assign_enabled": enableFlexSelfAssign ? "true" : "false",
-                "dispatch_flex_require_approval": requireManagerApproval ? "true" : "false",
-                "dispatch_pipeline_start_anytime_target": "\(startAnytimeTarget)",
-                "dispatch_pipeline_schedule_needed_target": "\(scheduleNeededTarget)",
-                "dispatch_pipeline_favorite_gc_target": "\(favoriteGCTarget)",
-                "dispatch_default_view": defaultView,
-                "dispatch_crew_history_months": "\(crewHistoryMonths)",
-                "dispatch_crew_continuity_weight": crewContinuityWeight,
-            ]
-            try service.upsertSettingsMap(data, category: "dispatch")
+            let preferences = SettingsService.DispatchPreferenceSettings(
+                aiSuggestionsEnabled: enableAISuggestions,
+                aiLearningEnabled: enableAILearning,
+                showConfidenceScores: showConfidenceScores,
+                aiSuggestionCount: SettingsService.DispatchPreferenceSettings.defaults.aiSuggestionCount,
+                flexSelfAssignEnabled: enableFlexSelfAssign,
+                flexRequireApproval: requireManagerApproval,
+                pipelineStartAnytimeTarget: startAnytimeTarget,
+                pipelineScheduleNeededTarget: scheduleNeededTarget,
+                pipelineFavoriteGCTarget: favoriteGCTarget,
+                defaultView: defaultView,
+                crewHistoryMonths: crewHistoryMonths,
+                crewContinuityWeight: crewContinuityWeight
+            )
+            try service.updateDispatchPreferences(preferences)
             saveError = nil
             isDirty = false
             saveSuccessMessage = "Dispatch preferences saved."

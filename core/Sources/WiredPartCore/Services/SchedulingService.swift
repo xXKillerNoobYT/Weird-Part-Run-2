@@ -45,6 +45,7 @@ public final class SchedulingService: Sendable {
         case contractorNotFound(Int64)
         case subcontractorScheduleNotFound(Int64)
         case subcontractorScheduleConflict(jobId: Int64, gcId: Int64, date: String)
+        case flexSelfAssignDisabled
     }
 
     // =========================================================================
@@ -1688,6 +1689,29 @@ public final class SchedulingService: Sendable {
         "small_job",
     ]
 
+    /// Saved display targets for the short-term pipeline's readiness categories.
+    public struct PipelineTargets: Codable, Equatable, Sendable {
+        public let startAnytime: Int
+        public let scheduleNeeded: Int
+        public let favoriteGC: Int
+
+        public init(startAnytime: Int, scheduleNeeded: Int, favoriteGC: Int) {
+            self.startAnytime = startAnytime
+            self.scheduleNeeded = scheduleNeeded
+            self.favoriteGC = favoriteGC
+        }
+    }
+
+    /// Get the saved dispatch-preference pipeline target thresholds.
+    public func getShortTermPipelineTargets() throws -> PipelineTargets {
+        let preferences = try SettingsService(db: db).getDispatchPreferences()
+        return PipelineTargets(
+            startAnytime: preferences.pipelineStartAnytimeTarget,
+            scheduleNeeded: preferences.pipelineScheduleNeededTarget,
+            favoriteGC: preferences.pipelineFavoriteGCTarget
+        )
+    }
+
     /// Get the short-term pipeline: active jobs categorized by readiness.
     /// Categories: start_anytime (no blockers), schedule_needed (need dispatch),
     /// favorite_gc (from preferred GCs), small_job (<=2 est. days).
@@ -2402,18 +2426,13 @@ public final class SchedulingService: Sendable {
     ///
     /// Returns an empty array if the `jobs` table is missing (fresh install).
     public func fetchFlexPool(userId: Int64) throws -> [FlexPoolJob] {
-        // Read approval setting first (separate from the jobs query to avoid fragile JOINs).
-        let isApprovalRequired: Bool
-        do {
-            let val = try db.writer.read { dbConn in
-                try String.fetchOne(dbConn,
-                    sql: "SELECT value FROM settings WHERE key = 'flex_pool_requires_approval' LIMIT 1")
-            }
-            isApprovalRequired = (val == "1")
-        } catch {
-            if isTableNotFoundError(error) { isApprovalRequired = false }
-            else { throw error }
+        let preferences = try SettingsService(db: db).getDispatchPreferences()
+        guard preferences.flexSelfAssignEnabled else {
+            return []
         }
+
+        // Read approval setting first (separate from the jobs query to avoid fragile JOINs).
+        let isApprovalRequired = preferences.flexRequireApproval
 
         // Fetch flex-pool jobs visible to this user.
         do {
@@ -2508,17 +2527,11 @@ public final class SchedulingService: Sendable {
     /// sets the user as lead and creates an `active` dispatch entry in a
     /// single transaction.
     public func claimFlexJob(jobId: Int64, userId: Int64) throws {
-        let requiresApproval: Bool
-        do {
-            let val = try db.writer.read { dbConn in
-                try String.fetchOne(dbConn,
-                    sql: "SELECT value FROM settings WHERE key = 'flex_pool_requires_approval' LIMIT 1")
-            }
-            requiresApproval = (val == "1")
-        } catch {
-            if isTableNotFoundError(error) { requiresApproval = false }
-            else { throw error }
+        let preferences = try SettingsService(db: db).getDispatchPreferences()
+        guard preferences.flexSelfAssignEnabled else {
+            throw SchedulingError.flexSelfAssignDisabled
         }
+        let requiresApproval = preferences.flexRequireApproval
 
         try db.writer.write { dbConn in
             // Guard: job + user must exist and not be tombstoned — flex-pool
