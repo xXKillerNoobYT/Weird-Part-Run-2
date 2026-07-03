@@ -51,6 +51,8 @@ struct IOSContentRouter: View {
             SettingsRouter(tabId: "settings-app-config")
         case "/settings/about":
             SettingsRouter(tabId: "settings-about")
+        case "/settings/bug-report", "/settings/feedback", "/settings/report-a-bug":
+            SettingsRouter(tabId: "settings-bug-report")
         case "/settings/company":
             SettingsRouter(tabId: "settings-company")
         case "/settings/pdf":

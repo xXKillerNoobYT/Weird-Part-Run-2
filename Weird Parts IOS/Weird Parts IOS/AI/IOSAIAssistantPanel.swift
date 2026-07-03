@@ -36,6 +36,7 @@ struct IOSAIAssistantPanel: View {
     @State private var isClearingConversation = false
     @State private var clearConversationError: String?
     @State private var clearConversationRetryId: String?
+    @State private var showBugReport = false
     @State private var aiAvailability: AIAvailability = .notSupported
     @State private var catalogContext: String?
     @State private var pricingContext: String?
@@ -162,6 +163,14 @@ struct IOSAIAssistantPanel: View {
                         .accessibilityLabel("New conversation")
 
                         Button {
+                            showBugReport = true
+                        } label: {
+                            Image(systemName: "ladybug")
+                        }
+                        .help("Report a bug or assistant issue")
+                        .accessibilityLabel("Report a bug or assistant issue")
+
+                        Button {
                             clearCurrentConversation()
                         } label: {
                             Image(systemName: "trash")
@@ -235,6 +244,16 @@ struct IOSAIAssistantPanel: View {
             .buttonStyle(.plain)
             .help("New conversation")
             .accessibilityLabel("New conversation")
+
+            Button {
+                showBugReport = true
+            } label: {
+                Image(systemName: "ladybug")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .help("Report a bug or assistant issue")
+            .accessibilityLabel("Report a bug or assistant issue")
 
             Button {
                 clearCurrentConversation()
@@ -362,6 +381,28 @@ struct IOSAIAssistantPanel: View {
         .onReceive(NotificationCenter.default.publisher(for: .appDidLogout)) { _ in
             resetForLogout()
         }
+        .sheet(isPresented: $showBugReport) {
+            BugReportComposerView(
+                source: .assistant,
+                initialContext: bugReportContext,
+                reporterName: appCore.currentUser?.displayName,
+                category: .bug
+            )
+        }
+    }
+
+    private var bugReportContext: String {
+        var parts = ["source=AI Assistant"]
+        if let activePageId {
+            parts.append("active_page=\(activePageId)")
+        }
+        if let settingsContext {
+            parts.append(settingsContext)
+        }
+        if !conversationId.isEmpty {
+            parts.append("conversation_id=\(conversationId)")
+        }
+        return parts.joined(separator: "; ")
     }
 
     // MARK: - Availability Header

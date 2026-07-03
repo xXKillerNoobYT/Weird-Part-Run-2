@@ -40,6 +40,12 @@ struct SettingsRouter: View {
             AppConfigPage()
         case "settings-about":
             AboutPage()
+        case "settings-bug-report":
+            BugReportComposerView(
+                source: .settings,
+                initialContext: settingsPageContext,
+                reporterName: appCore.currentUser?.displayName
+            )
         case "settings-company":
             CompanyProfilesPage()
         case "settings-pdf":

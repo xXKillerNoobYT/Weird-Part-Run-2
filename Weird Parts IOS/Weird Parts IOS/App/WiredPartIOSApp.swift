@@ -10,6 +10,7 @@ import WiredPartCore
 struct WiredPartIOSApp: App {
     @StateObject private var appCore = AppCore()
     @StateObject private var tabPrefs = TabBarPreferences()
+    @State private var showLaunchErrorReport = false
     @State private var uiTestingPanelSchedule = PanelSchedule(
         panelName: "QA Panel A",
         panelType: .loadCenter,
@@ -214,6 +215,21 @@ struct WiredPartIOSApp: App {
                             appCore.retryBootstrap()
                         }
                         .buttonStyle(.borderedProminent)
+                        Button("Report this startup problem") {
+                            showLaunchErrorReport = true
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityHint("Opens a pre-filled GitHub issue draft with the startup error details.")
+                    }
+                    .sheet(isPresented: $showLaunchErrorReport) {
+                        BugReportComposerView(
+                            source: .launchError,
+                            initialContext: "startup; appCore.isReady=false",
+                            initialTitle: "App failed to load database",
+                            initialDescription: error,
+                            reporterName: appCore.currentUser?.displayName,
+                            category: .appCrashed
+                        )
                     }
                 } else {
                     LoadingView()
