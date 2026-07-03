@@ -152,7 +152,7 @@ These live outside the feature folders (`Scanning/`, `Sync/`, `Auth/`, `AI/`) an
 ## 5) What WiredPart Does NOT Do (Current Scope)
 
 - No cloud backend, cloud accounts, or internet sync — sync is between nearby company devices only.
-- iOS only (an experimental macOS scheme exists in the workspace, but Apple platforms are the only target).
+- iOS-first: Mac compatibility is via the iOS app target when Xcode exposes a Mac Catalyst destination; no standalone macOS scheme is shipped.
 - No third-party analytics or tracking; all data stays on company devices.
 
 See [BETA-TESTER-GUIDE.md](BETA-TESTER-GUIDE.md) for beta-specific known limitations.
