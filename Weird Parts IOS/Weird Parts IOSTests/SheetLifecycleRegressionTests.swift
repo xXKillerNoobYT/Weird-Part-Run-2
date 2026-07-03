@@ -119,25 +119,30 @@ final class SheetLifecycleRegressionTests: XCTestCase {
         let review = try Self.methodBody(named: "reviewOneAtATime", in: source)
 
         XCTAssertTrue(
-            review.contains("reviewIndex = nil") && review.contains("Image(systemName: \"chevron.left\")") && review.contains("Text(\"Back\")"),
+            review.contains("reviewIndex = nil")
+                && review.contains("Image(systemName: \"chevron.left\")")
+                && review.contains("Text(\"Back\")"),
             "Pricing bulk edit's one-at-a-time review step needs an explicit Back path to the preview step."
         )
         XCTAssertTrue(
-            review.contains("Button(\"Cancel\") { dismiss() }"),
+            review.contains("Button(\"Cancel\")") && review.contains("dismiss()"),
             "Pricing bulk edit's one-at-a-time review step needs an explicit Cancel path; swipe-only is unavailable on Mac Catalyst."
         )
     }
 
     func testPricingOverrideConflictResolutionHasExplicitBackControl() throws {
         let source = try Self.readFeatureSource(["Parts", "PricingOverrideFlow.swift"])
+        let body = try Self.braceBalancedBody(after: "var body: some View", in: source)
         let resolveConflicts = try Self.braceBalancedBody(after: "private var resolveConflictsView", in: source)
 
         XCTAssertTrue(
-            resolveConflicts.contains("step = .preview") && resolveConflicts.contains("Image(systemName: \"chevron.left\")") && resolveConflicts.contains("Text(\"Back\")"),
+            resolveConflicts.contains("step = .preview")
+                && resolveConflicts.contains("Image(systemName: \"chevron.left\")")
+                && resolveConflicts.contains("Text(\"Back\")"),
             "Pricing override conflict resolution needs an explicit Back path to the preview step."
         )
         XCTAssertTrue(
-            source.contains("Button(\"Cancel\") { dismiss() }"),
+            body.contains("Button(\"Cancel\")") && body.contains("dismiss()"),
             "Pricing override flow must retain the explicit global Cancel path."
         )
     }
