@@ -7,7 +7,7 @@ import WiredPartCore
 ///
 /// The app has no central error store, so this is intentionally lightweight:
 /// callers `record(_:)` a user-facing message when they surface an error, and
-/// the bug report screen reads `recentEntries` (most-recent first). The buffer
+/// the bug report screen reads `entries` (most-recent first). The buffer
 /// is bounded so it can never grow without limit.
 @MainActor
 final class BugReportErrorLog: ObservableObject {

@@ -62,7 +62,7 @@ struct ReportABugPage: View {
 
             actionsSection
 
-            if let urlBuildError {
+            if let urlBuildError, githubURL == nil {
                 Section {
                     Text(urlBuildError)
                         .foregroundStyle(.red)
