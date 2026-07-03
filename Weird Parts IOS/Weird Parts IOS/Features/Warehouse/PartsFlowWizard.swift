@@ -114,6 +114,10 @@ struct PartsFlowWizard: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
+                }
+                ToolbarItem(placement: .confirmationAction) {
                     Button("Save & Exit") {
                         saveAllProgress(clearDraft: false, andDismiss: true)
                     }

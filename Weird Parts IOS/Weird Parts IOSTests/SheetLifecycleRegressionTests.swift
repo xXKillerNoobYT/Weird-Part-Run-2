@@ -106,13 +106,43 @@ final class SheetLifecycleRegressionTests: XCTestCase {
             return
         }
         XCTAssertLessThan(
-            dismissRange.lowerBound, completeRange.lowerBound,
+            dismissRange.lowerBound,
+            completeRange.lowerBound,
             "The completion Done button must not defer dismissal behind the parent refresh (issue #736)."
         )
     }
 
-    // MARK: - Helpers
+    // MARK: - Issues #1391 / #1392
 
+    func testPricingBulkEditReviewStepHasExplicitBackAndCancelControls() throws {
+        let source = try Self.readFeatureSource(["Parts", "PricingBulkEditSheet.swift"])
+        let review = try Self.methodBody(named: "reviewOneAtATime", in: source)
+
+        XCTAssertTrue(
+            review.contains("Button {\n                        reviewIndex = nil"),
+            "Pricing bulk edit's one-at-a-time review step needs an explicit Back path to the preview step."
+        )
+        XCTAssertTrue(
+            review.contains("Button(\"Cancel\") { dismiss() }"),
+            "Pricing bulk edit's one-at-a-time review step needs an explicit Cancel path; swipe-only is unavailable on Mac Catalyst."
+        )
+    }
+
+    func testPricingOverrideConflictResolutionHasExplicitBackControl() throws {
+        let source = try Self.readFeatureSource(["Parts", "PricingOverrideFlow.swift"])
+        let resolveConflicts = try Self.braceBalancedBody(after: "private var resolveConflictsView", in: source)
+
+        XCTAssertTrue(
+            resolveConflicts.contains("Button {\n                        step = .preview"),
+            "Pricing override conflict resolution needs an explicit Back path to the preview step."
+        )
+        XCTAssertTrue(
+            source.contains("Button(\"Cancel\") { dismiss() }"),
+            "Pricing override flow must retain the explicit global Cancel path."
+        )
+    }
+
+    // MARK: - Helpers
     /// Slice of `IOSToolDetailPage.swift` covering only `ToolTradeSheet`, so
     /// assertions can't be satisfied by the sibling sheets in the same file.
     private static func toolTradeSheetSource() throws -> String {

@@ -490,6 +490,19 @@ struct PricingTierSetSheet: View {
                     }
                 }
             }
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        step = .preview
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                            Text("Back")
+                        }
+                    }
+                    .disabled(isSaving)
+                }
+            }
         }
     }
 
