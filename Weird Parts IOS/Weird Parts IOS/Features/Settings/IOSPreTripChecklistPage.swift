@@ -346,11 +346,16 @@ struct IOSPreTripChecklistPage: View {
             return
         }
 
+        // Persist every edited template, not just the currently selected tab.
+        // Edits for other vehicle types / trailer live in `drafts` and would
+        // otherwise be silently dropped when the user switches tabs before
+        // saving (Copilot review PR #1376). Saving in a stable key order keeps
+        // behavior deterministic if one template's write throws mid-way.
         do {
-            for (vehicleType, sections) in drafts {
+            for key in drafts.keys.sorted() {
                 try service.replaceInspectionTemplate(
-                    vehicleType: vehicleType,
-                    items: draftItems(from: sections)
+                    vehicleType: key,
+                    items: draftItems(from: drafts[key] ?? [])
                 )
             }
             saveError = nil
