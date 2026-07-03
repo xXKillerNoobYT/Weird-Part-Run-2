@@ -112,7 +112,7 @@ When `sharedKeyData == nil` this is intentional plaintext backward-compat. The c
 2. Re-implement the narrow fix on current `main`: make `decrypt`/`resolveSharedKey`/push+pull decode throw when a key was present but crypto/decode fails, distinguishing that from the legitimate `sharedKeyData == nil` plaintext path. Port the branch's `PeerManagerTests` cases that assert propagation.
 3. This is a data-integrity/security fix and should be treated as higher priority than the Stage-3 import work.
 
-**Disposition for the branch:** once 3b is filed, tag `archive/codex-wei-1028-…-20260702` and delete the remote head. Its bundle is already preserved per #1374 (`/Users/IA/wpr2-archives/local-branches-20260702.bundle`).
+**Disposition for the branch:** once 3b is filed, tag `archive/codex-wei-1028-…-20260702` and delete the remote head. Its bundle is already preserved per #1374; see the issue comments for the operator-local archive location.
 
 ---
 

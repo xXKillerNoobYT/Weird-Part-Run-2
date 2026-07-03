@@ -39,7 +39,7 @@ Main gaps:
 
 Use a three-stage pipeline:
 
-1. Source adapters produce `ImportExtractedTable`.
+1. Source adapters produce `PartsImportExtractedTable`.
 2. Mapping converts source columns/candidates into canonical `PartsImportDraftRow`.
 3. Preview/commit uses one shared dedupe, validation, conflict, audit, and transaction path.
 
