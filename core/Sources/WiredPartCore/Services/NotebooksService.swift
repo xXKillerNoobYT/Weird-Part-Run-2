@@ -96,6 +96,10 @@ public final class NotebooksService: Sendable {
         public let photoPath: String?
         public let referenceType: String?
         public let referenceId: Int64?
+        public let taskStatus: String?
+        public let taskDueDate: String?
+        public let taskAssignedTo: Int64?
+        public let taskPartsNote: String?
         // Classification fields (45D)
         public let workClassification: String?
         public let classificationReviewed: Bool
@@ -110,6 +114,8 @@ public final class NotebooksService: Sendable {
             blockData: String? = nil, headingLevel: Int? = nil,
             checklistItems: String? = nil, photoPath: String? = nil,
             referenceType: String? = nil, referenceId: Int64? = nil,
+            taskStatus: String? = nil, taskDueDate: String? = nil,
+            taskAssignedTo: Int64? = nil, taskPartsNote: String? = nil,
             workClassification: String? = nil, classificationReviewed: Bool = false,
             warrantyTimerEnd: String? = nil, isQuestion: Bool = false
         ) {
@@ -128,6 +134,10 @@ public final class NotebooksService: Sendable {
             self.photoPath = photoPath
             self.referenceType = referenceType
             self.referenceId = referenceId
+            self.taskStatus = taskStatus
+            self.taskDueDate = taskDueDate
+            self.taskAssignedTo = taskAssignedTo
+            self.taskPartsNote = taskPartsNote
             self.workClassification = workClassification
             self.classificationReviewed = classificationReviewed
             self.warrantyTimerEnd = warrantyTimerEnd
@@ -293,6 +303,7 @@ public final class NotebooksService: Sendable {
                        COALESCE(ne.is_completed, 0) as is_completed, ne.created_at,
                        ne.block_type, ne.block_data, ne.heading_level, ne.checklist_items,
                        ne.photo_path, ne.reference_type, ne.reference_id,
+                       ne.task_status, ne.task_due_date, ne.task_assigned_to, ne.task_parts_note,
                        ne.work_classification, COALESCE(ne.classification_reviewed, 0) as classification_reviewed,
                        ne.warranty_timer_end, COALESCE(ne.is_question, 0) as is_question,
                        COALESCE(u.display_name, u.email, 'Unknown') AS created_by_name
@@ -320,6 +331,10 @@ public final class NotebooksService: Sendable {
                     photoPath: row["photo_path"] as String?,
                     referenceType: row["reference_type"] as String?,
                     referenceId: row["reference_id"] as Int64?,
+                    taskStatus: row["task_status"] as String?,
+                    taskDueDate: row["task_due_date"] as String?,
+                    taskAssignedTo: row["task_assigned_to"] as Int64?,
+                    taskPartsNote: row["task_parts_note"] as String?,
                     workClassification: row["work_classification"] as String?,
                     classificationReviewed: (row["classification_reviewed"] as Int?) == 1,
                     warrantyTimerEnd: row["warranty_timer_end"] as String?,
@@ -729,6 +744,7 @@ public final class NotebooksService: Sendable {
                            COALESCE(ne.is_completed, 0) as is_completed, ne.created_at,
                            ne.block_type, ne.block_data, ne.heading_level, ne.checklist_items,
                            ne.photo_path, ne.reference_type, ne.reference_id,
+                           ne.task_status, ne.task_due_date, ne.task_assigned_to, ne.task_parts_note,
                            ne.work_classification, COALESCE(ne.classification_reviewed, 0) as classification_reviewed,
                            ne.warranty_timer_end, COALESCE(ne.is_question, 0) as is_question,
                            COALESCE(u.display_name, u.email, 'Unknown') AS created_by_name
@@ -758,6 +774,10 @@ public final class NotebooksService: Sendable {
                         photoPath: row["photo_path"] as String?,
                         referenceType: row["reference_type"] as String?,
                         referenceId: row["reference_id"] as Int64?,
+                        taskStatus: row["task_status"] as String?,
+                        taskDueDate: row["task_due_date"] as String?,
+                        taskAssignedTo: row["task_assigned_to"] as Int64?,
+                        taskPartsNote: row["task_parts_note"] as String?,
                         workClassification: row["work_classification"] as String?,
                         classificationReviewed: (row["classification_reviewed"] as Int?) == 1,
                         warrantyTimerEnd: row["warranty_timer_end"] as String?,
@@ -944,6 +964,16 @@ public final class NotebooksService: Sendable {
         blockData: String? = nil,
         headingLevel: Int? = nil,
         checklistItems: String? = nil,
+        photoPath: String? = nil,
+        referenceType: String? = nil,
+        referenceId: Int64? = nil,
+        taskStatus: String? = nil,
+        taskDueDate: String? = nil,
+        taskAssignedTo: Int64? = nil,
+        taskPartsNote: String? = nil,
+        workClassification: String? = nil,
+        warrantyTimerEnd: String? = nil,
+        isQuestion: Bool = false,
         createdBy: Int64,
         sortOrder: Int? = nil
     ) throws -> Int64 {
@@ -968,16 +998,23 @@ public final class NotebooksService: Sendable {
 
             let storedBlockData = blockType == "checklist" ? nil : blockData
             let storedChecklistItems = checklistItems ?? (blockType == "checklist" ? blockData : nil)
+            let persistedTaskStatus = taskStatus ?? (blockType == "todo" ? "open" : nil)
 
             try dbConn.execute(sql: """
                 INSERT INTO notebook_entries
                 (section_id, notebook_id, title, content, entry_type, block_type, block_data,
-                 heading_level, checklist_items, field_required, is_deleted, is_completed,
-                 sort_order, created_by, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 'note', ?, ?, ?, ?, 0, 0, 0, ?, ?, datetime('now'), datetime('now'))
+                 heading_level, checklist_items, photo_path, reference_type, reference_id,
+                 task_status, task_due_date, task_assigned_to, task_parts_note,
+                 work_classification, warranty_timer_end, is_question,
+                 field_required, is_deleted, is_completed, sort_order, created_by, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'note', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        0, 0, 0, ?, ?, datetime('now'), datetime('now'))
                 """, arguments: [
                     sectionId, notebookId, title ?? "", content, blockType, storedBlockData,
-                    headingLevel, storedChecklistItems, order, createdBy
+                    headingLevel, storedChecklistItems, photoPath, referenceType, referenceId,
+                    persistedTaskStatus, taskDueDate, taskAssignedTo, taskPartsNote,
+                    workClassification, warrantyTimerEnd, isQuestion ? 1 : 0,
+                    order, createdBy
                 ])
             return dbConn.lastInsertedRowID
         }
@@ -991,13 +1028,35 @@ public final class NotebooksService: Sendable {
         blockData: String?,
         headingLevel: Int? = nil,
         checklistItems: String? = nil,
+        photoPath: String? = nil,
+        clearPhotoPath: Bool = false,
+        referenceType: String? = nil,
+        clearReferenceType: Bool = false,
+        referenceId: Int64? = nil,
+        clearReferenceId: Bool = false,
+        taskStatus: String? = nil,
+        clearTaskStatus: Bool = false,
+        taskDueDate: String? = nil,
+        clearTaskDueDate: Bool = false,
+        taskAssignedTo: Int64? = nil,
+        clearTaskAssignedTo: Bool = false,
+        taskPartsNote: String? = nil,
+        clearTaskPartsNote: Bool = false,
+        workClassification: String? = nil,
+        clearWorkClassification: Bool = false,
+        warrantyTimerEnd: String? = nil,
+        clearWarrantyTimerEnd: Bool = false,
+        isQuestion: Bool? = nil,
         updatedBy: Int64
     ) throws {
         try db.writer.write { dbConn in
             try ServicePermissionGate.requirePermission(dbConn, userId: updatedBy, permissionKey: "manage_notebooks")
 
             guard let existing = try Row.fetchOne(dbConn, sql: """
-                SELECT title, content, block_data, heading_level, checklist_items
+                SELECT title, content, block_data, heading_level, checklist_items,
+                       photo_path, reference_type, reference_id,
+                       task_status, task_due_date, task_assigned_to, task_parts_note,
+                       work_classification, warranty_timer_end, is_question
                 FROM notebook_entries
                 WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [entryId]) else { return }
@@ -1008,13 +1067,46 @@ public final class NotebooksService: Sendable {
             let oldBlockData = existing["block_data"] as String?
             let oldHeadingLevel = existing["heading_level"] as Int?
             let oldChecklistItems = existing["checklist_items"] as String?
+            let oldPhotoPath = existing["photo_path"] as String?
+            let oldReferenceType = existing["reference_type"] as String?
+            let oldReferenceId = existing["reference_id"] as Int64?
+            let oldTaskStatus = existing["task_status"] as String?
+            let oldTaskDueDate = existing["task_due_date"] as String?
+            let oldTaskAssignedTo = existing["task_assigned_to"] as Int64?
+            let oldTaskPartsNote = existing["task_parts_note"] as String?
+            let oldWorkClassification = existing["work_classification"] as String?
+            let oldWarrantyTimerEnd = existing["warranty_timer_end"] as String?
+            let oldIsQuestionInt = existing["is_question"] as Int?
 
             try dbConn.execute(sql: """
                 UPDATE notebook_entries
                 SET title = ?, content = ?, block_data = ?, heading_level = ?, checklist_items = ?,
+                    photo_path = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, photo_path) END,
+                    reference_type = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, reference_type) END,
+                    reference_id = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, reference_id) END,
+                    task_status = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, task_status) END,
+                    task_due_date = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, task_due_date) END,
+                    task_assigned_to = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, task_assigned_to) END,
+                    task_parts_note = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, task_parts_note) END,
+                    work_classification = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, work_classification) END,
+                    warranty_timer_end = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, warranty_timer_end) END,
+                    is_question = COALESCE(?, is_question),
                     updated_by = ?, updated_at = datetime('now')
                 WHERE id = ? AND deleted_at IS NULL
-                """, arguments: [newTitle, content, blockData, headingLevel, checklistItems, updatedBy, entryId])
+                """, arguments: [
+                    newTitle, content, blockData, headingLevel, checklistItems,
+                    clearPhotoPath ? 1 : 0, photoPath,
+                    clearReferenceType ? 1 : 0, referenceType,
+                    clearReferenceId ? 1 : 0, referenceId,
+                    clearTaskStatus ? 1 : 0, taskStatus,
+                    clearTaskDueDate ? 1 : 0, taskDueDate,
+                    clearTaskAssignedTo ? 1 : 0, taskAssignedTo,
+                    clearTaskPartsNote ? 1 : 0, taskPartsNote,
+                    clearWorkClassification ? 1 : 0, workClassification,
+                    clearWarrantyTimerEnd ? 1 : 0, warrantyTimerEnd,
+                    isQuestion.map { $0 ? 1 : 0 },
+                    updatedBy, entryId
+                ])
 
             var changedFields: [String: Any] = [:]
             var oldValues: [String: Any] = [:]
@@ -1030,11 +1122,33 @@ public final class NotebooksService: Sendable {
                     oldValues[field] = old ?? NSNull()
                 }
             }
+            func trackInt64(_ field: String, old: Int64?, new: Int64?) {
+                if old != new {
+                    changedFields[field] = new ?? NSNull()
+                    oldValues[field] = old ?? NSNull()
+                }
+            }
             trackString("title", old: oldTitle, new: newTitle)
             trackString("content", old: oldContent, new: content)
             trackString("block_data", old: oldBlockData, new: blockData)
             trackInt("heading_level", old: oldHeadingLevel, new: headingLevel)
             trackString("checklist_items", old: oldChecklistItems, new: checklistItems)
+            // When a clear* flag is true the column is set to NULL; otherwise CASE WHEN falls
+            // through to COALESCE(param, col), so nil param = leave unchanged (keep old value).
+            trackString("photo_path", old: oldPhotoPath, new: clearPhotoPath ? nil : (photoPath ?? oldPhotoPath))
+            trackString("reference_type", old: oldReferenceType, new: clearReferenceType ? nil : (referenceType ?? oldReferenceType))
+            trackInt64("reference_id", old: oldReferenceId, new: clearReferenceId ? nil : (referenceId ?? oldReferenceId))
+            trackString("task_status", old: oldTaskStatus, new: clearTaskStatus ? nil : (taskStatus ?? oldTaskStatus))
+            trackString("task_due_date", old: oldTaskDueDate, new: clearTaskDueDate ? nil : (taskDueDate ?? oldTaskDueDate))
+            trackInt64("task_assigned_to", old: oldTaskAssignedTo, new: clearTaskAssignedTo ? nil : (taskAssignedTo ?? oldTaskAssignedTo))
+            trackString("task_parts_note", old: oldTaskPartsNote, new: clearTaskPartsNote ? nil : (taskPartsNote ?? oldTaskPartsNote))
+            trackString("work_classification", old: oldWorkClassification, new: clearWorkClassification ? nil : (workClassification ?? oldWorkClassification))
+            trackString("warranty_timer_end", old: oldWarrantyTimerEnd, new: clearWarrantyTimerEnd ? nil : (warrantyTimerEnd ?? oldWarrantyTimerEnd))
+            trackInt(
+                "is_question",
+                old: oldIsQuestionInt,
+                new: isQuestion.map { $0 ? 1 : 0 } ?? oldIsQuestionInt
+            )
 
             if !changedFields.isEmpty {
                 let changedFieldsData = try JSONSerialization.data(withJSONObject: changedFields, options: [.sortedKeys])
@@ -1198,6 +1312,7 @@ public final class NotebooksService: Sendable {
                            COALESCE(ne.is_completed, 0) as is_completed, ne.created_at,
                            ne.block_type, ne.block_data, ne.heading_level, ne.checklist_items,
                            ne.photo_path, ne.reference_type, ne.reference_id,
+                           ne.task_status, ne.task_due_date, ne.task_assigned_to, ne.task_parts_note,
                            ne.work_classification, COALESCE(ne.classification_reviewed, 0) as classification_reviewed,
                            ne.warranty_timer_end, COALESCE(ne.is_question, 0) as is_question,
                            COALESCE(u.display_name, u.email, 'Unknown') AS created_by_name
@@ -1228,6 +1343,10 @@ public final class NotebooksService: Sendable {
                         photoPath: row["photo_path"] as String?,
                         referenceType: row["reference_type"] as String?,
                         referenceId: row["reference_id"] as Int64?,
+                        taskStatus: row["task_status"] as String?,
+                        taskDueDate: row["task_due_date"] as String?,
+                        taskAssignedTo: row["task_assigned_to"] as Int64?,
+                        taskPartsNote: row["task_parts_note"] as String?,
                         workClassification: row["work_classification"] as String?,
                         classificationReviewed: (row["classification_reviewed"] as Int?) == 1,
                         warrantyTimerEnd: row["warranty_timer_end"] as String?,
