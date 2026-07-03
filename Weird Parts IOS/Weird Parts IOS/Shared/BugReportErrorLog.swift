@@ -27,7 +27,7 @@ final class BugReportErrorLog: ObservableObject {
     /// Recent entries, most-recent first.
     @Published private(set) var entries: [Entry] = []
 
-    init() {}
+    private init() {}
 
     /// Records a user-facing error message. Blank messages are ignored so an
     /// empty `loadError` reset never pollutes the log. Consecutive identical
