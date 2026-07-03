@@ -134,11 +134,29 @@ struct IOSAIAssistantPanel: View {
     private let aiService = FoundationModelsService()
 
     var body: some View {
-        if displayMode == .sheet {
-            sheetContent
-        } else {
-            overlayContent
+        Group {
+            if displayMode == .sheet {
+                sheetContent
+            } else {
+                overlayContent
+            }
         }
+        .sheet(isPresented: $isBugReportPresented) {
+            bugReportSheet
+        }
+    }
+
+    @ViewBuilder
+    private var bugReportSheet: some View {
+        NavigationStack {
+            ReportABugPage(originModule: activeModuleName)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close") { isBugReportPresented = false }
+                    }
+                }
+        }
+        .presentationDetents([.large])
     }
 
     // MARK: - Sheet Mode
@@ -192,17 +210,6 @@ struct IOSAIAssistantPanel: View {
                         .help("Report a bug")
                         .accessibilityLabel("Report a bug")
                     }
-                }
-                .sheet(isPresented: $isBugReportPresented) {
-                    NavigationStack {
-                        ReportABugPage(originModule: activeModuleName)
-                            .toolbar {
-                                ToolbarItem(placement: .cancellationAction) {
-                                    Button("Close") { isBugReportPresented = false }
-                                }
-                            }
-                    }
-                    .presentationDetents([.large])
                 }
         }
     }
@@ -269,6 +276,16 @@ struct IOSAIAssistantPanel: View {
             .buttonStyle(.plain)
             .help("New conversation")
             .accessibilityLabel("New conversation")
+
+            Button {
+                isBugReportPresented = true
+            } label: {
+                Image(systemName: "ladybug")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .help("Report a bug")
+            .accessibilityLabel("Report a bug")
 
             Button {
                 clearCurrentConversation()

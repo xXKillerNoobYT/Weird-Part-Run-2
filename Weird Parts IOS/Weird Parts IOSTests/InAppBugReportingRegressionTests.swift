@@ -36,6 +36,19 @@ final class InAppBugReportingRegressionTests: XCTestCase {
             assistantSource.contains("activeModuleName") && assistantSource.contains("HelpContentRegistry.helpFor"),
             "Assistant bug reports must include the active module/page context so reports are actionable."
         )
+
+        guard let overlayHeaderRange = assistantSource.range(of: "private var overlayHeader: some View"),
+              let chatBodyRange = assistantSource.range(of: "// MARK: - Shared Chat Body") else {
+            return XCTFail("Assistant source must keep an overlayHeader section before the shared chat body.")
+        }
+
+        let overlayHeaderSource = String(assistantSource[overlayHeaderRange.lowerBound..<chatBodyRange.lowerBound])
+        XCTAssertTrue(
+            overlayHeaderSource.contains("isBugReportPresented = true")
+                && overlayHeaderSource.contains("Image(systemName: \"ladybug\")")
+                && overlayHeaderSource.contains(".accessibilityLabel(\"Report a bug\")"),
+            "The floating overlay header must expose the same direct, accessible Report a bug action as sheet mode."
+        )
     }
 
     func testStartupFailureCanOpenBugReportDraft() throws {
