@@ -211,8 +211,8 @@ struct PanelSchedulePDFExporter {
 
             let leftSpace = row * 2 + 1
             let rightSpace = row * 2 + 2
-            drawCircuitRow(schedule: schedule, spaceNumber: leftSpace, x: leftX, width: halfWidth, y: y, attributes: cellAttributes)
-            drawCircuitRow(schedule: schedule, spaceNumber: rightSpace, x: rightX, width: halfWidth, y: y, attributes: cellAttributes)
+            drawCircuitRow(schedule: schedule, spaceNumber: leftSpace, x: leftX, width: halfWidth, y: y, rowHeight: rowHeight, attributes: cellAttributes)
+            drawCircuitRow(schedule: schedule, spaceNumber: rightSpace, x: rightX, width: halfWidth, y: y, rowHeight: rowHeight, attributes: cellAttributes)
             y += rowHeight
         }
     }
@@ -223,11 +223,12 @@ struct PanelSchedulePDFExporter {
         x: CGFloat,
         width: CGFloat,
         y: CGFloat,
+        rowHeight: CGFloat,
         attributes: [NSAttributedString.Key: Any]
     ) {
         let circuit = schedule.circuits.first { $0.spaceNumber == spaceNumber }
         UIColor.systemGray4.setStroke()
-        UIBezierPath(rect: CGRect(x: x, y: y, width: width, height: 18)).stroke()
+        UIBezierPath(rect: CGRect(x: x, y: y, width: width, height: rowHeight)).stroke()
 
         drawRowText("\(spaceNumber)", x: x + 4, y: y + 4, width: 18, attributes: attributes)
         drawRowText(circuit?.breakerAmps.map { "\($0)" } ?? "-", x: x + 24, y: y + 4, width: 22, attributes: attributes)

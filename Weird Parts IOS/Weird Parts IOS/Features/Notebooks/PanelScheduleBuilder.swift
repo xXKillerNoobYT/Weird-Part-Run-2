@@ -10,7 +10,6 @@ struct PanelScheduleBuilder: View {
     @State private var selectedCircuit: CircuitEntry?
     @State private var showHiddenCircuitPruneConfirmation = false
     @State private var exportOptions = PanelScheduleExportOptions()
-    @State private var exportURL: URL?
     @State private var exportMessage: String?
     // Anchor rect (in the window's coordinate space) for the Export menu's
     // Print PDF button, so the iPad popover presentation of
@@ -27,7 +26,7 @@ struct PanelScheduleBuilder: View {
             case .circuitEditor: return "circuitEditor"
             case .panelSettings: return "panelSettings"
             case .headerSettings: return "headerSettings"
-            case .share: return "share"
+            case .share(let url): return "share-\(url.absoluteString)"
             }
         }
     }
@@ -342,7 +341,6 @@ struct PanelScheduleBuilder: View {
     private func exportPanelScheduleForShare() {
         do {
             let url = try PanelSchedulePDFExporter(schedule: schedule, options: exportOptions).writeToTemporaryFile()
-            exportURL = url
             activeSheet = .share(url)
         } catch {
             exportMessage = userFriendlyError(error, context: "export panel schedule")
@@ -352,7 +350,6 @@ struct PanelScheduleBuilder: View {
     private func printPanelSchedule() {
         do {
             let url = try PanelSchedulePDFExporter(schedule: schedule, options: exportOptions).writeToTemporaryFile()
-            exportURL = url
 
             let printController = UIPrintInteractionController.shared
             let printInfo = UIPrintInfo(dictionary: nil)
