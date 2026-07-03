@@ -134,29 +134,11 @@ struct IOSAIAssistantPanel: View {
     private let aiService = FoundationModelsService()
 
     var body: some View {
-        Group {
-            if displayMode == .sheet {
-                sheetContent
-            } else {
-                overlayContent
-            }
+        if displayMode == .sheet {
+            sheetContent
+        } else {
+            overlayContent
         }
-        .sheet(isPresented: $isBugReportPresented) {
-            bugReportSheet
-        }
-    }
-
-    @ViewBuilder
-    private var bugReportSheet: some View {
-        NavigationStack {
-            ReportABugPage(originModule: activeModuleName)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Close") { isBugReportPresented = false }
-                    }
-                }
-        }
-        .presentationDetents([.large])
     }
 
     // MARK: - Sheet Mode
@@ -211,7 +193,23 @@ struct IOSAIAssistantPanel: View {
                         .accessibilityLabel("Report a bug")
                     }
                 }
+                .sheet(isPresented: $isBugReportPresented) {
+                    bugReportSheet
+                }
         }
+    }
+
+    @ViewBuilder
+    private var bugReportSheet: some View {
+        NavigationStack {
+            ReportABugPage(originModule: activeModuleName)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close") { isBugReportPresented = false }
+                    }
+                }
+        }
+        .presentationDetents([.large])
     }
 
     // MARK: - Overlay Mode
@@ -240,6 +238,9 @@ struct IOSAIAssistantPanel: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
         .padding(DeviceContext.isLargeScreen ? 12 : 0)
+        .sheet(isPresented: $isBugReportPresented) {
+            bugReportSheet
+        }
     }
 
     @ViewBuilder
@@ -278,16 +279,6 @@ struct IOSAIAssistantPanel: View {
             .accessibilityLabel("New conversation")
 
             Button {
-                isBugReportPresented = true
-            } label: {
-                Image(systemName: "ladybug")
-                    .font(.caption)
-            }
-            .buttonStyle(.plain)
-            .help("Report a bug")
-            .accessibilityLabel("Report a bug")
-
-            Button {
                 clearCurrentConversation()
             } label: {
                 Image(systemName: "trash")
@@ -296,6 +287,16 @@ struct IOSAIAssistantPanel: View {
             .buttonStyle(.plain)
             .disabled(messages.isEmpty || isClearingConversation)
             .accessibilityLabel("Clear conversation")
+
+            Button {
+                isBugReportPresented = true
+            } label: {
+                Image(systemName: "ladybug")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .help("Report a bug")
+            .accessibilityLabel("Report a bug")
 
             Button {
                 isVisible = false

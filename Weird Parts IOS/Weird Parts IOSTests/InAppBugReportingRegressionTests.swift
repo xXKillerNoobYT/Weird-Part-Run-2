@@ -32,23 +32,21 @@ final class InAppBugReportingRegressionTests: XCTestCase {
             assistantSource.contains("isBugReportPresented") && assistantSource.contains("ReportABugPage(originModule: activeModuleName)"),
             "The assistant must expose a direct report action for assistant mistakes or page-specific app bugs."
         )
+        let overlayHeaderSource = try TestSourceSlicer.braceBalancedBody(
+            after: "private var overlayHeader: some View",
+            in: assistantSource
+        )
+        XCTAssertTrue(
+            overlayHeaderSource.contains("isBugReportPresented = true")
+                && overlayHeaderSource.contains("Image(systemName: \"ladybug\")")
+                && overlayHeaderSource.contains("accessibilityLabel(\"Report a bug\")"),
+            "The floating assistant overlay must expose the same Report a bug entry point as sheet mode."
+        )
         XCTAssertTrue(
             assistantSource.contains("activeModuleName") && assistantSource.contains("HelpContentRegistry.helpFor"),
             "Assistant bug reports must include the active module/page context so reports are actionable."
         )
 
-        guard let overlayHeaderRange = assistantSource.range(of: "private var overlayHeader: some View"),
-              let chatBodyRange = assistantSource.range(of: "// MARK: - Shared Chat Body") else {
-            return XCTFail("Assistant source must keep an overlayHeader section before the shared chat body.")
-        }
-
-        let overlayHeaderSource = String(assistantSource[overlayHeaderRange.lowerBound..<chatBodyRange.lowerBound])
-        XCTAssertTrue(
-            overlayHeaderSource.contains("isBugReportPresented = true")
-                && overlayHeaderSource.contains("Image(systemName: \"ladybug\")")
-                && overlayHeaderSource.contains(".accessibilityLabel(\"Report a bug\")"),
-            "The floating overlay header must expose the same direct, accessible Report a bug action as sheet mode."
-        )
     }
 
     func testStartupFailureCanOpenBugReportDraft() throws {
