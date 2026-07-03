@@ -209,6 +209,21 @@ final class BetaDeadEndControlsRegressionTests: XCTestCase {
         )
     }
 
+    // MARK: - #1389: Warehouse onboarding must have an unconditional exit
+
+    func testWarehouseOnboardingProvidesCancelSeparateFromSaveAndExit() throws {
+        let source = try Self.readSource("Features/Warehouse/WarehouseOnboardingWizard.swift")
+
+        XCTAssertTrue(
+            source.contains("ToolbarItem(placement: .cancellationAction)") && source.contains("Button(\"Cancel\") { dismiss() }"),
+            "Warehouse onboarding must expose a plain Cancel action that dismisses directly, even before a progress row exists."
+        )
+        XCTAssertTrue(
+            source.contains("ToolbarItem(placement: .confirmationAction)") && source.contains("Button(\"Save & Exit\") { saveAndExit() }"),
+            "Save & Exit should remain available as the save path, but it must not be the wizard's only exit."
+        )
+    }
+
     // MARK: - Helper
 
     private static func readSource(_ relativePath: String, file: StaticString = #filePath) throws -> String {
