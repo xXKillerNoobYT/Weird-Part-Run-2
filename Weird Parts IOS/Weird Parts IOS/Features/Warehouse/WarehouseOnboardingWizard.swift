@@ -147,6 +147,10 @@ struct WarehouseOnboardingWizard: View {
             .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
+                }
+                ToolbarItem(placement: .confirmationAction) {
                     Button("Save & Exit") { saveAndExit() }
                         .disabled(isSaving)
                 }
