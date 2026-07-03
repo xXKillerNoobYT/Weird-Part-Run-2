@@ -219,7 +219,7 @@ struct WiredPartIOSApp: App {
                             showLaunchErrorReport = true
                         }
                         .buttonStyle(.bordered)
-                        .accessibilityHint("Opens a pre-filled GitHub issue draft with the startup error details.")
+                        .accessibilityHint("Opens the in-app bug report form with the startup error details.")
                     }
                     .sheet(isPresented: $showLaunchErrorReport) {
                         NavigationStack {
