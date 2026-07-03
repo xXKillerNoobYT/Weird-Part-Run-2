@@ -1062,6 +1062,7 @@ struct ToolsServiceTests {
         let env = try E2ETestHelpers.setUp()
         var policy = try env.settings.getToolPolicies()
         policy.closeCheckoutOnLostStolen = false
+        policy.requireCheckoutCondition = false
         _ = try env.settings.updateToolPolicies(policy)
 
         let toolId = try insertTool(env, toolNumber: "T-LOST-OPEN", name: "Open Lost Tool", status: "available")
@@ -1090,6 +1091,9 @@ struct ToolsServiceTests {
     @Test("checkoutTool sets status to checked_out and creates checkout record")
     func testCheckoutToolLegacy() throws {
         let env = try E2ETestHelpers.setUp()
+        var policy = try env.settings.getToolPolicies()
+        policy.requireCheckoutCondition = false
+        _ = try env.settings.updateToolPolicies(policy)
         let toolId = try insertTool(env, toolNumber: "T-CO-L", name: "Legacy Checkout Tool", status: "available")
 
         try env.tools.checkoutTool(toolId: toolId, userId: env.adminUserId, notes: "Needed on site")
@@ -1101,6 +1105,10 @@ struct ToolsServiceTests {
     @Test("returnTool resets status to available and closes checkout record")
     func testReturnToolLegacy() throws {
         let env = try E2ETestHelpers.setUp()
+        var policy = try env.settings.getToolPolicies()
+        policy.requireCheckoutCondition = false
+        policy.requireReturnCondition = false
+        _ = try env.settings.updateToolPolicies(policy)
         let toolId = try insertTool(env, toolNumber: "T-RT-L", name: "Legacy Return Tool", status: "available")
 
         try env.tools.checkoutTool(toolId: toolId, userId: env.adminUserId, notes: nil)
@@ -1115,6 +1123,7 @@ struct ToolsServiceTests {
         let env = try E2ETestHelpers.setUp()
         var policy = try env.settings.getToolPolicies()
         policy.maxCheckoutDays = 3
+        policy.requireCheckoutCondition = false
         _ = try env.settings.updateToolPolicies(policy)
 
         let toolId = try insertTool(env, toolNumber: "T-POL-CO", name: "Policy Checkout Tool", status: "available")
@@ -1135,6 +1144,8 @@ struct ToolsServiceTests {
         let env = try E2ETestHelpers.setUp()
         var policy = try env.settings.getToolPolicies()
         policy.maintenanceAfterCheckouts = 1
+        policy.requireCheckoutCondition = false
+        policy.requireReturnCondition = false
         _ = try env.settings.updateToolPolicies(policy)
 
         let toolId = try insertTool(env, toolNumber: "T-POL-MAINT", name: "Maintenance Policy Tool", status: "available")
@@ -1143,6 +1154,30 @@ struct ToolsServiceTests {
 
         let detail = try env.tools.getToolDetail(toolId: toolId)
         #expect(detail?.status == "maintenance")
+    }
+
+    @Test("checkoutTool throws policyDisallowsAction when requireCheckoutCondition is enabled")
+    func testCheckoutTool_throwsWhenConditionRequired() throws {
+        let env = try E2ETestHelpers.setUp()
+        // Default policy has requireCheckoutCondition = true — no need to update.
+        let toolId = try insertTool(env, toolNumber: "T-CO-POL-BLOCK", name: "Blocked Checkout Tool", status: "available")
+        #expect(throws: ToolsService.ToolsError.policyDisallowsAction(
+            "A checkout condition is required by policy. Use checkoutToolWithCondition to provide one."
+        )) {
+            try env.tools.checkoutTool(toolId: toolId, userId: env.adminUserId)
+        }
+    }
+
+    @Test("returnTool throws policyDisallowsAction when requireReturnCondition is enabled")
+    func testReturnTool_throwsWhenConditionRequired() throws {
+        let env = try E2ETestHelpers.setUp()
+        // Default policy has requireReturnCondition = true — no need to update.
+        let toolId = try insertTool(env, toolNumber: "T-RT-POL-BLOCK", name: "Blocked Return Tool", status: "available")
+        #expect(throws: ToolsService.ToolsError.policyDisallowsAction(
+            "A return condition is required by policy. Use returnToolWithCondition to provide one."
+        )) {
+            try env.tools.returnTool(toolId: toolId, userId: env.adminUserId)
+        }
     }
 
     // =========================================================================
@@ -1651,6 +1686,9 @@ struct ToolsServiceTests {
     @Test("checkoutTool creates no orphan tool_checkouts row for a soft-deleted tool")
     func testCheckoutTool_noOrphanRowForSoftDeletedTool() throws {
         let env = try E2ETestHelpers.setUp()
+        var policy = try env.settings.getToolPolicies()
+        policy.requireCheckoutCondition = false
+        _ = try env.settings.updateToolPolicies(policy)
         let toolId: Int64 = try env.db.writer.write { db -> Int64 in
             try db.execute(sql: """
                 INSERT INTO tools (tool_number, name, category, status, has_kit, created_at, updated_at)
@@ -1764,6 +1802,9 @@ struct ToolsServiceTests {
 
     @Test func testCheckoutTool_rejectsTombstonedUser() throws {
         let env = try E2ETestHelpers.setUp()
+        var policy = try env.settings.getToolPolicies()
+        policy.requireCheckoutCondition = false
+        _ = try env.settings.updateToolPolicies(policy)
         let toolId = try insertTool(env, toolNumber: "T-CHKOUT-USR")
         #expect(throws: ToolsService.ToolsError.userNotFound(9999)) {
             try env.tools.checkoutTool(toolId: toolId, userId: 9999)
@@ -1772,6 +1813,9 @@ struct ToolsServiceTests {
 
     @Test func testReturnTool_rejectsTombstonedTool() throws {
         let env = try E2ETestHelpers.setUp()
+        var policy = try env.settings.getToolPolicies()
+        policy.requireReturnCondition = false
+        _ = try env.settings.updateToolPolicies(policy)
         #expect(throws: ToolsService.ToolsError.toolNotFound(9999)) {
             try env.tools.returnTool(toolId: 9999, userId: env.adminUserId)
         }
@@ -1779,6 +1823,9 @@ struct ToolsServiceTests {
 
     @Test func testReturnTool_rejectsTombstonedUser() throws {
         let env = try E2ETestHelpers.setUp()
+        var policy = try env.settings.getToolPolicies()
+        policy.requireReturnCondition = false
+        _ = try env.settings.updateToolPolicies(policy)
         let toolId = try insertTool(env, toolNumber: "T-RET-USR")
         #expect(throws: ToolsService.ToolsError.userNotFound(9999)) {
             try env.tools.returnTool(toolId: toolId, userId: 9999)
@@ -1787,6 +1834,9 @@ struct ToolsServiceTests {
 
     @Test func testCheckoutTool_rejectsInactiveUser() throws {
         let env = try E2ETestHelpers.setUp()
+        var policy = try env.settings.getToolPolicies()
+        policy.requireCheckoutCondition = false
+        _ = try env.settings.updateToolPolicies(policy)
         let toolId = try insertTool(env, toolNumber: "T-CHKOUT-INACTIVE")
         try env.db.writer.write { db in
             try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?", arguments: [env.adminUserId])
@@ -1803,6 +1853,9 @@ struct ToolsServiceTests {
 
     @Test func testReturnTool_rejectsInactiveUser() throws {
         let env = try E2ETestHelpers.setUp()
+        var policy = try env.settings.getToolPolicies()
+        policy.requireReturnCondition = false
+        _ = try env.settings.updateToolPolicies(policy)
         let toolId = try insertTool(env, toolNumber: "T-RET-INACTIVE")
         try env.db.writer.write { db in
             try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?", arguments: [env.adminUserId])
@@ -2428,6 +2481,9 @@ struct ToolsServiceTests {
     @Test("returnTool silently succeeds when no open checkout record exists")
     func testReturnTool_noOpenCheckout() throws {
         let env = try E2ETestHelpers.setUp()
+        var policy = try env.settings.getToolPolicies()
+        policy.requireReturnCondition = false
+        _ = try env.settings.updateToolPolicies(policy)
         // Tool exists, user exists, but no open checkout row — UPDATE closes 0 rows, no crash
         let toolId = try insertTool(env, toolNumber: "T-RET-NOOPEN", name: "No Open Checkout Tool",
                                     status: "checked_out", assignedTo: env.adminUserId)
@@ -2444,6 +2500,9 @@ struct ToolsServiceTests {
     @Test("checkoutTool with notes stores and tool status changes to checked_out")
     func testCheckoutTool_withNotes() throws {
         let env = try E2ETestHelpers.setUp()
+        var policy = try env.settings.getToolPolicies()
+        policy.requireCheckoutCondition = false
+        _ = try env.settings.updateToolPolicies(policy)
         let toolId = try insertTool(env, toolNumber: "T-CO-NOTES", name: "Notes Checkout Tool", status: "available")
 
         try env.tools.checkoutTool(toolId: toolId, userId: env.adminUserId, notes: "Needed on site 5B")

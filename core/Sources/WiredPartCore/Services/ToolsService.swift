@@ -115,11 +115,24 @@ public final class ToolsService: Sendable {
     // MARK: - Errors
     // =========================================================================
 
-    public enum ToolsError: Error, Sendable, Equatable {
+    public enum ToolsError: Error, Sendable, Equatable, LocalizedError {
         case toolNotFound(Int64)
         case userNotFound(Int64)
         case requiredFieldEmpty(String)
         case policyDisallowsAction(String)
+
+        public var errorDescription: String? {
+            switch self {
+            case .toolNotFound(let id):
+                return "Tool \(id) was not found."
+            case .userNotFound(let id):
+                return "User \(id) was not found or is inactive."
+            case .requiredFieldEmpty(let field):
+                return "The field "\(field)" is required."
+            case .policyDisallowsAction(let reason):
+                return reason
+            }
+        }
     }
 
     // =========================================================================
@@ -351,9 +364,17 @@ public final class ToolsService: Sendable {
     // =========================================================================
 
     /// Check out a tool to a user. No-op if the tool has been soft-deleted.
+    ///
+    /// Throws `policyDisallowsAction` when `requireCheckoutCondition` is enabled —
+    /// callers must use `checkoutToolWithCondition` to supply a condition string.
     public func checkoutTool(toolId: Int64, userId: Int64, notes: String? = nil) throws {
         try db.writer.write { dbConn in
             let policy = try Self.readToolPolicy(in: dbConn)
+            if policy.requireCheckoutCondition {
+                throw ToolsError.policyDisallowsAction(
+                    "A checkout condition is required by policy. Use checkoutToolWithCondition to provide one."
+                )
+            }
             let toolExists = (try Int.fetchOne(dbConn, sql: """
                 SELECT COUNT(*) FROM tools WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [toolId]) ?? 0) > 0
@@ -385,9 +406,17 @@ public final class ToolsService: Sendable {
     }
 
     /// Return a checked-out tool.
+    ///
+    /// Throws `policyDisallowsAction` when `requireReturnCondition` is enabled —
+    /// callers must use `returnToolWithCondition` to supply a condition string.
     public func returnTool(toolId: Int64, userId: Int64, notes: String? = nil) throws {
         try db.writer.write { dbConn in
             let policy = try Self.readToolPolicy(in: dbConn)
+            if policy.requireReturnCondition {
+                throw ToolsError.policyDisallowsAction(
+                    "A return condition is required by policy. Use returnToolWithCondition to provide one."
+                )
+            }
             let toolExists = (try Int.fetchOne(dbConn, sql: """
                 SELECT COUNT(*) FROM tools WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [toolId]) ?? 0) > 0
@@ -406,16 +435,14 @@ public final class ToolsService: Sendable {
                     """,
                 arguments: [toolId]
             )
-            // Close the checkout record. When the policy requires a return condition,
-            // default it to the checkout condition (or "Good") rather than leaving it null.
+            // Close the checkout record.
             try dbConn.execute(
                 sql: """
                     UPDATE tool_checkouts SET checked_in_at = datetime('now'), checked_in_by = ?,
-                        return_condition = CASE WHEN ? THEN COALESCE(return_condition, checkout_condition, 'Good') ELSE return_condition END,
                         return_notes = ?
                     WHERE tool_id = ? AND checked_in_at IS NULL
                     """,
-                arguments: [userId, policy.requireReturnCondition ? 1 : 0, notes, toolId]
+                arguments: [userId, notes, toolId]
             )
             try Self.schedulePolicyMaintenanceIfDue(toolId: toolId, policy: policy, performedBy: userId, in: dbConn)
         }
@@ -912,18 +939,19 @@ public final class ToolsService: Sendable {
     public func editToolWithVerification(
         toolId: Int64, userId: Int64, changes: [String: String], hasPermission: Bool
     ) throws -> ToolEditResult {
-        let policy = try db.writer.read { try Self.readToolPolicy(in: $0) }
-        let requiresVerification: Bool
-        switch policy.editVerificationMode {
-        case .pendingWithoutPermission:
-            requiresVerification = !hasPermission
-        case .alwaysPending:
-            requiresVerification = true
-        case .directEdits:
-            requiresVerification = false
-        }
-        let status = requiresVerification ? "pending_verification" : "approved"
-        try db.writer.write { dbConn in
+        return try db.writer.write { dbConn -> ToolEditResult in
+            let policy = try Self.readToolPolicy(in: dbConn)
+            let requiresVerification: Bool
+            switch policy.editVerificationMode {
+            case .pendingWithoutPermission:
+                requiresVerification = !hasPermission
+            case .alwaysPending:
+                requiresVerification = true
+            case .directEdits:
+                requiresVerification = false
+            }
+            let status = requiresVerification ? "pending_verification" : "approved"
+
             // Guard: tool must exist and not be tombstoned — silent no-op keeps existing
             // semantics (matches `testEditToolWithVerification_noOpOnSoftDeletedTool`); the
             // per-field `oldRow == nil` check below was the only prior defense and only
@@ -931,7 +959,7 @@ public final class ToolsService: Sendable {
             let toolExists = (try Int.fetchOne(dbConn, sql: """
                 SELECT COUNT(*) FROM tools WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [toolId]) ?? 0) > 0
-            guard toolExists else { return }
+            guard toolExists else { return ToolEditResult(status: status, requiresVerification: requiresVerification) }
 
             // Guard: editor must exist and be active — tool_change_log.changed_by
             // REFERENCES users but doesn't enforce soft-delete state; a tombstoned
@@ -965,8 +993,8 @@ public final class ToolsService: Sendable {
                         arguments: [value, toolId])
                 }
             }
+            return ToolEditResult(status: status, requiresVerification: requiresVerification)
         }
-        return ToolEditResult(status: status, requiresVerification: requiresVerification)
     }
 
     /// Approve a pending tool edit (manager QR scan verification).
@@ -1844,7 +1872,7 @@ public final class ToolsService: Sendable {
             WHERE tool_id = ?
               AND checked_in_at IS NOT NULL
               AND deleted_at IS NULL
-              AND created_at > COALESCE((SELECT last_maintenance_date FROM tools WHERE id = ?), '0000-01-01')
+              AND julianday(checked_in_at) > julianday(COALESCE((SELECT last_maintenance_date FROM tools WHERE id = ?), '0000-01-01'))
             """, arguments: [toolId, toolId]) ?? 0
         guard completedCheckouts >= policy.maintenanceAfterCheckouts else { return }
 

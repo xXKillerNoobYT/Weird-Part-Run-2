@@ -603,6 +603,10 @@ struct ReportsServiceTests {
     @Test("Tool checkout report returns rows after checkout")
     func testToolCheckoutReportWithData() throws {
         let env = try E2ETestHelpers.setUp()
+        var policy = try env.settings.getToolPolicies()
+        policy.requireCheckoutCondition = false
+        policy.requireReturnCondition = false
+        _ = try env.settings.updateToolPolicies(policy)
         // Insert a tool directly
         let toolId = try env.db.writer.write { db -> Int64 in
             try db.execute(sql: """
@@ -634,6 +638,10 @@ struct ReportsServiceTests {
     @Test("Tool checkout report hides soft-deleted tool names")
     func testToolCheckoutReportHidesSoftDeletedToolName() throws {
         let env = try E2ETestHelpers.setUp()
+        var policy = try env.settings.getToolPolicies()
+        policy.requireCheckoutCondition = false
+        policy.requireReturnCondition = false
+        _ = try env.settings.updateToolPolicies(policy)
         let deletedToolName = "Deleted Torque Wrench"
         let toolId = try env.db.writer.write { db -> Int64 in
             try db.execute(sql: """

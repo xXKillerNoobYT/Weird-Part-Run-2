@@ -248,9 +248,7 @@ struct IOSToolPoliciesPage: View {
             requireLostStolenLocation = parser.bool(map, key: "tool_policy_require_lost_stolen_location", default: false)
             closeCheckoutOnLostStolen = parser.bool(map, key: "tool_policy_close_checkout_on_lost_stolen", default: true)
 
-            editVerificationMode = map["tool_policy_edit_verification_mode"]
-                .flatMap(SettingsService.ToolPolicySettings.EditVerificationMode.init(rawValue:))
-                ?? .pendingWithoutPermission
+            editVerificationMode = parser.rawEnum(map, key: "tool_policy_edit_verification_mode", default: SettingsService.ToolPolicySettings.EditVerificationMode.pendingWithoutPermission)
             try parser.throwIfInvalid()
             loadError = nil
         } catch {
