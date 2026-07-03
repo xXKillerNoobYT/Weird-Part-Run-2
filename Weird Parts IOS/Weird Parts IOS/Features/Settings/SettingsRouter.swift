@@ -40,6 +40,8 @@ struct SettingsRouter: View {
             AppConfigPage()
         case "settings-about":
             AboutPage()
+        case "settings-bug-report":
+            ReportABugPage(originModule: "Settings")
         case "settings-company":
             CompanyProfilesPage()
         case "settings-pdf":

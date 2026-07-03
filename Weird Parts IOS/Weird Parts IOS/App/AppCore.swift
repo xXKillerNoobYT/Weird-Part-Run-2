@@ -343,6 +343,7 @@ final class AppCore: ObservableObject {
                 "[AppCore] bootstrap failed domain=\(nsError.domain, privacy: .public) code=\(nsError.code, privacy: .public) description=\(error.localizedDescription, privacy: .public)"
             )
             loadError = userFriendlyError(error, context: "start app")
+            BugReportErrorLog.shared.record(loadError, context: "App startup")
         }
     }
 
