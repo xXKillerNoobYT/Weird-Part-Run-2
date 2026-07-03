@@ -2,7 +2,7 @@
 
 > **Issue:** WEI-2812 (planning child WEI-2953)
 > **Revision:** 2026-06-04.1 (landed to `docs/plans/` 2026-07-02 via the #1374 branch-disposition pass)
-> **Status:** Plan of record for the parts universal-import pipeline. Stages 1–2 (shared source-adapter contract + supplier-aware dedupe) have landed on `main`; Stage 3 (digital PDF / OCR preview adapters) is partially unlanded — see [[branch-salvage-review-2026-07]].
+> **Status:** Plan of record for the parts universal-import pipeline. Stages 1–2 (shared source-adapter contract + supplier-aware dedupe) have landed on `main`; Stage 3 (digital PDF / OCR preview adapters) is partially unlanded — see [Branch Salvage Review — 2026-07](branch-salvage-review-2026-07.md).
 > **Purpose:** Extend parts import from validated CSV/XLSX into a universal, preview-first, evidence-preserving import pipeline for supplier spreadsheets, digital PDFs, scanned PDFs, and visual table layouts.
 
 ---
@@ -160,7 +160,7 @@ Stage 2: Mapping and supplier-aware dedupe — **landed on `main`**
 - Add supplier-aware dedupe keys and preview decision classification.
 - Preserve existing CSV/XLSX import behavior through compatibility tests.
 
-Stage 3: Digital PDF and OCR preview — **partially unlanded (WEI-2958); see [[branch-salvage-review-2026-07]]**
+Stage 3: Digital PDF and OCR preview — **partially unlanded (WEI-2958); see [Branch Salvage Review — 2026-07](branch-salvage-review-2026-07.md)**
 
 - Add digital PDF text/table extraction adapter.
 - Bridge OCR candidates into the shared preview model while keeping commit blocked for low-confidence/uncorrected OCR rows.
@@ -190,4 +190,4 @@ Stage 5: UI implementation and verification
 
 > **Historical note (2026-06-04):** the canonical repo had high branch/worktree pressure (179 remote heads, 18 open PRs). Implementation children were told to start in small batches and not open parallel branches beyond Stage 1 until branch cleanup made capacity clear.
 
-That branch cleanup happened: the 2026-07-02 drain (#513, decided in #1348) reduced origin to a clean set, and the #1374 disposition pass landed this plan and reviewed the remaining Stage-3 / auth-hardening branches. Stage 3 implementation should resume from the salvage recommendations in [[branch-salvage-review-2026-07]] rather than from the stale `WEI-2958` branch, because that branch was cut before Stages 1–2 landed and no longer applies cleanly to `main`.
+That branch cleanup happened: the 2026-07-02 drain (#513, decided in #1348) reduced origin to a clean set, and the #1374 disposition pass landed this plan and reviewed the remaining Stage-3 / auth-hardening branches. Stage 3 implementation should resume from the salvage recommendations in [Branch Salvage Review — 2026-07](branch-salvage-review-2026-07.md) rather than from the stale `WEI-2958` branch, because that branch was cut before Stages 1–2 landed and no longer applies cleanly to `main`.

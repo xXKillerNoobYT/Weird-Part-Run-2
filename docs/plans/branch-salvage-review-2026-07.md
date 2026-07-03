@@ -4,7 +4,7 @@
 > **Issue:** [#1374](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/1374) — Disposition for 3 keep-live branches
 > **Author:** Paperclip / Claude beta-completion pass
 > **Status:** Findings + recommendations. **The owner makes the final delete/keep call** — this review does not close #1374.
-> **Related:** [[ai-assisted-universal-import-architecture]] (WEI-2812 plan of record)
+> **Related:** [AI-Assisted Universal Import Architecture](ai-assisted-universal-import-architecture.md) (WEI-2812 plan of record)
 
 ---
 
