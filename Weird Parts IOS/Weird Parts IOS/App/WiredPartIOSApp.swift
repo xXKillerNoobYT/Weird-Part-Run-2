@@ -10,6 +10,7 @@ import WiredPartCore
 struct WiredPartIOSApp: App {
     @StateObject private var appCore = AppCore()
     @StateObject private var tabPrefs = TabBarPreferences()
+    @State private var showLaunchErrorReport = false
     @State private var uiTestingPanelSchedule = PanelSchedule(
         panelName: "QA Panel A",
         panelType: .loadCenter,
@@ -214,6 +215,22 @@ struct WiredPartIOSApp: App {
                             appCore.retryBootstrap()
                         }
                         .buttonStyle(.borderedProminent)
+                        Button("Report this startup problem") {
+                            showLaunchErrorReport = true
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityHint("Opens the in-app bug report form with the startup error details.")
+                    }
+                    .sheet(isPresented: $showLaunchErrorReport) {
+                        NavigationStack {
+                            ReportABugPage(originModule: "Startup")
+                                .toolbar {
+                                    ToolbarItem(placement: .cancellationAction) {
+                                        Button("Close") { showLaunchErrorReport = false }
+                                    }
+                                }
+                        }
+                        .presentationDetents([.large])
                     }
                 } else {
                     LoadingView()
