@@ -17,8 +17,6 @@ struct TabBarEditorView: View {
     @State private var bottomIds: [String] = []
     @State private var moreIds: [String] = []
 
-    /// True when the user has tried to exceed the 4-slot limit.
-    @State private var showCapWarning = false
     @State private var showResetConfirmation = false
     @State private var showDemoteMinimumWarning = false
 
@@ -215,10 +213,6 @@ struct TabBarEditorView: View {
         moreIds.remove(at: index)
         bottomIds.append(id)
         showDemoteMinimumWarning = false
-
-        if bottomIds.count > 4 {
-            showCapWarning = true
-        }
     }
 
     /// Move a module from "Fast Access Bar" to the top of "More".
@@ -231,7 +225,6 @@ struct TabBarEditorView: View {
         }
         bottomIds.remove(at: index)
         moreIds.insert(id, at: 0)
-        showCapWarning = false
         showDemoteMinimumWarning = false
     }
 
@@ -249,7 +242,6 @@ struct TabBarEditorView: View {
         let defaultIds = allVisibleModules.map(\.id)
         bottomIds = Array(defaultIds.prefix(min(4, defaultIds.count)))
         moreIds = Array(defaultIds.dropFirst(min(4, defaultIds.count)))
-        showCapWarning = false
         showDemoteMinimumWarning = false
     }
 

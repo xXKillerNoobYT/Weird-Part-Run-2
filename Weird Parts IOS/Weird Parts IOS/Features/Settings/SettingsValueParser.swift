@@ -38,6 +38,18 @@ struct SettingsValueParser {
         }
     }
 
+    mutating func rawEnum<T: RawRepresentable & CaseIterable>(
+        _ settings: [String: String], key: String, default defaultValue: T
+    ) -> T where T.RawValue == String {
+        guard let rawValue = settings[key] else { return defaultValue }
+        guard let parsed = T(rawValue: rawValue) else {
+            let validValues = T.allCases.map { "\($0.rawValue)" }.joined(separator: ", ")
+            recordInvalid(key: key, value: rawValue, expectedType: "one of: \(validValues)")
+            return defaultValue
+        }
+        return parsed
+    }
+
     func throwIfInvalid() throws {
         guard !invalidEntries.isEmpty else { return }
         throw SettingsHydrationError(invalidEntries: invalidEntries)

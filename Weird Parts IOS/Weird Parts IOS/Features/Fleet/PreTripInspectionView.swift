@@ -52,6 +52,7 @@ struct PreTripInspectionView: View {
         let section: String
         let itemName: String
         let itemDescription: String?
+        let isRequired: Bool
         let isCritical: Bool
         var status: String  // "", "ok", "issue", "na"
         var notes: String
@@ -262,7 +263,7 @@ struct PreTripInspectionView: View {
     // MARK: - Computed
 
     private var allItemsChecked: Bool {
-        checklistItems.allSatisfy { $0.status != "" }
+        checklistItems.allSatisfy { !$0.isRequired || $0.status != "" }
     }
 
     private var calculatedResult: String {
@@ -329,6 +330,7 @@ struct PreTripInspectionView: View {
                     section: tmpl.section,
                     itemName: tmpl.itemName,
                     itemDescription: tmpl.itemDescription,
+                    isRequired: tmpl.isRequired,
                     isCritical: tmpl.isCritical,
                     status: "",
                     notes: ""
@@ -376,8 +378,9 @@ struct PreTripInspectionView: View {
                 trailerId: trailerId,
                 inspectorId: userId,
                 result: result,
-                items: checklistItems.map { item in
-                    FleetService.InspectionItemResult(
+                items: checklistItems.compactMap { item in
+                    guard !item.status.isEmpty else { return nil }
+                    return FleetService.InspectionItemResult(
                         templateItemId: item.templateItemId,
                         status: item.status,
                         notes: item.notes.isEmpty ? nil : item.notes
@@ -447,6 +450,14 @@ private struct InspectionItemRow: View {
                         .foregroundStyle(.red)
                         .font(.caption)
                         .accessibilityLabel("Critical item")
+                }
+                if !item.isRequired {
+                    Text("Optional")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.secondary.opacity(0.12), in: Capsule())
                 }
                 Spacer()
             }

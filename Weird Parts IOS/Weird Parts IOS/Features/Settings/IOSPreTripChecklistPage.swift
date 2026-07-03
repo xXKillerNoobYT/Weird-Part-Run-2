@@ -1,42 +1,36 @@
 import SwiftUI
 import WiredPartCore
 
-/// Pre-trip inspection checklist editor.
+/// Pre-trip inspection checklist editor backed by `inspection_templates`.
 ///
-/// Manages per-vehicle-type checklists with sections and items.
-/// Configuration is stored as a single JSON blob in the settings table.
+/// Edits the same normalized rows the runtime `PreTripInspectionView` reads,
+/// with vehicle/trailer tabs, expandable sections, drag reorder within a
+/// section, custom items, and per-item required-vs-critical controls.
 struct IOSPreTripChecklistPage: View {
     @EnvironmentObject private var appCore: AppCore
 
     // MARK: - Types
 
-    struct ChecklistItem: Identifiable, Codable, Equatable {
-        var id: String
-        var name: String
-        var isCritical: Bool
+    private enum TemplateTab: String, CaseIterable, Identifiable {
+        case vehicle
+        case trailer
 
-        init(name: String, isCritical: Bool = false) {
-            self.id = UUID().uuidString
-            self.name = name
-            self.isCritical = isCritical
-        }
+        var id: String { rawValue }
+        var label: String { rawValue.capitalized }
     }
 
-    struct ChecklistSection: Identifiable, Codable, Equatable {
+    struct ChecklistItem: Identifiable, Equatable {
+        var id: String
+        var name: String
+        var description: String
+        var isRequired: Bool
+        var isCritical: Bool
+    }
+
+    struct ChecklistSection: Identifiable, Equatable {
         var id: String
         var title: String
         var items: [ChecklistItem]
-
-        init(title: String, items: [ChecklistItem]) {
-            self.id = UUID().uuidString
-            self.title = title
-            self.items = items
-        }
-    }
-
-    struct VehicleChecklist: Codable, Equatable {
-        var useDefault: Bool
-        var sections: [ChecklistSection]
     }
 
     // MARK: - State
@@ -44,16 +38,19 @@ struct IOSPreTripChecklistPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var saveError: String?
-    @State private var activeSheet: ActiveSheet?
-
-    @State private var selectedVehicleType: String = "all"
-    @State private var checklists: [String: VehicleChecklist] = [:]
-    @State private var isDirty = false
     @State private var saveSuccessMessage: String?
+    @State private var activeSheet: ActiveSheet?
+    @State private var isDirty = false
+
+    @State private var selectedTab: TemplateTab = .vehicle
+    @State private var selectedVehicleType = "truck"
+    @State private var drafts: [String: [ChecklistSection]] = [:]
+    @State private var collapsedSectionIds: Set<String> = []
 
     @State private var showAddItem = false
     @State private var addItemSectionId: String?
     @State private var newItemName = ""
+    @State private var newItemRequired = true
     @State private var newItemCritical = false
 
     @State private var showAddSection = false
@@ -68,14 +65,16 @@ struct IOSPreTripChecklistPage: View {
         var id: String { "help" }
     }
 
-    private let vehicleTypes = ["all", "truck", "van", "car", "trailer"]
-    private let vehicleLabels: [String: String] = [
-        "all": "All Vehicles",
-        "truck": "Truck",
-        "van": "Van",
-        "car": "Car",
-        "trailer": "Trailer",
-    ]
+    private let vehicleTypes = ["truck", "van"]
+    private let vehicleLabels = ["truck": "Truck", "van": "Van"]
+
+    private var selectedTemplateKey: String {
+        selectedTab == .trailer ? "trailer" : selectedVehicleType
+    }
+
+    private var currentSections: [ChecklistSection] {
+        drafts[selectedTemplateKey] ?? []
+    }
 
     var body: some View {
         Group {
@@ -83,7 +82,7 @@ struct IOSPreTripChecklistPage: View {
                 ProgressView("Loading checklist...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let loadError {
-                ErrorStateView(message: loadError)
+                ErrorStateView(message: loadError, retryAction: loadSettings)
             } else {
                 checklistEditor
             }
@@ -100,26 +99,16 @@ struct IOSPreTripChecklistPage: View {
         }
         .sheet(item: $activeSheet) { _ in
             PageHelpSheet(title: "Checklist Help", sections: [
-                ("About Pre-Trip Checklists", "Define the inspection items drivers must check before starting their trip. Items marked as critical will fail the inspection if not OK."),
-                ("Vehicle Types", "Each vehicle type can have its own checklist. Toggle 'Use Default' to inherit from the All Vehicles list."),
+                ("About Pre-Trip Checklists", "Edit the inspection templates drivers use for pre-trip inspections. Required items must be answered before submit. Critical items fail the inspection when marked as an issue."),
+                ("Vehicle and Trailer Templates", "Vehicle templates apply to trucks and vans. Trailer templates are added when an inspection includes a trailer."),
+                ("Ordering", "Drag items inside a section to control their runtime inspection order."),
             ])
+            .presentationDetents([.medium, .large])
         }
         .task { loadSettings() }
     }
 
     // MARK: - Editor
-
-    private var currentChecklist: VehicleChecklist {
-        checklists[selectedVehicleType] ?? checklists["all"] ?? VehicleChecklist(useDefault: true, sections: [])
-    }
-
-    private var displaySections: [ChecklistSection] {
-        let cl = checklists[selectedVehicleType]
-        if selectedVehicleType != "all", let cl, cl.useDefault {
-            return checklists["all"]?.sections ?? []
-        }
-        return cl?.sections ?? []
-    }
 
     private var checklistEditor: some View {
         Form {
@@ -131,68 +120,62 @@ struct IOSPreTripChecklistPage: View {
                 }
             }
 
-            // Vehicle type picker
             Section {
-                Picker("Vehicle Type", selection: $selectedVehicleType) {
-                    ForEach(vehicleTypes, id: \.self) { type in
-                        Text(vehicleLabels[type] ?? type.capitalized).tag(type)
+                Picker("Template", selection: $selectedTab) {
+                    ForEach(TemplateTab.allCases) { tab in
+                        Text(tab.label).tag(tab)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                if selectedTab == .vehicle {
+                    Picker("Vehicle Type", selection: $selectedVehicleType) {
+                        ForEach(vehicleTypes, id: \.self) { type in
+                            Text(vehicleLabels[type] ?? type.capitalized).tag(type)
+                        }
                     }
                 }
             }
 
-            // Use Default toggle (not for "all")
-            if selectedVehicleType != "all" {
-                Section {
-                    Toggle("Use Default Checklist", isOn: Binding(
-                        get: { checklists[selectedVehicleType]?.useDefault ?? true },
-                        set: { newValue in
-                            ensureChecklist(for: selectedVehicleType)
-                            checklists[selectedVehicleType]?.useDefault = newValue
-                        }
-                    ))
-                } footer: {
-                    Text("When enabled, this vehicle type inherits the All Vehicles checklist.")
-                }
-            }
-
-            // Sections and items
-            let isEditable = selectedVehicleType == "all" || !(checklists[selectedVehicleType]?.useDefault ?? true)
-
-            if !displaySections.isEmpty {
-                ForEach(displaySections) { section in
+            if !currentSections.isEmpty {
+                ForEach(sectionBindings) { $section in
+                    let section = $section.wrappedValue
                     Section {
-                        ForEach(section.items) { item in
+                        Button {
+                            toggleSection(section.id)
+                        } label: {
                             HStack {
-                                if item.isCritical {
-                                    Image(systemName: "exclamationmark.triangle.fill")
-                                        .foregroundStyle(.red)
-                                        .font(.caption)
-                                        .accessibilityHidden(true)
-                                }
-                                Text(item.name)
+                                Label(section.title.capitalized, systemImage: sectionIcon(section.title))
                                 Spacer()
-                                if item.isCritical {
-                                    Text("Critical")
-                                        .font(.caption2)
-                                        .foregroundStyle(.red)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(.red.opacity(0.1), in: Capsule())
-                                }
+                                Text("\(section.items.count)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Image(systemName: collapsedSectionIds.contains(section.id) ? "chevron.right" : "chevron.down")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
                         }
-                        .onDelete { offsets in
-                            if isEditable {
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("\(section.title.capitalized) section, \(section.items.count) items")
+                        .accessibilityHint(collapsedSectionIds.contains(section.id) ? "Expands the section" : "Collapses the section")
+
+                        if !collapsedSectionIds.contains(section.id) {
+                            ForEach($section.items) { $item in
+                                ChecklistItemEditor(item: $item)
+                            }
+                            .onMove { source, destination in
+                                moveItems(in: section.id, from: source, to: destination)
+                            }
+                            .onDelete { offsets in
                                 deleteItemSectionId = section.id
                                 deleteItemOffsets = offsets
                                 showDeleteItemConfirm = true
                             }
-                        }
 
-                        if isEditable {
                             Button {
                                 addItemSectionId = section.id
                                 newItemName = ""
+                                newItemRequired = true
                                 newItemCritical = false
                                 showAddItem = true
                             } label: {
@@ -200,8 +183,6 @@ struct IOSPreTripChecklistPage: View {
                                     .font(.subheadline)
                             }
                         }
-                    } header: {
-                        Text(section.title)
                     }
                 }
             } else {
@@ -211,15 +192,12 @@ struct IOSPreTripChecklistPage: View {
                 }
             }
 
-            // Add Section button
-            if isEditable {
-                Section {
-                    Button {
-                        newSectionName = ""
-                        showAddSection = true
-                    } label: {
-                        Label("Add Section", systemImage: "plus.rectangle.on.rectangle")
-                    }
+            Section {
+                Button {
+                    newSectionName = ""
+                    showAddSection = true
+                } label: {
+                    Label("Add Section", systemImage: "plus.rectangle.on.rectangle")
                 }
             }
 
@@ -234,7 +212,6 @@ struct IOSPreTripChecklistPage: View {
                 .accessibilityIdentifier("preTripChecklistSaveSuccessMessage")
             }
 
-            // Save
             Section {
                 Button { saveSettings() } label: {
                     Label("Save Checklist", systemImage: "checkmark.circle")
@@ -242,28 +219,29 @@ struct IOSPreTripChecklistPage: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!isDirty)
-                .accessibilityHint(isDirty ? "" : "Make changes to the checklist to enable saving.")
+                .accessibilityHint(isDirty ? "Saves pre-trip checklist changes" : "Make a checklist change before saving")
             }
         }
         // Fix #149: dismiss keyboard when scrolling checklist editor
         .scrollDismissesKeyboard(.interactively)
-        .onChange(of: checklists) { _, _ in
+        .onChange(of: drafts) { _, _ in
             // New edits invalidate the last save confirmation (issue #1214).
             isDirty = true
             saveSuccessMessage = nil
         }
         .alert("Add Item", isPresented: $showAddItem) {
             TextField("Item name", text: $newItemName)
-            Toggle("Critical item", isOn: $newItemCritical)
+            Toggle("Required", isOn: $newItemRequired)
+            Toggle("Critical failure item", isOn: $newItemCritical)
             Button("Add") { addItem() }
-            Button("Cancel", role: .cancel) { }
+            Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Enter the inspection item name.")
+            Text("Required controls completion before submit. Critical controls pass/fail result.")
         }
         .alert("Add Section", isPresented: $showAddSection) {
             TextField("Section name", text: $newSectionName)
             Button("Add") { addSection() }
-            Button("Cancel", role: .cancel) { }
+            Button("Cancel", role: .cancel) {}
         } message: {
             Text("Enter a name for the new section.")
         }
@@ -280,126 +258,189 @@ struct IOSPreTripChecklistPage: View {
                 deleteItemOffsets = nil
             }
         } message: {
-            Text("This checklist item will be removed.")
+            Text("This checklist item will be removed from future inspections.")
         }
+    }
+
+    private var sectionBindings: Binding<[ChecklistSection]> {
+        Binding(
+            get: { drafts[selectedTemplateKey] ?? [] },
+            set: { drafts[selectedTemplateKey] = $0 }
+        )
     }
 
     // MARK: - Item Management
 
-    private func ensureChecklist(for type: String) {
-        if checklists[type] == nil {
-            if type == "all" {
-                checklists[type] = VehicleChecklist(useDefault: false, sections: Self.defaultSections)
-            } else {
-                // Copy from all as a starting point
-                checklists[type] = VehicleChecklist(useDefault: true, sections: checklists["all"]?.sections ?? Self.defaultSections)
-            }
+    private func toggleSection(_ id: String) {
+        if collapsedSectionIds.contains(id) {
+            collapsedSectionIds.remove(id)
+        } else {
+            collapsedSectionIds.insert(id)
         }
     }
 
     private func addItem() {
-        guard !newItemName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              let sectionId = addItemSectionId else { return }
+        let itemName = newItemName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !itemName.isEmpty, let sectionId = addItemSectionId else { return }
+        guard let sectionIndex = drafts[selectedTemplateKey]?.firstIndex(where: { $0.id == sectionId }) else { return }
 
-        let editType = selectedVehicleType == "all" ? "all" : selectedVehicleType
-        ensureChecklist(for: editType)
-
-        if let sIdx = checklists[editType]?.sections.firstIndex(where: { $0.id == sectionId }) {
-            checklists[editType]?.sections[sIdx].items.append(
-                ChecklistItem(name: newItemName.trimmingCharacters(in: .whitespacesAndNewlines), isCritical: newItemCritical)
+        drafts[selectedTemplateKey]?[sectionIndex].items.append(
+            ChecklistItem(
+                id: UUID().uuidString,
+                name: itemName,
+                description: "",
+                isRequired: newItemRequired,
+                isCritical: newItemCritical
             )
-        }
+        )
     }
 
     private func addSection() {
-        guard !newSectionName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-
-        let editType = selectedVehicleType == "all" ? "all" : selectedVehicleType
-        ensureChecklist(for: editType)
-
-        checklists[editType]?.sections.append(
-            ChecklistSection(title: newSectionName.trimmingCharacters(in: .whitespacesAndNewlines), items: [])
+        let sectionName = newSectionName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !sectionName.isEmpty else { return }
+        drafts[selectedTemplateKey, default: []].append(
+            ChecklistSection(id: UUID().uuidString, title: normalizedSection(sectionName), items: [])
         )
     }
 
     private func deleteItems(in sectionId: String, at offsets: IndexSet) {
-        let editType = selectedVehicleType == "all" ? "all" : selectedVehicleType
-        if let sIdx = checklists[editType]?.sections.firstIndex(where: { $0.id == sectionId }) {
-            checklists[editType]?.sections[sIdx].items.remove(atOffsets: offsets)
-        }
+        guard let sectionIndex = drafts[selectedTemplateKey]?.firstIndex(where: { $0.id == sectionId }) else { return }
+        drafts[selectedTemplateKey]?[sectionIndex].items.remove(atOffsets: offsets)
+    }
+
+    private func moveItems(in sectionId: String, from source: IndexSet, to destination: Int) {
+        guard let sectionIndex = drafts[selectedTemplateKey]?.firstIndex(where: { $0.id == sectionId }) else { return }
+        drafts[selectedTemplateKey]?[sectionIndex].items.move(fromOffsets: source, toOffset: destination)
     }
 
     // MARK: - Persistence
 
     private func loadSettings() {
-        guard let service = appCore.settingsService else {
-            loadError = "Settings service unavailable"
+        guard let service = appCore.fleetService else {
+            loadError = "Fleet service unavailable"
             isLoading = false
             return
         }
 
+        isLoading = true
+        loadError = nil
         do {
-            if let json = try service.getSettingValue("pretrip_checklist_config"),
-               let data = json.data(using: .utf8) {
-                checklists = try JSONDecoder().decode([String: VehicleChecklist].self, from: data)
-            } else {
-                // Seed defaults
-                checklists = ["all": VehicleChecklist(useDefault: false, sections: Self.defaultSections)]
+            var loaded: [String: [ChecklistSection]] = [:]
+            for type in vehicleTypes + ["trailer"] {
+                loaded[type] = sections(from: try service.getInspectionChecklist(vehicleType: type))
             }
+            drafts = loaded
+            loadError = nil
         } catch {
-            // If JSON is corrupt, reset to defaults
-            checklists = ["all": VehicleChecklist(useDefault: false, sections: Self.defaultSections)]
+            loadError = userFriendlyError(error, context: "load inspection templates")
         }
+
         isLoading = false
         isDirty = false
+        saveSuccessMessage = nil
     }
 
     private func saveSettings() {
-        guard let service = appCore.settingsService else {
-            saveError = "Settings service unavailable"
+        guard let service = appCore.fleetService else {
+            saveError = "Fleet service unavailable"
             return
         }
 
+        // Persist every edited template, not just the currently selected tab.
+        // Edits for other vehicle types / trailer live in `drafts` and would
+        // otherwise be silently dropped when the user switches tabs before
+        // saving (Copilot review PR #1376). Saving in a stable key order keeps
+        // behavior deterministic if one template's write throws mid-way.
         do {
-            let data = try JSONEncoder().encode(checklists)
-            let json = String(data: data, encoding: .utf8) ?? "{}"
-            try service.upsertSetting(key: "pretrip_checklist_config", value: json, category: "pretrip")
+            for key in drafts.keys.sorted() {
+                try service.replaceInspectionTemplate(
+                    vehicleType: key,
+                    items: draftItems(from: drafts[key] ?? [])
+                )
+            }
             saveError = nil
             isDirty = false
-            saveSuccessMessage = "Checklist saved."
+            saveSuccessMessage = "All checklists saved."
         } catch {
-            saveError = userFriendlyError(error, context: "save data")
+            saveError = userFriendlyError(error, context: "save inspection templates")
             saveSuccessMessage = nil
         }
     }
 
-    // MARK: - Defaults
+    // MARK: - Mapping
 
-    static let defaultSections: [ChecklistSection] = [
-        ChecklistSection(title: "Exterior", items: [
-            ChecklistItem(name: "Tires & wheels", isCritical: true),
-            ChecklistItem(name: "Lights & signals", isCritical: true),
-            ChecklistItem(name: "Mirrors"),
-            ChecklistItem(name: "Body damage"),
-            ChecklistItem(name: "Fluid leaks", isCritical: true),
-            ChecklistItem(name: "Hitch/coupler"),
-            ChecklistItem(name: "Safety chains"),
-            ChecklistItem(name: "Mud flaps"),
-        ]),
-        ChecklistSection(title: "Interior", items: [
-            ChecklistItem(name: "Seat & seatbelt", isCritical: true),
-            ChecklistItem(name: "Horn", isCritical: true),
-            ChecklistItem(name: "Wipers & washers"),
-            ChecklistItem(name: "Gauges & warning lights", isCritical: true),
-            ChecklistItem(name: "HVAC"),
-            ChecklistItem(name: "Fire extinguisher", isCritical: true),
-            ChecklistItem(name: "First aid kit"),
-        ]),
-        ChecklistSection(title: "Equipment", items: [
-            ChecklistItem(name: "Ladder rack"),
-            ChecklistItem(name: "Tool boxes secured"),
-            ChecklistItem(name: "Load secured", isCritical: true),
-            ChecklistItem(name: "PPE present"),
-        ]),
-    ]
+    private func sections(from templates: [FleetService.InspectionTemplateItem]) -> [ChecklistSection] {
+        var sections: [ChecklistSection] = []
+        for template in templates {
+            let sectionTitle = normalizedSection(template.section)
+            if let index = sections.firstIndex(where: { $0.title == sectionTitle }) {
+                sections[index].items.append(item(from: template))
+            } else {
+                sections.append(ChecklistSection(
+                    id: sectionTitle,
+                    title: sectionTitle,
+                    items: [item(from: template)]
+                ))
+            }
+        }
+        return sections
+    }
+
+    private func item(from template: FleetService.InspectionTemplateItem) -> ChecklistItem {
+        ChecklistItem(
+            id: String(template.id),
+            name: template.itemName,
+            description: template.itemDescription ?? "",
+            isRequired: template.isRequired,
+            isCritical: template.isCritical
+        )
+    }
+
+    private func draftItems(from sections: [ChecklistSection]) -> [FleetService.InspectionTemplateDraftItem] {
+        sections.flatMap { section in
+            section.items.enumerated().map { index, item in
+                FleetService.InspectionTemplateDraftItem(
+                    section: normalizedSection(section.title),
+                    itemName: item.name,
+                    itemDescription: item.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : item.description,
+                    isRequired: item.isRequired,
+                    isCritical: item.isCritical,
+                    sortOrder: index
+                )
+            }
+        }
+    }
+
+    private func normalizedSection(_ section: String) -> String {
+        section.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private func sectionIcon(_ section: String) -> String {
+        switch normalizedSection(section) {
+        case "exterior": return "car.side"
+        case "interior": return "steeringwheel"
+        case "equipment": return "wrench.and.screwdriver"
+        default: return "checklist"
+        }
+    }
+}
+
+private struct ChecklistItemEditor: View {
+    @Binding var item: IOSPreTripChecklistPage.ChecklistItem
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("Item name", text: $item.name)
+                .textInputAutocapitalization(.words)
+
+            TextField("Description", text: $item.description, axis: .vertical)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1...3)
+
+            Toggle("Required", isOn: $item.isRequired)
+            Toggle("Critical failure item", isOn: $item.isCritical)
+        }
+        .padding(.vertical, 4)
+    }
 }

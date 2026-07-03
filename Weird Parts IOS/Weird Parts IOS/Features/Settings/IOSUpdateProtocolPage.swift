@@ -13,7 +13,6 @@ struct IOSUpdateProtocolPage: View {
     // MARK: - State
 
     @State private var activeSheet: ActiveSheet?
-    @State private var isLoading = true
     @State private var currentVersion = "1.0.0"
     @State private var buildNumber = "1"
     @State private var updateChannel = "stable"
@@ -175,7 +174,6 @@ struct IOSUpdateProtocolPage: View {
 
         guard let settingsService = appCore.settingsService else {
             errorMessage = "Service not available"
-            isLoading = false
             return
         }
         do {
@@ -188,7 +186,6 @@ struct IOSUpdateProtocolPage: View {
                 errorMessage = userFriendlyError(error, context: "load update settings")
             }
         }
-        isLoading = false
     }
 
     // MARK: - Actions

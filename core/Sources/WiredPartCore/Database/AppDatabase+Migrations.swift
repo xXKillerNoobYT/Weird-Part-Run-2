@@ -148,8 +148,7 @@ extension AppDatabase {
         registerMigration106POLineItemsBrandId(&migrator)
         registerMigration107BreakPolicyPresets(&migrator)
         registerMigration109DispatchPreferenceBackfill(&migrator)
-        // 110 is claimed by in-flight PR #1376 (inspection_template_required_flag);
-        // this PR takes 111 to avoid colliding. See PR body for #1371/#1372.
+        registerMigration110InspectionTemplateRequiredFlag(&migrator)
         registerMigration111ChatAttachmentStorageRelative(&migrator)
     }
 
@@ -5958,6 +5957,29 @@ private func registerMigration109DispatchPreferenceBackfill(_ migrator: inout Da
                    datetime('now')
             FROM settings
             WHERE key = 'flex_pool_requires_approval'
+            """)
+    }
+}
+
+// MARK: - Migration 110: Inspection template required flag (re-lands #437)
+
+/// Adds `is_required` to `inspection_templates` so the Pre-Trip Checklists
+/// settings editor can distinguish "must be answered before submit" from the
+/// pre-existing `is_critical` ("fails the inspection if marked as an issue").
+/// Existing rows default to required=true, preserving current inspection behavior.
+private func registerMigration110InspectionTemplateRequiredFlag(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("110_inspection_template_required_flag") { db in
+        try addColumnIfMissing(
+            db,
+            table: "inspection_templates",
+            column: "is_required",
+            type: .boolean,
+            defaultValue: true
+        )
+        try db.execute(sql: """
+            UPDATE inspection_templates
+            SET is_required = 1
+            WHERE is_required IS NULL
             """)
     }
 }

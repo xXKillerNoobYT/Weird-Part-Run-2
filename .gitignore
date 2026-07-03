@@ -43,8 +43,12 @@ Thumbs.db
 *.swo
 *~
 
-# Claude
-.claude/
+# Claude — ignore runtime/session state, but track committed agent definitions.
+# Note: exclude the *contents* of .claude/ (not the dir itself) so the
+# negation for .claude/agents/ can take effect (git won't descend into an
+# excluded directory).
+.claude/*
+!.claude/agents/
 
 # Paperclip runtime state
 .paperclip/

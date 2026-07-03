@@ -812,9 +812,9 @@ Running total: **23 confirmed gaps / 2 areas** (parts 15 + jobs 8). Scanner prio
 
 **Why:** C1b (plan-vs-code drift) currently requires a human-readable comparison of `parts-section-audit-fix-plan.md` and `colors-parts-redesign.md` against the codebase. As PE-COLORS Phase 2 is implemented over multiple iterations, drift will evolve. A subagent that reads both plans and outputs a checklist of "planned but not coded" and "coded but not planned" items (with file:line citations) would make each C1b check take 2 minutes instead of 10.
 
-**Where:** Agent tool with `subagent_type: feature-dev:code-explorer` (or a custom `.claude/agents/parts-drift-detector.md`)
+**Where:** `.claude/agents/parts-drift-detector.md` (custom subagent), backed by the mechanical first-pass helper `scripts/parts-drift-report.sh`.
 
-**Decision:** Add to plan — worth building after PE-COLORS Phase 2 is underway so the drift surface is active.
+**Decision:** ✅ BUILT 2026-07-02 (#256). PE-COLORS Phase 2 is complete (#237–#240 closed), so the drift surface is active. The subagent reads the full Parts plan family, runs the helper for a file-level skeleton, then verifies method/struct/migration/behavior anchors and emits a bidirectional drift report (planned-but-not-coded / coded-but-not-planned) with file:line citations for the C1b check.
 
 ---
 
@@ -825,7 +825,7 @@ Running total: **23 confirmed gaps / 2 areas** (parts 15 + jobs 8). Scanner prio
 | PartsService SQL column validator hook | Hook | High | APPROVED 2026-04-18 | ✅ BUILT (iter 8, commit pending) |
 | `parts-sql-schema-checker` skill | Skill | High | APPROVED (already built) | ✅ BUILT (pre-existing skill, #254 closed) |
 | `parts-xcode-phase2-generator` | Skill | Low | REJECTED 2026-04-18 | ❌ Removed — duplicates xcode-planner-and-review |
-| `parts-drift-detector` subagent | Subagent | Medium | DEFERRED 2026-04-18 | ⏸ Revisit when PE-COLORS Phase 2 code starts landing (#256) |
+| `parts-drift-detector` subagent | Subagent | Medium | BUILT 2026-07-02 | ✅ BUILT (#256) — `.claude/agents/parts-drift-detector.md` + `scripts/parts-drift-report.sh` |
 
 **Want more?** Run `/claude-automation-recommender` scoped to a different area or category.
 
