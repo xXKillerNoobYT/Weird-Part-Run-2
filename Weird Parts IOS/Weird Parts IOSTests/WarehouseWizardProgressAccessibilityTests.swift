@@ -114,6 +114,25 @@ final class WarehouseWizardProgressAccessibilityTests: XCTestCase {
         )
     }
 
+    func testPartsFlowWizardProvidesUnconditionalCancelSeparateFromSaveAndExit() throws {
+        let source = try Self.readWarehouseSource("PartsFlowWizard.swift")
+        let toolbar = try Self.braceBalancedBody(after: ".toolbar", in: source)
+
+        XCTAssertTrue(
+            toolbar.contains("Button(\"Cancel\") { dismiss() }"),
+            "Parts-flow setup needs an unconditional Cancel path that does not validate or save before dismissing."
+        )
+        XCTAssertTrue(
+            toolbar.contains("Button(\"Save & Exit\")"),
+            "Parts-flow setup should keep Save & Exit as the explicit validating save path."
+        )
+        XCTAssertLessThan(
+            toolbar.range(of: "Button(\"Cancel\")")?.lowerBound ?? toolbar.endIndex,
+            toolbar.range(of: "Button(\"Save & Exit\")")?.lowerBound ?? toolbar.startIndex,
+            "Cancel should be the leading cancellation action, separate from Save & Exit."
+        )
+    }
+
     func testWarehouseOnboardingWizardUsesSharedAccessibleProgressStepControl() throws {
         let source = try Self.readWarehouseSource("WarehouseOnboardingWizard.swift")
         let progressSection = try Self.progressBarSection(in: source)
@@ -125,6 +144,25 @@ final class WarehouseWizardProgressAccessibilityTests: XCTestCase {
         XCTAssertFalse(
             progressSection.contains(".onTapGesture"),
             "Warehouse onboarding progress dots must not rely on gesture-only Circle tap handlers."
+        )
+    }
+
+    func testWarehouseOnboardingWizardProvidesUnconditionalCancelSeparateFromSaveAndExit() throws {
+        let source = try Self.readWarehouseSource("WarehouseOnboardingWizard.swift")
+        let toolbar = try Self.braceBalancedBody(after: ".toolbar", in: source)
+
+        XCTAssertTrue(
+            toolbar.contains("Button(\"Cancel\") { dismiss() }"),
+            "Warehouse onboarding needs an unconditional Cancel path for fresh Step 1 sessions without a progress row."
+        )
+        XCTAssertTrue(
+            toolbar.contains("Button(\"Save & Exit\") { saveAndExit() }"),
+            "Warehouse onboarding should keep Save & Exit as the explicit save path."
+        )
+        XCTAssertLessThan(
+            toolbar.range(of: "Button(\"Cancel\")")?.lowerBound ?? toolbar.endIndex,
+            toolbar.range(of: "Button(\"Save & Exit\")")?.lowerBound ?? toolbar.startIndex,
+            "Cancel should be the leading cancellation action, separate from Save & Exit."
         )
     }
 
@@ -245,6 +283,10 @@ final class WarehouseWizardProgressAccessibilityTests: XCTestCase {
         let afterStart = source[start.lowerBound...]
         let end = afterStart.range(of: "]")?.upperBound ?? afterStart.endIndex
         return String(afterStart[..<end])
+    }
+
+    private static func braceBalancedBody(after anchor: String, in source: String) throws -> String {
+        try TestSourceSlicer.braceBalancedBody(after: anchor, in: source)
     }
 
     private static func readWarehouseSource(

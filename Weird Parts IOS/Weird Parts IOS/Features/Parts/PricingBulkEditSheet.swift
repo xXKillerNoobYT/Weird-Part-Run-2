@@ -311,6 +311,23 @@ struct PricingBulkEditSheet: View {
                 }
             }
             .navigationTitle("Review")
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        reviewIndex = nil
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                            Text("Back")
+                        }
+                    }
+                    .disabled(isSaving)
+                }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
+                }
+            }
         }
     }
 

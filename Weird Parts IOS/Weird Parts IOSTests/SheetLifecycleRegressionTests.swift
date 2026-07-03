@@ -106,13 +106,48 @@ final class SheetLifecycleRegressionTests: XCTestCase {
             return
         }
         XCTAssertLessThan(
-            dismissRange.lowerBound, completeRange.lowerBound,
+            dismissRange.lowerBound,
+            completeRange.lowerBound,
             "The completion Done button must not defer dismissal behind the parent refresh (issue #736)."
         )
     }
 
-    // MARK: - Helpers
+    // MARK: - Issues #1391 / #1392
 
+    func testPricingBulkEditReviewStepHasExplicitBackAndCancelControls() throws {
+        let source = try Self.readFeatureSource(["Parts", "PricingBulkEditSheet.swift"])
+        let review = try Self.methodBody(named: "reviewOneAtATime", in: source)
+
+        XCTAssertTrue(
+            review.contains("reviewIndex = nil")
+                && review.contains("Image(systemName: \"chevron.left\")")
+                && review.contains("Text(\"Back\")"),
+            "Pricing bulk edit's one-at-a-time review step needs an explicit Back path to the preview step."
+        )
+        XCTAssertTrue(
+            review.contains("Button(\"Cancel\")") && review.contains("dismiss()"),
+            "Pricing bulk edit's one-at-a-time review step needs an explicit Cancel path; swipe-only is unavailable on Mac Catalyst."
+        )
+    }
+
+    func testPricingOverrideConflictResolutionHasExplicitBackControl() throws {
+        let source = try Self.readFeatureSource(["Parts", "PricingOverrideFlow.swift"])
+        let body = try Self.braceBalancedBody(after: "var body: some View", in: source)
+        let resolveConflicts = try Self.braceBalancedBody(after: "private var resolveConflictsView", in: source)
+
+        XCTAssertTrue(
+            resolveConflicts.contains("step = .preview")
+                && resolveConflicts.contains("Image(systemName: \"chevron.left\")")
+                && resolveConflicts.contains("Text(\"Back\")"),
+            "Pricing override conflict resolution needs an explicit Back path to the preview step."
+        )
+        XCTAssertTrue(
+            body.contains("Button(\"Cancel\")") && body.contains("dismiss()"),
+            "Pricing override flow must retain the explicit global Cancel path."
+        )
+    }
+
+    // MARK: - Helpers
     /// Slice of `IOSToolDetailPage.swift` covering only `ToolTradeSheet`, so
     /// assertions can't be satisfied by the sibling sheets in the same file.
     private static func toolTradeSheetSource() throws -> String {
@@ -126,31 +161,8 @@ final class SheetLifecycleRegressionTests: XCTestCase {
         return String(source[start.lowerBound..<end.lowerBound])
     }
 
-    /// Extracts the brace-balanced body that follows the first occurrence of
-    /// `anchor` (a `func name(` head, a button label, etc.), so assertions
-    /// stay scoped to the code under test.
     private static func braceBalancedBody(after anchor: String, in source: String) throws -> String {
-        guard let anchorRange = source.range(of: anchor) else {
-            throw XCTSkip("Expected anchor \(anchor) in source")
-        }
-        guard let openBrace = source[anchorRange.upperBound...].firstIndex(of: "{") else {
-            throw XCTSkip("Expected opening brace after \(anchor)")
-        }
-
-        var depth = 0
-        var index = openBrace
-        while index < source.endIndex {
-            let char = source[index]
-            if char == "{" { depth += 1 }
-            if char == "}" { depth -= 1 }
-            let next = source.index(after: index)
-            if depth == 0 {
-                return String(source[openBrace..<next])
-            }
-            index = next
-        }
-
-        throw XCTSkip("Expected closing brace for \(anchor)")
+        try TestSourceSlicer.braceBalancedBody(after: anchor, in: source)
     }
 
     private static func methodBody(named methodName: String, in source: String) throws -> String {
