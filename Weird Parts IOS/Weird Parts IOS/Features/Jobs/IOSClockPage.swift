@@ -230,13 +230,20 @@ struct IOSClockPage: View {
                 breakTimer?.invalidate(); breakTimer = nil
                 NotificationCenter.default.post(name: .clockPageInactive, object: nil)
             }
-            .fullScreenCover(isPresented: $geofenceManager.didExitJobRegion) {
+            .fullScreenCover(
+                isPresented: $geofenceManager.didExitJobRegion,
+                onDismiss: {
+                    if geofenceManager.exitTime != nil || geofenceManager.exitLocation != nil {
+                        geofenceManager.acknowledgeExit()
+                        loadData()
+                    }
+                }
+            ) {
                 GeofenceAlertView(
                     geofenceManager: geofenceManager,
                     onResolved: { loadData() }
                 )
                 .environmentObject(appCore)
-                .interactiveDismissDisabled(true)
             }
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {

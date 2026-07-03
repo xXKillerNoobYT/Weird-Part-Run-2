@@ -49,6 +49,28 @@ final class GeofenceAlertViewRegressionTests: XCTestCase {
         )
     }
 
+    func testGeofenceAlertHasServiceIndependentDismissEscape() throws {
+        let source = try Self.readGeofenceAlertSource()
+        let clockPageSource = try Self.readClockPageSource()
+
+        XCTAssertTrue(source.contains("Button(\"Not Now\")"))
+        XCTAssertTrue(source.contains("dismissAlertWithoutServiceCall()"))
+        XCTAssertTrue(source.contains("@MainActor\n    private func dismissAlertWithoutServiceCall()"))
+        XCTAssertTrue(source.contains("geofenceManager.acknowledgeExit()"))
+        XCTAssertTrue(source.contains(".interactiveDismissDisabled(isProcessing)"))
+        XCTAssertTrue(clockPageSource.contains("onDismiss: {"))
+        XCTAssertTrue(clockPageSource.contains("if geofenceManager.exitTime != nil || geofenceManager.exitLocation != nil"))
+        XCTAssertTrue(clockPageSource.contains("geofenceManager.acknowledgeExit()"))
+        XCTAssertFalse(
+            source.contains(".interactiveDismissDisabled(true)"),
+            "The geofence alert must not hard-disable every dismissal path while idle."
+        )
+        XCTAssertFalse(
+            clockPageSource.contains(".interactiveDismissDisabled(true)"),
+            "IOSClockPage must not re-disable the geofence full-screen cover after the alert view enables an idle escape path."
+        )
+    }
+
     private static func readGeofenceAlertSource(file: StaticString = #filePath) throws -> String {
         let testFileURL = URL(fileURLWithPath: "\(file)")
         let projectRoot = testFileURL
@@ -58,6 +80,19 @@ final class GeofenceAlertViewRegressionTests: XCTestCase {
             .appendingPathComponent("Weird Parts IOS")
             .appendingPathComponent("App")
             .appendingPathComponent("GeofenceAlertView.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    private static func readClockPageSource(file: StaticString = #filePath) throws -> String {
+        let testFileURL = URL(fileURLWithPath: "\(file)")
+        let projectRoot = testFileURL
+            .deletingLastPathComponent() // Weird Parts IOSTests
+            .deletingLastPathComponent() // Weird Parts IOS
+        let sourceURL = projectRoot
+            .appendingPathComponent("Weird Parts IOS")
+            .appendingPathComponent("Features")
+            .appendingPathComponent("Jobs")
+            .appendingPathComponent("IOSClockPage.swift")
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 }
