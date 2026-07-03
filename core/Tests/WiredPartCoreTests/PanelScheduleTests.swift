@@ -133,4 +133,136 @@ struct PanelScheduleTests {
         #expect(persisted.totalSpaces == 20)
         #expect(persisted.circuits.map(\.spaceNumber) == [1])
     }
+
+    // MARK: - Circuit classification, drag/drop move, and position validation
+
+    @Test("Double breakers reserve same-side adjacent spaces")
+    func doubleBreakerOverlapIsRejected() throws {
+        let doubleBreaker = CircuitEntry(
+            id: "a",
+            spaceNumber: 1,
+            breakerAmps: 30,
+            breakerType: .double,
+            circuitDescription: "Range",
+            isSpare: false,
+            classification: .special
+        )
+        let occupiedLowerSpace = CircuitEntry(
+            id: "b",
+            spaceNumber: 3,
+            breakerAmps: 20,
+            breakerType: .single,
+            circuitDescription: "Kitchen",
+            isSpare: false,
+            classification: .receptacle
+        )
+        let schedule = PanelSchedule(totalSpaces: 20, circuits: [doubleBreaker, occupiedLowerSpace])
+
+        #expect(schedule.validationErrors.contains(.spaceConflict(space: 3, first: 1, second: 3)))
+    }
+
+    @Test("Double breakers cannot hang past the last same-side space")
+    func doubleBreakerOutOfRangeIsRejected() throws {
+        let schedule = PanelSchedule(
+            totalSpaces: 20,
+            circuits: [
+                CircuitEntry(
+                    spaceNumber: 19,
+                    breakerAmps: 40,
+                    breakerType: .double,
+                    circuitDescription: "Condenser",
+                    isSpare: false,
+                    classification: .motor
+                )
+            ]
+        )
+
+        #expect(schedule.validationErrors.contains(.doubleBreakerOutOfRange(space: 19)))
+    }
+
+    @Test("Moving a circuit preserves metadata and validates the destination")
+    func moveCircuitPreservesClassification() throws {
+        var schedule = PanelSchedule(
+            totalSpaces: 20,
+            circuits: [
+                CircuitEntry(
+                    id: "lighting-1",
+                    spaceNumber: 1,
+                    breakerAmps: 15,
+                    breakerType: .single,
+                    circuitDescription: "Hall lights",
+                    isSpare: false,
+                    classification: .lighting
+                )
+            ]
+        )
+
+        try schedule.moveCircuit(id: "lighting-1", to: 5)
+
+        let moved = try #require(schedule.circuits.first)
+        #expect(moved.spaceNumber == 5)
+        #expect(moved.classification == .lighting)
+        #expect(moved.circuitDescription == "Hall lights")
+    }
+
+    @Test("Moving a circuit into an occupied space is rejected and the schedule is unchanged")
+    func moveCircuitIntoConflictIsRejected() throws {
+        var schedule = PanelSchedule(
+            totalSpaces: 20,
+            circuits: [
+                CircuitEntry(id: "a", spaceNumber: 1, circuitDescription: "Office", isSpare: false, classification: .receptacle),
+                CircuitEntry(id: "b", spaceNumber: 2, circuitDescription: "Shop", isSpare: false, classification: .receptacle)
+            ]
+        )
+
+        #expect(throws: PanelScheduleValidationError.self) {
+            try schedule.moveCircuit(id: "a", to: 2)
+        }
+        // Schedule must be unchanged after a rejected move.
+        #expect(schedule.circuits.first { $0.id == "a" }?.spaceNumber == 1)
+    }
+
+    @Test("Moving an unknown circuit id throws circuitNotFound")
+    func moveUnknownCircuitThrows() throws {
+        var schedule = PanelSchedule(totalSpaces: 20, circuits: [])
+        #expect(throws: PanelScheduleValidationError.circuitNotFound) {
+            try schedule.moveCircuit(id: "missing", to: 1)
+        }
+    }
+
+    @Test("Circuit classification decodes old panel JSON safely")
+    func classificationDefaultsWhenDecodingLegacyJSON() throws {
+        let json = """
+        {
+          "id": "schedule",
+          "panelName": "Panel A",
+          "panelType": "Load Center",
+          "totalSpaces": 20,
+          "mainBreakerAmps": 200,
+          "voltage": 240,
+          "phase": 1,
+          "circuits": [
+            {
+              "id": "legacy",
+              "spaceNumber": 1,
+              "breakerType": "Single",
+              "circuitDescription": "Kitchen",
+              "isSpare": false
+            }
+          ]
+        }
+        """
+
+        let schedule = try JSONDecoder().decode(PanelSchedule.self, from: Data(json.utf8))
+
+        #expect(schedule.circuits.first?.classification == .special)
+    }
+
+    @Test("Small panel type is available and normalizes for persistence")
+    func smallPanelTypeSupported() throws {
+        #expect(PanelType.allCases.contains(.smallPanel))
+        let schedule = PanelSchedule(panelType: .smallPanel, totalSpaces: 8)
+        #expect(schedule.panelType == .smallPanel)
+        #expect(PanelSchedule.supportedTotalSpaces.contains(schedule.totalSpaces))
+    }
 }

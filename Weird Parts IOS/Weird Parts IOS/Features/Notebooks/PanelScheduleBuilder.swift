@@ -9,6 +9,8 @@ struct PanelScheduleBuilder: View {
 
     @State private var selectedCircuit: CircuitEntry?
     @State private var showHiddenCircuitPruneConfirmation = false
+    @State private var movingCircuitId: String?
+    @State private var validationMessage: String?
     @State private var exportOptions = PanelScheduleExportOptions()
     @State private var exportMessage: String?
     // Anchor rect (in the window's coordinate space) for the Export menu's
@@ -66,6 +68,14 @@ struct PanelScheduleBuilder: View {
         } message: {
             Text("Saving will permanently remove \(schedule.circuitsOutsideTotalSpaces.count) hidden circuit\(schedule.circuitsOutsideTotalSpaces.count == 1 ? "" : "s") outside the visible 1–\(schedule.totalSpaces) panel range.")
         }
+        .alert("Panel schedule issue", isPresented: Binding(
+            get: { validationMessage != nil },
+            set: { if !$0 { validationMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { validationMessage = nil }
+        } message: {
+            Text(validationMessage ?? "")
+        }
         .alert("Panel schedule export", isPresented: Binding(
             get: { exportMessage != nil },
             set: { if !$0 { exportMessage = nil } }
@@ -111,6 +121,16 @@ struct PanelScheduleBuilder: View {
 
     private var panelGrid: some View {
         VStack(spacing: 1) {
+            if let movingCircuit = movingCircuitDescription {
+                Text("Move \(movingCircuit): tap a destination space or drag it onto the grid.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(.blue.opacity(0.08))
+            }
+
             // Column headers
             HStack(spacing: 0) {
                 Text("#").font(.caption2).bold().frame(width: 22)
@@ -152,7 +172,11 @@ struct PanelScheduleBuilder: View {
 
     private func circuitCell(spaceNumber: Int, circuit: CircuitEntry?, isLeft: Bool) -> some View {
         Button {
-            openCircuitEditor(spaceNumber: spaceNumber, circuit: circuit)
+            if movingCircuitId != nil {
+                moveSelectedCircuit(to: spaceNumber)
+            } else {
+                openCircuitEditor(spaceNumber: spaceNumber, circuit: circuit)
+            }
         } label: {
             HStack(spacing: 2) {
                 if isLeft {
@@ -162,13 +186,29 @@ struct PanelScheduleBuilder: View {
                     Text(circuit?.breakerAmps.map { "\($0)" } ?? "—")
                         .font(.caption).fontDesign(.monospaced)
                         .frame(width: 26, alignment: .center)
-                    Text((circuit?.circuitDescription).flatMap { $0.isEmpty ? nil : $0 } ?? "SPARE")
-                        .font(.caption).lineLimit(1)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text((circuit?.circuitDescription).flatMap { $0.isEmpty ? nil : $0 } ?? "SPARE")
+                            .font(.caption).lineLimit(1)
+                        if let secondary = circuit?.secondaryCircuitDescription, !secondary.isEmpty {
+                            Text("+ \(secondary)")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
                     Spacer()
                 } else {
                     Spacer()
-                    Text((circuit?.circuitDescription).flatMap { $0.isEmpty ? nil : $0 } ?? "SPARE")
-                        .font(.caption).lineLimit(1)
+                    VStack(alignment: .trailing, spacing: 0) {
+                        Text((circuit?.circuitDescription).flatMap { $0.isEmpty ? nil : $0 } ?? "SPARE")
+                            .font(.caption).lineLimit(1)
+                        if let secondary = circuit?.secondaryCircuitDescription, !secondary.isEmpty {
+                            Text("+ \(secondary)")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
                     Text(circuit?.breakerAmps.map { "\($0)" } ?? "—")
                         .font(.caption).fontDesign(.monospaced)
                         .frame(width: 26, alignment: .center)
@@ -181,18 +221,78 @@ struct PanelScheduleBuilder: View {
             .padding(.vertical, 6)
             .frame(minHeight: 44)
             .background(circuitBackground(circuit))
+            .overlay {
+                if movingCircuitId != nil {
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(.blue.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .draggable(circuit?.id ?? "")
+        .dropDestination(for: String.self) { ids, _ in
+            guard let id = ids.first, !id.isEmpty else { return false }
+            return moveCircuit(id: id, to: spaceNumber)
+        }
+        .contextMenu {
+            if let circuit {
+                Button {
+                    movingCircuitId = circuit.id
+                } label: {
+                    Label("Move Circuit", systemImage: "arrow.left.arrow.right")
+                }
+                Button {
+                    openCircuitEditor(spaceNumber: spaceNumber, circuit: circuit)
+                } label: {
+                    Label("Edit Circuit", systemImage: "pencil")
+                }
+            }
+        }
         .accessibilityLabel(circuitAccessibilityLabel(spaceNumber: spaceNumber, circuit: circuit))
         .accessibilityValue(circuitAccessibilityValue(circuit))
-        .accessibilityHint("Opens the editor for circuit \(spaceNumber).")
+        .accessibilityHint(movingCircuitId != nil ? "Moves the selected circuit here." : "Opens the editor for circuit \(spaceNumber).")
         .accessibilityIdentifier("panel-schedule-circuit-\(spaceNumber)")
+        .accessibilityAction(named: Text(circuit == nil ? "Place selected circuit here" : "Move circuit")) {
+            if let circuit {
+                movingCircuitId = circuit.id
+            } else if movingCircuitId != nil {
+                moveSelectedCircuit(to: spaceNumber)
+            }
+        }
     }
 
     private func openCircuitEditor(spaceNumber: Int, circuit: CircuitEntry?) {
         selectedCircuit = circuit ?? CircuitEntry(spaceNumber: spaceNumber)
         activeSheet = .circuitEditor
+    }
+
+    private var movingCircuitDescription: String? {
+        guard let movingCircuitId,
+              let circuit = schedule.circuits.first(where: { $0.id == movingCircuitId }) else {
+            return nil
+        }
+        return circuit.circuitDescription.isEmpty ? "circuit \(circuit.spaceNumber)" : circuit.circuitDescription
+    }
+
+    private func moveSelectedCircuit(to spaceNumber: Int) {
+        guard let movingCircuitId else { return }
+        _ = moveCircuit(id: movingCircuitId, to: spaceNumber)
+    }
+
+    /// Attempts to move a circuit and returns whether it succeeded. Callers that
+    /// bridge to SwiftUI drag-and-drop must propagate this so a rejected move
+    /// (validation failure) cancels the drop instead of appearing to succeed.
+    @discardableResult
+    private func moveCircuit(id: String, to spaceNumber: Int) -> Bool {
+        do {
+            try schedule.moveCircuit(id: id, to: spaceNumber)
+            movingCircuitId = nil
+            return true
+        } catch {
+            validationMessage = error.localizedDescription
+            return false
+        }
     }
 
     private func circuitDisplayName(_ circuit: CircuitEntry?) -> String {
@@ -216,10 +316,14 @@ struct PanelScheduleBuilder: View {
             details.append("No amp rating")
         }
         details.append("\(circuit.breakerType.rawValue) breaker")
+        details.append(circuit.classification.rawValue)
 
         let description = circuit.circuitDescription.trimmingCharacters(in: .whitespacesAndNewlines)
         if !description.isEmpty {
             details.append(description)
+        }
+        if let secondary = circuit.secondaryCircuitDescription?.trimmingCharacters(in: .whitespacesAndNewlines), !secondary.isEmpty {
+            details.append("plus \(secondary)")
         }
         if let fedFrom = circuit.isFedFrom?.trimmingCharacters(in: .whitespacesAndNewlines), !fedFrom.isEmpty {
             details.append("fed from \(fedFrom)")
@@ -229,13 +333,25 @@ struct PanelScheduleBuilder: View {
 
     private func circuitBackground(_ circuit: CircuitEntry?) -> Color {
         guard let circuit, !circuit.isSpare else { return .yellow.opacity(0.05) }
+        // Breaker-type safety coloring (GFCI/AFCI/dual-function) takes priority: it's the
+        // pre-existing, safety-relevant visual cue and must stay reachable regardless of
+        // classification, per #1379 review — classification color coding is additive, not
+        // a replacement for it.
         switch circuit.breakerType {
+        case .gfci, .afci, .dualFunction: return .green.opacity(0.1)
         case .double: return .blue.opacity(0.1)
         case .tandem: return .purple.opacity(0.1)
-        case .gfci, .afci, .dualFunction: return .green.opacity(0.1)
         case .spare: return .yellow.opacity(0.1)
         case .blank: return .gray.opacity(0.1)
-        default: return .clear
+        case .single: break
+        }
+        switch circuit.classification {
+        case .lighting: return .cyan.opacity(0.12)
+        case .receptacle: return .orange.opacity(0.12)
+        case .motor: return .red.opacity(0.12)
+        case .spare: return .yellow.opacity(0.1)
+        case .blank: return .gray.opacity(0.1)
+        case .special: return .clear
         }
     }
 
@@ -255,13 +371,27 @@ struct PanelScheduleBuilder: View {
 
             // Legend
             HStack(spacing: 8) {
-                legendDot(.blue, "240V")
+                legendDot(.cyan, "Light")
+                legendDot(.orange, "Recept")
+                legendDot(.red, "Motor")
+                legendDot(.blue, "Double")
                 legendDot(.purple, "Tandem")
                 legendDot(.green, "GFI/AFI")
                 legendDot(.yellow, "Spare")
             }
+            .lineLimit(1)
 
             Spacer()
+
+            if movingCircuitId != nil {
+                Button {
+                    movingCircuitId = nil
+                } label: {
+                    Label("Cancel Move", systemImage: "xmark.circle")
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+            }
 
             Menu {
                 Button {
@@ -297,6 +427,7 @@ struct PanelScheduleBuilder: View {
             )
 
             Button {
+                guard validateBeforeSave() else { return }
                 if schedule.circuitsOutsideTotalSpaces.isEmpty {
                     saveNormalizedSchedule()
                 } else {
@@ -323,10 +454,30 @@ struct PanelScheduleBuilder: View {
 
     private func updateCircuit(_ circuit: CircuitEntry) {
         let normalized = circuit.normalizedForPersistence()
-        if let index = schedule.circuits.firstIndex(where: { $0.spaceNumber == normalized.spaceNumber }) {
-            schedule.circuits[index] = normalized
+        var candidate = schedule
+        if let index = candidate.circuits.firstIndex(where: { $0.spaceNumber == normalized.spaceNumber }) {
+            candidate.circuits[index] = normalized
         } else {
-            schedule.circuits.append(normalized)
+            candidate.circuits.append(normalized)
+        }
+        do {
+            try candidate.validated()
+            schedule = candidate
+        } catch {
+            validationMessage = error.localizedDescription
+        }
+    }
+
+    /// Runs position validation before the existing #1239 prune/save flow.
+    /// Returns `false` (and surfaces `validationMessage`) if the schedule has
+    /// an unresolved double-breaker span or space conflict.
+    private func validateBeforeSave() -> Bool {
+        do {
+            try schedule.validated()
+            return true
+        } catch {
+            validationMessage = error.localizedDescription
+            return false
         }
     }
 
@@ -428,6 +579,11 @@ struct CircuitEditorSheet: View {
                             Text(type.rawValue).tag(type)
                         }
                     }
+                    Picker("Classification", selection: $circuit.classification) {
+                        ForEach(CircuitClassification.allCases, id: \.self) { classification in
+                            Text(classification.rawValue).tag(classification)
+                        }
+                    }
                 }
                 Section("Circuit") {
                     TextField("Description (e.g. Kitchen Outlets)", text: $circuit.circuitDescription)
@@ -442,6 +598,10 @@ struct CircuitEditorSheet: View {
                     TextField("Fed From (e.g. MDP)", text: Binding(
                         get: { circuit.isFedFrom ?? "" },
                         set: { circuit.isFedFrom = $0.isEmpty ? nil : $0 }
+                    ))
+                    TextField("Second Circuit (tandem/dual only)", text: Binding(
+                        get: { circuit.secondaryCircuitDescription ?? "" },
+                        set: { circuit.secondaryCircuitDescription = $0.isEmpty ? nil : $0 }
                     ))
                     Toggle("Spare", isOn: $circuit.isSpare)
                 }
