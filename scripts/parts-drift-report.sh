@@ -34,8 +34,7 @@
 #        the script can be safely chained in a pipeline without false CI fails.)
 #   1  — Fatal error (missing repo layout, no plan files, bad args).
 #
-# Requirements: bash 3.2+ (macOS default), grep, find, sort. jq optional
-# (only for pretty-printing --json; falls back to hand-rolled JSON if absent).
+# Requirements: bash 3.2+ (macOS default), basename, find, grep, sed, sort.
 
 set -euo pipefail
 
