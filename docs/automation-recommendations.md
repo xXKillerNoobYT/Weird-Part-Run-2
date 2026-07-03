@@ -814,7 +814,7 @@ Running total: **23 confirmed gaps / 2 areas** (parts 15 + jobs 8). Scanner prio
 
 **Where:** Agent tool with `subagent_type: feature-dev:code-explorer` (or a custom `.claude/agents/parts-drift-detector.md`)
 
-**Decision:** Add to plan — worth building after PE-COLORS Phase 2 is underway so the drift surface is active.
+**Decision:** Built 2026-07-03 for GitHub #256 after PE-COLORS Phase 2 completed. The project-scoped agent lives at `.claude/agents/parts-drift-detector.md` and has a static guard at `tests/static/test_parts_drift_detector_agent.py` so future edits keep the C1b inputs, output schema, and citation requirements intact.
 
 ---
 
@@ -825,7 +825,7 @@ Running total: **23 confirmed gaps / 2 areas** (parts 15 + jobs 8). Scanner prio
 | PartsService SQL column validator hook | Hook | High | APPROVED 2026-04-18 | ✅ BUILT (iter 8, commit pending) |
 | `parts-sql-schema-checker` skill | Skill | High | APPROVED (already built) | ✅ BUILT (pre-existing skill, #254 closed) |
 | `parts-xcode-phase2-generator` | Skill | Low | REJECTED 2026-04-18 | ❌ Removed — duplicates xcode-planner-and-review |
-| `parts-drift-detector` subagent | Subagent | Medium | DEFERRED 2026-04-18 | ⏸ Revisit when PE-COLORS Phase 2 code starts landing (#256) |
+| `parts-drift-detector` subagent | Subagent | Medium | BUILT 2026-07-03 | ✅ Project agent at `.claude/agents/parts-drift-detector.md`; static guard `tests/static/test_parts_drift_detector_agent.py`; closes #256 |
 
 **Want more?** Run `/claude-automation-recommender` scoped to a different area or category.
 

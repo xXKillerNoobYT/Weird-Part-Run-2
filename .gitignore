@@ -45,6 +45,9 @@ Thumbs.db
 
 # Claude
 .claude/
+!.claude/
+!.claude/agents/
+!.claude/agents/parts-drift-detector.md
 
 # Paperclip runtime state
 .paperclip/

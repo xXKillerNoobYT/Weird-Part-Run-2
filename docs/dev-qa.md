@@ -146,6 +146,7 @@ _None. All clusters have been answered — see Answered Clusters below and Proce
 
 4. **[Subagent] parts-drift-detector** — An Agent-tool subagent that reads parts plans and outputs "planned-but-not-coded" and "coded-but-not-planned" items with file:line citations, to speed up C1b plan-vs-code drift checks from ~10 min to ~2 min. Priority: **medium**. Best timing: after PE-COLORS Phase 2 begins so the drift surface is active. Tracked as open GitHub issue [#256](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/256).
    > **Answer (2026-04-18):** **DEFER — build when PE-COLORS Phase 2 begins.** Matches the recommendation's own timing guidance. Drift detection is only valuable once there's actively-drifting code to detect. Leave #256 open; revisit when Phase 2 code starts landing.
+   > **✅ BUILT 2026-07-03.** Project-scoped agent added at `.claude/agents/parts-drift-detector.md`. Static guard added at `tests/static/test_parts_drift_detector_agent.py` to require the four Parts plan inputs, Parts UI/service/model/schema targets, structured drift output sections, and file:line citation rules. Closes #256.
 
 ---
 
