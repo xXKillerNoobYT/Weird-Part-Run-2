@@ -12,8 +12,8 @@ final class InAppBugReportingRegressionTests: XCTestCase {
 
         let routerSource = try Self.readSource("Features/Settings/SettingsRouter.swift")
         XCTAssertTrue(
-            routerSource.contains("case \"settings-bug-report\"") && routerSource.contains("BugReportComposerView("),
-            "The Report a Bug settings item must route to the real bug-report composer."
+            routerSource.contains("case \"settings-bug-report\"") && routerSource.contains("ReportABugPage(originModule: \"Settings\")"),
+            "The Report a Bug settings item must route to the real bug-report page."
         )
 
         let contentRouterSource = try Self.readSource("Navigation/IOSContentRouter.swift")
@@ -26,43 +26,67 @@ final class InAppBugReportingRegressionTests: XCTestCase {
     func testAssistantHasBugReportEntryPointWithContext() throws {
         let assistantSource = try Self.readSource("AI/IOSAIAssistantPanel.swift")
         XCTAssertTrue(
-            assistantSource.contains("showBugReport") && assistantSource.contains("Report a bug or assistant issue"),
+            assistantSource.contains("isBugReportPresented") && assistantSource.contains("ReportABugPage(originModule: activeModuleName)"),
             "The assistant must expose a direct report action for assistant mistakes or page-specific app bugs."
         )
         XCTAssertTrue(
-            assistantSource.contains("source=AI Assistant") && assistantSource.contains("conversation_id"),
-            "Assistant bug reports must include source/conversation context so reports are actionable."
+            assistantSource.contains("activeModuleName") && assistantSource.contains("HelpContentRegistry.helpFor"),
+            "Assistant bug reports must include the active module/page context so reports are actionable."
         )
     }
 
     func testStartupFailureCanOpenBugReportDraft() throws {
         let appSource = try Self.readSource("App/WiredPartIOSApp.swift")
         XCTAssertTrue(
-            appSource.contains("Report this startup problem") && appSource.contains("source: .launchError"),
+            appSource.contains("Report this startup problem") && appSource.contains("ReportABugPage(originModule: \"Startup\")"),
             "The database/startup failure screen must let users self-report the exact failure instead of only retrying."
+        )
+
+        let appCoreSource = try Self.readSource("App/AppCore.swift")
+        XCTAssertTrue(
+            appCoreSource.contains("BugReportErrorLog.shared.record(loadError, context: \"App startup\")"),
+            "Startup failures must be recorded so the startup report includes the exact failure details."
         )
     }
 
-    func testComposerBuildsPrefilledGitHubIssueDraft() throws {
-        let supportSource = try Self.readSource("Shared/BugReportSupport.swift")
+    func testReporterBuildsPrefilledGitHubIssueDraft() throws {
+        let pageSource = try Self.readSource("Features/Settings/ReportABugPage.swift")
         XCTAssertTrue(
-            supportSource.contains("issues/new") && supportSource.contains("URLQueryItem(name: \"title\"") && supportSource.contains("URLQueryItem(name: \"body\""),
+            pageSource.contains("Open GitHub issue") && pageSource.contains("githubURL"),
+            "Bug reports must expose a pre-filled GitHub issue draft."
+        )
+
+        let composerSource = try Self.readProjectFile("core/Sources/WiredPartCore/BugReportComposer.swift")
+        XCTAssertTrue(
+            composerSource.contains("issues/new") && composerSource.contains("URLQueryItem(name: \"title\"") && composerSource.contains("URLQueryItem(name: \"body\""),
             "Bug reports must open a pre-filled GitHub issue draft with title/body details."
         )
         XCTAssertTrue(
-            supportSource.contains("Category:") && supportSource.contains("App context:") && supportSource.contains("Device:"),
-            "Bug report bodies must carry category, context, and device/build diagnostics."
+            composerSource.contains("Device:") && composerSource.contains("Page/module:") && composerSource.contains("Recent errors"),
+            "Bug report bodies must carry page, recent-error, and device/build diagnostics."
         )
     }
 
     private static func readSource(_ relativePath: String, file: StaticString = #filePath) throws -> String {
-        let testFileURL = URL(fileURLWithPath: "\(file)")
-        let projectRoot = testFileURL
-            .deletingLastPathComponent() // Weird Parts IOSTests
-            .deletingLastPathComponent() // Weird Parts IOS
+        let projectRoot = try projectRoot(file: file)
         let sourceURL = projectRoot
+            .appendingPathComponent("Weird Parts IOS")
             .appendingPathComponent("Weird Parts IOS")
             .appendingPathComponent(relativePath)
         return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    private static func readProjectFile(_ relativePath: String, file: StaticString = #filePath) throws -> String {
+        let sourceURL = try projectRoot(file: file)
+            .appendingPathComponent(relativePath)
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    private static func projectRoot(file: StaticString = #filePath) throws -> URL {
+        let testFileURL = URL(fileURLWithPath: "\(file)")
+        return testFileURL
+            .deletingLastPathComponent() // Weird Parts IOSTests
+            .deletingLastPathComponent() // Weird Parts IOS
+            .deletingLastPathComponent() // repository root
     }
 }

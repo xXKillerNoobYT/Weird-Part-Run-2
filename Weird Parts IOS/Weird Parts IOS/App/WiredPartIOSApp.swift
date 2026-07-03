@@ -222,14 +222,15 @@ struct WiredPartIOSApp: App {
                         .accessibilityHint("Opens a pre-filled GitHub issue draft with the startup error details.")
                     }
                     .sheet(isPresented: $showLaunchErrorReport) {
-                        BugReportComposerView(
-                            source: .launchError,
-                            initialContext: "startup; appCore.isReady=false",
-                            initialTitle: "App failed to load database",
-                            initialDescription: error,
-                            reporterName: appCore.currentUser?.displayName,
-                            category: .appCrashed
-                        )
+                        NavigationStack {
+                            ReportABugPage(originModule: "Startup")
+                                .toolbar {
+                                    ToolbarItem(placement: .cancellationAction) {
+                                        Button("Close") { showLaunchErrorReport = false }
+                                    }
+                                }
+                        }
+                        .presentationDetents([.large])
                     }
                 } else {
                     LoadingView()
