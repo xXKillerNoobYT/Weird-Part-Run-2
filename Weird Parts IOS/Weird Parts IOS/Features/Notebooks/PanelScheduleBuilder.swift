@@ -254,9 +254,12 @@ struct PanelScheduleBuilder: View {
 
     private func moveSelectedCircuit(to spaceNumber: Int) {
         guard let movingCircuitId else { return }
-        moveCircuit(id: movingCircuitId, to: spaceNumber)
+        _ = moveCircuit(id: movingCircuitId, to: spaceNumber)
     }
 
+    /// Attempts to move a circuit and returns whether it succeeded. Callers that
+    /// bridge to SwiftUI drag-and-drop must propagate this so a rejected move
+    /// (validation failure) cancels the drop instead of appearing to succeed.
     @discardableResult
     private func moveCircuit(id: String, to spaceNumber: Int) -> Bool {
         do {

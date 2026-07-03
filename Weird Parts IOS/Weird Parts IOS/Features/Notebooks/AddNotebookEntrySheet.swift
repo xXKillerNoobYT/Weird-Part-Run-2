@@ -403,6 +403,11 @@ struct AddNotebookEntrySheet: View {
         case "heading", "todo", "photo", "part_reference", "panel_schedule":
             title = trailingText
             content = ""
+        case "table":
+            // The table UI shows a title field and the hint is `/table Title`,
+            // so the trailing text is the title, not content.
+            title = trailingText
+            content = ""
         case "checklist":
             title = trailingText
             content = ""
@@ -413,11 +418,13 @@ struct AddNotebookEntrySheet: View {
             title = ""
             content = ""
         case "quote", "code":
+            // These blocks have no title field in their editors, so clear any
+            // previously-entered title to avoid persisting hidden title data.
             title = ""
             content = trailingText
-        case "table":
-            title = trailingText
-            content = ""
+        case "callout":
+            // Callout keeps its optional title field; only fill content.
+            content = trailingText
         default:
             content = trailingText
         }
