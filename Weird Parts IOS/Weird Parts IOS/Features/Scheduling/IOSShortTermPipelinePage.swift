@@ -31,8 +31,8 @@ enum IOSShortTermPipelineCallbackActionHandler {
 
 /// Short-term pipeline page showing jobs ready or near-ready for scheduling.
 ///
-/// Categories: Start Anytime (target: 3), Schedule Needed (target: 2),
-/// Favorite GC (target: 1), Small Jobs (gap fillers). Includes callback
+/// Categories: Start Anytime, Schedule Needed, Favorite GC, and Small Jobs.
+/// Pipeline targets come from saved dispatch preferences. Includes callback
 /// tracking with snooze and AI crew suggestion button.
 struct IOSShortTermPipelinePage: View {
     @EnvironmentObject private var appCore: AppCore
@@ -41,6 +41,11 @@ struct IOSShortTermPipelinePage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var searchText = ""
+    @State private var pipelineTargets = SchedulingService.PipelineTargets(
+        startAnytime: 3,
+        scheduleNeeded: 2,
+        favoriteGC: 1
+    )
 
     private enum ActiveSheet: String, Identifiable {
         case callback
@@ -179,9 +184,9 @@ struct IOSShortTermPipelinePage: View {
             Section {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
-                        TargetCard(title: "Start Anytime", count: startAnytimeItems.count, target: 3, color: .green)
-                        TargetCard(title: "Need Schedule", count: scheduleNeededItems.count, target: 2, color: .blue)
-                        TargetCard(title: "Favorite GC", count: favoriteGCItems.count, target: 1, color: .purple)
+                        TargetCard(title: "Start Anytime", count: startAnytimeItems.count, target: pipelineTargets.startAnytime, color: .green)
+                        TargetCard(title: "Need Schedule", count: scheduleNeededItems.count, target: pipelineTargets.scheduleNeeded, color: .blue)
+                        TargetCard(title: "Favorite GC", count: favoriteGCItems.count, target: pipelineTargets.favoriteGC, color: .purple)
                         SmartCard(title: "Small Jobs", count: smallJobItems.count, color: .orange)
                     }
                     .padding(.horizontal, 4)
@@ -192,21 +197,21 @@ struct IOSShortTermPipelinePage: View {
 
             // Start Anytime
             pipelineSection(
-                title: "Start Anytime", target: 3,
+                title: "Start Anytime", target: pipelineTargets.startAnytime,
                 category: "start_anytime", items: startAnytimeItems,
                 icon: "bolt.fill", color: .green
             )
 
             // Schedule Needed
             pipelineSection(
-                title: "Schedule Needed", target: 2,
+                title: "Schedule Needed", target: pipelineTargets.scheduleNeeded,
                 category: "schedule_needed", items: scheduleNeededItems,
                 icon: "calendar.badge.exclamationmark", color: .blue
             )
 
             // Favorite GC
             pipelineSection(
-                title: "Favorite GC", target: 1,
+                title: "Favorite GC", target: pipelineTargets.favoriteGC,
                 category: "favorite_gc", items: favoriteGCItems,
                 icon: "star.fill", color: .purple
             )
@@ -411,6 +416,7 @@ struct IOSShortTermPipelinePage: View {
         isLoading = pipelineItems.isEmpty
         loadError = nil
         do {
+            pipelineTargets = try service.getShortTermPipelineTargets()
             pipelineItems = try service.getShortTermPipeline()
         } catch {
             loadError = userFriendlyError(error, context: "load pipeline data")
@@ -426,6 +432,7 @@ struct IOSShortTermPipelinePage: View {
                 userInfo: [NSLocalizedDescriptionKey: "Scheduling service not available."]
             )
         }
+        pipelineTargets = try service.getShortTermPipelineTargets()
         pipelineItems = try service.getShortTermPipeline()
         loadError = nil
     }
