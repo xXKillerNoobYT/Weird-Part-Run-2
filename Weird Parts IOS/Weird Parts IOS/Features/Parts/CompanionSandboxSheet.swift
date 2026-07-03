@@ -138,6 +138,7 @@ struct CompanionSandboxSheet: View {
                                 Image(systemName: "xmark.circle.fill")
                                     .font(.caption2)
                             }
+                            .accessibilityLabel("Remove \(cat.categoryName)")
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)

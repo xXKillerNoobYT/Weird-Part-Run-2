@@ -194,3 +194,16 @@ Command groups (pre-generated lists in the branch-audit scratchpad; use `git -C 
 - Batch Q (detents sweep, module-per-PR), R (#574 — promote earlier if beta launch nears), S (#1139), T (#256); **branch cleanup (§7) executes here**, after the fix batches merge; then #513 close, #1339 Option B closeout comment, local reflog gc (with owner approval).
 
 **Standing rules per iteration:** every PR through the Copilot review gate; one PR at a time on the merge train; update umbrella checklists as sub-findings resolve; end each session on `main`.
+
+---
+
+## 9. EXECUTION LOG — 2026-07-02 completion pass (Claude Code, owner-directed)
+
+Single-pass execution of the remaining plan by Claude Code under Isaac's beta-completion directive:
+
+- **Owner calls (§4)**: all six answered per recommendations in #1348 (closed). #635, #79 closed with decision records; #851 hidden for beta; Option B accepted for #1339; branch decisions executed.
+- **Fix batches**: H, G, M, L, N(+#1203), C, D+E, J re-verify, S — implemented in parallel worktrees, adversarially reviewed (blocker/important findings fixed pre-merge), merged through the Copilot + Analyze (swift) + conversation-resolution gate via auto-merge. PRs #1361–#1370.
+- **Stranded-work discovery**: ALL FIVE #90 children (not just #435) plus #80's three slices and #278's three slices were never merged — commits rescued to `rescue/*` branches, then re-landed adapted to current main (PRs #1370, #1375–#1379). Migration-number collision (the original stranding cause) resolved by renumbering (106→107 break presets vs po_line_items brand id).
+- **Branch drain (§7)**: executed and closed #513 — local 861→23, remote ~72→20; everything preserved via `archive/*-20260702` tags + verified local bundle. Keep-live dispositions tracked in #1374.
+- **CI**: PR Merge Maintenance action_required trap root-caused (bot-attributed update pushes); worked around with owner-attributed updates; **permanent fix still needs owner-minted `PR_MAINTENANCE_PAT`** (§6.1).
+- **Follow-ups filed**: #1371 (attachment durability), #1372 (received-file interactivity), #1373 (polish batch).

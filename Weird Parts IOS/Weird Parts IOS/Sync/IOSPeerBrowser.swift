@@ -36,6 +36,7 @@ struct IOSPeerBrowser: View {
                         Image(systemName: "arrow.clockwise")
                     }
                     .disabled(syncManager.isScanning)
+                    .accessibilityLabel("Scan again for nearby devices")
                 }
             }
             .onAppear {

@@ -1017,6 +1017,7 @@ private struct SupplierDetailSheet: View {
                     } label: {
                         Image(systemName: "pencil")
                     }
+                    .accessibilityLabel("Edit supplier")
                 }
             }
             .task { await loadAllDetails() }

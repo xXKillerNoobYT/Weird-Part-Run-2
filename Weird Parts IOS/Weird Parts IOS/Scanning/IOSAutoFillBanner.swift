@@ -43,6 +43,7 @@ struct IOSAutoFillBanner: View {
                         .font(.title3)
                         .foregroundStyle(.secondary)
                 }
+                .buttonStyle(.dsIcon)
                 .accessibilityLabel("Dismiss")
             }
 
@@ -64,6 +65,10 @@ struct IOSAutoFillBanner: View {
                                              ? .blue : .secondary)
                     }
                     .buttonStyle(.plain)
+                    .dsMinTapTarget()
+                    .accessibilityLabel(selectedFields.contains(field.id)
+                                        ? "Deselect \(field.label)"
+                                        : "Select \(field.label)")
 
                     // Confidence dot
                     IOSConfidenceIndicator(confidence: field.confidence)
@@ -183,6 +188,8 @@ struct IOSQRAutoFillBanner: View {
                     .font(.title3)
                     .foregroundStyle(.secondary)
             }
+            .buttonStyle(.dsIcon)
+            .accessibilityLabel("Dismiss")
         }
         .padding()
         .background(.ultraThinMaterial)

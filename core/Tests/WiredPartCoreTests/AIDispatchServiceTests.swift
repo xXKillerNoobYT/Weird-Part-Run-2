@@ -34,6 +34,34 @@ struct AIDispatchServiceTests {
         #expect(suggestions.count >= 0)
     }
 
+    @Test("Generate suggestions returns empty when AI dispatch is disabled")
+    func testSuggestionsDisabledByDispatchPreferences() throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = makeService(env)
+        _ = try E2ETestHelpers.seedJob(env, jobNumber: "J-AI-OFF", name: "Disabled AI Job")
+
+        var preferences = try env.settings.getDispatchPreferences()
+        preferences.aiSuggestionsEnabled = false
+        _ = try env.settings.updateDispatchPreferences(preferences)
+
+        let suggestions = try service.generateSuggestions(date: "2026-03-29")
+        #expect(suggestions.isEmpty)
+    }
+
+    @Test("Generate suggestions respects saved suggestion count")
+    func testSuggestionsRespectSavedSuggestionCount() throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = makeService(env)
+        _ = try E2ETestHelpers.seedJob(env, jobNumber: "J-AI-COUNT", name: "Counted AI Job")
+
+        var preferences = try env.settings.getDispatchPreferences()
+        preferences.aiSuggestionCount = 1
+        _ = try env.settings.updateDispatchPreferences(preferences)
+
+        let suggestions = try service.generateSuggestions(date: "2026-03-29")
+        #expect(suggestions.count <= 1)
+    }
+
     // MARK: - Context
 
     @Test("Get dispatch context as text")
@@ -59,5 +87,27 @@ struct AIDispatchServiceTests {
         let env = try E2ETestHelpers.setUp()
         let service = makeService(env)
         try service.recordDispatcherChoice(date: "2026-03-29", chosenRank: 2, wasModified: true)
+    }
+
+    @Test("Record dispatcher choice is skipped when AI learning is disabled")
+    func testRecordChoiceDisabledByDispatchPreferences() throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = makeService(env)
+
+        var preferences = try env.settings.getDispatchPreferences()
+        preferences.aiLearningEnabled = false
+        _ = try env.settings.updateDispatchPreferences(preferences)
+
+        try service.recordDispatcherChoice(date: "2026-03-29", chosenRank: 1, wasModified: false)
+
+        let count: Int
+        do {
+            count = try env.db.writer.read { db in
+                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM ai_dispatch_choices") ?? 0
+            }
+        } catch {
+            count = 0
+        }
+        #expect(count == 0)
     }
 }

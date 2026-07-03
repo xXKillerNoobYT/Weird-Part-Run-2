@@ -147,6 +147,7 @@ extension AppDatabase {
         registerMigration105JobRecordsLocalFirst(&migrator)
         registerMigration106POLineItemsBrandId(&migrator)
         registerMigration107BreakPolicyPresets(&migrator)
+        registerMigration109DispatchPreferenceBackfill(&migrator)
         registerMigration110InspectionTemplateRequiredFlag(&migrator)
     }
 
@@ -5930,6 +5931,32 @@ private func registerMigration100POEmailRequestType(_ migrator: inout DatabaseMi
 private func registerMigration107BreakPolicyPresets(_ migrator: inout DatabaseMigrator) {
     migrator.registerMigration("107_break_policy_presets") { db in
         try AppDatabase.seedBreakPolicyPresets(db)
+    }
+}
+
+// MARK: - Migration 109: Dispatch preference backfill (re-lands #439)
+
+private func registerMigration109DispatchPreferenceBackfill(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("109_dispatch_preference_backfill") { db in
+        // Older installs stored the flex-pool approval flag as a bare
+        // `flex_pool_requires_approval` row outside the `dispatch` settings
+        // category (category defaulted to `general`). SettingsService now reads
+        // dispatch preferences as a typed `dispatch`-category group; normalize
+        // the legacy row into the new `dispatch_flex_require_approval` key so
+        // stored data is consistent going forward. `INSERT OR IGNORE` keeps this
+        // idempotent and never overwrites a value already saved under the new
+        // key. The legacy row is left in place (still consulted as a fallback
+        // by SettingsService.getDispatchPreferences) rather than deleted, so
+        // this migration can never lose data if re-run against a restored backup.
+        try db.execute(sql: """
+            INSERT OR IGNORE INTO settings (key, value, category, updated_at)
+            SELECT 'dispatch_flex_require_approval',
+                   CASE WHEN value = '1' THEN 'true' ELSE 'false' END,
+                   'dispatch',
+                   datetime('now')
+            FROM settings
+            WHERE key = 'flex_pool_requires_approval'
+            """)
     }
 }
 

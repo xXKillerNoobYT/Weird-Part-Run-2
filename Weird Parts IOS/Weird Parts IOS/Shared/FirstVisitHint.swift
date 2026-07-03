@@ -25,6 +25,8 @@ struct FirstVisitHint: View {
                     Image(systemName: "xmark")
                         .font(.caption2)
                 }
+                .dsMinTapTarget()
+                .accessibilityLabel("Dismiss hint")
             }
             .padding(10)
             .background(Color.blue.opacity(0.1))
