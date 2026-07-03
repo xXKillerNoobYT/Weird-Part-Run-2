@@ -187,8 +187,6 @@ public enum BugReportComposer {
         guard let timestamp = entry.timestamp else {
             return message
         }
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return "\(formatter.string(from: timestamp)) — \(message)"
+        return "\(CoreFormatters.iso8601.string(from: timestamp)) — \(message)"
     }
 }
