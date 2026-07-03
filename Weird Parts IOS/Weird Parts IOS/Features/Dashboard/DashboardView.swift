@@ -49,7 +49,6 @@ struct DashboardView: View {
     // Clock status
     @State private var isCurrentlyClockedIn = false
     @State private var clockedInJobName: String?
-    @State private var clockedInJobNumber: String?
     @State private var clockInTime: Date?
     @State private var clockDurationText: String = "0m"
 
@@ -1050,7 +1049,6 @@ struct DashboardView: View {
                 recentTasks = bgRecent
                 isCurrentlyClockedIn = clockStatus.isClockedIn
                 clockedInJobName = clockStatus.jobName
-                clockedInJobNumber = clockStatus.jobNumber
                 if let timeStr = clockStatus.clockInTimestamp {
                     clockInTime = Formatters.iso8601Fractional.date(from: timeStr)
                         ?? Formatters.iso8601Basic.date(from: timeStr)

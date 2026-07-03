@@ -12,7 +12,6 @@ struct IOSKeyManagementPage: View {
     // MARK: - State
 
     @State private var activeSheet: ActiveSheet?
-    @State private var isLoading = true
     @State private var keyFingerprint: String?
     @State private var keyCreatedAt: String?
     @State private var keyRotatedAt: String?
@@ -129,7 +128,6 @@ struct IOSKeyManagementPage: View {
     private func loadData() {
         guard let settingsService = appCore.settingsService else {
             errorMessage = "Settings service not available."
-            isLoading = false
             return
         }
         do {
@@ -140,6 +138,5 @@ struct IOSKeyManagementPage: View {
         } catch {
             errorMessage = userFriendlyError(error, context: "load key info")
         }
-        isLoading = false
     }
 }

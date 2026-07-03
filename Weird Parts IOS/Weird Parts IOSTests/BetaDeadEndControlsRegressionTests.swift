@@ -83,6 +83,58 @@ final class BetaDeadEndControlsRegressionTests: XCTestCase {
         )
     }
 
+    // MARK: - #1373: Transfer swipe must preserve the swiped part's context
+
+    /// #1373 (item 1): the inventory Transfer swipe previously posted a bare
+    /// module/tab and dropped the part, so it landed on an empty Movements list.
+    /// It now reuses the dashboard QR scanner's context-preserving pattern
+    /// (#700) — stashing a `QRScanRouteContext` in `QRScanRouteStore` keyed by
+    /// the destination tab BEFORE the navigation notification posts — so the
+    /// swiped part arrives pre-targeted (the Movements page consumes it in
+    /// `.task` and opens the wizard with `prefillPartId`). These source-scan
+    /// checks pin that wiring so a refactor cannot fall back to context-free
+    /// navigation. The store's consume-once semantics are covered by
+    /// `QRScanRouteTests` in the core package.
+    func testInventoryGridTransferSwipePreservesPartContext() throws {
+        let source = try Self.readSource("Features/Warehouse/IOSInventoryGridPage.swift")
+
+        // The swiped part context must be stashed for the Movements tab.
+        XCTAssertTrue(
+            source.contains("QRScanRouteStore.shared.stash("),
+            "The Transfer swipe must stash the swiped part's context in QRScanRouteStore so Movements can pre-target it."
+        )
+        XCTAssertTrue(
+            source.contains("for: \"warehouse-movements\""),
+            "The stashed context must be keyed by the 'warehouse-movements' destination tab so the Movements page consumes it on appear."
+        )
+        // It must carry the part identity and the Move Stock intent that the
+        // Movements page's `.task` consumer checks for.
+        for fragment in ["entityType: .part", "entityId: item.partId", "action: .moveStock"] {
+            XCTAssertTrue(
+                source.contains(fragment),
+                "The stashed context must include \(fragment) — the Movements consumer requires entityType == .part, action == .moveStock, and a part id."
+            )
+        }
+
+        // The context must be stashed BEFORE the navigation notification posts,
+        // so the destination page can consume it when it appears.
+        let stashRange = try XCTUnwrap(
+            source.range(of: "QRScanRouteStore.shared.stash("),
+            "The Transfer swipe must stash the scanned context."
+        )
+        let notificationRange = try XCTUnwrap(
+            source.range(
+                of: "NotificationCenter.default.post(name: .navigateToModule",
+                range: stashRange.lowerBound..<source.endIndex
+            ),
+            "The Transfer swipe must post the navigation notification after stashing context."
+        )
+        XCTAssertTrue(
+            stashRange.lowerBound < notificationRange.lowerBound,
+            "The part context must be stashed BEFORE the navigation notification posts."
+        )
+    }
+
     // MARK: - #1188: Orders bulk-action coming-soon bar removed
 
     func testPartsOrderManagementHasNoComingSoonActions() throws {

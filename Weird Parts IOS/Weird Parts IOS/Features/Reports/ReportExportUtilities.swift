@@ -175,7 +175,6 @@ struct ReportExportToolbar: ViewModifier {
         var id: String { "share" }
     }
     @State private var activeExportSheet: ExportSheet?
-    @State private var exportURL: URL?
     @State private var exportError: String?
 
     func body(content: Content) -> some View {
@@ -226,7 +225,6 @@ struct ReportExportToolbar: ViewModifier {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
         do {
             try data.write(to: url)
-            exportURL = url
             activeExportSheet = .share(url)
         } catch {
             exportError = userFriendlyError(error, context: "create pdf")
@@ -240,7 +238,6 @@ struct ReportExportToolbar: ViewModifier {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
         do {
             try data.write(to: url)
-            exportURL = url
             activeExportSheet = .share(url)
         } catch {
             exportError = userFriendlyError(error, context: "create csv")

@@ -23,7 +23,6 @@ struct IOSToolCheckoutsPage: View {
         var id: String { rawValue }
     }
     @State private var activeSheet: ActiveSheet?
-    @State private var scannedToolId: Int64?
     @State private var scannedToolName: String?
     @State private var showCheckoutConfirm = false
 
@@ -54,8 +53,7 @@ struct IOSToolCheckoutsPage: View {
             switch sheet {
             case .toolScanner:
                 QRScanSheet(expectedType: .tool) { result in
-                    if let toolId = result.entityId, result.isFound {
-                        scannedToolId = toolId
+                    if result.entityId != nil, result.isFound {
                         scannedToolName = result.fields["tool_name"] ?? result.fields["name"] ?? result.code
                         showCheckoutConfirm = true
                     }

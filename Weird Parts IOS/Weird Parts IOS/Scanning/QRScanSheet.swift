@@ -22,7 +22,6 @@ struct QRScanSheet: View {
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
 
-    @State private var isScanning = false
     @State private var scanError: String?
     @State private var resultTitle: String?
     @State private var resultIsFound = false
@@ -223,7 +222,6 @@ struct QRScanSheet: View {
             return
         }
 
-        isScanning = true
         scanError = nil
 
         Task {
@@ -239,7 +237,6 @@ struct QRScanSheet: View {
                     case .permissionDenied:
                         await MainActor.run {
                             scanError = "Camera permission required. Enable in Settings."
-                            isScanning = false
                         }
                         return
                     }
@@ -247,7 +244,6 @@ struct QRScanSheet: View {
             } catch {
                 await MainActor.run {
                     scanError = userFriendlyError(error, context: "scan item")
-                    isScanning = false
                 }
             }
         }

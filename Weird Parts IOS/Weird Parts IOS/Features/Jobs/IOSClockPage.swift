@@ -28,7 +28,6 @@ struct IOSClockPage: View {
     @State private var userLocation: CLLocation?
     @State private var sortedJobs: [JobWithDistance] = []
     @State private var isShopClockIn = false
-    @State private var linkedJobId: Int64?
     @State private var linkedJobName: String?
 
     // Activity status (working, supply_run, break, lunch_paid, lunch_unpaid)
@@ -69,7 +68,6 @@ struct IOSClockPage: View {
 
     // Sheets
     @State private var activeSheet: ActiveSheet?
-    @State private var lastLaborEntryId: Int64?
 
     // Flex Pool — shown when user has no dispatch for today
     @State private var hasDispatchToday = false
@@ -1093,7 +1091,6 @@ struct IOSClockPage: View {
                         .padding(.vertical, 4)
 
                         Button("Change Job") {
-                            linkedJobId = nil
                             linkedJobName = nil
                         }
                         .font(.caption)
@@ -1502,10 +1499,8 @@ struct IOSClockPage: View {
                 )
                 geofenceManager.stopMonitoring()
                 errorMessage = nil
-                linkedJobId = nil
                 linkedJobName = nil
                 isShopClockIn = false
-                lastLaborEntryId = entryId
                 appCore.onboardingManager?.markCompleted("clock-out")
                 activeSheet = .questionnaire(entryId)
                 loadData()
@@ -1809,12 +1804,10 @@ struct IOSClockPage: View {
     }
 
     private func startJobLink(jobId: Int64, jobName: String) {
-        linkedJobId = jobId
         linkedJobName = jobName
     }
 
     private func endJobLink() {
-        linkedJobId = nil
         linkedJobName = nil
     }
 
@@ -1861,7 +1854,6 @@ struct IOSClockPage: View {
                 activeSheet = nil
                 isSwitchingJob = false
                 errorMessage = nil
-                linkedJobId = nil
                 linkedJobName = nil
                 isShopClockIn = false
                 currentTodo = nil

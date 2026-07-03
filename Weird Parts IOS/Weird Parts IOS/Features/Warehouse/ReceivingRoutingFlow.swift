@@ -46,7 +46,6 @@ struct ReceivingRoutingFlow: View {
 
     @State private var currentStep: RoutingStep = .conditionCheck
     @State private var selectedCondition: PartCondition?
-    @State private var isWrongPart = false
     @State private var isProcessing = false
     @State private var routingError: String?
 
@@ -453,9 +452,6 @@ struct ReceivingRoutingFlow: View {
             HStack(spacing: 12) {
                 // Correct part button
                 Button {
-                    withAnimation {
-                        isWrongPart = false
-                    }
                     Task { await advanceFromWrongPartCheck() }
                 } label: {
                     VStack(spacing: 8) {
@@ -483,7 +479,6 @@ struct ReceivingRoutingFlow: View {
                 // Wrong part button
                 Button {
                     withAnimation {
-                        isWrongPart = true
                         currentStep = .routeConfirmed
                     }
                     onRouteComplete(.wrongPart)
