@@ -1,9 +1,14 @@
 import SwiftUI
 import WiredPartCore
 
-/// Tool checkout, condition, maintenance, and trade policy settings.
+/// Tool checkout, condition, maintenance, trade, lost/stolen, and edit-verification
+/// policy settings.
 ///
-/// All values are stored as key-value settings using the `tool_policy_` prefix.
+/// All values are stored as key-value settings using the `tool_policy_` prefix
+/// (persisted via `SettingsService.upsertSettingsMap`/`getSettingsByCategory`,
+/// same as every other typed settings page) and enforced by `ToolsService`
+/// checkout/return/trade/edit/lost-stolen workflows through
+/// `SettingsService.ToolPolicySettings`. See issue #438.
 struct IOSToolPoliciesPage: View {
     @EnvironmentObject private var appCore: AppCore
 
@@ -34,6 +39,14 @@ struct IOSToolPoliciesPage: View {
     @State private var tradeTimeoutDays: Int = 7
     @State private var requireTradeCondition = true
 
+    // Lost / Stolen
+    @State private var allowLostStolenReports = true
+    @State private var requireLostStolenLocation = false
+    @State private var closeCheckoutOnLostStolen = true
+
+    // Edit Verification
+    @State private var editVerificationMode: SettingsService.ToolPolicySettings.EditVerificationMode = .pendingWithoutPermission
+
     @State private var isDirty = false
 
     private enum ActiveSheet: Identifiable {
@@ -47,7 +60,10 @@ struct IOSToolPoliciesPage: View {
                 ProgressView("Loading tool policies...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let loadError {
-                ErrorStateView(message: loadError)
+                ErrorStateView(message: loadError) {
+                    isLoading = true
+                    loadSettings()
+                }
             } else {
                 settingsForm
             }
@@ -69,7 +85,10 @@ struct IOSToolPoliciesPage: View {
                 ("Condition Checks", "Require workers to report tool condition during checkout, return, and damage events."),
                 ("Maintenance", "Schedule automatic maintenance after a number of checkouts or set reminder lead times."),
                 ("Trades", "Allow workers to trade tools directly. Trades expire after the timeout period."),
+                ("Lost/Stolen", "Control whether reports are allowed, whether location is required, and whether active checkouts close automatically."),
+                ("Edit Verification", "Choose whether tool edits are applied directly or held for manager verification."),
             ])
+            .presentationDetents([.medium, .large])
         }
         .task { loadSettings() }
     }
@@ -140,6 +159,32 @@ struct IOSToolPoliciesPage: View {
                 Text("When enabled, workers can trade tools directly. Unaccepted trades expire after the timeout.")
             }
 
+            // Lost / Stolen
+            Section {
+                Toggle("Allow lost/stolen reports", isOn: $allowLostStolenReports)
+                if allowLostStolenReports {
+                    Toggle("Require last known location", isOn: $requireLostStolenLocation)
+                    Toggle("Close active checkout", isOn: $closeCheckoutOnLostStolen)
+                }
+            } header: {
+                Label("Lost/Stolen", systemImage: "exclamationmark.octagon")
+            } footer: {
+                Text("Lost or stolen reports update tool status and can close the open checkout automatically.")
+            }
+
+            // Edit Verification
+            Section {
+                Picker("Edit handling", selection: $editVerificationMode) {
+                    Text("Verify unapproved users").tag(SettingsService.ToolPolicySettings.EditVerificationMode.pendingWithoutPermission)
+                    Text("Verify every edit").tag(SettingsService.ToolPolicySettings.EditVerificationMode.alwaysPending)
+                    Text("Apply edits directly").tag(SettingsService.ToolPolicySettings.EditVerificationMode.directEdits)
+                }
+            } header: {
+                Label("Edit Verification", systemImage: "checkmark.seal")
+            } footer: {
+                Text("Verification creates manager-review records before changes are applied.")
+            }
+
             // Save
             Section {
                 Button { saveSettings() } label: {
@@ -162,6 +207,10 @@ struct IOSToolPoliciesPage: View {
         .onChange(of: allowTrades) { _, _ in markDirty() }
         .onChange(of: tradeTimeoutDays) { _, _ in markDirty() }
         .onChange(of: requireTradeCondition) { _, _ in markDirty() }
+        .onChange(of: allowLostStolenReports) { _, _ in markDirty() }
+        .onChange(of: requireLostStolenLocation) { _, _ in markDirty() }
+        .onChange(of: closeCheckoutOnLostStolen) { _, _ in markDirty() }
+        .onChange(of: editVerificationMode) { _, _ in markDirty() }
     }
 
     // MARK: - Actions
@@ -194,7 +243,14 @@ struct IOSToolPoliciesPage: View {
             allowTrades = parser.bool(map, key: "tool_policy_allow_trades", default: true)
             tradeTimeoutDays = parser.int(map, key: "tool_policy_trade_timeout_days", default: 7)
             requireTradeCondition = parser.bool(map, key: "tool_policy_require_trade_condition", default: true)
+
+            allowLostStolenReports = parser.bool(map, key: "tool_policy_allow_lost_stolen_reports", default: true)
+            requireLostStolenLocation = parser.bool(map, key: "tool_policy_require_lost_stolen_location", default: false)
+            closeCheckoutOnLostStolen = parser.bool(map, key: "tool_policy_close_checkout_on_lost_stolen", default: true)
+
+            editVerificationMode = parser.rawEnum(map, key: "tool_policy_edit_verification_mode", default: SettingsService.ToolPolicySettings.EditVerificationMode.pendingWithoutPermission)
             try parser.throwIfInvalid()
+            loadError = nil
         } catch {
             loadError = settingsHydrationMessage(error)
         }
@@ -224,6 +280,10 @@ struct IOSToolPoliciesPage: View {
                 "tool_policy_allow_trades": allowTrades ? "true" : "false",
                 "tool_policy_trade_timeout_days": "\(tradeTimeoutDays)",
                 "tool_policy_require_trade_condition": requireTradeCondition ? "true" : "false",
+                "tool_policy_allow_lost_stolen_reports": allowLostStolenReports ? "true" : "false",
+                "tool_policy_require_lost_stolen_location": requireLostStolenLocation ? "true" : "false",
+                "tool_policy_close_checkout_on_lost_stolen": closeCheckoutOnLostStolen ? "true" : "false",
+                "tool_policy_edit_verification_mode": editVerificationMode.rawValue,
             ]
             try service.upsertSettingsMap(data, category: "tool_policy")
             saveError = nil
