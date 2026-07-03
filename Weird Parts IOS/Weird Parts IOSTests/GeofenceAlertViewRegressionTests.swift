@@ -55,7 +55,12 @@ final class GeofenceAlertViewRegressionTests: XCTestCase {
 
         XCTAssertTrue(source.contains("Button(\"Not Now\")"))
         XCTAssertTrue(source.contains("dismissAlertWithoutServiceCall()"))
-        XCTAssertTrue(source.contains("@MainActor\n    private func dismissAlertWithoutServiceCall()"))
+        XCTAssertNotNil(
+            source.range(
+                of: #"@MainActor\s+private\s+func\s+dismissAlertWithoutServiceCall\s*\(\s*\)"#,
+                options: .regularExpression
+            )
+        )
         XCTAssertTrue(source.contains("geofenceManager.acknowledgeExit()"))
         XCTAssertTrue(source.contains(".interactiveDismissDisabled(isProcessing)"))
         XCTAssertTrue(clockPageSource.contains("onDismiss: {"))
