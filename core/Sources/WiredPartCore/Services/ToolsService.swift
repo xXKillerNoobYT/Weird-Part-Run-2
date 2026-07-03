@@ -128,7 +128,7 @@ public final class ToolsService: Sendable {
             case .userNotFound(let id):
                 return "User \(id) was not found or is inactive."
             case .requiredFieldEmpty(let field):
-                return "The field "\(field)" is required."
+                return "The field \"\(field)\" is required."
             case .policyDisallowsAction(let reason):
                 return reason
             }
