@@ -54,6 +54,23 @@ struct AttachmentStorageTests {
         #expect(storage.fileExists(relativePath: relative) == false)
     }
 
+    @Test("resolveURL rejects paths outside ChatAttachments")
+    func testResolveRejectsUnsafeRelativePaths() throws {
+        let (storage, base) = makeScratchStorage()
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        try storage.ensureDirectory()
+        let outside = base.appendingPathComponent("outside.txt")
+        try Data("secret".utf8).write(to: outside)
+
+        #expect(storage.resolveURL(relativePath: "/tmp/outside.txt") == nil)
+        #expect(storage.resolveURL(relativePath: "../outside.txt") == nil)
+        #expect(storage.resolveURL(relativePath: "ChatAttachments/../outside.txt") == nil)
+        #expect(storage.resolveURL(relativePath: "OtherAttachments/file.txt") == nil)
+        #expect(storage.resolveURL(relativePath: "ChatAttachments//file.txt") == nil)
+        #expect(storage.resolveURL(relativePath: "ChatAttachments/./file.txt") == nil)
+    }
+
     @Test("a resolved path survives a base-directory move (container change)")
     func testRelativePathSurvivesContainerMove() throws {
         // Old container.

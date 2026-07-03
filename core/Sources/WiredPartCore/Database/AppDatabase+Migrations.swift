@@ -6008,8 +6008,12 @@ private func registerMigration111ChatAttachmentStorageRelative(_ migrator: inout
         // 0 = file_path is a legacy absolute path (or nil); 1 = file_path is
         // relative to the Application Support base and resolved at render time.
         // Existing rows keep 0 so the reconciler knows to inspect them.
-        try db.alter(table: "message_attachments") { t in
-            t.add(column: "storage_relative", .integer).notNull().defaults(to: 0)
-        }
+        try addColumnIfMissing(
+            db,
+            table: "message_attachments",
+            column: "storage_relative",
+            type: .integer,
+            defaultValue: 0
+        )
     }
 }

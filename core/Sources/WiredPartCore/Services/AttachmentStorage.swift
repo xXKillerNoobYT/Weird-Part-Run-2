@@ -125,7 +125,13 @@ public struct AttachmentStorage: Sendable {
     /// Returning `nil` (rather than a dangling URL) is what lets the UI render an
     /// explicit "file unavailable" state instead of a broken preview (#1372).
     public func resolveURL(relativePath: String) -> URL? {
-        let url = baseDirectory.appendingPathComponent(relativePath)
+        guard Self.isSafeRelativeStoragePath(relativePath) else { return nil }
+
+        let url = baseDirectory.appendingPathComponent(relativePath).standardizedFileURL
+        let directory = attachmentsDirectory.standardizedFileURL
+        let directoryPath = directory.path.hasSuffix("/") ? directory.path : "\(directory.path)/"
+
+        guard url.path.hasPrefix(directoryPath) else { return nil }
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
@@ -152,6 +158,18 @@ public struct AttachmentStorage: Sendable {
     /// as opposed to a relative `ChatAttachments/...` path.
     static func isAbsolutePath(_ path: String) -> Bool {
         path.hasPrefix("/")
+    }
+
+    /// Reject persisted paths that could escape `ChatAttachments/` when resolved.
+    static func isSafeRelativeStoragePath(_ path: String) -> Bool {
+        guard !path.isEmpty, !isAbsolutePath(path) else { return false }
+
+        let components = path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        guard components.count >= 2, components.first == subdirectoryName else { return false }
+
+        return components.dropFirst().allSatisfy { component in
+            !component.isEmpty && component != "." && component != ".."
+        }
     }
 }
 
