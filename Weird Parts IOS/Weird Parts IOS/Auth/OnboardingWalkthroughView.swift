@@ -249,6 +249,7 @@ let onboardingModules: [OnboardingModule] = [
 /// Walks through every app module filtered by the user's hat permissions.
 struct OnboardingWalkthroughView: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var currentStep = 0
     @State private var showWelcome = true
@@ -288,62 +289,81 @@ struct OnboardingWalkthroughView: View {
 
     // MARK: - Welcome Screen
 
+    // Scrolls and drops centering spacers at accessibility Dynamic Type sizes
+    // so the welcome copy and both action buttons stay reachable (issue #1311).
     private var welcomeScreen: some View {
-        VStack(spacing: 32) {
-            Spacer()
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(spacing: dynamicTypeSize.isAccessibilitySize ? 24 : 32) {
+                    if !dynamicTypeSize.isAccessibilitySize {
+                        Spacer(minLength: 24)
+                    }
 
-            Image(systemName: "wrench.and.screwdriver.fill")
-                .decorativeIconFont(72)
-                .foregroundStyle(.blue)
+                    Image(systemName: "wrench.and.screwdriver.fill")
+                        .decorativeIconFont(dynamicTypeSize.isAccessibilitySize ? 56 : 72)
+                        .foregroundStyle(.blue)
+                        .accessibilityHidden(true)
+                        .padding(.top, dynamicTypeSize.isAccessibilitySize ? 24 : 0)
 
-            VStack(spacing: 8) {
-                Text("Welcome to WiredPart")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
+                    VStack(spacing: 8) {
+                        Text("Welcome to WiredPart")
+                            .font(.largeTitle)
+                            .fontWeight(.bold)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
 
-                if let user = appCore.currentUser {
-                    Text("Hi \(user.displayName)!")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                }
+                        if let user = appCore.currentUser {
+                            Text("Hi \(user.displayName)!")
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
 
-                Text("Let's walk through the app together so you know where everything is. This takes about 5 minutes.")
+                        Text("Let's walk through the app together so you know where everything is. This takes about 5 minutes.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, dynamicTypeSize.isAccessibilitySize ? 24 : 40)
+                    }
+
+                    VStack(spacing: 4) {
+                        Text("\(availableModules.count) modules")
+                            .font(.headline)
+                        Text("based on your permissions")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding()
+                    .background(Color.blue.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                    if !dynamicTypeSize.isAccessibilitySize {
+                        Spacer(minLength: 24)
+                    }
+
+                    Button {
+                        withAnimation { showWelcome = false }
+                    } label: {
+                        Text("Let's Get Started")
+                            .fontWeight(.semibold)
+                            .frame(maxWidth: 280)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+
+                    Button("Skip Onboarding") {
+                        finishOnboarding()
+                    }
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 40)
+                    .dsMinTapTarget()
+                    .padding(.bottom, 40)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: proxy.size.height)
             }
-
-            VStack(spacing: 4) {
-                Text("\(availableModules.count) modules")
-                    .font(.headline)
-                Text("based on your permissions")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
-            .padding()
-            .background(Color.blue.opacity(0.1))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-
-            Spacer()
-
-            Button {
-                withAnimation { showWelcome = false }
-            } label: {
-                Text("Let's Get Started")
-                    .fontWeight(.semibold)
-                    .frame(maxWidth: 280)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-
-            Button("Skip Onboarding") {
-                finishOnboarding()
-            }
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-
-            Spacer().frame(height: 40)
         }
     }
 
@@ -379,6 +399,7 @@ struct OnboardingWalkthroughView: View {
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
                                 .padding(.horizontal, 24)
                         }
 
@@ -389,18 +410,21 @@ struct OnboardingWalkthroughView: View {
                                 .padding(.horizontal)
 
                             ForEach(module.keyFeatures, id: \.label) { feature in
-                                HStack(spacing: 12) {
+                                HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center, spacing: 12) {
                                     Image(systemName: feature.icon)
                                         .font(.title3)
                                         .foregroundStyle(module.iconColor)
                                         .frame(width: 32)
+                                        .accessibilityHidden(true)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(feature.label)
                                             .font(.subheadline)
                                             .fontWeight(.semibold)
+                                            .fixedSize(horizontal: false, vertical: true)
                                         Text(feature.detail)
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
+                                            .fixedSize(horizontal: false, vertical: true)
                                     }
                                     Spacer()
                                 }
@@ -422,11 +446,13 @@ struct OnboardingWalkthroughView: View {
                             Text(module.requiredAction)
                                 .font(.subheadline)
                                 .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
 
                             Text(module.actionHint)
                                 .font(.caption)
                                 .foregroundStyle(.tertiary)
                                 .italic()
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         .padding()
                         .background(
@@ -440,7 +466,9 @@ struct OnboardingWalkthroughView: View {
                     .padding(.bottom, 24)
                 }
 
-                // Action buttons
+                // Action buttons — stack vertically at accessibility Dynamic
+                // Type sizes so wrapped titles keep every control reachable
+                // (issue #1311).
                 VStack(spacing: 12) {
                     if !completedModules.contains(module.id) {
                         Button {
@@ -455,39 +483,65 @@ struct OnboardingWalkthroughView: View {
                         .controlSize(.large)
                     }
 
-                    HStack(spacing: 16) {
-                        if currentStep > 0 {
-                            Button {
-                                withAnimation { currentStep -= 1 }
-                            } label: {
-                                Label("Back", systemImage: "chevron.left")
-                            }
-                            .buttonStyle(.bordered)
+                    if dynamicTypeSize.isAccessibilitySize {
+                        VStack(spacing: 12) {
+                            navigationFooterButtons(module: module, fullWidth: true)
                         }
-
-                        Spacer()
-
-                        if !completedModules.contains(module.id) {
-                            Button("Skip") {
-                                skippedModules.insert(module.id)
-                                saveProgress()
-                                advanceStep()
-                            }
-                            .foregroundStyle(.secondary)
+                    } else {
+                        HStack(spacing: 16) {
+                            backButtonIfNeeded(fullWidth: false)
+                            Spacer()
+                            skipAndNextButtons(module: module, fullWidth: false)
                         }
-
-                        Button {
-                            advanceStep()
-                        } label: {
-                            Label("Next", systemImage: "chevron.right")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(!completedModules.contains(module.id) && !skippedModules.contains(module.id))
                     }
                 }
                 .padding()
             }
         }
+    }
+
+    // MARK: - Step Footer Buttons
+
+    @ViewBuilder
+    private func navigationFooterButtons(module: OnboardingModule, fullWidth: Bool) -> some View {
+        backButtonIfNeeded(fullWidth: fullWidth)
+        skipAndNextButtons(module: module, fullWidth: fullWidth)
+    }
+
+    @ViewBuilder
+    private func backButtonIfNeeded(fullWidth: Bool) -> some View {
+        if currentStep > 0 {
+            Button {
+                withAnimation { currentStep -= 1 }
+            } label: {
+                Label("Back", systemImage: "chevron.left")
+                    .frame(maxWidth: fullWidth ? .infinity : nil)
+            }
+            .buttonStyle(.bordered)
+        }
+    }
+
+    @ViewBuilder
+    private func skipAndNextButtons(module: OnboardingModule, fullWidth: Bool) -> some View {
+        if !completedModules.contains(module.id) {
+            Button("Skip") {
+                skippedModules.insert(module.id)
+                saveProgress()
+                advanceStep()
+            }
+            .foregroundStyle(.secondary)
+            .dsMinTapTarget()
+            .frame(maxWidth: fullWidth ? .infinity : nil)
+        }
+
+        Button {
+            advanceStep()
+        } label: {
+            Label("Next", systemImage: "chevron.right")
+                .frame(maxWidth: fullWidth ? .infinity : nil)
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(!completedModules.contains(module.id) && !skippedModules.contains(module.id))
     }
 
     // MARK: - Completion Screen
@@ -508,6 +562,8 @@ struct OnboardingWalkthroughView: View {
                 Text("You've completed the WiredPart walkthrough.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 // Summary
                 VStack(alignment: .leading, spacing: 12) {
@@ -538,6 +594,7 @@ struct OnboardingWalkthroughView: View {
                         Text("Tap the ? button on any page for help when you visit these later.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
 
                         ForEach(availableModules.filter { skippedModules.contains($0.id) }) { module in
                             HStack(spacing: 8) {

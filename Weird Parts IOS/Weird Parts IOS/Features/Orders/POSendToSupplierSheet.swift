@@ -385,6 +385,10 @@ struct POSendToSupplierSheet: View {
                         .font(.title3)
                 }
                 .buttonStyle(.plain)
+                .dsMinTapTarget()
+                .accessibilityLabel(isIncluded
+                                    ? "Exclude \(poNumber) from this send"
+                                    : "Include \(poNumber) in this send")
             }
 
             VStack(alignment: .leading, spacing: 2) {

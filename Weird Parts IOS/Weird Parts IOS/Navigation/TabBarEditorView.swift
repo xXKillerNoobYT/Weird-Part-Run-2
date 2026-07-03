@@ -198,6 +198,10 @@ struct TabBarEditorView: View {
                     .foregroundStyle(section == .bottom ? .orange : .green)
             }
             .buttonStyle(.plain)
+            .dsMinTapTarget()
+            .accessibilityLabel(section == .bottom
+                                ? "Move \(module.label) to More menu"
+                                : "Move \(module.label) to tab bar")
         }
         .padding(.vertical, 2)
     }
