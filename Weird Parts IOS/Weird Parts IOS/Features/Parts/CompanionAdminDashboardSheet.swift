@@ -9,7 +9,6 @@ struct CompanionAdminDashboardSheet: View {
 
     @State private var userStats: [UserVotingStat] = []
     @State private var pollHistory: [PollHistoryRow] = []
-    @State private var isLoading = true
     @State private var loadError: String?
     @State private var ruleStats: (manual: Int, autoDiscovered: Int) = (0, 0)
 
@@ -141,7 +140,6 @@ struct CompanionAdminDashboardSheet: View {
     private func loadData() async {
         guard let service = appCore.partsService else {
             loadError = "Service not available"
-            isLoading = false
             return
         }
         do {
@@ -185,12 +183,10 @@ struct CompanionAdminDashboardSheet: View {
                 userStats = stats
                 pollHistory = history
                 ruleStats = (manual: ruleStatsResult.manual, autoDiscovered: ruleStatsResult.autoDiscovered)
-                isLoading = false
             }
         } catch {
             await MainActor.run {
                 loadError = userFriendlyError(error, context: "load companion admin data")
-                isLoading = false
             }
         }
     }

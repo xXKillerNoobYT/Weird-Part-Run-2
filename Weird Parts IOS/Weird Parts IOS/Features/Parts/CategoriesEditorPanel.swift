@@ -723,7 +723,6 @@ struct ColorBrandSKUEditorSection: View {
     var onRefresh: () async -> Void
 
     @EnvironmentObject private var appCore: AppCore
-    @State private var sku: PartsService.ColorBrandSKU?
     @State private var partNumber = ""
     @State private var unitCost = ""
     @State private var stockQty = "0"
@@ -841,7 +840,6 @@ struct ColorBrandSKUEditorSection: View {
         errorMessage = nil
         do {
             let loaded = try service.getColorBrandSKUs(typeId: typeId, brandId: brandId).first(where: { $0.id == skuId })
-            sku = loaded
             partNumber = loaded?.partNumber ?? ""
             unitCost = loaded?.unitCost.map { String(format: "%.2f", $0) } ?? ""
             stockQty = String(loaded?.stockQty ?? 0)

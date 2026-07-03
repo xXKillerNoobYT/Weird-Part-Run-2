@@ -253,14 +253,7 @@ struct IOSInventoryGridPage: View {
             inventoryRow(item)
                 .swipeActions(edge: .trailing) {
                     Button {
-                        NotificationCenter.default.post(
-                            name: .navigateToModule,
-                            object: nil,
-                            userInfo: [
-                                "moduleId": "warehouse",
-                                "tabId": "warehouse-movements"
-                            ]
-                        )
+                        transferItem(item)
                     } label: {
                         Label("Transfer", systemImage: "arrow.left.arrow.right")
                     }
@@ -337,6 +330,38 @@ struct IOSInventoryGridPage: View {
     }
 
     // MARK: - Actions
+
+    /// Navigate to Movements with the swiped part pre-targeted (#1373).
+    ///
+    /// Reuses the dashboard QR scanner's context-preserving pattern (#700): the
+    /// scanned/swiped part context is stashed in `QRScanRouteStore` (keyed by the
+    /// destination tab) BEFORE the `.navigateToModule` notification posts, so
+    /// `WarehouseMovementsPage` consumes it on appear and opens the movement
+    /// wizard with the part preselected instead of landing on the bare list.
+    private func transferItem(_ item: WarehouseService.LocationStock) {
+        QRScanRouteStore.shared.stash(
+            QRScanRouteContext(
+                entityType: .part,
+                entityId: item.partId,
+                code: item.partCode ?? "",
+                searchHint: item.partCode,
+                action: .moveStock
+            ),
+            for: "warehouse-movements"
+        )
+
+        var userInfo: [String: Any] = [
+            "moduleId": "warehouse",
+            "tabId": "warehouse-movements",
+            "action": QRScanAction.moveStock.rawValue,
+            "entityType": QREntityType.part.rawValue,
+            "entityId": item.partId
+        ]
+        if let code = item.partCode {
+            userInfo["code"] = code
+        }
+        NotificationCenter.default.post(name: .navigateToModule, object: nil, userInfo: userInfo)
+    }
 
     private func auditItem(_ item: WarehouseService.LocationStock) {
         guard let service = appCore.warehouseService else {

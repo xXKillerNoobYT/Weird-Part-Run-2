@@ -91,7 +91,6 @@ struct IOSBackupsPage: View {
     // MARK: - State
 
     @State private var activeSheet: ActiveSheet?
-    @State private var isLoading = true
     @State private var lastBackupTime: String?
     @State private var backupSizeText: String = "Unknown"
     @State private var backupCount = 0
@@ -278,8 +277,6 @@ struct IOSBackupsPage: View {
                 lastBackupTime = nil
             }
         }
-
-        isLoading = false
     }
 
     // MARK: - Create Backup

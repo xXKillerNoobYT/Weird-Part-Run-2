@@ -27,7 +27,6 @@ struct IOSFlexPoolPage: View {
     @State private var jobToClaim: FlexPoolJob?
     @State private var showClaimConfirm = false
     @State private var claimError: String?
-    @State private var claimedJobId: Int64?
     @State private var pendingApprovalIds: Set<Int64> = []
 
     private var currentUserId: Int64? {
@@ -210,7 +209,6 @@ struct IOSFlexPoolPage: View {
                 pendingApprovalIds.insert(job.id)
             } else {
                 // Remove from list — job is now claimed
-                claimedJobId = job.id
                 flexJobs.removeAll { $0.id == job.id }
             }
         } catch {
