@@ -14,7 +14,7 @@ WiredPart is a **single native SwiftUI application** backed by one shared Swift 
 |-------|-------|------|
 | **App UI** | `Weird Parts IOS/` | SwiftUI feature screens for iPhone and iPad (deployment target iOS 26.2) |
 | **Shared core** | `core/Sources/WiredPartCore/` | 22 services owning all business rules, GRDB/SQLite persistence, sync, AI, QR/OCR |
-| **macOS (experimental)** | `Weird Parts.xcworkspace` → `WiredPart-macOS` scheme | Same core, same SwiftUI surfaces where they fit |
+| **Mac compatibility** | `WiredPart-iOS` scheme on a Mac Catalyst-capable destination when needed | Same iOS app target and shared core; no standalone macOS project is active |
 
 **The core is the app.** Business rules, validation, and data access live in `WiredPartCore`, where they are testable without booting the UI (2,200+ core tests). SwiftUI screens are thin composition layers over shared services, view models, and navigation state.
 
@@ -117,7 +117,7 @@ public final class JobsService: Sendable {
 | Target | How | Distribution |
 |--------|-----|-------------|
 | iOS (iPhone/iPad) | `Weird Parts.xcworkspace` scheme `WiredPart-iOS`, or `Weird Parts IOS/Weird Parts.xcodeproj` scheme `Weird Parts` | TestFlight → App Store |
-| macOS (experimental) | workspace scheme `WiredPart-macOS` | not distributed |
+| Mac compatibility | workspace scheme `WiredPart-iOS` on a Mac Catalyst-capable destination when needed | not distributed |
 | Core package | `cd core && swift build` | consumed by the app |
 
 CI for iOS/Xcode work runs on the repo's local self-hosted Mac runner — see [runbooks/local-mac-actions-runner.md](runbooks/local-mac-actions-runner.md).

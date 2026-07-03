@@ -153,7 +153,7 @@ Commands run:
 | --- | --- | --- |
 | `git diff --check` | Pass | No whitespace errors in the Stage 9 docs diff |
 | `python3 scripts/guard-tracked-artifacts.py` | Pass | `No tracked Paperclip/Xcode runtime artifacts found.` |
-| `xcodebuild -list -workspace "Weird Parts.xcworkspace"` | Pass | Workspace schemes are `GRDB-Package`, `WiredPart-iOS`, `WiredPart-iOS-Stage9-Smokes`, `WiredPart-macOS`, and `WiredPartCore` |
+| `xcodebuild -list -workspace "Weird Parts.xcworkspace"` | Pass | Workspace schemes are `GRDB-Package`, `WiredPart-iOS`, `WiredPart-iOS-Stage9-Smokes`, and `WiredPartCore` |
 | `cd core && swift test` | Inconclusive | Built successfully and started suites, then the SwiftPM test helper stopped producing output and was terminated after a bounded wait |
 | Focused `swift test --filter 'JobsServiceTests|OrdersServiceTests|ReportsServiceTests|Database Migration Tests'` | Inconclusive | Built immediately, then the same SwiftPM test helper no-output behavior recurred and was terminated |
 | `xcodebuild -workspace "Weird Parts.xcworkspace" -scheme "WiredPart-iOS" -destination 'generic/platform=iOS Simulator' build` | Pass | Simulator app build succeeded; warnings were pre-existing deprecation/result-builder/concurrency warnings |
