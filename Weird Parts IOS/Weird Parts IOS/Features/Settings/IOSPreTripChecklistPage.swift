@@ -139,6 +139,7 @@ struct IOSPreTripChecklistPage: View {
 
             if !currentSections.isEmpty {
                 ForEach(sectionBindings) { $section in
+                    let section = $section.wrappedValue
                     Section {
                         Button {
                             toggleSection(section.id)
@@ -346,13 +347,15 @@ struct IOSPreTripChecklistPage: View {
         }
 
         do {
-            try service.replaceInspectionTemplate(
-                vehicleType: selectedTemplateKey,
-                items: draftItems(from: currentSections)
-            )
+            for (vehicleType, sections) in drafts {
+                try service.replaceInspectionTemplate(
+                    vehicleType: vehicleType,
+                    items: draftItems(from: sections)
+                )
+            }
             saveError = nil
             isDirty = false
-            saveSuccessMessage = "Checklist saved."
+            saveSuccessMessage = "All checklists saved."
         } catch {
             saveError = userFriendlyError(error, context: "save inspection templates")
             saveSuccessMessage = nil
