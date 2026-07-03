@@ -18,8 +18,11 @@ final class InAppBugReportingRegressionTests: XCTestCase {
 
         let contentRouterSource = try Self.readSource("Navigation/IOSContentRouter.swift")
         XCTAssertTrue(
-            contentRouterSource.contains("/settings/bug-report") && contentRouterSource.contains("settings-bug-report"),
-            "Deep links/search navigation must be able to open the bug-report settings route."
+            contentRouterSource.contains("/settings/bug-report")
+                && contentRouterSource.contains("/settings/feedback")
+                && contentRouterSource.contains("/settings/report-a-bug")
+                && contentRouterSource.contains("settings-bug-report"),
+            "Deep links/search navigation must be able to open every bug-report settings alias."
         )
     }
 
