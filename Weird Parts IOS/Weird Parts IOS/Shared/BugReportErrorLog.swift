@@ -36,13 +36,16 @@ final class BugReportErrorLog: ObservableObject {
         guard let message else { return }
         let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        let normalizedContext = context?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let storedContext = normalizedContext?.isEmpty == true ? nil : normalizedContext
 
-        if let last = entries.first, last.message == trimmed, last.context == context {
+        if let last = entries.first, last.message == trimmed, last.context == storedContext {
             return
         }
 
         entries.insert(
-            Entry(message: trimmed, context: context, timestamp: Date()),
+            Entry(message: trimmed, context: storedContext, timestamp: Date()),
             at: 0
         )
         if entries.count > Self.capacity {
