@@ -46,6 +46,7 @@ final class InAppBugReportingRegressionTests: XCTestCase {
             assistantSource.contains("activeModuleName") && assistantSource.contains("HelpContentRegistry.helpFor"),
             "Assistant bug reports must include the active module/page context so reports are actionable."
         )
+
     }
 
     func testStartupFailureCanOpenBugReportDraft() throws {
