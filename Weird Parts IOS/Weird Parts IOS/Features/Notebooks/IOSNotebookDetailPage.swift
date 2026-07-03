@@ -902,6 +902,7 @@ struct IOSNotebookDetailPage: View {
                     Rectangle()
                         .fill(.secondary.opacity(0.45))
                         .frame(width: 3)
+                        .accessibilityHidden(true)
                     Text(entry.content)
                         .font(.callout)
                         .italic()

@@ -1029,14 +1029,23 @@ public final class NotebooksService: Sendable {
         headingLevel: Int? = nil,
         checklistItems: String? = nil,
         photoPath: String? = nil,
+        clearPhotoPath: Bool = false,
         referenceType: String? = nil,
+        clearReferenceType: Bool = false,
         referenceId: Int64? = nil,
+        clearReferenceId: Bool = false,
         taskStatus: String? = nil,
+        clearTaskStatus: Bool = false,
         taskDueDate: String? = nil,
+        clearTaskDueDate: Bool = false,
         taskAssignedTo: Int64? = nil,
+        clearTaskAssignedTo: Bool = false,
         taskPartsNote: String? = nil,
+        clearTaskPartsNote: Bool = false,
         workClassification: String? = nil,
+        clearWorkClassification: Bool = false,
         warrantyTimerEnd: String? = nil,
+        clearWarrantyTimerEnd: Bool = false,
         isQuestion: Bool? = nil,
         updatedBy: Int64
     ) throws {
@@ -1072,23 +1081,30 @@ public final class NotebooksService: Sendable {
             try dbConn.execute(sql: """
                 UPDATE notebook_entries
                 SET title = ?, content = ?, block_data = ?, heading_level = ?, checklist_items = ?,
-                    photo_path = COALESCE(?, photo_path),
-                    reference_type = COALESCE(?, reference_type),
-                    reference_id = COALESCE(?, reference_id),
-                    task_status = COALESCE(?, task_status),
-                    task_due_date = COALESCE(?, task_due_date),
-                    task_assigned_to = COALESCE(?, task_assigned_to),
-                    task_parts_note = COALESCE(?, task_parts_note),
-                    work_classification = COALESCE(?, work_classification),
-                    warranty_timer_end = COALESCE(?, warranty_timer_end),
+                    photo_path = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, photo_path) END,
+                    reference_type = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, reference_type) END,
+                    reference_id = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, reference_id) END,
+                    task_status = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, task_status) END,
+                    task_due_date = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, task_due_date) END,
+                    task_assigned_to = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, task_assigned_to) END,
+                    task_parts_note = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, task_parts_note) END,
+                    work_classification = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, work_classification) END,
+                    warranty_timer_end = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, warranty_timer_end) END,
                     is_question = COALESCE(?, is_question),
                     updated_by = ?, updated_at = datetime('now')
                 WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [
                     newTitle, content, blockData, headingLevel, checklistItems,
-                    photoPath, referenceType, referenceId,
-                    taskStatus, taskDueDate, taskAssignedTo, taskPartsNote,
-                    workClassification, warrantyTimerEnd, isQuestion.map { $0 ? 1 : 0 },
+                    clearPhotoPath ? 1 : 0, photoPath,
+                    clearReferenceType ? 1 : 0, referenceType,
+                    clearReferenceId ? 1 : 0, referenceId,
+                    clearTaskStatus ? 1 : 0, taskStatus,
+                    clearTaskDueDate ? 1 : 0, taskDueDate,
+                    clearTaskAssignedTo ? 1 : 0, taskAssignedTo,
+                    clearTaskPartsNote ? 1 : 0, taskPartsNote,
+                    clearWorkClassification ? 1 : 0, workClassification,
+                    clearWarrantyTimerEnd ? 1 : 0, warrantyTimerEnd,
+                    isQuestion.map { $0 ? 1 : 0 },
                     updatedBy, entryId
                 ])
 
@@ -1117,17 +1133,17 @@ public final class NotebooksService: Sendable {
             trackString("block_data", old: oldBlockData, new: blockData)
             trackInt("heading_level", old: oldHeadingLevel, new: headingLevel)
             trackString("checklist_items", old: oldChecklistItems, new: checklistItems)
-            // COALESCE(?, col) means a nil parameter leaves the column untouched, so the
-            // effective new value for change-log purposes is `param ?? old`.
-            trackString("photo_path", old: oldPhotoPath, new: photoPath ?? oldPhotoPath)
-            trackString("reference_type", old: oldReferenceType, new: referenceType ?? oldReferenceType)
-            trackInt64("reference_id", old: oldReferenceId, new: referenceId ?? oldReferenceId)
-            trackString("task_status", old: oldTaskStatus, new: taskStatus ?? oldTaskStatus)
-            trackString("task_due_date", old: oldTaskDueDate, new: taskDueDate ?? oldTaskDueDate)
-            trackInt64("task_assigned_to", old: oldTaskAssignedTo, new: taskAssignedTo ?? oldTaskAssignedTo)
-            trackString("task_parts_note", old: oldTaskPartsNote, new: taskPartsNote ?? oldTaskPartsNote)
-            trackString("work_classification", old: oldWorkClassification, new: workClassification ?? oldWorkClassification)
-            trackString("warranty_timer_end", old: oldWarrantyTimerEnd, new: warrantyTimerEnd ?? oldWarrantyTimerEnd)
+            // When a clear* flag is true the column is set to NULL; otherwise CASE WHEN falls
+            // through to COALESCE(param, col), so nil param = leave unchanged (keep old value).
+            trackString("photo_path", old: oldPhotoPath, new: clearPhotoPath ? nil : (photoPath ?? oldPhotoPath))
+            trackString("reference_type", old: oldReferenceType, new: clearReferenceType ? nil : (referenceType ?? oldReferenceType))
+            trackInt64("reference_id", old: oldReferenceId, new: clearReferenceId ? nil : (referenceId ?? oldReferenceId))
+            trackString("task_status", old: oldTaskStatus, new: clearTaskStatus ? nil : (taskStatus ?? oldTaskStatus))
+            trackString("task_due_date", old: oldTaskDueDate, new: clearTaskDueDate ? nil : (taskDueDate ?? oldTaskDueDate))
+            trackInt64("task_assigned_to", old: oldTaskAssignedTo, new: clearTaskAssignedTo ? nil : (taskAssignedTo ?? oldTaskAssignedTo))
+            trackString("task_parts_note", old: oldTaskPartsNote, new: clearTaskPartsNote ? nil : (taskPartsNote ?? oldTaskPartsNote))
+            trackString("work_classification", old: oldWorkClassification, new: clearWorkClassification ? nil : (workClassification ?? oldWorkClassification))
+            trackString("warranty_timer_end", old: oldWarrantyTimerEnd, new: clearWarrantyTimerEnd ? nil : (warrantyTimerEnd ?? oldWarrantyTimerEnd))
             trackInt(
                 "is_question",
                 old: oldIsQuestionInt,

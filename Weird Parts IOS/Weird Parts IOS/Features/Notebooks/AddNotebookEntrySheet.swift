@@ -412,6 +412,12 @@ struct AddNotebookEntrySheet: View {
         case "divider":
             title = ""
             content = ""
+        case "quote", "code":
+            title = ""
+            content = trailingText
+        case "table":
+            title = trailingText
+            content = ""
         default:
             content = trailingText
         }
@@ -458,13 +464,16 @@ struct AddNotebookEntrySheet: View {
             content = ""
         } else if text.hasPrefix("/quote ") {
             blockType = "quote"
+            title = ""
             content = String(text.dropFirst(7))
         } else if text.hasPrefix("/code ") {
             blockType = "code"
+            title = ""
             content = String(text.dropFirst(6))
         } else if text.hasPrefix("/table ") {
             blockType = "table"
-            content = String(text.dropFirst(7))
+            title = String(text.dropFirst(7))
+            content = ""
         } else if text.hasPrefix("/photo ") {
             blockType = "photo"
             title = String(text.dropFirst(7))

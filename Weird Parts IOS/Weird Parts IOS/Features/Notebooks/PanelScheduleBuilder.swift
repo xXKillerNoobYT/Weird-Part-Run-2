@@ -210,8 +210,7 @@ struct PanelScheduleBuilder: View {
         .draggable(circuit?.id ?? "")
         .dropDestination(for: String.self) { ids, _ in
             guard let id = ids.first, !id.isEmpty else { return false }
-            moveCircuit(id: id, to: spaceNumber)
-            return true
+            return moveCircuit(id: id, to: spaceNumber)
         }
         .contextMenu {
             if let circuit {
@@ -258,12 +257,15 @@ struct PanelScheduleBuilder: View {
         moveCircuit(id: movingCircuitId, to: spaceNumber)
     }
 
-    private func moveCircuit(id: String, to spaceNumber: Int) {
+    @discardableResult
+    private func moveCircuit(id: String, to spaceNumber: Int) -> Bool {
         do {
             try schedule.moveCircuit(id: id, to: spaceNumber)
             movingCircuitId = nil
+            return true
         } catch {
             validationMessage = error.localizedDescription
+            return false
         }
     }
 
