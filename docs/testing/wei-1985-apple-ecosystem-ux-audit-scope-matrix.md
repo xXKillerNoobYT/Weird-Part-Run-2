@@ -47,7 +47,7 @@ Current repo evidence shows:
 - The active app target is `Weird Parts IOS/Weird Parts.xcodeproj` through `WiredPart-iOS.xcscheme`.
 - `TARGETED_DEVICE_FAMILY = "1,2"`, so iPhone and iPad are in scope.
 - `SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"`, so iOS device/simulator is the primary supported runtime.
-- `SUPPORTS_MACCATALYST = YES` appears in the iOS project settings, but the standalone `WiredPart-macOS.xcscheme` references `container:mac` and the `mac/` folder is not present in the current repo checkout. Treat Mac/Catalyst as a conditional compatibility surface, not a full beta-blocking surface, until a build owner confirms a runnable Mac/Catalyst target.
+- `SUPPORTS_MACCATALYST = YES` appears in the iOS project settings, but there is no active standalone macOS project or scheme in the current repo checkout. Treat Mac/Catalyst as a conditional compatibility surface through the `WiredPart-iOS` scheme, not a full beta-blocking surface, until a build owner confirms a runnable Mac/Catalyst target.
 - No watchOS, tvOS, visionOS, Android, Windows, or web/Tauri runtime is in scope for this Apple ecosystem audit.
 
 ## Target device and orientation matrix
@@ -61,7 +61,7 @@ Current repo evidence shows:
 | Physical iPhone | P1 for native-only capabilities | Real device when available | Portrait primary, landscape spot-check | Required for camera, location, share sheet, file permissions, notifications, and realistic touch/keyboard. | Device name/iOS version, permission state, screenshot/video, failure links. Simulator is acceptable only when hardware is unavailable and the limitation is noted. |
 | Physical iPad | P1 for warehouse/office workflows | Real device when available | Landscape primary, portrait spot-check | Warehouse floor plans, reports, procurement, settings, and office approvals are likely iPad-heavy. | Device name/iPadOS version, floor-plan/table/form evidence, failure links. |
 | Mac Catalyst / Designed for iPad on Mac | Conditional P2 | Only if Xcode exposes a runnable Mac/Catalyst destination for the iOS target | Resizable desktop window | Project settings claim Catalyst support, but current repo evidence does not prove a full Mac runtime. | Build/run proof first. If runnable, capture launch, navigation, keyboard/mouse, window resizing, menu/share/file behavior. If not runnable, record exclusion with build evidence. |
-| Standalone macOS scheme | Excluded unless restored | `WiredPart-macOS.xcscheme` | N/A | Scheme references missing `mac/` container in current checkout. | Exclusion note is enough unless a future PR restores `mac/`. |
+| Standalone macOS scheme | Excluded unless restored | N/A | N/A | No standalone macOS project/scheme is active in the current checkout. | Exclusion note is enough unless a future PR restores a macOS target. |
 
 ## Feature-area matrix
 

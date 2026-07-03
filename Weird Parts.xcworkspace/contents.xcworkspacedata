@@ -7,10 +7,4 @@
    <FileRef
       location = "group:core">
    </FileRef>
-   <FileRef
-      location = "group:mac">
-   </FileRef>
-   <FileRef
-      location = "group:ios-app">
-   </FileRef>
 </Workspace>

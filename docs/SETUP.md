@@ -26,7 +26,7 @@ This guide is for the current native iOS and Swift package repository. Older web
 | Target | Minimum version |
 | --- | --- |
 | iOS app (iPhone/iPad, device or simulator) | iOS 26.2 (`IPHONEOS_DEPLOYMENT_TARGET = 26.2`) |
-| macOS scheme (`WiredPart-macOS`, experimental) | macOS 26.4 |
+| Mac compatibility path | Mac Catalyst-capable destination via the `WiredPart-iOS` scheme when needed |
 | Core package (`core/Package.swift`) | iOS 17 / macOS 14 — `swift test` runs on Macs that cannot run the app target |
 | Xcode | 26.2 or newer (needs the iOS 26.2 SDK) |
 
@@ -69,7 +69,7 @@ The repo has two Xcode entry points. Both resolve the same packages; they differ
 | Entry point | Schemes | Use for |
 | --- | --- | --- |
 | `Weird Parts IOS/Weird Parts.xcodeproj` | `Weird Parts`, `WiredPartCore` | quick app-only build/test work (the commands below) |
-| `Weird Parts.xcworkspace` (repo root) | `WiredPart-iOS`, `WiredPart-iOS-Stage9-Smokes`, `WiredPart-macOS`, `WiredPartCore` | the beta smoke gate ([docs/testing/wei-3091-stage-9-beta-smoke-package.md](testing/wei-3091-stage-9-beta-smoke-package.md)) and the experimental macOS scheme |
+| `Weird Parts.xcworkspace` (repo root) | `WiredPart-iOS`, `WiredPart-iOS-Stage9-Smokes`, `WiredPartCore` | the beta smoke gate ([docs/testing/wei-3091-stage-9-beta-smoke-package.md](testing/wei-3091-stage-9-beta-smoke-package.md)) and shared package integration |
 
 The workspace filename contains a space — quote `Weird Parts.xcworkspace` exactly in commands.
 

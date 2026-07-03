@@ -36,7 +36,7 @@ Everything else is Apple system frameworks (SwiftUI, GRDB's bundled SQLite/SQLCi
 | Requirement | Value |
 |-------------|-------|
 | iOS app deployment target | **iOS 26.2** (`IPHONEOS_DEPLOYMENT_TARGET = 26.2`) |
-| macOS target (workspace `WiredPart-macOS` scheme) | macOS 26.4 |
+| Mac compatibility path | Mac Catalyst-capable destination via the `WiredPart-iOS` scheme when needed |
 | Core package platforms | iOS 17 / macOS 14 (`core/Package.swift`) — the package builds lower than the app so `swift test` runs on more Macs |
 | Swift tools version | 6.0 (`// swift-tools-version: 6.0`) |
 | Xcode | Xcode 26.2 or newer (needs the iOS 26.2 SDK; repo verified with Xcode 26.5 / build 17F42) |
@@ -55,7 +55,7 @@ swift test
 
 # App: open either entry point and let Xcode resolve packages
 open "Weird Parts IOS/Weird Parts.xcodeproj"     # project (schemes: "Weird Parts", "WiredPartCore")
-open "Weird Parts.xcworkspace"                    # workspace (schemes: "WiredPart-iOS", "WiredPart-macOS", ...)
+open "Weird Parts.xcworkspace"                    # workspace (schemes: "WiredPart-iOS", Stage-9 smokes, "WiredPartCore", ...)
 ```
 
 See [SETUP.md](SETUP.md) for full build/test instructions and scheme details.
