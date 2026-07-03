@@ -119,7 +119,7 @@ final class SheetLifecycleRegressionTests: XCTestCase {
         let review = try Self.methodBody(named: "reviewOneAtATime", in: source)
 
         XCTAssertTrue(
-            review.contains("Button {\n                        reviewIndex = nil"),
+            review.contains("reviewIndex = nil") && review.contains("Label(\"Back\", systemImage: \"chevron.left\")"),
             "Pricing bulk edit's one-at-a-time review step needs an explicit Back path to the preview step."
         )
         XCTAssertTrue(
@@ -133,7 +133,7 @@ final class SheetLifecycleRegressionTests: XCTestCase {
         let resolveConflicts = try Self.braceBalancedBody(after: "private var resolveConflictsView", in: source)
 
         XCTAssertTrue(
-            resolveConflicts.contains("Button {\n                        step = .preview"),
+            resolveConflicts.contains("step = .preview") && resolveConflicts.contains("Label(\"Back\", systemImage: \"chevron.left\")"),
             "Pricing override conflict resolution needs an explicit Back path to the preview step."
         )
         XCTAssertTrue(
