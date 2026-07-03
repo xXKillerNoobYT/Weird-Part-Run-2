@@ -89,6 +89,45 @@ final class PanelScheduleBuilderAccessibilityTests: XCTestCase {
         )
     }
 
+    func testCircuitBackgroundKeepsBreakerSafetyColorReachableAlongsideClassification() throws {
+        let source = try Self.readNotebookSource("PanelScheduleBuilder.swift")
+
+        XCTAssertTrue(
+            source.contains("private func circuitBackground(_ circuit: CircuitEntry?) -> Color"),
+            "circuitBackground should remain the single source of circuit cell background color."
+        )
+        XCTAssertTrue(
+            source.contains("case .gfci, .afci, .dualFunction: return .green.opacity(0.1)"),
+            "GFCI/AFCI/dual-function breakers must keep their green safety highlight regardless of classification (#1379 review)."
+        )
+
+        // The breakerType switch (which carries the GFCI/AFCI/dual-function safety color)
+        // must run before the classification switch bails out early for every non-special
+        // case, otherwise any classified circuit makes the breaker-type coloring unreachable.
+        guard let breakerSwitchRange = source.range(of: "switch circuit.breakerType {"),
+              let classificationSwitchRange = source.range(of: "switch circuit.classification {") else {
+            XCTFail("Expected both circuit.breakerType and circuit.classification switches in circuitBackground.")
+            return
+        }
+        XCTAssertTrue(
+            breakerSwitchRange.lowerBound < classificationSwitchRange.lowerBound,
+            "The breaker-type safety-color switch must run before the classification switch so GFCI/AFCI/dual-function coloring is not shadowed by an early classification return."
+        )
+    }
+
+    func testPanelLegendIncludesSafetyRelevantBreakerEntries() throws {
+        let source = try Self.readNotebookSource("PanelScheduleBuilder.swift")
+
+        XCTAssertTrue(
+            source.contains("legendDot(.green, \"GFI/AFI\")"),
+            "The panel legend must keep a GFI/AFI entry so sighted users can still identify safety breakers visually."
+        )
+        XCTAssertTrue(
+            source.contains("legendDot(.yellow, \"Spare\")"),
+            "The panel legend must keep a Spare entry."
+        )
+    }
+
     private static func readNotebookSource(_ filename: String, file: StaticString = #filePath) throws -> String {
         let testFileURL = URL(fileURLWithPath: "\(file)")
         let projectRoot = testFileURL
