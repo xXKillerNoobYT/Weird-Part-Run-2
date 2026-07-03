@@ -337,6 +337,23 @@ final class AppCore: ObservableObject {
                     return "Office channel ready"
                 }
             }
+
+            // Migrate legacy tmp-absolute chat attachment paths into durable,
+            // backup-excluded Application Support storage (#1371). Surviving files
+            // are copied and rewritten to relative paths; purged files are left to
+            // render as "file unavailable" (#1372). One-shot, idempotent.
+            Task.detached { [chatService, backgroundTaskService, logger] in
+                Self.runAuditedBootstrapTask(
+                    name: "Chat Attachment Path Migration",
+                    type: "system_setup",
+                    backgroundTaskService: backgroundTaskService,
+                    logger: logger
+                ) {
+                    let storage = try AttachmentStorage()
+                    let migrated = try chatService?.reconcileLegacyAttachmentPaths(storage: storage) ?? 0
+                    return "Reconciled \(migrated) attachment path(s)"
+                }
+            }
         } catch {
             let nsError = error as NSError
             logger.error(

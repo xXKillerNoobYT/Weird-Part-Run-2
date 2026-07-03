@@ -149,6 +149,7 @@ extension AppDatabase {
         registerMigration107BreakPolicyPresets(&migrator)
         registerMigration109DispatchPreferenceBackfill(&migrator)
         registerMigration110InspectionTemplateRequiredFlag(&migrator)
+        registerMigration111ChatAttachmentStorageRelative(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5980,5 +5981,39 @@ private func registerMigration110InspectionTemplateRequiredFlag(_ migrator: inou
             SET is_required = 1
             WHERE is_required IS NULL
             """)
+    }
+}
+
+// MARK: - Migration 111: Chat Attachment Storage (relative paths)
+
+/// Adds `storage_relative` to `message_attachments` so the app can tell durable,
+/// relative-path attachments (new writes into `Application Support/ChatAttachments/`)
+/// apart from legacy rows whose `file_path` is an absolute `tmp/` path (#1371).
+///
+/// This migration is schema-only and idempotent. It **cannot** rewrite legacy
+/// absolute paths itself: doing so requires touching the filesystem (locating the
+/// current container's Application Support directory and checking whether each
+/// file still exists), which is app-runtime work, not SQL. The value it sets is
+/// the safe default (0 = legacy/absolute); the runtime reconciler
+/// (`ChatService.reconcileLegacyAttachmentPaths`) upgrades surviving rows to
+/// relative and leaves purged ones to resolve as "file unavailable" (#1372).
+private func registerMigration111ChatAttachmentStorageRelative(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("111_chat_attachment_storage_relative") { db in
+        // Guard: the attachments table may not exist yet on some partial installs.
+        let tableExists = try Bool.fetchOne(db, sql: """
+            SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'message_attachments'
+            """) ?? false
+        guard tableExists else { return }
+
+        // 0 = file_path is a legacy absolute path (or nil); 1 = file_path is
+        // relative to the Application Support base and resolved at render time.
+        // Existing rows keep 0 so the reconciler knows to inspect them.
+        try addColumnIfMissing(
+            db,
+            table: "message_attachments",
+            column: "storage_relative",
+            type: .integer,
+            defaultValue: 0
+        )
     }
 }

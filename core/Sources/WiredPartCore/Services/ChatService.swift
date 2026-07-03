@@ -950,27 +950,58 @@ public final class ChatService: Sendable {
         public let id: Int64
         public let messageId: Int64
         public let attachmentType: String  // "photo", "file", "part_ref", "po_ref", "job_ref", "jpo_ref"
+        /// For `storageRelative == true`, a path relative to the attachments base
+        /// directory (`ChatAttachments/<uuid>.<ext>`) resolved via
+        /// ``AttachmentStorage``. For legacy rows (`false`), an absolute `tmp/`
+        /// path that may no longer exist (#1371).
         public let filePath: String?
         public let fileName: String?
         public let fileSize: Int64?
         public let mimeType: String?
         public let referenceId: Int64?
         public let referenceLabel: String?
+        /// Whether `filePath` is a durable relative path (`true`) resolved against
+        /// Application Support, or a legacy absolute path (`false`).
+        public let storageRelative: Bool
+
+        public init(
+            id: Int64, messageId: Int64, attachmentType: String,
+            filePath: String?, fileName: String?, fileSize: Int64?,
+            mimeType: String?, referenceId: Int64?, referenceLabel: String?,
+            storageRelative: Bool = false
+        ) {
+            self.id = id
+            self.messageId = messageId
+            self.attachmentType = attachmentType
+            self.filePath = filePath
+            self.fileName = fileName
+            self.fileSize = fileSize
+            self.mimeType = mimeType
+            self.referenceId = referenceId
+            self.referenceLabel = referenceLabel
+            self.storageRelative = storageRelative
+        }
     }
 
     /// A pending attachment before the message is sent.
     public struct PendingAttachment: Sendable {
         public let type: String  // "photo", "file", "part_ref", "po_ref", "job_ref", "jpo_ref"
+        /// For file/photo attachments this should be a **relative** path produced
+        /// by ``AttachmentStorage`` (durable across tmp purges and app updates,
+        /// #1371). `storageRelative` records which convention was used.
         public let filePath: String?
         public let fileName: String?
         public let fileSize: Int64?
         public let mimeType: String?
         public let referenceId: Int64?
         public let referenceLabel: String?
+        /// `true` when `filePath` is a relative attachments-directory path.
+        public let storageRelative: Bool
 
         public init(type: String, filePath: String? = nil, fileName: String? = nil,
                     fileSize: Int64? = nil, mimeType: String? = nil,
-                    referenceId: Int64? = nil, referenceLabel: String? = nil) {
+                    referenceId: Int64? = nil, referenceLabel: String? = nil,
+                    storageRelative: Bool = false) {
             self.type = type
             self.filePath = filePath
             self.fileName = fileName
@@ -978,6 +1009,7 @@ public final class ChatService: Sendable {
             self.mimeType = mimeType
             self.referenceId = referenceId
             self.referenceLabel = referenceLabel
+            self.storageRelative = storageRelative
         }
     }
 
@@ -1008,11 +1040,12 @@ public final class ChatService: Sendable {
                     sql: """
                         INSERT INTO message_attachments
                         (message_id, attachment_type, file_path, file_name, file_size,
-                         mime_type, reference_id, reference_label)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                         mime_type, reference_id, reference_label, storage_relative)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                     arguments: [messageId, att.type, att.filePath, att.fileName,
-                                att.fileSize, att.mimeType, att.referenceId, att.referenceLabel]
+                                att.fileSize, att.mimeType, att.referenceId, att.referenceLabel,
+                                att.storageRelative ? 1 : 0]
                 )
             }
 
@@ -1026,24 +1059,13 @@ public final class ChatService: Sendable {
             return try db.writer.read { dbConn in
                 let rows = try Row.fetchAll(dbConn, sql: """
                     SELECT id, message_id, attachment_type, file_path, file_name,
-                           file_size, mime_type, reference_id, reference_label
+                           file_size, mime_type, reference_id, reference_label,
+                           storage_relative
                     FROM message_attachments
                     WHERE message_id = ? AND deleted_at IS NULL
                     ORDER BY id ASC
                     """, arguments: [messageId])
-                return rows.map { row in
-                    MessageAttachment(
-                        id: row["id"] ?? 0,
-                        messageId: row["message_id"] ?? 0,
-                        attachmentType: row["attachment_type"] ?? "file",
-                        filePath: row["file_path"],
-                        fileName: row["file_name"],
-                        fileSize: row["file_size"],
-                        mimeType: row["mime_type"],
-                        referenceId: row["reference_id"],
-                        referenceLabel: row["reference_label"]
-                    )
-                }
+                return rows.map(Self.mapAttachmentRow)
             }
         } catch {
             if isTableNotFoundError(error) { return [] }
@@ -1059,7 +1081,8 @@ public final class ChatService: Sendable {
                 let placeholders = messageIds.map { _ in "?" }.joined(separator: ",")
                 let rows = try Row.fetchAll(dbConn, sql: """
                     SELECT id, message_id, attachment_type, file_path, file_name,
-                           file_size, mime_type, reference_id, reference_label
+                           file_size, mime_type, reference_id, reference_label,
+                           storage_relative
                     FROM message_attachments
                     WHERE message_id IN (\(placeholders)) AND deleted_at IS NULL
                     ORDER BY id ASC
@@ -1067,23 +1090,106 @@ public final class ChatService: Sendable {
 
                 var result: [Int64: [MessageAttachment]] = [:]
                 for row in rows {
-                    let att = MessageAttachment(
-                        id: row["id"] ?? 0,
-                        messageId: row["message_id"] ?? 0,
-                        attachmentType: row["attachment_type"] ?? "file",
-                        filePath: row["file_path"],
-                        fileName: row["file_name"],
-                        fileSize: row["file_size"],
-                        mimeType: row["mime_type"],
-                        referenceId: row["reference_id"],
-                        referenceLabel: row["reference_label"]
-                    )
+                    let att = Self.mapAttachmentRow(row)
                     result[att.messageId, default: []].append(att)
                 }
                 return result
             }
         } catch {
             if isTableNotFoundError(error) { return [:] }
+            throw error
+        }
+    }
+
+    /// Map a `message_attachments` row (including `storage_relative`) to a
+    /// ``MessageAttachment``. Shared by the single- and batch-fetch paths so the
+    /// column list and defaults stay in one place.
+    private static func mapAttachmentRow(_ row: Row) -> MessageAttachment {
+        MessageAttachment(
+            id: row["id"] ?? 0,
+            messageId: row["message_id"] ?? 0,
+            attachmentType: row["attachment_type"] ?? "file",
+            filePath: row["file_path"],
+            fileName: row["file_name"],
+            fileSize: row["file_size"],
+            mimeType: row["mime_type"],
+            referenceId: row["reference_id"],
+            referenceLabel: row["reference_label"],
+            // Column is NOT NULL DEFAULT 0, but coalesce defensively for rows
+            // written before the migration is visible to this read.
+            storageRelative: (row["storage_relative"] as Int?) == 1
+        )
+    }
+
+    /// One-shot reconciliation of legacy absolute-path attachment rows into the
+    /// durable relative-path scheme (#1371). Intended to run once at app launch.
+    ///
+    /// For every non-relative row whose `file_path` is an absolute path:
+    /// - if the file still exists on disk, its bytes are copied into
+    ///   ``AttachmentStorage`` and the row is rewritten to the new relative path
+    ///   with `storage_relative = 1`;
+    /// - if the file is already gone (the common case after a `tmp/` purge), the
+    ///   row is left as-is so the UI can resolve it to `nil` and show an explicit
+    ///   "file unavailable" state (#1372) rather than a dangling path.
+    ///
+    /// Rows that already carry a relative path, reference rows (no `file_path`),
+    /// and soft-deleted rows are skipped. Returns the number of rows migrated to
+    /// relative storage. Best-effort per row — a single failed copy does not
+    /// abort the batch.
+    ///
+    /// - Returns: count of rows successfully rewritten to relative storage.
+    @discardableResult
+    public func reconcileLegacyAttachmentPaths(storage: AttachmentStorage) throws -> Int {
+        do {
+            // Read candidates outside the write transaction to keep the write
+            // window (and any file I/O) short.
+            let candidates: [(id: Int64, path: String, name: String?)] = try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT id, file_path, file_name
+                    FROM message_attachments
+                    WHERE storage_relative = 0
+                      AND file_path IS NOT NULL
+                      AND deleted_at IS NULL
+                    """)
+                return rows.compactMap { row -> (Int64, String, String?)? in
+                    guard let id: Int64 = row["id"], let path: String = row["file_path"] else { return nil }
+                    guard AttachmentStorage.isAbsolutePath(path) else { return nil }
+                    return (id, path, row["file_name"])
+                }
+            }
+            guard !candidates.isEmpty else { return 0 }
+
+            let fm = FileManager.default
+            var migrated = 0
+            for candidate in candidates {
+                // Skip (and leave for the "unavailable" UI state) anything already gone.
+                guard fm.fileExists(atPath: candidate.path) else { continue }
+                let sourceURL = URL(fileURLWithPath: candidate.path)
+                let relative: String
+                do {
+                    relative = try storage.store(
+                        copyingFrom: sourceURL,
+                        preferredName: candidate.name ?? sourceURL.lastPathComponent
+                    )
+                } catch {
+                    // Copy failed (permissions, disk full) — leave the legacy row
+                    // untouched so a later launch can retry.
+                    continue
+                }
+                try db.writer.write { dbConn in
+                    try dbConn.execute(sql: """
+                        UPDATE message_attachments
+                        SET file_path = ?, storage_relative = 1
+                        WHERE id = ?
+                        """, arguments: [relative, candidate.id])
+                }
+                // Best-effort cleanup of the now-copied tmp original.
+                try? fm.removeItem(at: sourceURL)
+                migrated += 1
+            }
+            return migrated
+        } catch {
+            if isTableNotFoundError(error) { return 0 }
             throw error
         }
     }
