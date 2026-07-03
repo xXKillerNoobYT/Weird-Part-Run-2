@@ -32,6 +32,16 @@ final class InAppBugReportingRegressionTests: XCTestCase {
             assistantSource.contains("isBugReportPresented") && assistantSource.contains("ReportABugPage(originModule: activeModuleName)"),
             "The assistant must expose a direct report action for assistant mistakes or page-specific app bugs."
         )
+        let overlayHeaderSource = try TestSourceSlicer.braceBalancedBody(
+            after: "private var overlayHeader: some View",
+            in: assistantSource
+        )
+        XCTAssertTrue(
+            overlayHeaderSource.contains("isBugReportPresented = true")
+                && overlayHeaderSource.contains("Image(systemName: \"ladybug\")")
+                && overlayHeaderSource.contains("accessibilityLabel(\"Report a bug\")"),
+            "The floating assistant overlay must expose the same Report a bug entry point as sheet mode."
+        )
         XCTAssertTrue(
             assistantSource.contains("activeModuleName") && assistantSource.contains("HelpContentRegistry.helpFor"),
             "Assistant bug reports must include the active module/page context so reports are actionable."
