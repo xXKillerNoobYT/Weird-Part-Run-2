@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import QuickLook
 import UniformTypeIdentifiers
 import WiredPartCore
 import OSLog
@@ -277,13 +278,19 @@ struct IOSMessageThreadView: View {
                                 logger.error("Photo attachment import failed: no data returned for selected item")
                                 continue
                             }
-                            let tmpURL = FileManager.default.temporaryDirectory
-                                .appendingPathComponent(UUID().uuidString + ".jpg")
-                            try data.write(to: tmpURL)
+                            // Store durably in Application Support (excluded from
+                            // backup) and keep the RELATIVE path — survives tmp
+                            // purges and container moves (#1371).
+                            let storage = try AttachmentStorage()
+                            let relative = try storage.store(
+                                data: data,
+                                preferredName: UUID().uuidString + ".jpg"
+                            )
                             let att = ChatService.PendingAttachment(
                                 type: "photo",
-                                filePath: tmpURL.path,
-                                fileName: tmpURL.lastPathComponent
+                                filePath: relative,
+                                fileName: (relative as NSString).lastPathComponent,
+                                storageRelative: true
                             )
                             await MainActor.run { pendingAttachments.append(att) }
                         } catch {
@@ -548,26 +555,34 @@ struct IOSMessageThreadView: View {
         }
     }
 
-    /// Copy picked files into a temp location and queue them as pending
-    /// attachments. Security-scoped access is required for files outside
-    /// the app sandbox (Files app, iCloud Drive, etc.).
+    /// Copy picked files into durable Application Support storage and queue them
+    /// as pending attachments. Security-scoped access is required for files
+    /// outside the app sandbox (Files app, iCloud Drive, etc.).
+    ///
+    /// Stores the RELATIVE path (resolved at render time) so the file survives
+    /// `tmp/` purges and sandbox-container moves across app updates (#1371).
     private func importFiles(_ urls: [URL]) {
         for url in urls {
             let didAccess = url.startAccessingSecurityScopedResource()
             defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
             do {
-                let tmpURL = FileManager.default.temporaryDirectory
-                    .appendingPathComponent(UUID().uuidString + "-" + url.lastPathComponent)
-                try FileManager.default.copyItem(at: url, to: tmpURL)
-                let attributes = try? FileManager.default.attributesOfItem(atPath: tmpURL.path)
-                let fileSize = (attributes?[.size] as? NSNumber)?.int64Value
+                let storage = try AttachmentStorage()
+                let relative = try storage.store(
+                    copyingFrom: url,
+                    preferredName: url.lastPathComponent
+                )
+                // Size the stored copy; MIME from the original extension.
+                let fileSize = storage.resolveURL(relativePath: relative)
+                    .flatMap { try? FileManager.default.attributesOfItem(atPath: $0.path) }
+                    .flatMap { ($0[.size] as? NSNumber)?.int64Value }
                 let mimeType = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
                 pendingAttachments.append(ChatService.PendingAttachment(
                     type: "file",
-                    filePath: tmpURL.path,
+                    filePath: relative,
                     fileName: url.lastPathComponent,
                     fileSize: fileSize,
-                    mimeType: mimeType
+                    mimeType: mimeType,
+                    storageRelative: true
                 ))
             } catch {
                 actionError = userFriendlyError(error, context: "attach file")
@@ -588,11 +603,35 @@ struct IOSMessageThreadView: View {
     }
 }
 
+// MARK: - Attachment URL Resolution
+
+/// Resolve a stored attachment to an on-disk URL, or `nil` if the bytes are gone.
+///
+/// Handles both durable relative paths (`storageRelative == true`, resolved
+/// against Application Support) and legacy absolute paths (`storageRelative ==
+/// false`, resolved directly). Returning `nil` for a missing file is what lets
+/// the UI show an explicit "file unavailable" state instead of a dead chip
+/// (#1371 / #1372).
+func resolveAttachmentURL(_ attachment: ChatService.MessageAttachment) -> URL? {
+    guard let path = attachment.filePath, !path.isEmpty else { return nil }
+    if attachment.storageRelative {
+        return (try? AttachmentStorage())?.resolveURL(relativePath: path)
+    }
+    // Legacy absolute path — only usable if the file still exists.
+    return FileManager.default.fileExists(atPath: path) ? URL(fileURLWithPath: path) : nil
+}
+
 // MARK: - Attachment Display in Bubbles
 
 /// Renders a single attachment inline in a message bubble.
 struct AttachmentDisplay: View {
     let attachment: ChatService.MessageAttachment
+
+    /// Resolved on-disk URL for photo/file attachments, or nil if the file is
+    /// missing (purged tmp, dangling legacy path). Reference attachments ignore this.
+    @State private var resolvedURL: URL?
+    @State private var didResolve = false
+    @State private var showQuickLook = false
 
     var body: some View {
         switch attachment.attachmentType {
@@ -611,22 +650,7 @@ struct AttachmentDisplay: View {
             .clipShape(RoundedRectangle(cornerRadius: 6))
 
         case "photo":
-            if let path = attachment.filePath {
-                AsyncImage(url: URL(fileURLWithPath: path)) { image in
-                    image.resizable().aspectRatio(contentMode: .fill)
-                        .frame(maxWidth: 200, maxHeight: 150)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                } placeholder: {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.gray.opacity(0.2))
-                        .frame(width: 100, height: 75)
-                        .overlay {
-                            Image(systemName: "photo")
-                                .foregroundStyle(.secondary)
-                                .accessibilityHidden(true)
-                        }
-                }
-            }
+            photoView
 
         case "po_ref", "job_ref", "jpo_ref":
             HStack {
@@ -641,17 +665,127 @@ struct AttachmentDisplay: View {
             .clipShape(RoundedRectangle(cornerRadius: 6))
 
         default:
-            // File attachment
-            HStack {
-                Image(systemName: "doc")
-                    .accessibilityHidden(true)
-                Text(attachment.fileName ?? "File")
-                    .font(.caption)
-            }
-            .padding(6)
-            .background(Color(.tertiarySystemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            fileView
         }
+    }
+
+    // MARK: Photo
+
+    @ViewBuilder
+    private var photoView: some View {
+        Group {
+            if let url = resolvedURL {
+                AsyncImage(url: url) { image in
+                    image.resizable().aspectRatio(contentMode: .fill)
+                        .frame(maxWidth: 200, maxHeight: 150)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                } placeholder: {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.gray.opacity(0.2))
+                        .frame(width: 100, height: 75)
+                        .overlay {
+                            Image(systemName: "photo")
+                                .foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
+                        }
+                }
+                .accessibilityLabel(Text("Photo attachment"))
+                .onTapGesture { showQuickLook = true }
+                .contextMenu {
+                    ShareLink(item: url) {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                    }
+                }
+                .quickLookPreview(isPresented: $showQuickLook, url: url)
+            } else if didResolve {
+                unavailableView(label: attachment.fileName ?? "Photo")
+            } else {
+                // Resolving — show a neutral placeholder to avoid a flash of the
+                // "unavailable" state before the file check completes.
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.gray.opacity(0.15))
+                    .frame(width: 100, height: 75)
+            }
+        }
+        .task(id: attachment.id) { resolveIfNeeded() }
+    }
+
+    // MARK: File
+
+    @ViewBuilder
+    private var fileView: some View {
+        Group {
+            if let url = resolvedURL {
+                Button {
+                    showQuickLook = true
+                } label: {
+                    fileChip(available: true)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Open \(attachment.fileName ?? "file")"))
+                .accessibilityHint(Text("Opens a preview"))
+                .contextMenu {
+                    ShareLink(item: url) {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                    }
+                }
+                .quickLookPreview(isPresented: $showQuickLook, url: url)
+            } else if didResolve {
+                unavailableView(label: attachment.fileName ?? "File")
+            } else {
+                fileChip(available: true)
+            }
+        }
+        .task(id: attachment.id) { resolveIfNeeded() }
+    }
+
+    private func fileChip(available: Bool) -> some View {
+        HStack {
+            Image(systemName: "doc")
+                .accessibilityHidden(true)
+            Text(attachment.fileName ?? "File")
+                .font(.caption)
+            if available {
+                Image(systemName: "eye")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+        }
+        .padding(6)
+        .frame(minHeight: 44)
+        .background(Color(.tertiarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    /// Explicit "file unavailable" state — distinguishes a purged/dangling file
+    /// from a working attachment instead of rendering a dead, tappable chip.
+    private func unavailableView(label: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "exclamationmark.triangle")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(label)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Text("File unavailable")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(6)
+        .frame(minHeight: 44)
+        .background(Color(.tertiarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("\(label), file unavailable"))
+    }
+
+    private func resolveIfNeeded() {
+        resolvedURL = resolveAttachmentURL(attachment)
+        didResolve = true
     }
 
     private func iconForRefType(_ type: String) -> String {
@@ -660,6 +794,76 @@ struct AttachmentDisplay: View {
         case "job_ref": return "wrench.and.screwdriver"
         case "jpo_ref": return "doc.plaintext"
         default: return "link"
+        }
+    }
+}
+
+// MARK: - QuickLook Preview
+
+/// Presents a `QLPreviewController` over the calling view when `isPresented`
+/// becomes true, wrapping the UIKit controller for SwiftUI (#1372).
+private struct QuickLookPreviewModifier: ViewModifier {
+    @Binding var isPresented: Bool
+    let url: URL
+
+    func body(content: Content) -> some View {
+        content.background(
+            QuickLookPresenter(isPresented: $isPresented, url: url)
+        )
+    }
+}
+
+private extension View {
+    /// Present a QuickLook preview of `url` when `isPresented` is true.
+    func quickLookPreview(isPresented: Binding<Bool>, url: URL) -> some View {
+        modifier(QuickLookPreviewModifier(isPresented: isPresented, url: url))
+    }
+}
+
+/// UIViewControllerRepresentable bridge that pushes a `QLPreviewController`
+/// inside a navigation controller when requested and clears the flag on dismiss.
+private struct QuickLookPresenter: UIViewControllerRepresentable {
+    @Binding var isPresented: Bool
+    let url: URL
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIViewController(context: Context) -> UIViewController {
+        UIViewController()
+    }
+
+    func updateUIViewController(_ controller: UIViewController, context: Context) {
+        if isPresented {
+            // Avoid double-presenting.
+            guard controller.presentedViewController == nil else { return }
+            let preview = QLPreviewController()
+            preview.dataSource = context.coordinator
+            preview.delegate = context.coordinator
+            let nav = UINavigationController(rootViewController: preview)
+            context.coordinator.presented = nav
+            controller.present(nav, animated: true)
+        } else if let presented = context.coordinator.presented,
+                  presented.presentingViewController != nil {
+            presented.dismiss(animated: true)
+            context.coordinator.presented = nil
+        }
+    }
+
+    final class Coordinator: NSObject, QLPreviewControllerDataSource, QLPreviewControllerDelegate {
+        let parent: QuickLookPresenter
+        weak var presented: UINavigationController?
+
+        init(_ parent: QuickLookPresenter) { self.parent = parent }
+
+        func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
+
+        func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem {
+            parent.url as NSURL
+        }
+
+        func previewControllerDidDismiss(_ controller: QLPreviewController) {
+            // Reflect user-driven dismissal back into the binding.
+            if parent.isPresented { parent.isPresented = false }
         }
     }
 }
