@@ -335,6 +335,34 @@ struct SettingsServiceTests {
         #expect(updated.startDay == 15)
     }
 
+    // MARK: - Tool Policies
+
+    @Test("getToolPolicies returns defaults and updateToolPolicies persists typed settings")
+    func testToolPoliciesTypedSettings() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        let defaults = try svc.getToolPolicies()
+        #expect(defaults.maxCheckoutDays == 30)
+        #expect(defaults.allowTrades)
+        #expect(defaults.editVerificationMode == .pendingWithoutPermission)
+
+        var custom = defaults
+        custom.maxCheckoutDays = 5
+        custom.allowTrades = false
+        custom.requireLostStolenLocation = true
+        custom.editVerificationMode = .alwaysPending
+
+        let saved = try svc.updateToolPolicies(custom)
+        #expect(saved == custom)
+
+        let reloaded = try svc.getToolPolicies()
+        #expect(reloaded.maxCheckoutDays == 5)
+        #expect(!reloaded.allowTrades)
+        #expect(reloaded.requireLostStolenLocation)
+        #expect(reloaded.editVerificationMode == .alwaysPending)
+    }
+
     // MARK: - Dispatch Preferences
 
     @Test("getDispatchPreferences returns defaults and updateDispatchPreferences persists typed settings")
