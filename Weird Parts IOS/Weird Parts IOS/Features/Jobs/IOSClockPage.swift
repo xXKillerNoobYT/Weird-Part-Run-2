@@ -236,7 +236,6 @@ struct IOSClockPage: View {
                     onResolved: { loadData() }
                 )
                 .environmentObject(appCore)
-                .interactiveDismissDisabled(true)
             }
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {

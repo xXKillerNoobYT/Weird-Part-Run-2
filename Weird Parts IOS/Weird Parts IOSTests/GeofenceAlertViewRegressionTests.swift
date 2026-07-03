@@ -49,6 +49,33 @@ final class GeofenceAlertViewRegressionTests: XCTestCase {
         )
     }
 
+    func testGeofenceAlertHasManualDismissPathThatDoesNotCallJobServices() throws {
+        let source = try Self.readGeofenceAlertSource()
+        let clockPageSource = try Self.readClockPageSource()
+
+        XCTAssertTrue(source.contains("Button(\"Not Now\")"))
+        XCTAssertTrue(source.contains("Button(\"Dismiss Alert\", role: .destructive)"))
+        XCTAssertTrue(source.contains("private func dismissWithoutServiceCall()"))
+        XCTAssertTrue(source.contains("geofenceManager.acknowledgeExit()"))
+        XCTAssertTrue(source.contains("onResolved()"))
+        XCTAssertTrue(source.contains(".interactiveDismissDisabled(isProcessing)"))
+        XCTAssertFalse(
+            clockPageSource.contains(".interactiveDismissDisabled(true)"),
+            "The full-screen geofence alert must not be hard-locked by the presenting Clock page."
+        )
+
+        let dismissFunction = try XCTUnwrap(source.range(of: "private func dismissWithoutServiceCall()"))
+        let dismissBody = source[dismissFunction.lowerBound..<source.endIndex]
+        let dismissEnd = try XCTUnwrap(dismissBody.range(of: "// MARK: - Load Jobs"))
+        let manualDismissSource = String(dismissBody[..<dismissEnd.lowerBound])
+
+        XCTAssertFalse(manualDismissSource.contains("appCore.jobsService"))
+        XCTAssertFalse(manualDismissSource.contains("getActiveClockEntry"))
+        XCTAssertFalse(manualDismissSource.contains("clockOut"))
+        XCTAssertFalse(manualDismissSource.contains("switchClockedInJob"))
+        XCTAssertFalse(manualDismissSource.contains("toggleSupplyRun"))
+    }
+
     private static func readGeofenceAlertSource(file: StaticString = #filePath) throws -> String {
         let testFileURL = URL(fileURLWithPath: "\(file)")
         let projectRoot = testFileURL
@@ -58,6 +85,19 @@ final class GeofenceAlertViewRegressionTests: XCTestCase {
             .appendingPathComponent("Weird Parts IOS")
             .appendingPathComponent("App")
             .appendingPathComponent("GeofenceAlertView.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    private static func readClockPageSource(file: StaticString = #filePath) throws -> String {
+        let testFileURL = URL(fileURLWithPath: "\(file)")
+        let projectRoot = testFileURL
+            .deletingLastPathComponent() // Weird Parts IOSTests
+            .deletingLastPathComponent() // Weird Parts IOS
+        let sourceURL = projectRoot
+            .appendingPathComponent("Weird Parts IOS")
+            .appendingPathComponent("Features")
+            .appendingPathComponent("Jobs")
+            .appendingPathComponent("IOSClockPage.swift")
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 }

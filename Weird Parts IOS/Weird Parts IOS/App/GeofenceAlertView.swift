@@ -200,11 +200,23 @@ struct GeofenceAlertView: View {
                     .padding(.bottom, 32)
                 }
             }
-            .interactiveDismissDisabled(true)
+            .interactiveDismissDisabled(isProcessing)
             .navigationTitle("Location Alert")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Not Now") {
+                        dismissWithoutServiceCall()
+                    }
+                    .disabled(isProcessing)
+                    .accessibilityHint("Dismisses the location alert without calling job services")
+                }
+            }
             .alert("Error", isPresented: $showError) {
                 Button("OK", role: .cancel) { }
+                Button("Dismiss Alert", role: .destructive) {
+                    dismissWithoutServiceCall()
+                }
             } message: {
                 Text(errorMessage ?? "An unknown error occurred.")
             }
@@ -312,6 +324,13 @@ struct GeofenceAlertView: View {
             showError = true
             isProcessing = false
         }
+    }
+
+    @MainActor
+    private func dismissWithoutServiceCall() {
+        geofenceManager.acknowledgeExit()
+        isProcessing = false
+        onResolved()
     }
 
     // MARK: - Load Jobs
