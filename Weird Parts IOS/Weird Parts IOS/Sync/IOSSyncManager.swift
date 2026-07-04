@@ -560,7 +560,72 @@ final class IOSSyncManager {
             isScanning = true
         }
 
+        // Allow a not-yet-in-company device to connect over Bluetooth to complete
+        // the code handshake (the code is the security gate).
+        await pm.setBluetoothPairingHostMode(true)
         return try await pm.issuePairingCode()
+    }
+
+    /// Joiner: pair with a Bluetooth-discovered host over Multipeer (no Wi-Fi).
+    /// Mirrors `pairWithShop` but exchanges the code over the Bluetooth session and
+    /// adopts the host's company id so both devices share one company.
+    func pairWithPeerOverBluetooth(hostDeviceId: String, hostName: String, pairingCode: String) async throws {
+        syncStatus = .syncing
+        syncProgressMessage = "Connecting over Bluetooth…"
+        syncProgressPercent = 0.1
+
+        guard let normalizedCode = SyncCrypto.normalizedPairingCode(pairingCode) else {
+            syncStatus = .error
+            syncProgressMessage = nil
+            errorMessage = "Pairing code must be eight letters or numbers."
+            throw SyncError.invalidPairingCode
+        }
+        guard let pm = peerManager, let db else {
+            syncStatus = .error
+            syncProgressMessage = nil
+            errorMessage = SyncError.noDatabaseAvailable.localizedDescription
+            throw SyncError.noDatabaseAvailable
+        }
+
+        let myDeviceId = DeviceIdentity.current
+        let myDeviceName = UIDevice.current.name
+
+        let response = try await pm.pairViaMultipeer(
+            hostDeviceId: hostDeviceId,
+            myDeviceId: myDeviceId,
+            myDeviceName: myDeviceName,
+            pairingCode: normalizedCode,
+            platform: "iOS"
+        )
+
+        syncProgressMessage = "Registering verified device…"
+        syncProgressPercent = 0.3
+
+        try ChangeTracker.registerPeerDevice(
+            db: db,
+            peerId: response.serverDeviceId,
+            peerName: hostName.isEmpty ? "Paired Device" : hostName,
+            platform: "ios"
+        )
+        if let service = settingsService {
+            try service.upsertSettingsMap([
+                "paired_shop_device_id": response.serverDeviceId,
+                "paired_company_id": response.companyId,
+                "device_pairing_verified_at": response.pairedAt,
+                "auto_sync": "true",
+                "sync_interval": "60",
+            ], category: "sync")
+            // Adopt the host's company id (see the LAN pairWithShop path).
+            let joinedCompanyId = response.companyId.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !joinedCompanyId.isEmpty {
+                try service.updateSetting(key: "company_id", value: joinedCompanyId, category: "company")
+            }
+        }
+        UserDefaults.standard.set(true, forKey: "device_paired")
+        UserDefaults.standard.set(true, forKey: "bluetooth_sync_enabled")
+
+        syncProgressMessage = "Paired over Bluetooth."
+        syncProgressPercent = 0.4
     }
 
     /// Enable or disable Bluetooth/Multipeer sync.

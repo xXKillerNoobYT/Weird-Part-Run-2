@@ -90,6 +90,10 @@ public final class MultipeerManager: NSObject, @unchecked Sendable {
     private var peers: [String: PeerEntry] = [:]        // GUARDED BY syncQueue
     private var receiveQueue: [ReceivedMultipeerMessage] = []  // GUARDED BY syncQueue
     private var isRunning = false               // GUARDED BY syncQueue
+    // Host pairing mode: while a pairing code is active, accept incoming connection
+    // invitations from devices in a DIFFERENT company (normally rejected). The
+    // pairing code exchanged over the session is the security gate. GUARDED BY syncQueue.
+    private var acceptAnyCompanyForPairing = false
 
     /// Internal peer tracking with MCPeerID association.
     private struct PeerEntry {
@@ -183,6 +187,37 @@ public final class MultipeerManager: NSObject, @unchecked Sendable {
     /// Number of messages waiting in the receive queue.
     public var receiveQueueCount: Int {
         syncQueue.sync { receiveQueue.count }
+    }
+
+    /// Host pairing mode. Enable while offering a pairing code (Add a Device) so a
+    /// not-yet-in-company device can connect over Bluetooth to complete the code
+    /// handshake; disable once pairing is done. No-op safety: defaults to false.
+    public func setAcceptAnyCompanyForPairing(_ enabled: Bool) {
+        syncQueue.async { [weak self] in
+            self?.acceptAnyCompanyForPairing = enabled
+        }
+    }
+
+    /// Explicitly invite a discovered peer to connect (used by the joiner during
+    /// pairing, where auto-invite is off). Returns false if the peer isn't known yet.
+    @discardableResult
+    public func invite(deviceId: String) -> Bool {
+        syncQueue.sync {
+            guard let entry = peers[deviceId], let browser = self.browser else { return false }
+            let context: [String: String] = [
+                "device_id": self.deviceId,
+                "device_name": self.deviceName,
+                "company_id": self.companyId
+            ]
+            guard let contextData = try? JSONSerialization.data(withJSONObject: context) else { return false }
+            browser.invitePeer(entry.mcPeerId, to: self.session, withContext: contextData, timeout: 30.0)
+            return true
+        }
+    }
+
+    /// Whether the given peer currently has a connected MCSession.
+    public func isConnected(toPeer deviceId: String) -> Bool {
+        syncQueue.sync { peers[deviceId]?.info.state == .connected }
     }
 
     // MARK: - Private
@@ -395,8 +430,9 @@ extension MultipeerManager: MCNearbyServiceAdvertiserDelegate {
                 peerCompanyId = json["company_id"] ?? ""
             }
 
-            // Auto-accept same-company peers
-            if peerCompanyId == self.companyId {
+            // Accept same-company peers, or any company while hosting a pairing
+            // code (the code exchanged over the session is the security gate).
+            if peerCompanyId == self.companyId || self.acceptAnyCompanyForPairing {
                 handler(true, self.session)
             } else {
                 handler(false, nil)

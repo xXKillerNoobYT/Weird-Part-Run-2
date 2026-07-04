@@ -19,9 +19,10 @@ struct DevicePairingView: View {
     private var syncManager: IOSSyncManager { appCore.syncManager }
 
     struct DiscoveredShop: Identifiable {
-        let id: String
+        let id: String        // peer device id (or manual address)
         let name: String
-        let address: String
+        let address: String   // Wi-Fi address, or "" for a Bluetooth-only peer
+        let isBluetooth: Bool // true = pair over Bluetooth (no Wi-Fi needed)
     }
 
     private var isValid: Bool {
@@ -120,13 +121,16 @@ struct DevicePairingView: View {
             // Show discovered peers as potential shops
             ForEach(syncManager.discoveredPeers) { peer in
                 Button {
-                    guard let address = IOSSyncManager.normalizedShopServerAddress(peer.address) else {
-                        errorMessage = "This device was found over Bluetooth only. Keep both devices on the same Wi-Fi network or enter the shop address manually."
-                        return
-                    }
                     errorMessage = nil
-                    syncManager.stopPeerDiscovery()
-                    discoveredShop = DiscoveredShop(id: peer.id, name: peer.name, address: address)
+                    if let address = IOSSyncManager.normalizedShopServerAddress(peer.address) {
+                        // Same Wi-Fi → fast LAN pairing (HTTP); discovery not needed.
+                        syncManager.stopPeerDiscovery()
+                        discoveredShop = DiscoveredShop(id: peer.id, name: peer.name, address: address, isBluetooth: false)
+                    } else {
+                        // Bluetooth-only → pair over Bluetooth. Keep discovery/Multipeer
+                        // running; the live session is required for the handshake.
+                        discoveredShop = DiscoveredShop(id: peer.id, name: peer.name, address: "", isBluetooth: true)
+                    }
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "desktopcomputer")
@@ -134,7 +138,7 @@ struct DevicePairingView: View {
                         Text(peer.name)
                             .fontWeight(.medium)
                         if peer.address == nil {
-                            Text("Needs Wi-Fi address")
+                            Text("Bluetooth")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -172,7 +176,8 @@ struct DevicePairingView: View {
                     discoveredShop = DiscoveredShop(
                         id: address,
                         name: address,
-                        address: address
+                        address: address,
+                        isBluetooth: false
                     )
                 }
                 .buttonStyle(.bordered)
@@ -282,11 +287,21 @@ struct DevicePairingView: View {
         errorMessage = nil
 
         do {
-            // Pair with the shop — stores address and keys
-            try await syncManager.pairWithShop(
-                shopAddress: shop.address,
-                pairingCode: pairingCode.trimmingCharacters(in: .whitespacesAndNewlines)
-            )
+            let code = pairingCode.trimmingCharacters(in: .whitespacesAndNewlines)
+            if shop.isBluetooth {
+                // Pair entirely over Bluetooth — no Wi-Fi address required.
+                try await syncManager.pairWithPeerOverBluetooth(
+                    hostDeviceId: shop.id,
+                    hostName: shop.name,
+                    pairingCode: code
+                )
+            } else {
+                // Pair with the shop over Wi-Fi/LAN — stores address and keys.
+                try await syncManager.pairWithShop(
+                    shopAddress: shop.address,
+                    pairingCode: code
+                )
+            }
 
             // Navigate to the sync waiting screen for initial download
             navigateToSync = true

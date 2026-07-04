@@ -88,6 +88,23 @@ private enum PeerSyncHTTPError: LocalizedError {
 /// 3. Apply received changes via ConflictResolver
 ///
 /// Sync order: Office computers first, then least-recently-synced.
+/// Typed envelope for Multipeer messages so the Bluetooth channel can carry more
+/// than sync changes (e.g. the pairing handshake). Legacy senders transmit a bare
+/// `[IncomingChange]` JSON array; the receiver falls back to that when envelope
+/// decoding fails, so this is backwards-compatible.
+struct MPEnvelope: Codable {
+    let type: String   // "changes" | "pairRequest" | "pairResponse"
+    let payload: Data
+}
+
+public enum MultipeerPairingError: Error {
+    case notAvailable
+    case connectionTimeout
+    case sendFailed
+    case responseTimeout
+    case rejected
+}
+
 public actor PeerManager {
 
     private let db: AppDatabase
@@ -100,6 +117,8 @@ public actor PeerManager {
 
     #if canImport(MultipeerConnectivity)
     private var multipeerManager: MultipeerManager?
+    // Joiner-side: continuations awaiting a pairResponse over Bluetooth, keyed by host deviceId.
+    private var pendingPairContinuations: [String: CheckedContinuation<SyncPairResponse, Error>] = [:]
     #endif
 
     private var peerPollTask: Task<Void, Never>?
@@ -365,7 +384,8 @@ public actor PeerManager {
                 // Multipeer sync path
                 if !enrichedChanges.isEmpty {
                     let encoder = JSONEncoder()
-                    let payload = try encoder.encode(enrichedChanges)
+                    let changesData = try encoder.encode(enrichedChanges)
+                    let payload = try encoder.encode(MPEnvelope(type: "changes", payload: changesData))
                     if mpManager.send(data: payload, toPeer: peer.deviceId) {
                         pushed = enrichedChanges.count
                         let syncedIds = pendingChanges.compactMap { $0.id }
@@ -492,6 +512,16 @@ public actor PeerManager {
     /// Clear any active pairing code on the running shop sync server.
     public func clearPairingCode() async {
         await serverState?.clearActivePairingCode()
+        setBluetoothPairingHostMode(false)
+    }
+
+    /// Host: allow cross-company Bluetooth connections while a pairing code is
+    /// offered, so a not-yet-in-company device can connect to complete the code
+    /// handshake over Bluetooth. Enable when issuing a code; disable when cleared.
+    public func setBluetoothPairingHostMode(_ enabled: Bool) {
+        #if canImport(MultipeerConnectivity)
+        multipeerManager?.setAcceptAnyCompanyForPairing(enabled)
+        #endif
     }
 
     // MARK: - Private: LAN HTTP Sync
@@ -749,24 +779,133 @@ public actor PeerManager {
 
     #if canImport(MultipeerConnectivity)
     private func handleMultipeerMessage(_ message: ReceivedMultipeerMessage) {
-        // Parse as array of IncomingChange
-        guard let changes = try? JSONDecoder().decode([IncomingChange].self, from: message.data) else {
+        // Prefer the typed envelope; fall back to a legacy bare [IncomingChange]
+        // array from older peers (envelope decode fails on a JSON array).
+        if let env = try? JSONDecoder().decode(MPEnvelope.self, from: message.data) {
+            switch env.type {
+            case "changes":
+                applyIncomingChanges(env.payload)
+            case "pairRequest":
+                Task { await self.handlePairRequest(from: message.fromDeviceId, payload: env.payload) }
+            case "pairResponse":
+                handlePairResponse(from: message.fromDeviceId, payload: env.payload)
+            default:
+                break
+            }
             return
         }
+        applyIncomingChanges(message.data)
+    }
 
-        let deviceId = serverState?.deviceId ?? "unknown"
+    /// Apply a sync-changes payload (array of IncomingChange) via the conflict resolver.
+    private func applyIncomingChanges(_ data: Data) {
+        guard let changes = try? JSONDecoder().decode([IncomingChange].self, from: data) else { return }
+        let did = serverState?.deviceId ?? "unknown"
         Task {
-            let did = deviceId
             do {
-                _ = try ConflictResolver.resolveAndApplyChanges(
-                    db: self.db,
-                    changes: changes,
-                    localDeviceId: did
-                )
+                _ = try ConflictResolver.resolveAndApplyChanges(db: self.db, changes: changes, localDeviceId: did)
             } catch {
                 self.logger.error("ConflictResolver failed for peer \(String(did.prefix(8)), privacy: .public)...: \(error.localizedDescription, privacy: .public)")
             }
         }
+    }
+
+    /// Host side: a joiner sent a pairing code over Bluetooth. Validate it against
+    /// the active pairing code (same one-time check as the Wi-Fi /sync/pair path),
+    /// register the joiner as a trusted peer, and reply with our company id.
+    private func handlePairRequest(from peerDeviceId: String, payload: Data) async {
+        guard let sState = serverState,
+              let mpManager = multipeerManager,
+              let request = try? JSONDecoder().decode(SyncPairRequest.self, from: payload) else { return }
+
+        let accepted = await sState.consumePairingCode(request.pairingCode)
+        let response: SyncPairResponse
+        if accepted {
+            try? ChangeTracker.registerPeerDevice(
+                db: db,
+                peerId: request.deviceId,
+                peerName: request.deviceName,
+                platform: request.platform ?? "ios"
+            )
+            response = SyncPairResponse(
+                accepted: true,
+                serverDeviceId: sState.deviceId,
+                companyId: sState.companyId,
+                pairedAt: CoreFormatters.nowISO()
+            )
+            logger.info("[PeerManager] Bluetooth pairing accepted for peer \(String(request.deviceId.prefix(8)), privacy: .public)")
+        } else {
+            response = SyncPairResponse(
+                accepted: false,
+                serverDeviceId: sState.deviceId,
+                companyId: "",
+                pairedAt: CoreFormatters.nowISO()
+            )
+            logger.error("[PeerManager] Bluetooth pairing rejected — invalid code")
+        }
+        if let respData = try? JSONEncoder().encode(response),
+           let env = try? JSONEncoder().encode(MPEnvelope(type: "pairResponse", payload: respData)) {
+            _ = mpManager.send(data: env, toPeer: peerDeviceId)
+        }
+    }
+
+    /// Joiner side: a pairResponse arrived; resume the waiting continuation.
+    private func handlePairResponse(from peerDeviceId: String, payload: Data) {
+        guard let response = try? JSONDecoder().decode(SyncPairResponse.self, from: payload) else { return }
+        if let cont = pendingPairContinuations.removeValue(forKey: peerDeviceId) {
+            cont.resume(returning: response)
+        }
+    }
+
+    /// Called by the response timeout to fail a still-pending pairing.
+    private func timeoutPairing(with peerDeviceId: String) {
+        if let cont = pendingPairContinuations.removeValue(forKey: peerDeviceId) {
+            cont.resume(throwing: MultipeerPairingError.responseTimeout)
+        }
+    }
+
+    /// Joiner side: pair with a Bluetooth-discovered host by connecting the
+    /// Multipeer session and exchanging the pairing code over it — no Wi-Fi needed.
+    public func pairViaMultipeer(
+        hostDeviceId: String,
+        myDeviceId: String,
+        myDeviceName: String,
+        pairingCode: String,
+        platform: String
+    ) async throws -> SyncPairResponse {
+        guard let mpManager = multipeerManager else { throw MultipeerPairingError.notAvailable }
+
+        // 1. Invite the host and wait for the MCSession to connect.
+        mpManager.invite(deviceId: hostDeviceId)
+        let deadline = Date().addingTimeInterval(20)
+        while !mpManager.isConnected(toPeer: hostDeviceId) {
+            if Date() >= deadline { throw MultipeerPairingError.connectionTimeout }
+            try? await Task.sleep(nanoseconds: 300_000_000)
+        }
+
+        // 2. Send the pairing request.
+        let request = SyncPairRequest(
+            deviceId: myDeviceId,
+            deviceName: myDeviceName,
+            pairingCode: pairingCode,
+            platform: platform
+        )
+        let payload = try JSONEncoder().encode(request)
+        let env = try JSONEncoder().encode(MPEnvelope(type: "pairRequest", payload: payload))
+        guard mpManager.send(data: env, toPeer: hostDeviceId) else {
+            throw MultipeerPairingError.sendFailed
+        }
+
+        // 3. Await the pairResponse (resumed by handlePairResponse), with a timeout.
+        let response: SyncPairResponse = try await withCheckedThrowingContinuation { cont in
+            pendingPairContinuations[hostDeviceId] = cont
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
+                await self?.timeoutPairing(with: hostDeviceId)
+            }
+        }
+        guard response.accepted else { throw MultipeerPairingError.rejected }
+        return response
     }
     #endif
 
