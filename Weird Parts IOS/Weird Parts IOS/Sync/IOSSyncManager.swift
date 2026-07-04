@@ -394,34 +394,12 @@ final class IOSSyncManager {
             syncStatus = .idle
         }
 
-        // Start multipeer if BT is enabled
+        // Bluetooth discovery + pairing for onboarding join now runs through the
+        // PeerManager's own Multipeer manager (started just below via startMultipeer).
+        // That is the manager `pairViaMultipeer` uses, so the discovered host can
+        // actually be invited/paired. A separate MultipeerManager here would
+        // double-browse the same service and leave pairing unable to reach the host.
         let bluetoothDiscoveryEnabled = UserDefaults.standard.bool(forKey: "bluetooth_sync_enabled")
-        if bluetoothDiscoveryEnabled && mode == .onboardingJoin {
-            if multipeerDiscoveryMode != mode {
-                multipeerManager?.stop()
-                multipeerManager = nil
-                removeMultipeerDiscoveredPeers()
-            }
-            if multipeerManager == nil {
-                let deviceId = DeviceIdentity.current
-                let deviceName = UIDevice.current.name
-                multipeerManager = MultipeerManager(
-                    deviceId: deviceId,
-                    deviceName: deviceName,
-                    companyId: companyId,
-                    allowAnyCompanyPeerDiscovery: mode == .onboardingJoin,
-                    autoInvitePeers: mode == .existingCompanySync,
-                    advertiseSelf: mode == .existingCompanySync
-                )
-                multipeerDiscoveryMode = mode
-                multipeerManager?.onPeersChanged = { [weak self] peers in
-                    Task { @MainActor [weak self] in
-                        self?.handleMultipeerPeersChanged(peers)
-                    }
-                }
-            }
-            multipeerManager?.start()
-        }
 
         // Also start LAN peer discovery when available. Existing sync discovery
         // stays company-scoped. Join/onboarding discovery relaxes LAN browsing
@@ -443,7 +421,7 @@ final class IOSSyncManager {
                         deviceName: deviceName,
                         companyId: companyId,
                         allowAnyCompanyPeerDiscovery: mode == .onboardingJoin,
-                        startMultipeer: bluetoothDiscoveryEnabled && mode == .existingCompanySync,
+                        startMultipeer: bluetoothDiscoveryEnabled && (mode == .existingCompanySync || mode == .onboardingJoin),
                         startSyncServer: mode == .existingCompanySync
                     )
                     if !isScanning {
