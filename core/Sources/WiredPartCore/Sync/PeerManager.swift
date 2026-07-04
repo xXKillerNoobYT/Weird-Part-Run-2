@@ -119,6 +119,8 @@ public actor PeerManager {
     private var multipeerManager: MultipeerManager?
     // Joiner-side: continuations awaiting a pairResponse over Bluetooth, keyed by host deviceId.
     private var pendingPairContinuations: [String: CheckedContinuation<SyncPairResponse, Error>] = [:]
+    // Joiner-side: continuations awaiting a full initial sync to complete, keyed by host deviceId.
+    private var pendingFullSyncContinuations: [String: CheckedContinuation<Void, Error>] = [:]
     #endif
 
     private var peerPollTask: Task<Void, Never>?
@@ -789,12 +791,74 @@ public actor PeerManager {
                 Task { await self.handlePairRequest(from: message.fromDeviceId, payload: env.payload) }
             case "pairResponse":
                 handlePairResponse(from: message.fromDeviceId, payload: env.payload)
+            case "fullSyncRequest":
+                Task { await self.handleFullSyncRequest(from: message.fromDeviceId) }
+            case "fullSyncComplete":
+                handleFullSyncComplete(from: message.fromDeviceId)
             default:
                 break
             }
             return
         }
         applyIncomingChanges(message.data)
+    }
+
+    /// Host side: a freshly-paired joiner asked for the whole company. Replay the
+    /// entire change log (from sequence 0) over Bluetooth as "changes" batches,
+    /// then signal completion. The joiner applies them via the existing changes path.
+    private func handleFullSyncRequest(from peerDeviceId: String) async {
+        guard let mpManager = multipeerManager else { return }
+        var since: Int64 = 0
+        let batchSize = 200
+        while true {
+            let batch = (try? ChangeTracker.getChangesSince(db: db, sinceSequence: since, limit: batchSize)) ?? []
+            if batch.isEmpty { break }
+            if let enriched = try? enrichChangesWithData(batch), !enriched.isEmpty,
+               let changesData = try? JSONEncoder().encode(enriched),
+               let env = try? JSONEncoder().encode(MPEnvelope(type: "changes", payload: changesData)) {
+                _ = mpManager.send(data: env, toPeer: peerDeviceId)
+            }
+            let maxSeq = Int64(batch.compactMap { $0.sequence }.max() ?? 0)
+            guard maxSeq > since else { break }   // no forward progress → stop
+            since = maxSeq
+            if batch.count < batchSize { break }  // last batch
+        }
+        if let env = try? JSONEncoder().encode(MPEnvelope(type: "fullSyncComplete", payload: Data())) {
+            _ = mpManager.send(data: env, toPeer: peerDeviceId)
+        }
+        logger.info("[PeerManager] Sent full Bluetooth initial sync to peer \(String(peerDeviceId.prefix(8)), privacy: .public)")
+    }
+
+    /// Joiner side: the host finished replaying its data.
+    private func handleFullSyncComplete(from peerDeviceId: String) {
+        if let cont = pendingFullSyncContinuations.removeValue(forKey: peerDeviceId) {
+            cont.resume()
+        }
+    }
+
+    private func timeoutFullSync(with peerDeviceId: String) {
+        if let cont = pendingFullSyncContinuations.removeValue(forKey: peerDeviceId) {
+            cont.resume(throwing: MultipeerPairingError.responseTimeout)
+        }
+    }
+
+    /// Joiner side: request and await the full initial company sync over Bluetooth.
+    public func requestFullSyncOverMultipeer(hostDeviceId: String) async throws {
+        guard let mpManager = multipeerManager else { throw MultipeerPairingError.notAvailable }
+        let deadline = Date().addingTimeInterval(20)
+        while !mpManager.isConnected(toPeer: hostDeviceId) {
+            if Date() >= deadline { throw MultipeerPairingError.connectionTimeout }
+            try? await Task.sleep(nanoseconds: 300_000_000)
+        }
+        let env = try JSONEncoder().encode(MPEnvelope(type: "fullSyncRequest", payload: Data()))
+        guard mpManager.send(data: env, toPeer: hostDeviceId) else { throw MultipeerPairingError.sendFailed }
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+            pendingFullSyncContinuations[hostDeviceId] = cont
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 60_000_000_000)   // 60s cap for a full sync
+                await self?.timeoutFullSync(with: hostDeviceId)
+            }
+        }
     }
 
     /// Apply a sync-changes payload (array of IncomingChange) via the conflict resolver.

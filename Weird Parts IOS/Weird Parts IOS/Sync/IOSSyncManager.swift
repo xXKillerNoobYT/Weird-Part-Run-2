@@ -994,6 +994,15 @@ final class IOSSyncManager {
     // MARK: - Initial Full Sync
 
     /// Perform a full initial sync — downloads all data from the shop.
+    /// The device id of a host this device paired with over Bluetooth (no Wi-Fi
+    /// server address). Used to route the initial sync over the Multipeer session.
+    private func pairedBluetoothHostDeviceId() -> String? {
+        guard serverAddress == nil, let service = settingsService else { return nil }
+        guard let sync = try? service.getSettingsByCategory("sync") else { return nil }
+        let id = (sync["paired_shop_device_id"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return id.isEmpty ? nil : id
+    }
+
     func performInitialSync() async throws {
         syncStatus = .syncing
         syncProgressMessage = "Starting initial sync..."
@@ -1006,7 +1015,9 @@ final class IOSSyncManager {
 
         let deviceId = DeviceIdentity.current
 
-        // Try SyncEngine initial sync
+        // Prefer Wi-Fi/LAN when a shop server address is known (faster full download);
+        // otherwise fall back to the Bluetooth initial sync for a device that paired
+        // over Bluetooth (no server address).
         if let engine = syncEngine, let server = serverAddress {
             syncProgressMessage = "Downloading database from shop..."
             syncProgressPercent = 0.2
@@ -1030,6 +1041,23 @@ final class IOSSyncManager {
                 errorMessage = state.error ?? "Initial sync failed."
                 throw SyncError.syncFailed(state.error ?? "Unknown error")
             }
+        } else if let hostDeviceId = pairedBluetoothHostDeviceId(), let pm = peerManager {
+            // Bluetooth: ask the paired host to replay the whole company over the
+            // live Multipeer session — no Wi-Fi/server needed.
+            syncProgressMessage = "Downloading data over Bluetooth…"
+            syncProgressPercent = 0.3
+            do {
+                try await pm.requestFullSyncOverMultipeer(hostDeviceId: hostDeviceId)
+            } catch {
+                syncProgressMessage = nil
+                syncStatus = .error
+                errorMessage = "Bluetooth sync failed. Keep both devices close with Bluetooth on and try again."
+                throw error
+            }
+            syncProgressMessage = "Initial sync complete."
+            syncProgressPercent = 1.0
+            syncStatus = .synced
+            lastSyncDate = Formatters.iso8601Basic.string(from: Date())
         } else {
             syncProgressMessage = nil
             throw SyncError.noServerConfigured
