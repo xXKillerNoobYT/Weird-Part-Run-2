@@ -122,26 +122,20 @@ struct DevicePairingView: View {
             ForEach(syncManager.discoveredPeers) { peer in
                 Button {
                     errorMessage = nil
-                    if let address = IOSSyncManager.normalizedShopServerAddress(peer.address) {
-                        // Same Wi-Fi → fast LAN pairing (HTTP); discovery not needed.
-                        syncManager.stopPeerDiscovery()
-                        discoveredShop = DiscoveredShop(id: peer.id, name: peer.name, address: address, isBluetooth: false)
-                    } else {
-                        // Bluetooth-only → pair over Bluetooth. Keep discovery/Multipeer
-                        // running; the live session is required for the handshake.
-                        discoveredShop = DiscoveredShop(id: peer.id, name: peer.name, address: "", isBluetooth: true)
-                    }
+                    // Always pair a discovered peer over Bluetooth — it works with no
+                    // Wi-Fi at all. Wi-Fi/LAN is then used automatically for sync
+                    // speed once paired. Keep discovery/Multipeer running; the live
+                    // session is required for the handshake.
+                    discoveredShop = DiscoveredShop(id: peer.id, name: peer.name, address: peer.address ?? "", isBluetooth: true)
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "desktopcomputer")
                             .foregroundStyle(.green)
                         Text(peer.name)
                             .fontWeight(.medium)
-                        if peer.address == nil {
-                            Text("Bluetooth")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                        Text(peer.address == nil ? "Bluetooth" : "Bluetooth · Wi-Fi")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                         Spacer()
                         Image(systemName: "chevron.right")
                             .font(.caption)
@@ -233,8 +227,16 @@ struct DevicePairingView: View {
                 .textFieldStyle(.roundedBorder)
                 .multilineTextAlignment(.center)
                 .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled()
                 .font(.title3.monospaced())
                 .frame(maxWidth: 240)
+                // Auto-format while typing AND on paste: uppercase, strip junk,
+                // insert the dash after 4 chars (ABCD-1234). A pasted "abcd1234",
+                // "ABCD-1234", or "abcd 1234" all normalize to the same valid code.
+                .onChange(of: pairingCode) { _, newValue in
+                    let formatted = formatPairingCodeInput(newValue)
+                    if formatted != newValue { pairingCode = formatted }
+                }
 
             if let error = errorMessage {
                 Text(error)
@@ -305,9 +307,37 @@ struct DevicePairingView: View {
 
             // Navigate to the sync waiting screen for initial download
             navigateToSync = true
+        } catch let e as MultipeerPairingError {
+            errorMessage = bluetoothPairingErrorMessage(e)
         } catch {
             errorMessage = userFriendlyError(error, context: "pair device")
         }
         isConnecting = false
+    }
+
+    private func bluetoothPairingErrorMessage(_ error: MultipeerPairingError) -> String {
+        switch error {
+        case .connectionTimeout:
+            return "Couldn't connect over Bluetooth. Keep both devices close together with Bluetooth on, and make sure the other device's Add-a-Device screen is open."
+        case .responseTimeout:
+            return "The other device didn't respond. Make sure its Add-a-Device screen is still open with a valid code, then try again."
+        case .rejected:
+            return "That pairing code was wrong or already used. Get a fresh code on the other device and re-enter it."
+        case .sendFailed:
+            return "Lost the Bluetooth connection while pairing. Move the devices closer and try again."
+        case .notAvailable:
+            return "Bluetooth sync isn't running yet. Go back, wait a moment, then try again."
+        }
+    }
+
+    /// Normalize/format a pairing code as the user types or pastes: keep only
+    /// letters/digits, uppercase, cap at 8, and insert a dash after 4 → "ABCD-1234".
+    /// This makes both typing (auto-dash) and pasting (any format) produce a valid code.
+    private func formatPairingCodeInput(_ raw: String) -> String {
+        let allowed = raw.uppercased().filter { $0.isNumber || ($0.isLetter && $0.isASCII) }
+        let capped = String(allowed.prefix(8))
+        guard capped.count > 4 else { return capped }
+        let idx = capped.index(capped.startIndex, offsetBy: 4)
+        return String(capped[..<idx]) + "-" + String(capped[idx...])
     }
 }
