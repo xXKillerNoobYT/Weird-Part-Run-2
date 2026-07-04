@@ -724,15 +724,43 @@ struct CompanySetupWizard: View {
             return
         }
 
-        guard let draft else { return }
-        completedSteps = draft.completedSteps
-        skippedSteps = draft.skippedSteps
-        companyName = draft.name
-        companyAddress = draft.address
-        companyPhone = draft.phone
-        companyEmail = draft.email
-        selectedState = draft.selectedState
-        currentStep = draft.currentStep
+        if let draft {
+            completedSteps = draft.completedSteps
+            skippedSteps = draft.skippedSteps
+            companyName = draft.name
+            companyAddress = draft.address
+            companyPhone = draft.phone
+            companyEmail = draft.email
+            selectedState = draft.selectedState
+            currentStep = draft.currentStep
+        }
+
+        // No repeat questions: pre-fill the Company Profile step from data the
+        // user already entered during the welcome flow (BusinessProfileSetupView
+        // writes a BusinessProfile row; older paths wrote company_* settings).
+        // In-progress draft edits above take precedence — we only fill blanks.
+        hydrateCompanyProfileFromExistingData(settingsService)
+    }
+
+    /// Fill the Step 1 company fields from the already-saved BusinessProfile (or
+    /// legacy `company_*` settings) so the wizard reflects — rather than re-asks —
+    /// what the user typed on the welcome screens. Only empty fields are filled,
+    /// so a returning user's draft edits are never clobbered.
+    private func hydrateCompanyProfileFromExistingData(_ settingsService: SettingsService) {
+        let profile = (try? settingsService.getBusinessProfile()) ?? nil
+
+        func fillIfBlank(_ field: inout String, _ candidates: [String?]) {
+            guard field.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            let resolved = candidates
+                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .first { !$0.isEmpty }
+            if let resolved { field = resolved }
+        }
+
+        fillIfBlank(&companyName, [profile?.companyName, (try? settingsService.getSettingValue("company_name")) ?? nil])
+        fillIfBlank(&companyAddress, [profile?.address, (try? settingsService.getSettingValue("company_address")) ?? nil])
+        fillIfBlank(&companyPhone, [profile?.phone, (try? settingsService.getSettingValue("company_phone")) ?? nil])
+        fillIfBlank(&companyEmail, [profile?.email, (try? settingsService.getSettingValue("company_email")) ?? nil])
     }
 
     private func saveProgress() {
