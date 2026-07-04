@@ -52,7 +52,13 @@ Multipeer wired (`MultipeerManager` started with `startMultipeer: true`). The **
 | 4b | New device joins post-onboarding via Join path + host code | UI | ✅ covered (new device runs first-run Join; host shows code) |
 | 5 | Build green + fresh-install launch smoke; document on-device verification | verify | ✅ build green + launches; device-sync steps below |
 
-**Build/verify status (2026-07-04):** `** BUILD SUCCEEDED **` on all changes; app launches on a fresh simulator install with no crash and renders onboarding. Interactive tap-through of the priming screen, and LAN/Bluetooth peer discovery, still require XCUITest or **two real devices** — those remain `UNVERIFIED` per the verification standard.
+**Build/verify status (2026-07-04):** `** BUILD SUCCEEDED **` on all changes; app launches on a fresh simulator install with no crash and renders onboarding; regression tests pass (`OnboardingAX5LayoutRegressionTests`, `CompanySetupDraftCleanupRegressionTests`, `WarehouseNetworkPageRegressionTests` — `** TEST SUCCEEDED **`). Interactive tap-through of the priming screen, and LAN/Bluetooth peer discovery, still require XCUITest or **two real devices** — those remain `UNVERIFIED` per the verification standard.
+
+**On-device verification steps (owner, needs two devices on the same Wi-Fi):**
+1. Device A: create a company (Create New Business) and finish setup.
+2. Device A: Warehouse → Network → **Add a Device** → note the pairing code (stays discoverable while open).
+3. Device B (fresh install): **Join Existing Business** → grant Local Network + Bluetooth when prompted → Device A appears → tap it → enter the code → initial sync runs.
+4. Confirm Device B lands in the same company with data. Repeat with Wi-Fi off to confirm the Bluetooth/Multipeer path.
 
 ## Verification standard
 Per `docs/plans/e2e-ui-test-plan.md`: nothing is "verified" until driven in the running app with no issues. #3/#4 require **two real devices** on the same Wi-Fi / Bluetooth range — those steps stay `UNVERIFIED` until run on hardware; the code/plist changes are verified by build + unit tests + simulator where possible.
