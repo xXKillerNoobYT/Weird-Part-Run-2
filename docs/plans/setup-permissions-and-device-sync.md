@@ -60,6 +60,13 @@ Multipeer wired (`MultipeerManager` started with `startMultipeer: true`). The **
 3. Device B (fresh install): **Join Existing Business** → grant Local Network + Bluetooth when prompted → Device A appears → tap it → enter the code → initial sync runs.
 4. Confirm Device B lands in the same company with data. Repeat with Wi-Fi off to confirm the Bluetooth/Multipeer path.
 
+## Bugs found by on-device (Mac Catalyst) testing — 2026-07-04
+Driving the real Mac build end-to-end (fresh company → Add a Device) surfaced two blockers the simulator/build checks missed:
+1. **`company_id` never persisted** — `peerDiscoveryCompanyId()` required a `company_id` setting that *nothing* in the app ever wrote, so every newly-created company failed discovery/pairing with `noCompanyIdConfigured`. Fix: get-or-create on first use (`IOSSyncManager.peerDiscoveryCompanyId`), and joiners adopt the shop's id in `pairWithShop`. (commit be61365b)
+2. **Mac sandbox missing `network.server`** — Mac Catalyst is sandboxed; the app had `network.client` but not `network.server`, so `LanSyncServer`'s `NWListener` couldn't accept incoming connections and `startPeerSync()` threw. Fix: `ENABLE_INCOMING_NETWORK_CONNECTIONS = YES` in the app target (adds `com.apple.security.network.server`). Mac-only; no-op on iOS. (commit 95dbe166)
+
+**Verified on Mac (2026-07-04):** fresh company created (permissions priming screen shown ✓, company name pre-filled in setup wizard ✓ = items 1 & 2), and **Add a Device generated a live pairing code (`5R4E-Q5FP`) ✓** — the host/LAN-server/discovery path works. Remaining: join from the tablet (needs the fixed build reinstalled on the tablet) to confirm the full two-device sync.
+
 ## Verification standard
 Per `docs/plans/e2e-ui-test-plan.md`: nothing is "verified" until driven in the running app with no issues. #3/#4 require **two real devices** on the same Wi-Fi / Bluetooth range — those steps stay `UNVERIFIED` until run on hardware; the code/plist changes are verified by build + unit tests + simulator where possible.
 
