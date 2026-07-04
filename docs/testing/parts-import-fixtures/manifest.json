@@ -1,0 +1,194 @@
+{
+  "minimumRowsPerFile": 30,
+  "files": [
+    {
+      "file": "csv/parts-import-style-01.csv",
+      "format": "csv",
+      "rows": 36,
+      "style": 1,
+      "supplier": "Codale Branch Quote"
+    },
+    {
+      "file": "xlsx/parts-import-style-01.xlsx",
+      "format": "xlsx",
+      "rows": 36,
+      "style": 1,
+      "supplier": "Codale Branch Quote"
+    },
+    {
+      "file": "csv/parts-import-style-02.csv",
+      "format": "csv",
+      "rows": 37,
+      "style": 2,
+      "supplier": "Codale Counter Export"
+    },
+    {
+      "file": "xlsx/parts-import-style-02.xlsx",
+      "format": "xlsx",
+      "rows": 37,
+      "style": 2,
+      "supplier": "Codale Counter Export"
+    },
+    {
+      "file": "csv/parts-import-style-03.csv",
+      "format": "csv",
+      "rows": 38,
+      "style": 3,
+      "supplier": "Mountain West Electrical"
+    },
+    {
+      "file": "xlsx/parts-import-style-03.xlsx",
+      "format": "xlsx",
+      "rows": 38,
+      "style": 3,
+      "supplier": "Mountain West Electrical"
+    },
+    {
+      "file": "csv/parts-import-style-04.csv",
+      "format": "csv",
+      "rows": 36,
+      "style": 4,
+      "supplier": "Industrial Supply House"
+    },
+    {
+      "file": "xlsx/parts-import-style-04.xlsx",
+      "format": "xlsx",
+      "rows": 36,
+      "style": 4,
+      "supplier": "Industrial Supply House"
+    },
+    {
+      "file": "csv/parts-import-style-05.csv",
+      "format": "csv",
+      "rows": 37,
+      "style": 5,
+      "supplier": "Jobsite Stock Recount"
+    },
+    {
+      "file": "xlsx/parts-import-style-05.xlsx",
+      "format": "xlsx",
+      "rows": 37,
+      "style": 5,
+      "supplier": "Jobsite Stock Recount"
+    },
+    {
+      "file": "csv/parts-import-style-06.csv",
+      "format": "csv",
+      "rows": 38,
+      "style": 6,
+      "supplier": "Service Van Replenishment"
+    },
+    {
+      "file": "xlsx/parts-import-style-06.xlsx",
+      "format": "xlsx",
+      "rows": 38,
+      "style": 6,
+      "supplier": "Service Van Replenishment"
+    },
+    {
+      "file": "csv/parts-import-style-07.csv",
+      "format": "csv",
+      "rows": 36,
+      "style": 7,
+      "supplier": "Lighting Retrofit Bid"
+    },
+    {
+      "file": "xlsx/parts-import-style-07.xlsx",
+      "format": "xlsx",
+      "rows": 36,
+      "style": 7,
+      "supplier": "Lighting Retrofit Bid"
+    },
+    {
+      "file": "csv/parts-import-style-08.csv",
+      "format": "csv",
+      "rows": 37,
+      "style": 8,
+      "supplier": "Panel Shop Order"
+    },
+    {
+      "file": "xlsx/parts-import-style-08.xlsx",
+      "format": "xlsx",
+      "rows": 37,
+      "style": 8,
+      "supplier": "Panel Shop Order"
+    },
+    {
+      "file": "pdf/parts-import-ocr-style-01.pdf",
+      "format": "pdf",
+      "rows": 34,
+      "style": 1,
+      "supplier": "Codale Branch Quote"
+    },
+    {
+      "file": "pdf/parts-import-ocr-style-02.pdf",
+      "format": "pdf",
+      "rows": 35,
+      "style": 2,
+      "supplier": "Codale Counter Export"
+    },
+    {
+      "file": "pdf/parts-import-ocr-style-03.pdf",
+      "format": "pdf",
+      "rows": 36,
+      "style": 3,
+      "supplier": "Mountain West Electrical"
+    },
+    {
+      "file": "pdf/parts-import-ocr-style-04.pdf",
+      "format": "pdf",
+      "rows": 37,
+      "style": 4,
+      "supplier": "Industrial Supply House"
+    },
+    {
+      "file": "pdf/parts-import-ocr-style-05.pdf",
+      "format": "pdf",
+      "rows": 38,
+      "style": 5,
+      "supplier": "Jobsite Stock Recount"
+    },
+    {
+      "file": "pdf/parts-import-ocr-style-06.pdf",
+      "format": "pdf",
+      "rows": 39,
+      "style": 6,
+      "supplier": "Service Van Replenishment"
+    },
+    {
+      "file": "docx/parts-import-word-style-01.docx",
+      "format": "docx",
+      "rows": 33,
+      "style": 1,
+      "supplier": "Mountain West Electrical"
+    },
+    {
+      "file": "docx/parts-import-word-style-02.docx",
+      "format": "docx",
+      "rows": 34,
+      "style": 2,
+      "supplier": "Industrial Supply House"
+    },
+    {
+      "file": "docx/parts-import-word-style-03.docx",
+      "format": "docx",
+      "rows": 35,
+      "style": 3,
+      "supplier": "Jobsite Stock Recount"
+    },
+    {
+      "file": "docx/parts-import-word-style-04.docx",
+      "format": "docx",
+      "rows": 36,
+      "style": 4,
+      "supplier": "Service Van Replenishment"
+    },
+    {
+      "file": "docx/parts-import-word-style-05.docx",
+      "format": "docx",
+      "rows": 37,
+      "style": 5,
+      "supplier": "Lighting Retrofit Bid"
+    }
+  ]
+}
