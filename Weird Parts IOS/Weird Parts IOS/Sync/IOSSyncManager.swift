@@ -496,8 +496,24 @@ final class IOSSyncManager {
         guard let settingsService else {
             throw SyncError.noCompanyIdConfigured
         }
-        return try Self.peerDiscoveryCompanyId {
-            try settingsService.getSettingsByCategory("company")
+        // Resolve the stable company id used to scope peer discovery/sync.
+        //
+        // Newly-created companies (the "Create New Business" onboarding path) never
+        // had a `company_id` setting written — nothing in the app set it — so peer
+        // discovery and "Add a Device" pairing failed with `noCompanyIdConfigured`.
+        // Generate and persist one on first use (get-or-create). It is idempotent:
+        // once written, the same id is returned forever. Devices that JOIN an
+        // existing company overwrite this with the shop's company id during pairing,
+        // so both ends share one id and cross-company peers are still rejected.
+        do {
+            return try Self.peerDiscoveryCompanyId {
+                try settingsService.getSettingsByCategory("company")
+            }
+        } catch SyncError.noCompanyIdConfigured {
+            let generated = UUID().uuidString
+            try settingsService.updateSetting(key: "company_id", value: generated, category: "company")
+            logger.info("[IOSSyncManager] No company_id was set; generated and persisted one for peer sync.")
+            return generated
         }
     }
 
@@ -859,6 +875,16 @@ final class IOSSyncManager {
                 "auto_sync": "true",
                 "sync_interval": "60",
             ], category: "sync")
+
+            // Adopt the shop's company id as this device's own peer-discovery id
+            // (the "company" category is what `peerDiscoveryCompanyId()` reads).
+            // Without this, a joined device keeps its own generated company_id and
+            // would advertise/discover under a different id than the shop, so the
+            // two would reject each other as cross-company peers after pairing.
+            let joinedCompanyId = pairResponse.companyId.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !joinedCompanyId.isEmpty {
+                try service.updateSetting(key: "company_id", value: joinedCompanyId, category: "company")
+            }
         }
         UserDefaults.standard.set(true, forKey: "device_paired")
         UserDefaults.standard.set(true, forKey: "bluetooth_sync_enabled")
