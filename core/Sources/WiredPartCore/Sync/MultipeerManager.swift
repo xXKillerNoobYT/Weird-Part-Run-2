@@ -423,20 +423,40 @@ extension MultipeerManager: MCNearbyServiceAdvertiserDelegate {
                 return
             }
 
-            // Parse context to check company_id
+            // Parse the inviter's identity from the context it sent.
             var peerCompanyId = ""
+            var peerDeviceId = ""
+            var peerDeviceName = peerID.displayName
             if let contextData = context,
                let json = try? JSONSerialization.jsonObject(with: contextData) as? [String: String] {
                 peerCompanyId = json["company_id"] ?? ""
+                peerDeviceId = json["device_id"] ?? ""
+                peerDeviceName = json["device_name"] ?? peerID.displayName
             }
 
             // Accept same-company peers, or any company while hosting a pairing
             // code (the code exchanged over the session is the security gate).
-            if peerCompanyId == self.companyId || self.acceptAnyCompanyForPairing {
-                handler(true, self.session)
-            } else {
+            guard peerCompanyId == self.companyId || self.acceptAnyCompanyForPairing else {
                 handler(false, nil)
+                return
             }
+
+            // Record the inviting peer BEFORE accepting. The joiner does not
+            // advertise, so the host's browser never discovers it — without this
+            // entry the accepted connection has no peer record, and any reply
+            // (e.g. the pairing response) can't be routed with send(toPeer:).
+            // `didChange(.connected)` will find this entry by MCPeerID and flip it
+            // to `.connected`, at which point send() to it works.
+            if !peerDeviceId.isEmpty {
+                let info = MultipeerPeerInfo(
+                    deviceId: peerDeviceId,
+                    deviceName: peerDeviceName,
+                    companyId: peerCompanyId,
+                    state: .connecting
+                )
+                self.peers[peerDeviceId] = PeerEntry(info: info, mcPeerId: peerID)
+            }
+            handler(true, self.session)
         }
     }
 }

@@ -818,9 +818,11 @@ public actor PeerManager {
               let mpManager = multipeerManager,
               let request = try? JSONDecoder().decode(SyncPairRequest.self, from: payload) else { return }
 
-        let accepted = await sState.consumePairingCode(request.pairingCode)
+        // Validate WITHOUT consuming, so a transport failure doesn't burn a valid
+        // one-time code (the joiner can then retry with the same code).
+        let valid = await sState.verifyPairingCode(request.pairingCode)
         let response: SyncPairResponse
-        if accepted {
+        if valid {
             try? ChangeTracker.registerPeerDevice(
                 db: db,
                 peerId: request.deviceId,
@@ -833,7 +835,6 @@ public actor PeerManager {
                 companyId: sState.companyId,
                 pairedAt: CoreFormatters.nowISO()
             )
-            logger.info("[PeerManager] Bluetooth pairing accepted for peer \(String(request.deviceId.prefix(8)), privacy: .public)")
         } else {
             response = SyncPairResponse(
                 accepted: false,
@@ -841,11 +842,22 @@ public actor PeerManager {
                 companyId: "",
                 pairedAt: CoreFormatters.nowISO()
             )
-            logger.error("[PeerManager] Bluetooth pairing rejected — invalid code")
         }
+
+        var delivered = false
         if let respData = try? JSONEncoder().encode(response),
            let env = try? JSONEncoder().encode(MPEnvelope(type: "pairResponse", payload: respData)) {
-            _ = mpManager.send(data: env, toPeer: peerDeviceId)
+            delivered = mpManager.send(data: env, toPeer: peerDeviceId)
+        }
+
+        // Consume the code only once the acceptance was actually sent.
+        if valid && delivered {
+            await sState.clearActivePairingCode()
+            logger.info("[PeerManager] Bluetooth pairing accepted + delivered for peer \(String(request.deviceId.prefix(8)), privacy: .public)")
+        } else if valid {
+            logger.error("[PeerManager] Bluetooth pairing valid but reply undelivered — code kept for retry")
+        } else {
+            logger.error("[PeerManager] Bluetooth pairing rejected — invalid code")
         }
     }
 
