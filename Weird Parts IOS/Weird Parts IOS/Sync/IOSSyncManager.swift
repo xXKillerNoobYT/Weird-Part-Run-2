@@ -408,7 +408,7 @@ final class IOSSyncManager {
         if let pm = peerManager {
             peerDiscoveryStartupTask = Task {
                 let deviceId = DeviceIdentity.current
-                let deviceName = UIDevice.current.name
+                let deviceName = Self.advertisedDeviceName
                 do {
                     guard isCurrentPeerDiscoveryStartup(startupGeneration) else { return }
                     if await pm.getState().running {
@@ -522,7 +522,7 @@ final class IOSSyncManager {
         let currentState = await pm.getState()
         if !currentState.running {
             let deviceId = DeviceIdentity.current
-            let deviceName = UIDevice.current.name
+            let deviceName = Self.advertisedDeviceName
             let companyId: String
             do {
                 companyId = try peerDiscoveryCompanyId()
@@ -566,7 +566,7 @@ final class IOSSyncManager {
         }
 
         let myDeviceId = DeviceIdentity.current
-        let myDeviceName = UIDevice.current.name
+        let myDeviceName = Self.advertisedDeviceName
 
         let response = try await pm.pairViaMultipeer(
             hostDeviceId: hostDeviceId,
@@ -881,7 +881,7 @@ final class IOSSyncManager {
         }
 
         let deviceId = DeviceIdentity.current
-        let deviceName = UIDevice.current.name
+        let deviceName = Self.advertisedDeviceName
 
         guard let db else {
             syncStatus = .error
@@ -994,6 +994,20 @@ final class IOSSyncManager {
     // MARK: - Initial Full Sync
 
     /// Perform a full initial sync — downloads all data from the shop.
+    /// Human-friendly name this device advertises to peers. On Mac Catalyst
+    /// `UIDevice.current.name` returns a generic "iPad", so use the Mac's own
+    /// computer/host name instead so a Mac doesn't appear as an iPad.
+    static var advertisedDeviceName: String {
+        #if targetEnvironment(macCatalyst)
+        let host = ProcessInfo.processInfo.hostName
+            .replacingOccurrences(of: ".local", with: "")
+            .trimmingCharacters(in: .whitespaces)
+        return host.isEmpty ? "Mac" : "\(host) (Mac)"
+        #else
+        return UIDevice.current.name
+        #endif
+    }
+
     /// The device id of a host this device paired with over Bluetooth (no Wi-Fi
     /// server address). Used to route the initial sync over the Multipeer session.
     private func pairedBluetoothHostDeviceId() -> String? {
