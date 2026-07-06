@@ -294,7 +294,41 @@ struct GeofenceAlertView: View {
                     )
                 }
 
-            case .lunch, .breakTime, .doneForDay:
+            case .lunch:
+                guard let entryId = activeEntryId else {
+                    await showMissingActiveClockEntryError()
+                    return
+                }
+                guard let breakSvc = appCore.breakService else {
+                    await showBreakServiceUnavailableError()
+                    return
+                }
+                let paidMin = try breakSvc.paidLunchTimerMinutes()
+                _ = try breakSvc.startBreak(
+                    userId: userId,
+                    breakType: "lunch_paid",
+                    laborEntryId: entryId,
+                    timerMinutes: paidMin
+                )
+
+            case .breakTime:
+                guard let entryId = activeEntryId else {
+                    await showMissingActiveClockEntryError()
+                    return
+                }
+                guard let breakSvc = appCore.breakService else {
+                    await showBreakServiceUnavailableError()
+                    return
+                }
+                let settings = try breakSvc.getCompanyBreakSettings()
+                _ = try breakSvc.startBreak(
+                    userId: userId,
+                    breakType: "break",
+                    laborEntryId: entryId,
+                    timerMinutes: settings.roundingMinutes > 0 ? 15 : nil
+                )
+
+            case .doneForDay:
                 if let entryId = activeEntryId {
                     try service.clockOut(laborEntryId: entryId, gpsLat: exitLat, gpsLng: exitLng)
                 }
@@ -321,6 +355,14 @@ struct GeofenceAlertView: View {
     private func showMissingActiveClockEntryError() async {
         await MainActor.run {
             errorMessage = "No active clock entry was found. Please refresh the Clock page and try again."
+            showError = true
+            isProcessing = false
+        }
+    }
+
+    private func showBreakServiceUnavailableError() async {
+        await MainActor.run {
+            errorMessage = "Break service is not available. Please restart the app and try again."
             showError = true
             isProcessing = false
         }
@@ -379,7 +421,7 @@ struct GeofenceAlertView: View {
         switch reason {
         case .supplyRun: return "Getting supplies. Clock keeps running."
         case .anotherJob: return "Clock out here, clock in at the new job."
-        case .lunch: return "Clock out for lunch."
+        case .lunch: return "Start a paid lunch break. Clock stays active."
         case .breakTime: return "Taking a break. Clock pauses."
         case .doneForDay: return "Clock out and done."
         case .other: return "Something else — explain below."
