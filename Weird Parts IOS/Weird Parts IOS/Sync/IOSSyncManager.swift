@@ -22,6 +22,10 @@ final class IOSSyncManager {
     var syncHistory: [SyncHistoryEntry] = []
     var syncProgressMessage: String?
     var syncProgressPercent: Double = 0
+    /// Host-side: name of the peer we are actively pushing a full sync to (nil when idle).
+    var activeSyncPeerName: String?
+    /// Host-side: human summary of the most recent completed peer transfer.
+    var lastHostSyncSummary: String?
     var isPaired: Bool {
         guard let service = settingsService else {
             return false
@@ -659,6 +663,21 @@ final class IOSSyncManager {
     }
 
     private func handlePeerStateChange(_ state: PeerManagerState) {
+        // Host-side transfer feedback: who we're actively sending to, and the last
+        // completed transfer per peer (drives "Syncing…"/"Synced N records" UI).
+        if let syncingId = state.syncingWith {
+            activeSyncPeerName = state.peers.first(where: { $0.deviceId == syncingId })?.deviceName
+                ?? discoveredPeers.first(where: { $0.id == syncingId })?.name
+                ?? "device"
+        } else {
+            activeSyncPeerName = nil
+        }
+        if let latest = state.lastPeerSyncs.values.max(by: { $0.syncedAt < $1.syncedAt }) {
+            lastHostSyncSummary = latest.success
+                ? "Sent \(latest.pushed) records to \(latest.peerName)"
+                : "Sync with \(latest.peerName) failed"
+        }
+
         // Merge LAN peers into our peer list
         let lanPeers = state.peers.map { peer in
             let address = formattedPeerAddress(host: peer.host, port: Int(peer.port))

@@ -803,30 +803,122 @@ public actor PeerManager {
         applyIncomingChanges(message.data)
     }
 
-    /// Host side: a freshly-paired joiner asked for the whole company. Replay the
-    /// entire change log (from sequence 0) over Bluetooth as "changes" batches,
-    /// then signal completion. The joiner applies them via the existing changes path.
+    /// Host side: a freshly-paired joiner asked for the whole company.
+    ///
+    /// Streams a **full snapshot of every synced business table** — not the change
+    /// log. Change-tracking here is explicit, and the foundational records
+    /// (admin user from `seedFirstAdmin`, business profile, company settings) are
+    /// written WITHOUT change-logging, so a change-log replay left the joiner with
+    /// data but no users ("No User Found"). A row snapshot is also what the Wi-Fi
+    /// full-download does, so both transports now deliver the same result.
+    ///
+    /// Tables stream in creation (migration) order, which approximates dependency
+    /// order for any FK constraints. Device-scoped settings rows are excluded so
+    /// the host's pairing/device config never clobbers the joiner's.
     private func handleFullSyncRequest(from peerDeviceId: String) async {
-        guard let mpManager = multipeerManager else { return }
-        var since: Int64 = 0
-        let batchSize = 200
-        while true {
-            let batch = (try? ChangeTracker.getChangesSince(db: db, sinceSequence: since, limit: batchSize)) ?? []
-            if batch.isEmpty { break }
-            if let enriched = try? enrichChangesWithData(batch), !enriched.isEmpty,
-               let changesData = try? JSONEncoder().encode(enriched),
-               let env = try? JSONEncoder().encode(MPEnvelope(type: "changes", payload: changesData)) {
-                _ = mpManager.send(data: env, toPeer: peerDeviceId)
-            }
-            let maxSeq = Int64(batch.compactMap { $0.sequence }.max() ?? 0)
-            guard maxSeq > since else { break }   // no forward progress → stop
-            since = maxSeq
-            if batch.count < batchSize { break }  // last batch
+        guard let mpManager = multipeerManager, let sState = serverState else { return }
+        let hostDeviceId = sState.deviceId
+        let fallbackTimestamp = CoreFormatters.nowISO()
+        let peerName = state.peers.first(where: { $0.deviceId == peerDeviceId })?.deviceName ?? "New device"
+
+        // Host-side feedback: surface "syncing with <peer>" to the UI.
+        state.syncingWith = peerDeviceId
+        notifyStateChanged()
+        defer {
+            state.syncingWith = nil
+            notifyStateChanged()
         }
+
+        // Creation order from sqlite_master ≈ migration order ≈ parents first.
+        let tables: [String] = (try? await db.writer.read { dbConn in
+            try String.fetchAll(
+                dbConn,
+                sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY rowid"
+            )
+        }) ?? []
+
+        var totalSent = 0
+        let batchSize = 200
+
+        for table in tables {
+            // Only whitelisted business tables; never the _sync-infrastructure tables.
+            guard !table.hasPrefix("_"), ConflictResolver.isAllowedTable(table) else { continue }
+
+            var offset = 0
+            while true {
+                let currentOffset = offset
+                let rows: [Row] = (try? await db.writer.read { dbConn in
+                    try Row.fetchAll(
+                        dbConn,
+                        sql: "SELECT * FROM [\(table)] LIMIT ? OFFSET ?",
+                        arguments: [batchSize, currentOffset]
+                    )
+                }) ?? []
+                if rows.isEmpty { break }
+
+                var changes: [IncomingChange] = []
+                changes.reserveCapacity(rows.count)
+                for row in rows {
+                    // Don't ship device-scoped settings (sync/pairing/device identity);
+                    // they would overwrite the joiner's own configuration.
+                    if table == "settings" {
+                        let key = (row["key"] as? String) ?? ""
+                        let category = row["category"] as? String
+                        if SettingsService.syncScope(for: key, category: category) == .device { continue }
+                    }
+
+                    var dict: [String: Any] = [:]
+                    for column in row.columnNames {
+                        dict[column] = row[column] as Any
+                    }
+                    guard let jsonData = try? JSONSerialization.data(withJSONObject: dict),
+                          let recordData = String(data: jsonData, encoding: .utf8) else { continue }
+
+                    let recordId: String
+                    if let idValue = row["id"] as? Int64 {
+                        recordId = String(idValue)
+                    } else {
+                        recordId = "0"
+                    }
+                    // Prefer the row's own updated_at for LWW fairness; the joiner is
+                    // fresh so there is nothing local to conflict with either way.
+                    let timestamp = (row["updated_at"] as? String) ?? fallbackTimestamp
+
+                    changes.append(IncomingChange(
+                        deviceId: hostDeviceId,
+                        tableName: table,
+                        recordId: recordId,
+                        operation: "INSERT",
+                        recordData: recordData,
+                        timestamp: timestamp
+                    ))
+                }
+
+                if !changes.isEmpty,
+                   let changesData = try? JSONEncoder().encode(changes),
+                   let env = try? JSONEncoder().encode(MPEnvelope(type: "changes", payload: changesData)) {
+                    if mpManager.send(data: env, toPeer: peerDeviceId) {
+                        totalSent += changes.count
+                    }
+                }
+
+                if rows.count < batchSize { break }
+                offset += batchSize
+            }
+        }
+
         if let env = try? JSONEncoder().encode(MPEnvelope(type: "fullSyncComplete", payload: Data())) {
             _ = mpManager.send(data: env, toPeer: peerDeviceId)
         }
-        logger.info("[PeerManager] Sent full Bluetooth initial sync to peer \(String(peerDeviceId.prefix(8)), privacy: .public)")
+
+        // Host-side feedback: record the transfer so the UI can show "Synced N records".
+        state.lastPeerSyncs[peerDeviceId] = PeerSyncResult(
+            peerDeviceId: peerDeviceId,
+            peerName: peerName,
+            pushed: totalSent,
+            success: true
+        )
+        logger.info("[PeerManager] Sent full Bluetooth snapshot (\(totalSent) records) to peer \(String(peerDeviceId.prefix(8)), privacy: .public)")
     }
 
     /// Joiner side: the host finished replaying its data.

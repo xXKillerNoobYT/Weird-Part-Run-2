@@ -36,7 +36,32 @@ struct IOSAddDeviceSheet: View {
 
                     content
 
+                    liveStatus
+
                     steps
+
+                    // Always-visible controls: regenerate a fresh code without
+                    // relaunching, and a Close that works even where the toolbar
+                    // Done is unreliable (Mac Catalyst dismiss quirk — see #1415).
+                    HStack(spacing: 12) {
+                        Button {
+                            Task { await loadCode() }
+                        } label: {
+                            Label("New Code", systemImage: "arrow.clockwise")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(isLoading)
+
+                        Button {
+                            dismiss()
+                        } label: {
+                            Text("Close")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    .padding(.top, 4)
                 }
                 .padding()
             }
@@ -86,6 +111,49 @@ struct IOSAddDeviceSheet: View {
             }
             .frame(maxWidth: .infinity, minHeight: 120)
         }
+    }
+
+    /// Live host-side feedback: which devices are connected right now, whether a
+    /// transfer is running, and the result of the last completed transfer — so the
+    /// host actually SEES the pairing + data transfer happen instead of a silent wait.
+    @ViewBuilder
+    private var liveStatus: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if !syncManager.discoveredPeers.isEmpty {
+                Text("Nearby devices")
+                    .font(.headline)
+                ForEach(syncManager.discoveredPeers) { peer in
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(peer.state == "connected" ? Color.green : Color.orange)
+                            .frame(width: 8, height: 8)
+                            .accessibilityHidden(true)
+                        Text(peer.name)
+                            .font(.subheadline)
+                        Text(peer.state)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                }
+            }
+
+            if let syncingName = syncManager.activeSyncPeerName {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Sending company data to \(syncingName)…")
+                        .font(.subheadline)
+                }
+                .accessibilityElement(children: .combine)
+            } else if let summary = syncManager.lastHostSyncSummary {
+                Label(summary, systemImage: "checkmark.circle.fill")
+                    .font(.subheadline)
+                    .foregroundStyle(.green)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 4)
     }
 
     private var steps: some View {
