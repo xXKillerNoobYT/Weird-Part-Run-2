@@ -373,16 +373,33 @@ private struct HatDetailSheet: View {
             permissionsSection
         }
         .listStyle(.insetGrouped)
+        // Two confirms with disjoint presentation: named-record for a single
+        // swipe, count-aware when edit-mode delete spans multiple rows.
         .confirmDestruction(
             ofRecordNamed: pendingMemberName,
             noun: "member",
             actionLabel: "Remove",
             actionVerb: "removes",
             isPresented: Binding(
-                get: { pendingMemberRemoval != nil },
+                get: { (pendingMemberRemoval?.count ?? 0) == 1 },
                 set: { if !$0 { pendingMemberRemoval = nil } }
             ),
             messageSuffix: "They keep their account; only the hat assignment is removed."
+        ) {
+            if let offsets = pendingMemberRemoval {
+                removeMember(at: offsets)
+            }
+        }
+        .confirmDestruction(
+            of: "member",
+            count: pendingMemberRemoval?.count ?? 0,
+            actionLabel: "Remove",
+            actionVerb: "removes",
+            isPresented: Binding(
+                get: { (pendingMemberRemoval?.count ?? 0) > 1 },
+                set: { if !$0 { pendingMemberRemoval = nil } }
+            ),
+            messageSuffix: "They keep their accounts; only the hat assignments are removed."
         ) {
             if let offsets = pendingMemberRemoval {
                 removeMember(at: offsets)
