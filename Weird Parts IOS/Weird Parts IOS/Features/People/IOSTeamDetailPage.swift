@@ -104,26 +104,27 @@ struct IOSTeamDetailPage: View {
                 )
             }
         }
-        .alert("Delete Team?", isPresented: $showDeleteConfirm) {
-            Button("Delete", role: .destructive) {
-                Task { await deleteTeam() }
-            }
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("This will remove the team. Members will not be deleted.")
+        .confirmDestruction(
+            ofRecordNamed: team?.name ?? "",
+            noun: "team",
+            actionLabel: "Delete",
+            isPresented: $showDeleteConfirm,
+            messageSuffix: "Members keep their accounts; only the team is removed."
+        ) {
+            Task { await deleteTeam() }
         }
-        .alert("Remove Member?", isPresented: $showRemoveMemberConfirm) {
-            Button("Remove", role: .destructive) {
-                if let member = memberToRemove {
-                    Task { await removeMember(member) }
-                }
-                memberToRemove = nil
-            }
-            Button("Cancel", role: .cancel) { memberToRemove = nil }
-        } message: {
+        .confirmDestruction(
+            ofRecordNamed: memberToRemove?.name ?? "",
+            noun: "member",
+            actionLabel: "Remove",
+            actionVerb: "removes",
+            isPresented: $showRemoveMemberConfirm,
+            messageSuffix: "They keep their account; only the team membership is removed."
+        ) {
             if let member = memberToRemove {
-                Text("Remove \(member.name) from this team?")
+                Task { await removeMember(member) }
             }
+            memberToRemove = nil
         }
         .task { await loadData() }
         .refreshable { await loadData() }
@@ -348,7 +349,7 @@ private struct EditTeamSheet: View {
                         .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
-            .alert("Discard changes?", isPresented: $showDiscardAlert) {
+            .alert("Discard team changes?", isPresented: $showDiscardAlert) {
                 Button("Discard", role: .destructive) { dismiss() }
                 Button("Keep Editing", role: .cancel) {}
             } message: {

@@ -18,6 +18,12 @@ struct IOSEmployeeDetailPage: View {
     @State private var canManageHats = false
     @State private var combinedPermissions: [String] = []
     @State private var certificationToRemove: Certification?
+    /// Skill pending removal — swipe sets it; the confirm executes.
+    private struct PendingSkill {
+        let id: Int64
+        let name: String
+    }
+    @State private var skillToRemove: PendingSkill?
 
     private enum ActiveSheet: String, Identifiable {
         case editContact
@@ -46,6 +52,35 @@ struct IOSEmployeeDetailPage: View {
         .navigationTitle(employee?.displayName ?? "Employee")
         .refreshable { loadData() }
         .task { loadData() }
+        .confirmDestruction(
+            ofRecordNamed: certificationToRemove?.certName ?? "",
+            noun: "certification",
+            actionLabel: "Remove",
+            actionVerb: "removes",
+            isPresented: Binding(
+                get: { certificationToRemove != nil },
+                set: { if !$0 { certificationToRemove = nil } }
+            ),
+            messageSuffix: "It will no longer appear on the employee profile."
+        ) {
+            if let certificationToRemove {
+                removeCertification(certificationToRemove)
+            }
+        }
+        .confirmDestruction(
+            ofRecordNamed: skillToRemove?.name ?? "",
+            noun: "skill",
+            actionLabel: "Remove",
+            actionVerb: "removes",
+            isPresented: Binding(
+                get: { skillToRemove != nil },
+                set: { if !$0 { skillToRemove = nil } }
+            )
+        ) {
+            if let skillToRemove {
+                removeSkill(id: skillToRemove.id)
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Edit") { activeSheet = .editContact }
@@ -130,21 +165,6 @@ struct IOSEmployeeDetailPage: View {
                     ]
                 )
             }
-        }
-        .alert("Remove certification?", isPresented: Binding(
-            get: { certificationToRemove != nil },
-            set: { if !$0 { certificationToRemove = nil } }
-        )) {
-            Button("Remove", role: .destructive) {
-                if let certificationToRemove {
-                    removeCertification(certificationToRemove)
-                }
-            }
-            Button("Cancel", role: .cancel) {
-                certificationToRemove = nil
-            }
-        } message: {
-            Text("This certification will no longer appear on the employee profile.")
         }
     }
 
@@ -260,7 +280,7 @@ struct IOSEmployeeDetailPage: View {
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 if canManageHats, let skillId = skill.id {
                                     Button(role: .destructive) {
-                                        removeSkill(id: skillId)
+                                        skillToRemove = PendingSkill(id: skillId, name: skill.skillName)
                                     } label: {
                                         Label("Delete", systemImage: "trash")
                                     }
@@ -855,7 +875,7 @@ private struct EditEmployeeContactSheet: View {
                         .disabled(isSaving || displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
-            .alert("Discard changes?", isPresented: $showDiscardAlert) {
+            .alert("Discard employee changes?", isPresented: $showDiscardAlert) {
                 Button("Discard", role: .destructive) { dismiss() }
                 Button("Keep Editing", role: .cancel) {}
             } message: {
@@ -959,7 +979,7 @@ private struct AddCertificationSheet: View {
                         .disabled(isSaving || certType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || certName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
-            .alert("Discard changes?", isPresented: $showDiscardAlert) {
+            .alert("Discard skill changes?", isPresented: $showDiscardAlert) {
                 Button("Discard", role: .destructive) { dismiss() }
                 Button("Keep Editing", role: .cancel) {}
             } message: {
@@ -1055,7 +1075,7 @@ private struct AddSkillSheet: View {
                         .disabled(isSaving || skillName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
-            .alert("Discard changes?", isPresented: $showDiscardAlert) {
+            .alert("Discard certification changes?", isPresented: $showDiscardAlert) {
                 Button("Discard", role: .destructive) { dismiss() }
                 Button("Keep Editing", role: .cancel) {}
             } message: {
