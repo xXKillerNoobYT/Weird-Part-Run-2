@@ -233,7 +233,7 @@ private struct AddCustomerSheet: View {
                         .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
-            .alert("Discard changes?", isPresented: $showDiscardAlert) {
+            .alert("Discard customer changes?", isPresented: $showDiscardAlert) {
                 Button("Discard", role: .destructive) { dismiss() }
                 Button("Keep Editing", role: .cancel) {}
             } message: {

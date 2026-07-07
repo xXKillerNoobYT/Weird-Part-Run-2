@@ -15,6 +15,14 @@ struct IOSHatsPage: View {
     @State private var searchText = ""
     @State private var loadError: String?
     @State private var hatToDelete: PeopleService.HatListItem?
+
+    /// States the permissions consequence and, when employees hold the hat,
+    /// exactly how many lose it.
+    private var hatDeleteConsequence: String {
+        let base = "All of its permissions are removed with it."
+        guard let count = hatToDelete?.userCount, count > 0 else { return base }
+        return "\(base) \(count) employee\(count == 1 ? "" : "s") currently hold\(count == 1 ? "s" : "") this hat."
+    }
     private enum ActiveSheet: Identifiable {
         case addHat
         case help
@@ -79,22 +87,20 @@ struct IOSHatsPage: View {
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
             }
-            .alert(
-                "Delete Hat?",
+            .confirmDestruction(
+                ofRecordNamed: hatToDelete?.name ?? "",
+                noun: "hat",
+                actionLabel: "Delete",
                 isPresented: Binding(
                     get: { hatToDelete != nil },
                     set: { if !$0 { hatToDelete = nil } }
-                )
+                ),
+                messageSuffix: hatDeleteConsequence
             ) {
-                Button("Cancel", role: .cancel) { hatToDelete = nil }
-                Button("Delete", role: .destructive) {
-                    if let hat = hatToDelete {
-                        deleteHat(hat)
-                        hatToDelete = nil
-                    }
+                if let hat = hatToDelete {
+                    deleteHat(hat)
+                    hatToDelete = nil
                 }
-            } message: {
-                Text("This will remove the role and all its permissions. This cannot be undone.")
             }
     }
 
@@ -266,7 +272,7 @@ private struct AddHatSheet: View {
                         .disabled(hatName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
-            .alert("Discard changes?", isPresented: $showDiscardAlert) {
+            .alert("Discard hat changes?", isPresented: $showDiscardAlert) {
                 Button("Discard", role: .destructive) { dismiss() }
                 Button("Keep Editing", role: .cancel) {}
             } message: {
@@ -308,6 +314,16 @@ private struct HatDetailSheet: View {
     @State private var loadError: String?
     @State private var canManageHats = false
     @State private var showAddEmployee = false
+    /// Swipe sets the pending offsets; the confirmation executes the removal.
+    @State private var pendingMemberRemoval: IndexSet?
+
+    /// Names the member when the swipe covers one row; blank otherwise so the
+    /// confirm falls back to "this member".
+    private var pendingMemberName: String {
+        guard let offsets = pendingMemberRemoval, offsets.count == 1,
+              let index = offsets.first, members.indices.contains(index) else { return "" }
+        return members[index].displayName
+    }
 
     var body: some View {
         NavigationStack {
@@ -357,6 +373,38 @@ private struct HatDetailSheet: View {
             permissionsSection
         }
         .listStyle(.insetGrouped)
+        // Two confirms with disjoint presentation: named-record for a single
+        // swipe, count-aware when edit-mode delete spans multiple rows.
+        .confirmDestruction(
+            ofRecordNamed: pendingMemberName,
+            noun: "member",
+            actionLabel: "Remove",
+            actionVerb: "removes",
+            isPresented: Binding(
+                get: { (pendingMemberRemoval?.count ?? 0) == 1 },
+                set: { if !$0 { pendingMemberRemoval = nil } }
+            ),
+            messageSuffix: "They keep their account; only the hat assignment is removed."
+        ) {
+            if let offsets = pendingMemberRemoval {
+                removeMember(at: offsets)
+            }
+        }
+        .confirmDestruction(
+            of: "member",
+            count: pendingMemberRemoval?.count ?? 0,
+            actionLabel: "Remove",
+            actionVerb: "removes",
+            isPresented: Binding(
+                get: { (pendingMemberRemoval?.count ?? 0) > 1 },
+                set: { if !$0 { pendingMemberRemoval = nil } }
+            ),
+            messageSuffix: "They keep their accounts; only the hat assignments are removed."
+        ) {
+            if let offsets = pendingMemberRemoval {
+                removeMember(at: offsets)
+            }
+        }
     }
 
     @ViewBuilder
@@ -370,7 +418,7 @@ private struct HatDetailSheet: View {
                 ForEach(members) { member in
                     memberRow(member)
                 }
-                .onDelete(perform: removeMember)
+                .onDelete { offsets in pendingMemberRemoval = offsets }
             } else {
                 ForEach(members) { member in
                     memberRow(member)
@@ -427,7 +475,9 @@ private struct HatDetailSheet: View {
             loadError = "People service unavailable"
             return
         }
-        for index in offsets {
+        // Offsets sit in pendingMemberRemoval while the confirm is up; a
+        // refresh can shrink `members` in the meantime, so bounds-check.
+        for index in offsets where members.indices.contains(index) {
             let member = members[index]
             do {
                 try service.toggleHatAssignment(employeeId: member.id, hatId: hat.id, assign: false)

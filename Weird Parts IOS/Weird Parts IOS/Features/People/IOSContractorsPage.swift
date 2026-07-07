@@ -200,7 +200,7 @@ private struct AddContractorSheet: View {
                         .disabled(companyName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
-            .alert("Discard changes?", isPresented: $showDiscardAlert) {
+            .alert("Discard contractor changes?", isPresented: $showDiscardAlert) {
                 Button("Discard", role: .destructive) { dismiss() }
                 Button("Keep Editing", role: .cancel) {}
             } message: {
