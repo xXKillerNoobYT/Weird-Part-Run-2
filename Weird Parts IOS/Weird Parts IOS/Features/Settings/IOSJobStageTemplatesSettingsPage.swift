@@ -322,9 +322,11 @@ struct IOSJobStageTemplatesSettingsPage: View {
                     }
                 }
                 .disabled(isSaving || selectedTemplateId == nil || draftStages.isEmpty)
-                .accessibilityLabel("Save Stages")
-                .accessibilityValue(isSaving ? "Saving" : "")
-                .accessibilityIdentifier("settings-job-stage-save-stages-button")
+                .rowAccessibility(
+                    label: "Save Stages",
+                    value: isSaving ? "Saving" : nil,
+                    id: "settings-job-stage-save-stages-button"
+                )
             }
         } header: {
             Label("Stages", systemImage: "list.number")

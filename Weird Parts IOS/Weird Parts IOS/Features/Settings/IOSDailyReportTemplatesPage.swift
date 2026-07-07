@@ -167,7 +167,7 @@ struct IOSDailyReportTemplatesPage: View {
                         }
                         Toggle(section.name, isOn: $section.enabled)
                             .disabled(section.locked)
-                            .accessibilityHint(section.locked ? "Locked. This section is always included and cannot be disabled." : "")
+                            .accessibilityHint("Locked. This section is always included and cannot be disabled.", isEnabled: section.locked)
                             .accessibilityIdentifier("settings-report-section-toggle-\(section.id)")
                     }
                     .contextMenu {
@@ -219,7 +219,7 @@ struct IOSDailyReportTemplatesPage: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!hasUnsavedChanges)
-                .accessibilityHint(hasUnsavedChanges ? "" : "Make changes to the template to enable saving.")
+                .accessibilityHint("Make changes to the template to enable saving.", isEnabled: !hasUnsavedChanges)
             }
         }
         // Fix #149: dismiss keyboard when scrolling template editor

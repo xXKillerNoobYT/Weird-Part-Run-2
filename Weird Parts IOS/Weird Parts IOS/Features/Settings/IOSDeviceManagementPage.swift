@@ -65,10 +65,12 @@ struct IOSDeviceManagementPage: View {
                     }
                 }
                 .disabled(isIssuingCode)
-                .accessibilityLabel("Pair new device")
-                .accessibilityValue(isIssuingCode ? "Generating code" : "")
-                .accessibilityHint("Issues a one-time pairing code for a new device to join this business.")
-                .accessibilityIdentifier("settings-device-mgmt-pair-button")
+                .rowAccessibility(
+                    label: "Pair new device",
+                    value: isIssuingCode ? "Generating code" : nil,
+                    hint: "Issues a one-time pairing code for a new device to join this business.",
+                    id: "settings-device-mgmt-pair-button"
+                )
 
                 if let error = pairingError {
                     Text(error)
