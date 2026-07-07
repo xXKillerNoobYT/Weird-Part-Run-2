@@ -381,9 +381,29 @@ public actor PeerManager {
             var pulled = 0
 
             #if canImport(MultipeerConnectivity)
-            if peer.transport == "multipeer" && peer.multipeerState == "connected",
-               let mpManager = multipeerManager {
-                // Multipeer sync path
+            if peer.transport == "multipeer", let mpManager = multipeerManager {
+                // Bluetooth/Multipeer path. If the session is still forming (user
+                // tapped Sync during "connecting"), wait briefly for it instead of
+                // falling through to the HTTP path — a multipeer-only peer has a
+                // placeholder host, so HTTP could only throw badURL (-1000), which
+                // is the raw error the owner hit from the Nearby Devices sheet.
+                if !mpManager.isConnected(toPeer: peer.deviceId) {
+                    mpManager.invite(deviceId: peer.deviceId)
+                    let deadline = Date().addingTimeInterval(10)
+                    while !mpManager.isConnected(toPeer: peer.deviceId), Date() < deadline {
+                        try? await Task.sleep(nanoseconds: 300_000_000)
+                    }
+                }
+                guard mpManager.isConnected(toPeer: peer.deviceId) else {
+                    let result = PeerSyncResult(
+                        peerDeviceId: peer.deviceId,
+                        peerName: peer.deviceName,
+                        success: false,
+                        error: "Still connecting to \(peer.deviceName) over Bluetooth — try again in a moment."
+                    )
+                    state.lastPeerSyncs[peer.deviceId] = result
+                    return result
+                }
                 if !enrichedChanges.isEmpty {
                     let encoder = JSONEncoder()
                     let changesData = try encoder.encode(enrichedChanges)
