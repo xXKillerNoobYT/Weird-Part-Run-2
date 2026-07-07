@@ -290,10 +290,12 @@ struct IOSDataExportPage: View {
             }
             .buttonStyle(.borderedProminent)
             .disabled(selectedTables.isEmpty || isExporting)
-            .accessibilityLabel("Export selected tables")
-            .accessibilityValue(isExporting ? "Export in progress" : exportSuccess ? "Export complete" : "")
-            .accessibilityHint("Writes the selected tables as \(selectedFormat.uppercased()) files and opens the share sheet.")
-            .accessibilityIdentifier("settings-export-selected-tables-button")
+            .rowAccessibility(
+                label: "Export selected tables",
+                value: isExporting ? "Export in progress" : (exportSuccess ? "Export complete" : nil),
+                hint: "Writes the selected tables as \(selectedFormat.uppercased()) files and opens the share sheet.",
+                id: "settings-export-selected-tables-button"
+            )
 
             Button {
                 exportFullDatabase()

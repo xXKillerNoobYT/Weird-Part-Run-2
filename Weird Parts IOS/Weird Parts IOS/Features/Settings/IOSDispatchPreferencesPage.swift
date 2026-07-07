@@ -171,7 +171,7 @@ struct IOSDispatchPreferencesPage: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!isDirty)
-                .accessibilityHint(isDirty ? "" : "Make changes to enable saving.")
+                .accessibilityHint("Make changes to enable saving.", isEnabled: !isDirty)
                 .accessibilityIdentifier("settings-dispatch-save-button")
             }
         }

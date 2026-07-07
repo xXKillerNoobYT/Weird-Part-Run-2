@@ -234,7 +234,7 @@ struct IOSOrganizationThresholdsPage: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!hasValidSettings)
-                .accessibilityHint(hasValidSettings ? "" : "Base decay rate and movement decay factor must be greater than zero.")
+                .accessibilityHint("Base decay rate and movement decay factor must be greater than zero.", isEnabled: !hasValidSettings)
                 .accessibilityIdentifier("settings-org-thresholds-save-button")
             }
         }

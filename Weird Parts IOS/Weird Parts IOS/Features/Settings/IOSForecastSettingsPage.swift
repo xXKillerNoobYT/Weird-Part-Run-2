@@ -249,7 +249,7 @@ struct IOSForecastSettingsPage: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!hasValidSettings)
-                .accessibilityHint(hasValidSettings ? "" : "All multipliers and free-space threshold must be greater than zero.")
+                .accessibilityHint("All multipliers and free-space threshold must be greater than zero.", isEnabled: !hasValidSettings)
                 .accessibilityIdentifier("settings-forecast-save-button")
             }
         }

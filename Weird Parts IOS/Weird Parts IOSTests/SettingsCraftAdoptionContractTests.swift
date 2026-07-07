@@ -4,10 +4,11 @@ import XCTest
 /// (#1421 Wave 2, docs/plans/panel-quality-uplift.md).
 ///
 /// These are intentional source-token adoption checks (scans for `"settings-`
-/// identifier prefixes, `.rowAccessibility(`, `.contextMenu`) — NOT
-/// user-visible copy assertions. They pin area-level adoption floors set by
-/// the 2026-07-07 pass (the area was 0/39 files before it), so pages can keep
-/// evolving without breaking them.
+/// identifier prefixes, `.rowAccessibility(`, `.contextMenu`) that pin
+/// area-level adoption floors set by the 2026-07-07 pass (the area was 0/39
+/// files before it), so pages can keep evolving without breaking them.
+/// One deliberate exception: the database-reset test also pins the final
+/// alert's title copy — that string is itself the safety artifact.
 final class SettingsCraftAdoptionContractTests: XCTestCase {
 
     func testSettingsAreaUsesStableAccessibilityIdentifiers() throws {
@@ -48,8 +49,12 @@ final class SettingsCraftAdoptionContractTests: XCTestCase {
     func testDatabaseResetKeepsFinalConfirmationLayer() throws {
         let source = try Self.readSettingsSource(named: "IOSDatabaseResetPage.swift")
         XCTAssertTrue(
+            source.contains("showFinalConfirm"),
+            "Database reset lost its final-confirmation state gate — the wipe must never fire directly from the PIN screen."
+        )
+        XCTAssertTrue(
             source.contains("Erase all data on this device?"),
-            "Database reset lost its final confirmation alert — the wipe must never fire directly from the PIN screen."
+            "Database reset's final alert lost its explicit consequence title (deliberate copy pin — this string is the safety artifact)."
         )
         XCTAssertTrue(
             source.contains("verifyAdminApproval"),
@@ -62,7 +67,7 @@ final class SettingsCraftAdoptionContractTests: XCTestCase {
     private static func settingsDirectory(file: StaticString = #filePath) -> URL {
         URL(fileURLWithPath: "\(file)")
             .deletingLastPathComponent() // Weird Parts IOSTests
-            .deletingLastPathComponent() // project root
+            .deletingLastPathComponent() // "Weird Parts IOS" project directory
             .appendingPathComponent("Weird Parts IOS")
             .appendingPathComponent("Features")
             .appendingPathComponent("Settings")
