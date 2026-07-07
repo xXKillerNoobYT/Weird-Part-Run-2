@@ -118,13 +118,17 @@ struct IOSTeamDetailPage: View {
             noun: "member",
             actionLabel: "Remove",
             actionVerb: "removes",
-            isPresented: $showRemoveMemberConfirm,
+            isPresented: Binding(
+                get: { showRemoveMemberConfirm },
+                // Clears the pending member on ANY dismissal (Cancel included),
+                // not just confirm.
+                set: { showRemoveMemberConfirm = $0; if !$0 { memberToRemove = nil } }
+            ),
             messageSuffix: "They keep their account; only the team membership is removed."
         ) {
             if let member = memberToRemove {
                 Task { await removeMember(member) }
             }
-            memberToRemove = nil
         }
         .task { await loadData() }
         .refreshable { await loadData() }
