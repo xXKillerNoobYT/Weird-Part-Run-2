@@ -470,7 +470,7 @@ struct IOSJPOCreationPage: View {
                         }
                         .accessibilityLabel("Search again for \(query)")
                         .accessibilityHint("Runs this recent search again.")
-                        .accessibilityIdentifier("orders-jpo-create-recent-search-\(Self.searchSlug(query))")
+                        .accessibilityIdentifier("orders-jpo-create-recent-search-\(stableAccessibilitySuffix(id: nil, name: query))")
                     }
                 }
             }
@@ -482,13 +482,6 @@ struct IOSJPOCreationPage: View {
             }
         }
         .padding(sizeClass == .regular ? 12 : 0)
-    }
-
-    /// Kebab-slug for accessibility identifiers — raw queries contain spaces
-    /// and punctuation, which make identifiers unpredictable in UI tests.
-    private static func searchSlug(_ query: String) -> String {
-        String(query.unicodeScalars.map { CharacterSet.alphanumerics.contains($0) ? Character($0) : "-" })
-            .lowercased()
     }
 
     private func searchResultRow(_ part: Part) -> some View {

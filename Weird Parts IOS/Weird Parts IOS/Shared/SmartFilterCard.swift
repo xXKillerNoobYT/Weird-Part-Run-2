@@ -44,7 +44,7 @@ struct SmartFilterCard: View {
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .modifier(SmartFilterCardOptionalHint(hint: accessibilityHint))
         .accessibilityIdentifier(
-            accessibilityId ?? "smart-filter-\(title.lowercased().replacingOccurrences(of: " ", with: "-"))"
+            accessibilityId ?? "smart-filter-\(stableAccessibilitySuffix(id: nil, name: title))"
         )
     }
 }
