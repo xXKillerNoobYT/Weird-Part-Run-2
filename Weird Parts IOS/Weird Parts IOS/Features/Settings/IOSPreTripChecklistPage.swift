@@ -189,7 +189,7 @@ struct IOSPreTripChecklistPage: View {
                         .accessibilityLabel("\(section.title.capitalized) section")
                         .accessibilityValue("\(section.items.count) items, \(collapsedSectionIds.contains(section.id) ? "collapsed" : "expanded")")
                         .accessibilityHint(collapsedSectionIds.contains(section.id) ? "Expands the section" : "Collapses the section")
-                        .accessibilityIdentifier("settings-pretrip-section-toggle-\(stableAccessibilitySuffix(id: nil, name: section.title))")
+                        .accessibilityIdentifier("settings-pretrip-section-toggle-\(section.id)")
                         .contextMenu {
                             Button {
                                 toggleSection(section.id)
