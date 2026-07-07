@@ -53,7 +53,7 @@ struct SupplierPickerSheet: View {
                         .disabled(isGenerating)
                         .accessibilityLabel(supplierRowLabel(item))
                         .accessibilityHint("Generates a purchase order from this supplier.")
-                        .accessibilityIdentifier("supplier-picker-row-\(item.supplier.id.map(String.init) ?? item.supplier.name.lowercased().replacingOccurrences(of: " ", with: "-"))")
+                        .accessibilityIdentifier("supplier-picker-row-\(stableAccessibilitySuffix(id: item.supplier.id, name: item.supplier.name))")
                     }
                     .listStyle(.insetGrouped)
                 }

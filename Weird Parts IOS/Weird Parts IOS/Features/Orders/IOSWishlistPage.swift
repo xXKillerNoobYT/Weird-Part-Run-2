@@ -638,7 +638,7 @@ struct IOSWishlistPage: View {
                 + (item.reason.map { ", \($0)" } ?? ""),
             value: item.status == "sent_to_procurement" ? "sent to procurement" : item.status,
             hint: "Swipe for approve, send to procurement, dismiss, reopen, and delete actions.",
-            id: "wishlist-row-\(item.id ?? 0)"
+            id: "wishlist-row-\(stableAccessibilitySuffix(id: item.id, name: item.partName))"
         )
     }
 

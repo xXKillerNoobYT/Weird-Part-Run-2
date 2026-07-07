@@ -541,7 +541,7 @@ struct IOSJPOCreationPage: View {
                 ? "Add another \(part.name) to cart"
                 : "Add \(part.name) to cart")
             .accessibilityHint("Adds one of this part to the order cart.")
-            .accessibilityIdentifier("orders-jpo-create-search-add-\(part.id ?? 0)")
+            .accessibilityIdentifier("orders-jpo-create-search-add-\(stableAccessibilitySuffix(id: part.id, name: part.name))")
         }
         .padding(.vertical, 4)
     }

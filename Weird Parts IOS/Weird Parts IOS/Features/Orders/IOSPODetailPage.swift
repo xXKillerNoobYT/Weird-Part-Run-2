@@ -595,7 +595,7 @@ struct IOSPODetailPage: View {
                                     label: "Supplier \(sup.name), \(swc.partCount) parts linked",
                                     value: selectedSupplierId == sup.id ? "Selected" : "Not selected",
                                     hint: "Selects this supplier for the double order.",
-                                    id: "orders-po-double-order-supplier-\(sup.id ?? 0)"
+                                    id: "orders-po-double-order-supplier-\(stableAccessibilitySuffix(id: sup.id, name: sup.name))"
                                 )
                             }
                         }

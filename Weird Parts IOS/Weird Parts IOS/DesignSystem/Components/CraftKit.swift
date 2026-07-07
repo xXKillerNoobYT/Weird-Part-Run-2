@@ -46,6 +46,13 @@ extension View {
     // chips ≈20pt), not a missing primitive.
 }
 
+/// Stable accessibility-identifier suffix: the record id when present, else a
+/// kebab slug of the given name. Never a literal `0` — nil-id records would
+/// otherwise collide on the same identifier and make UI tests flaky.
+nonisolated func stableAccessibilitySuffix(id: Int64?, name: String) -> String {
+    id.map(String.init) ?? name.lowercased().replacingOccurrences(of: " ", with: "-")
+}
+
 /// Applies `.accessibilityValue` only when a value exists, so empty values don't
 /// register a blank utterance in the VoiceOver rotor.
 private struct OptionalAccessibilityValue: ViewModifier {

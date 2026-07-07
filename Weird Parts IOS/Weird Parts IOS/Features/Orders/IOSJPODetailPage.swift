@@ -1264,7 +1264,7 @@ private struct AddJPOLineItemSheet: View {
                                 label: "Select \(part.name)",
                                 value: part.code,
                                 hint: "Chooses this part for the new line item.",
-                                id: "orders-jpo-detail-add-line-part-\(part.id ?? 0)"
+                                id: "orders-jpo-detail-add-line-part-\(stableAccessibilitySuffix(id: part.id, name: part.name))"
                             )
                         }
                     }
