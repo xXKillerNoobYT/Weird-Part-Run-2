@@ -235,7 +235,8 @@ struct IOSVehicleDetailPage: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(part.partName).font(.subheadline)
-                            Text("Qty: \(part.quantity) / Target: \(part.targetQty ?? 0)")
+                            // Target shown only when set — matches the progress bar's gate.
+                            Text(truckStockQtyText(part))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
@@ -250,7 +251,7 @@ struct IOSVehicleDetailPage: View {
                     }
                     .rowAccessibility(
                         label: part.partName,
-                        value: "Quantity \(part.quantity) of target \(part.targetQty ?? 0)",
+                        value: truckStockAccessibilityValue(part),
                         id: "fleet-truck-stock-row-\(part.id)"
                     )
                 }
@@ -598,6 +599,22 @@ struct IOSVehicleDetailPage: View {
         if current < (min ?? 0) { return .red }
         if current >= target { return .green }
         return .orange
+    }
+
+    /// "Qty: 3 / Target: 5", or just "Qty: 3" when no target is set — an
+    /// unset target must never display or announce as "Target: 0".
+    private func truckStockQtyText(_ part: FleetService.VehicleStockItem) -> String {
+        if let target = part.targetQty, target > 0 {
+            return "Qty: \(part.quantity) / Target: \(target)"
+        }
+        return "Qty: \(part.quantity)"
+    }
+
+    private func truckStockAccessibilityValue(_ part: FleetService.VehicleStockItem) -> String {
+        if let target = part.targetQty, target > 0 {
+            return "Quantity \(part.quantity) of target \(target)"
+        }
+        return "Quantity \(part.quantity)"
     }
 
     private func conditionColor(_ condition: String) -> Color {
