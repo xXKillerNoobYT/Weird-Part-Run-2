@@ -425,7 +425,8 @@ struct IOSFleetDashboardPage: View {
     }
 
     private func upcomingMaintenanceAccessibilityValue(_ item: FleetService.FleetMaintenanceItem) -> String {
-        let days = Int(item.daysUntil)
+        // Round, don't truncate — 0.6 days is "due in 1 day", not "due today".
+        let days = Int(item.daysUntil.rounded())
         let dayWord = abs(days) == 1 ? "day" : "days"
         if days < 0 {
             return "Overdue by \(abs(days)) \(dayWord)"

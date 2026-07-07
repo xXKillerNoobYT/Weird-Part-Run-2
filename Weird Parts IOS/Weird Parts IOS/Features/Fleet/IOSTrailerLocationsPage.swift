@@ -148,8 +148,10 @@ struct IOSTrailerLocationsPage: View {
         var value = trailer.status.replacingOccurrences(of: "_", with: " ")
         if let job = trailer.currentJobName {
             value += ", at \(job)"
-        } else {
+        } else if trailer.assignedVehicleName == nil {
             value += ", in the yard, unassigned"
+        } else {
+            value += ", in the yard"
         }
         if let vehicle = trailer.assignedVehicleName {
             value += ", towed by \(vehicle)"

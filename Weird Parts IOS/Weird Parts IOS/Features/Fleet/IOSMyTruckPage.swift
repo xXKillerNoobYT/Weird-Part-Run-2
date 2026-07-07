@@ -90,7 +90,12 @@ struct IOSMyTruckPage: View {
         .sheet(item: $activeSheet) { sheet in
             sheetContent(sheet)
         }
-        .navigationDestination(isPresented: $showTrailerDetail) {
+        .navigationDestination(isPresented: Binding(
+            // Guarded: never push a blank destination if stats reload and the
+            // trailer disappears while the flag is set.
+            get: { showTrailerDetail && vehicleStats?.trailerId != nil },
+            set: { showTrailerDetail = $0 }
+        )) {
             if let trailerId = vehicleStats?.trailerId {
                 IOSTrailerDetailPage(trailerId: trailerId)
             }
