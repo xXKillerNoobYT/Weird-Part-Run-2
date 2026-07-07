@@ -74,7 +74,8 @@ struct SecurityAdminPage: View {
     /// Name of the user whose session is pending force-logout, so the
     /// confirmation names whose access is being cut.
     private var selectedSessionUserName: String {
-        sessions.first(where: { $0.id == selectedSessionId })?.userName ?? "this user"
+        guard let selectedSessionId else { return "this user" }
+        return sessions.first(where: { $0.id == selectedSessionId })?.userName ?? "this user"
     }
 
     private enum ActiveSheet: Identifiable {

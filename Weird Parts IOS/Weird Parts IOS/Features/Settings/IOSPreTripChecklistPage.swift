@@ -211,34 +211,31 @@ struct IOSPreTripChecklistPage: View {
                         }
 
                         if !collapsedSectionIds.contains(section.id) {
-                            ForEach($section.items) { $item in
-                                let itemIndex = section.items.firstIndex(where: { $0.id == $item.wrappedValue.id })
-                                ChecklistItemEditor(item: $item)
+                            ForEach(Array(zip(section.items.indices, section.items)), id: \.1.id) { itemIndex, _ in
+                                ChecklistItemEditor(item: $section.items[itemIndex])
                                     .contextMenu {
                                         Button {
-                                            if let itemIndex, itemIndex > 0 {
+                                            if itemIndex > 0 {
                                                 moveItems(in: section.id, from: IndexSet(integer: itemIndex), to: itemIndex - 1)
                                             }
                                         } label: {
                                             Label("Move Up", systemImage: "arrow.up")
                                         }
-                                        .disabled((itemIndex ?? 0) <= 0)
+                                        .disabled(itemIndex <= 0)
 
                                         Button {
-                                            if let itemIndex, itemIndex < section.items.count - 1 {
+                                            if itemIndex < section.items.count - 1 {
                                                 moveItems(in: section.id, from: IndexSet(integer: itemIndex), to: itemIndex + 2)
                                             }
                                         } label: {
                                             Label("Move Down", systemImage: "arrow.down")
                                         }
-                                        .disabled((itemIndex ?? section.items.count - 1) >= section.items.count - 1)
+                                        .disabled(itemIndex >= section.items.count - 1)
 
                                         Button(role: .destructive) {
-                                            if let itemIndex {
-                                                deleteItemSectionId = section.id
-                                                deleteItemOffsets = IndexSet(integer: itemIndex)
-                                                showDeleteItemConfirm = true
-                                            }
+                                            deleteItemSectionId = section.id
+                                            deleteItemOffsets = IndexSet(integer: itemIndex)
+                                            showDeleteItemConfirm = true
                                         } label: {
                                             Label("Delete Item", systemImage: "trash")
                                         }
