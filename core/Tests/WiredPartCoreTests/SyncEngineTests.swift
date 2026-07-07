@@ -6,7 +6,13 @@ import Foundation
 struct SyncEngineTests {
 
     private func freshDB() throws -> AppDatabase {
-        try AppDatabase.openInMemoryDatabase()
+        let db = try AppDatabase.openInMemoryDatabase()
+        // Migration 112 backfills seeded reference rows into _change_log; these
+        // tests assert on specific tracked entries, so start from an empty log.
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: "DELETE FROM _change_log")
+        }
+        return db
     }
 
     @Test("Initial state is idle with zero pending")

@@ -170,6 +170,7 @@ struct NotebooksServiceTests {
                 WHERE table_name = 'notebook_entries'
                   AND record_id = ?
                   AND operation = 'UPDATE'
+                  AND changed_fields IS NOT NULL
                 ORDER BY id DESC
                 """, arguments: [entryId])
         }
@@ -231,6 +232,7 @@ struct NotebooksServiceTests {
                 WHERE table_name = 'notebook_entries'
                   AND record_id = ?
                   AND operation = 'UPDATE'
+                  AND changed_fields IS NOT NULL
                 ORDER BY id DESC
                 """, arguments: [entryId])
         }

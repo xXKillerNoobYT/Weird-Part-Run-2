@@ -136,7 +136,7 @@ struct BluetoothPage: View {
             ])
         }
         .onAppear {
-            bluetoothEnabled = UserDefaults.standard.bool(forKey: "bluetooth_sync_enabled")
+            bluetoothEnabled = IOSSyncManager.bluetoothSyncEnabled
         }
     }
 

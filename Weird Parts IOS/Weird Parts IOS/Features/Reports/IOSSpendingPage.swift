@@ -13,7 +13,6 @@ struct IOSSpendingPage: View {
 
     @State private var summary: ReportsService.SpendingSummary?
     @State private var isLoading = true
-    @State private var selectedDays = 30
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
     @State private var dateRange: ReportDateRange = .thisWeek
@@ -25,12 +24,9 @@ struct IOSSpendingPage: View {
     private var effectiveStart: Date { dateRange.dateInterval?.start ?? customStart }
     private var effectiveEnd: Date { dateRange.dateInterval?.end ?? customEnd }
 
-    private let periodOptions = [7, 14, 30, 60, 90]
-
     var body: some View {
         VStack(spacing: 0) {
             StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
-            periodPicker
             spendingContent
         }
         .navigationTitle("Spending")
@@ -72,34 +68,6 @@ struct IOSSpendingPage: View {
         .onChange(of: dateRange) { loadData() }
         .onChange(of: customStart) { loadData() }
         .onChange(of: customEnd) { loadData() }
-    }
-
-    // MARK: - Period Picker
-
-    private var periodPicker: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(periodOptions, id: \.self) { days in
-                    Button {
-                        selectedDays = days
-                        loadData()
-                    } label: {
-                        Text("\(days)d")
-                            .font(.caption)
-                            .fontWeight(selectedDays == days ? .bold : .regular)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule().fill(selectedDays == days ? Color.accentColor : Color.secondary.opacity(0.2))
-                            )
-                            .foregroundStyle(selectedDays == days ? .white : .primary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal)
-            .padding(.vertical, 8)
-        }
     }
 
     // MARK: - Spending Content
@@ -219,7 +187,9 @@ struct IOSSpendingPage: View {
         isLoading = summary == nil
         loadError = nil
         do {
-            summary = try service.getSpendingSummary(days: selectedDays)
+            // Query driven by the StandardFilterBar range — it previously
+            // rendered but never reached the query (2026-07-06 audit).
+            summary = try service.getSpendingSummary(start: effectiveStart, end: effectiveEnd)
         } catch {
             loadError = userFriendlyError(error, context: "load reports")
         }
@@ -235,7 +205,7 @@ struct IOSSpendingPage: View {
             name: .reportsSpendingPageActive,
             object: nil,
             userInfo: [
-                "context": "Spending Report: range \(dateRange.rawValue), period \(selectedDays)d, total spend \(totalSpend), PO count \(poCount), top supplier \(topSupplier)."
+                "context": "Spending Report: range \(dateRange.rawValue), total spend \(totalSpend), PO count \(poCount), top supplier \(topSupplier)."
             ]
         )
     }

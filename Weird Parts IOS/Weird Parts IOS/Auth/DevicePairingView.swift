@@ -19,9 +19,10 @@ struct DevicePairingView: View {
     private var syncManager: IOSSyncManager { appCore.syncManager }
 
     struct DiscoveredShop: Identifiable {
-        let id: String
+        let id: String        // peer device id (or manual address)
         let name: String
-        let address: String
+        let address: String   // Wi-Fi address, or "" for a Bluetooth-only peer
+        let isBluetooth: Bool // true = pair over Bluetooth (no Wi-Fi needed)
     }
 
     private var isValid: Bool {
@@ -120,24 +121,21 @@ struct DevicePairingView: View {
             // Show discovered peers as potential shops
             ForEach(syncManager.discoveredPeers) { peer in
                 Button {
-                    guard let address = IOSSyncManager.normalizedShopServerAddress(peer.address) else {
-                        errorMessage = "This device was found over Bluetooth only. Keep both devices on the same Wi-Fi network or enter the shop address manually."
-                        return
-                    }
                     errorMessage = nil
-                    syncManager.stopPeerDiscovery()
-                    discoveredShop = DiscoveredShop(id: peer.id, name: peer.name, address: address)
+                    // Always pair a discovered peer over Bluetooth — it works with no
+                    // Wi-Fi at all. Wi-Fi/LAN is then used automatically for sync
+                    // speed once paired. Keep discovery/Multipeer running; the live
+                    // session is required for the handshake.
+                    discoveredShop = DiscoveredShop(id: peer.id, name: peer.name, address: peer.address ?? "", isBluetooth: true)
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "desktopcomputer")
                             .foregroundStyle(.green)
                         Text(peer.name)
                             .fontWeight(.medium)
-                        if peer.address == nil {
-                            Text("Needs Wi-Fi address")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                        Text(peer.address == nil ? "Bluetooth" : "Bluetooth · Wi-Fi")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                         Spacer()
                         Image(systemName: "chevron.right")
                             .font(.caption)
@@ -172,7 +170,8 @@ struct DevicePairingView: View {
                     discoveredShop = DiscoveredShop(
                         id: address,
                         name: address,
-                        address: address
+                        address: address,
+                        isBluetooth: false
                     )
                 }
                 .buttonStyle(.bordered)
@@ -228,8 +227,16 @@ struct DevicePairingView: View {
                 .textFieldStyle(.roundedBorder)
                 .multilineTextAlignment(.center)
                 .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled()
                 .font(.title3.monospaced())
                 .frame(maxWidth: 240)
+                // Auto-format while typing AND on paste: uppercase, strip junk,
+                // insert the dash after 4 chars (ABCD-1234). A pasted "abcd1234",
+                // "ABCD-1234", or "abcd 1234" all normalize to the same valid code.
+                .onChange(of: pairingCode) { _, newValue in
+                    let formatted = formatPairingCodeInput(newValue)
+                    if formatted != newValue { pairingCode = formatted }
+                }
 
             if let error = errorMessage {
                 Text(error)
@@ -282,17 +289,82 @@ struct DevicePairingView: View {
         errorMessage = nil
 
         do {
-            // Pair with the shop — stores address and keys
-            try await syncManager.pairWithShop(
-                shopAddress: shop.address,
-                pairingCode: pairingCode.trimmingCharacters(in: .whitespacesAndNewlines)
-            )
+            let code = pairingCode.trimmingCharacters(in: .whitespacesAndNewlines)
+            if shop.isBluetooth {
+                do {
+                    // Pair entirely over Bluetooth — no Wi-Fi address required.
+                    try await syncManager.pairWithPeerOverBluetooth(
+                        hostDeviceId: shop.id,
+                        hostName: shop.name,
+                        pairingCode: code
+                    )
+                } catch let e as MultipeerPairingError
+                    where shouldFallBackToLAN(e) && !shop.address.isEmpty {
+                    // Bluetooth couldn't complete but the peer also advertised a
+                    // Wi-Fi/LAN address (e.g. its Bluetooth radio is off) — fall
+                    // back to LAN pairing rather than dead-ending (Copilot review
+                    // on PR #1422). Bluetooth stays the primary path; Wi-Fi is
+                    // the speed/backup path.
+                    try await syncManager.pairWithShop(
+                        shopAddress: shop.address,
+                        pairingCode: code
+                    )
+                }
+            } else {
+                // Pair with the shop over Wi-Fi/LAN — stores address and keys.
+                try await syncManager.pairWithShop(
+                    shopAddress: shop.address,
+                    pairingCode: code
+                )
+            }
 
             // Navigate to the sync waiting screen for initial download
             navigateToSync = true
+        } catch let e as MultipeerPairingError {
+            errorMessage = bluetoothPairingErrorMessage(e)
         } catch {
             errorMessage = userFriendlyError(error, context: "pair device")
         }
         isConnecting = false
+    }
+
+    /// Whether a failed Bluetooth pairing attempt should retry over the peer's
+    /// advertised Wi-Fi/LAN address. Connectivity-class failures (couldn't
+    /// connect, link dropped, host silent, Multipeer not running) are worth a
+    /// LAN retry. `.rejected` is NOT — the code itself was wrong or already
+    /// used, and retrying the same code over LAN would just burn the attempt.
+    private func shouldFallBackToLAN(_ error: MultipeerPairingError) -> Bool {
+        switch error {
+        case .connectionTimeout, .responseTimeout, .sendFailed, .notAvailable:
+            return true
+        case .rejected:
+            return false
+        }
+    }
+
+    private func bluetoothPairingErrorMessage(_ error: MultipeerPairingError) -> String {
+        switch error {
+        case .connectionTimeout:
+            return "Couldn't connect over Bluetooth. Keep both devices close together with Bluetooth on, and make sure the other device's Add-a-Device screen is open."
+        case .responseTimeout:
+            return "The other device didn't respond. Make sure its Add-a-Device screen is still open with a valid code, then try again."
+        case .rejected:
+            return "That pairing code was wrong or already used. Get a fresh code on the other device and re-enter it."
+        case .sendFailed:
+            return "Lost the Bluetooth connection while pairing. Move the devices closer and try again."
+        case .notAvailable:
+            return "Bluetooth sync isn't running yet. Go back, wait a moment, then try again."
+        }
+    }
+
+    /// Normalize/format a pairing code as the user types or pastes: keep only
+    /// letters/digits, uppercase, cap at 8, and insert a dash after 4 → "ABCD-1234".
+    /// This makes both typing (auto-dash) and pasting (any format) produce a valid code.
+    private func formatPairingCodeInput(_ raw: String) -> String {
+        let allowed = raw.uppercased().filter { $0.isNumber || ($0.isLetter && $0.isASCII) }
+        let capped = String(allowed.prefix(8))
+        guard capped.count > 4 else { return capped }
+        let idx = capped.index(capped.startIndex, offsetBy: 4)
+        return String(capped[..<idx]) + "-" + String(capped[idx...])
     }
 }

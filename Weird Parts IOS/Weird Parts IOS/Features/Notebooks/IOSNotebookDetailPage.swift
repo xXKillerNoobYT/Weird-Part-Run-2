@@ -1208,6 +1208,22 @@ struct IOSNotebookDetailPage: View {
     private struct ChecklistItemData: Codable {
         let text: String
         let checked: Bool
+
+        // Tolerant decode: AddNotebookEntrySheet historically wrote `checked` as
+        // the STRINGS "true"/"false", which a plain Bool decode rejects — so every
+        // checklist saved there silently rendered as nothing here (2026-07-06
+        // panel-quality audit). New rows are canonical Bool; legacy rows decode too.
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            text = try container.decode(String.self, forKey: .text)
+            if let flag = try? container.decode(Bool.self, forKey: .checked) {
+                checked = flag
+            } else if let legacy = try? container.decode(String.self, forKey: .checked) {
+                checked = legacy == "true"
+            } else {
+                checked = false
+            }
+        }
     }
 
     private func decodeChecklistItems(_ json: String?) -> [ChecklistItemData]? {

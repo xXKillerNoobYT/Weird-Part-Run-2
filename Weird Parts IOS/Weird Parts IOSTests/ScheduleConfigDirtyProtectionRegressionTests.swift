@@ -28,7 +28,9 @@ final class ScheduleConfigDirtyProtectionRegressionTests: XCTestCase {
             "Shift template form signature must derive from the selected work days."
         )
         XCTAssertTrue(
-            source.contains("name.trimmingCharacters(in: .whitespaces),\n            String(selectedHatId),\n            days,"),
+            // .whitespacesAndNewlines, not .whitespaces — updated with the
+            // project-wide trimming umbrella fix.
+            source.contains("name.trimmingCharacters(in: .whitespacesAndNewlines),\n            String(selectedHatId),\n            days,"),
             "Shift template form signature must lead with the trimmed name, hat, and selected days."
         )
         for field in ["Formatters.timeHHmmFormatter.string(from: startTime)",

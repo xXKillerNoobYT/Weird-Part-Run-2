@@ -45,6 +45,30 @@ public enum ChangeTracker {
         let oldJSON: String? = oldValues.flatMap { try? jsonEncode($0) }
 
         try db.writer.write { dbConnection in
+            // The migration-112 triggers already log a bare entry (device_id = '',
+            // no field detail) for every write. When a caller ALSO tracks manually
+            // (richer: changed_fields/old_values), UPGRADE the trigger's bare row
+            // instead of inserting a duplicate — otherwise every reader of
+            // _change_log (sync push, notebook history, audit log) sees doubles.
+            // Plain UPDATE + changesCount (not RETURNING — unsupported on older
+            // system SQLite builds; Copilot review on PR #1422).
+            try dbConnection.execute(
+                sql: """
+                    UPDATE _change_log
+                    SET device_id = ?, changed_fields = ?, old_values = ?
+                    WHERE id = (
+                        SELECT MAX(id) FROM _change_log
+                        WHERE table_name = ? AND record_id = ? AND operation = ?
+                          AND synced = 0 AND device_id = '' AND changed_fields IS NULL
+                    )
+                    """,
+                arguments: [
+                    resolvedDeviceId, changedJSON, oldJSON,
+                    tableName, recordId, operation.rawValue,
+                ]
+            )
+            guard dbConnection.changesCount == 0 else { return }
+
             try dbConnection.execute(
                 sql: """
                     INSERT INTO _change_log
@@ -68,12 +92,26 @@ public enum ChangeTracker {
     /// Get unsynced changes, ordered by timestamp. Capped at `limit` rows to prevent OOM on
     /// long-offline devices with large backlogs.
     public static func getPendingChanges(db: AppDatabase, limit: Int = 500) throws -> [ChangeLogEntry] {
-        try db.writer.read { dbConnection in
+        let entries = try db.writer.read { dbConnection in
             try ChangeLogEntry.fetchAll(
                 dbConnection,
                 sql: "SELECT * FROM _change_log WHERE synced = 0 ORDER BY timestamp ASC LIMIT ?",
                 arguments: [limit]
             )
+        }
+        return Self.fillingLocalDeviceId(entries)
+    }
+
+    /// The change-tracking triggers (migration 112) write device_id as '' — SQL
+    /// triggers cannot know the device identity. Substitute this device's id at
+    /// read time so pushed changes are correctly attributed for LWW merging.
+    static func fillingLocalDeviceId(_ entries: [ChangeLogEntry]) -> [ChangeLogEntry] {
+        let localId = DeviceIdentity.current
+        return entries.map { entry in
+            guard entry.deviceId.isEmpty else { return entry }
+            var filled = entry
+            filled.deviceId = localId
+            return filled
         }
     }
 
@@ -167,13 +205,14 @@ public enum ChangeTracker {
     /// long-offline peers with large backlogs. Callers should check if the batch is full and
     /// re-request with the last returned sequence to paginate.
     public static func getChangesSince(db: AppDatabase, sinceSequence: Int64, limit: Int = 500) throws -> [ChangeLogEntry] {
-        try db.writer.read { dbConnection in
+        let entries = try db.writer.read { dbConnection in
             try ChangeLogEntry.fetchAll(
                 dbConnection,
                 sql: "SELECT * FROM _change_log WHERE sequence > ? ORDER BY sequence ASC LIMIT ?",
                 arguments: [sinceSequence, limit]
             )
         }
+        return Self.fillingLocalDeviceId(entries)
     }
 
     /// Get the current maximum sequence number in our change log.

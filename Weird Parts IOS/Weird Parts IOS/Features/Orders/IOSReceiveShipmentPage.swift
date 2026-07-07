@@ -1316,7 +1316,10 @@ struct IOSReceiveShipmentPage: View {
     }
 }
 
-func receivingBarcodeScanBaseQuantity(
+// Pure quantity helper — `nonisolated` for the same reason as the price helpers
+// below: keep it off the file's default `@MainActor` isolation so it is safe to
+// call from tests/background without a Swift 6 runtime isolation trap.
+nonisolated func receivingBarcodeScanBaseQuantity(
     displayedQty: Int?,
     persistedReceivedQty: Int,
     hasScannerCount: Bool,
@@ -1334,11 +1337,16 @@ struct ReceiveShipmentPriceValidationItem {
     let partName: String
 }
 
-func isValidReceiveShipmentDifferentPrice(_ price: Double) -> Bool {
+// Pure validation helpers — no UI or shared state. Marked `nonisolated` so they
+// are not swept into the file's default `@MainActor` isolation
+// (SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor). Without this, calling them off the
+// main thread (unit tests, background tasks) trips Swift 6's runtime isolation
+// assertion (`swift_task_isCurrentExecutor` → `dispatch_assert_queue`) and crashes.
+nonisolated func isValidReceiveShipmentDifferentPrice(_ price: Double) -> Bool {
     price > 0 && price.isFinite
 }
 
-func receiveShipmentDifferentPriceValidationMessage(
+nonisolated func receiveShipmentDifferentPriceValidationMessage(
     for items: [ReceiveShipmentPriceValidationItem],
     priceVerifications: [Int64: PriceVerification]
 ) -> String? {

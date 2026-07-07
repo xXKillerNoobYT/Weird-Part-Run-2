@@ -1,6 +1,12 @@
 import SwiftUI
 import WiredPartCore
 
+/// Save-path failures that must surface to the user instead of silently no-op'ing.
+private enum BreakSettingsSaveError: Error {
+    /// A bonus row loaded from the DB has no id, so it can't be updated.
+    case bonusMissingId
+}
+
 /// Break/lunch compliance settings page.
 ///
 /// 6-section form:
@@ -600,12 +606,19 @@ struct IOSBreakSettingsPage: View {
             // Save bonuses
             let statePolicy = selectedPolicy(type: "state_required_paid")
             if let policyId = statePolicy?.id {
-                // Toggle existing bonuses
+                // Update existing bonuses — amount AND enabled flag. toggleBonus
+                // alone silently dropped edited amounts (2026-07-06 audit).
                 for bonus in bonuses {
+                    // Bonuses were loaded from the DB, so a nil id means the row
+                    // can't be addressed — fail the save loudly rather than
+                    // UPDATE ... WHERE id = 0, which no-ops and reports success.
+                    guard let bonusId = bonus.id else {
+                        throw BreakSettingsSaveError.bonusMissingId
+                    }
                     if bonus.bonusType == "lunch" {
-                        try breakSvc.toggleBonus(bonusId: bonus.id ?? 0, isEnabled: lunchBonusEnabled)
+                        try breakSvc.updateBonus(bonusId: bonusId, bonusAmount: lunchBonusAmount, isEnabled: lunchBonusEnabled)
                     } else if bonus.bonusType == "break" {
-                        try breakSvc.toggleBonus(bonusId: bonus.id ?? 0, isEnabled: breakBonusEnabled)
+                        try breakSvc.updateBonus(bonusId: bonusId, bonusAmount: breakBonusAmount, isEnabled: breakBonusEnabled)
                     }
                 }
 

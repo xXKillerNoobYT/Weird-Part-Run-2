@@ -527,6 +527,9 @@ struct IOSUnifiedApprovalsPage: View {
                 .fontWeight(.medium)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
+                // Approve/deny are the page's primary actions and were ~36pt tall;
+                // meet the 44pt floor (2026-07-06 panel-quality audit).
+                .dsMinTapTarget()
         }
         .buttonStyle(.borderedProminent)
         .tint(color)
@@ -537,6 +540,7 @@ struct IOSUnifiedApprovalsPage: View {
                 ProgressView()
             }
         }
+        .accessibilityHint(title == "Deny" ? "Denies this approval request." : "\(title)s this approval request.")
     }
 
     private func statusBadge(_ status: String, color: Color) -> some View {

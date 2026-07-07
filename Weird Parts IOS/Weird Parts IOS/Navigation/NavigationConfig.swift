@@ -110,7 +110,8 @@ let appModules: [AppModule] = [
         AppTab(id: "warehouse-returns", label: "Returns", icon: "arrow.uturn.left", path: "/warehouse/returns"),
         AppTab(id: "warehouse-tools", label: "Tools", icon: "wrench.and.screwdriver.fill", path: "/warehouse/tools"),
         AppTab(id: "warehouse-leaderboard", label: "Leaderboard", icon: "trophy.fill", path: "/warehouse/leaderboard", permission: "manage_warehouse"),
-        AppTab(id: "warehouse-network", label: "Network", icon: "antenna.radiowaves.left.and.right", path: "/warehouse/network", permission: "manage_devices"),
+        // Network/devices moved to its own top-level "Devices" module — it is an
+        // app-wide sync/pairing concern, not a warehouse sub-feature.
         AppTab(id: "warehouse-settings", label: "Settings", icon: "gearshape.fill", path: "/warehouse/settings"),
     ], permission: "view_warehouse"),
     // 6. Orders — JPOs, POs, procurement
@@ -188,7 +189,12 @@ let appModules: [AppModule] = [
         AppTab(id: "office-teams", label: "Teams", icon: "person.3.fill", path: "/office/teams"),
         AppTab(id: "office-reports", label: "Reports", icon: "chart.pie.fill", path: "/office/reports", permission: "view_reports"),
     ], permission: officeAccessPermission),
-    // 13. Settings — app config, security
+    // 13. Devices — network discovery, pairing & sync (standalone top-level page;
+    //     previously buried under Warehouse → Network).
+    AppModule(id: "devices", label: "Devices", icon: "antenna.radiowaves.left.and.right", tabs: [
+        AppTab(id: "devices-network", label: "Network", icon: "antenna.radiowaves.left.and.right", path: "/devices/network"),
+    ], permission: "manage_devices"),
+    // 14. Settings — app config, security
     AppModule(id: "settings", label: "Settings", icon: "gearshape.fill", tabs: [
         AppTab(id: "settings-themes", label: "Themes", icon: "paintpalette.fill", path: "/settings/themes"),
         AppTab(id: "settings-app-config", label: "App Config", icon: "slider.horizontal.3", path: "/settings/app-config"),

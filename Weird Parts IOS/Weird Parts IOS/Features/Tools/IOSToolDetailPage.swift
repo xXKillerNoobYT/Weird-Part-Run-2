@@ -153,7 +153,10 @@ struct IOSToolDetailPage: View {
                 }
             }
 
-            // Pending verification banner
+            // Pending verification banner. For managers, each pending edit is
+            // tappable and opens the approve/reject sheet directly — the sheet
+            // existed but NOTHING ever presented it, leaving pending edits stuck
+            // unless a QR scan path was used (2026-07-06 panel-quality audit).
             if !pendingEdits.isEmpty {
                 Section {
                     HStack {
@@ -163,11 +166,42 @@ struct IOSToolDetailPage: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("\(pendingEdits.count) edit(s) pending verification")
                                 .font(.subheadline).fontWeight(.medium)
-                            Text("A manager must scan this tool's QR code to approve.")
+                            Text(appCore.hasPermission("manage_tools")
+                                 ? "Tap an edit below to review and approve it."
+                                 : "A manager must review these to approve.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
                     .padding(.vertical, 2)
+
+                    if appCore.hasPermission("manage_tools") {
+                        ForEach(pendingEdits, id: \.id) { edit in
+                            Button {
+                                activeSheet = .pendingVerification(editId: edit.id)
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(edit.fieldName ?? "Field change")
+                                            .font(.subheadline)
+                                        Text("\(edit.oldValue ?? "—") → \(edit.newValue ?? "—")")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
+                                        .accessibilityHidden(true)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .frame(minHeight: 44)
+                            .accessibilityLabel("Pending edit to \(edit.fieldName ?? "a field")")
+                            .accessibilityHint("Opens the approve or reject sheet.")
+                        }
+                    }
                 }
             }
 

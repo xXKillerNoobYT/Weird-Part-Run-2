@@ -6,7 +6,13 @@ import GRDB
 struct BaseRepositoryTests {
 
     private func freshDB() throws -> AppDatabase {
-        try AppDatabase.openInMemoryDatabase()
+        let db = try AppDatabase.openInMemoryDatabase()
+        // Migration 112 backfills seeded reference rows into _change_log; these
+        // tests assert on specific tracked entries, so start from an empty log.
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: "DELETE FROM _change_log")
+        }
+        return db
     }
 
     // MARK: - Insert
@@ -198,6 +204,10 @@ struct BaseRepositoryTests {
             "is_active": 1.databaseValue,
         ], track: false)
 
+        // The migration-112 triggers log even `track: false` writes (sync must
+        // see every change); clear so the assertion isolates the tracked op.
+        try db.writer.write { try $0.execute(sql: "DELETE FROM _change_log") }
+
         _ = try repo.update(id, data: [
             "email": "new@test.com".databaseValue,
         ], track: true, deviceId: "test-device")
@@ -252,6 +262,10 @@ struct BaseRepositoryTests {
             "pin_hash": "fakehash".databaseValue,
             "is_active": 1.databaseValue,
         ], track: false)
+
+        // The migration-112 triggers log even `track: false` writes (sync must
+        // see every change); clear so the assertion isolates the tracked op.
+        try db.writer.write { try $0.execute(sql: "DELETE FROM _change_log") }
 
         _ = try repo.delete(id, track: true, deviceId: "test-device")
 
