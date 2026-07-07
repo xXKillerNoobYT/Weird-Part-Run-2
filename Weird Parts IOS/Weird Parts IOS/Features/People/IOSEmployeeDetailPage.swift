@@ -282,7 +282,7 @@ struct IOSEmployeeDetailPage: View {
                                     Button(role: .destructive) {
                                         skillToRemove = PendingSkill(id: skillId, name: skill.skillName)
                                     } label: {
-                                        Label("Delete", systemImage: "trash")
+                                        Label("Remove", systemImage: "minus.circle")
                                     }
                                 }
                             }
