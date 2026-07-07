@@ -59,6 +59,8 @@ struct IOSFuelPage: View {
                         Image(systemName: "questionmark.circle")
                     }
                     .accessibilityLabel("Help")
+                    .accessibilityHint("Shows help for fuel logs.")
+                    .accessibilityIdentifier("fleet-fuel-help-button")
                 }
             }
             .sheet(item: $activeSheet) { _ in
@@ -177,6 +179,30 @@ struct IOSFuelPage: View {
             }
         }
         .padding(.vertical, 4)
+        .rowAccessibility(
+            label: fuelRowAccessibilityLabel(log),
+            value: fuelRowAccessibilityValue(log),
+            id: "fleet-fuel-row-\(log.id)"
+        )
+    }
+
+    private func fuelRowAccessibilityLabel(_ log: FleetService.FuelRow) -> String {
+        var label = "\(log.vehicleName), \(log.logDate)"
+        if let station = log.station, !station.isEmpty {
+            label += ", at \(station)"
+        }
+        return label
+    }
+
+    private func fuelRowAccessibilityValue(_ log: FleetService.FuelRow) -> String {
+        var parts: [String] = []
+        if let cost = log.totalCost {
+            parts.append(String(format: "$%.2f", cost))
+        }
+        if let gallons = log.gallons {
+            parts.append(String(format: "%.1f gallons", gallons))
+        }
+        return parts.joined(separator: ", ")
     }
 
     // MARK: - Data Loading

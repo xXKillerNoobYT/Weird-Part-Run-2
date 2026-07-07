@@ -175,6 +175,11 @@ struct IOSVehiclesPage: View {
                     NavigationLink(destination: IOSVehicleDetailPage(vehicleId: vehicle.id)) {
                         vehicleRow(vehicle)
                     }
+                    .contextMenu {
+                        NavigationLink(destination: IOSVehicleDetailPage(vehicleId: vehicle.id)) {
+                            Label("View Details", systemImage: "doc.text.magnifyingglass")
+                        }
+                    }
                 }
                 .listStyle(.insetGrouped)
             }
@@ -209,7 +214,16 @@ struct IOSVehiclesPage: View {
     }
 
     private func vehicleRow(_ vehicle: FleetService.VehicleListItem) -> some View {
-        HStack(spacing: 12) {
+        var label = "\(vehicle.vehicleName), \(vehicle.vehicleNumber), \(vehicle.vehicleType)"
+        if let make = vehicle.make, let model = vehicle.model {
+            label += ", \(make) \(model)"
+            if let year = vehicle.year { label += " \(String(year))" }
+        }
+        var value = vehicle.status
+        if let user = vehicle.assignedUserName { value += ", assigned to \(user)" }
+        if let odo = vehicle.currentOdometer { value += ", \(odo.formatted()) miles" }
+
+        return HStack(spacing: 12) {
             Image(systemName: vehicleIcon(vehicle.vehicleType))
                 .font(.title2)
                 .foregroundStyle(Color.accentColor)
@@ -254,8 +268,12 @@ struct IOSVehiclesPage: View {
             }
         }
         .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(vehicle.vehicleName), \(vehicle.vehicleNumber), \(vehicle.vehicleType), status \(vehicle.status)")
+        .rowAccessibility(
+            label: label,
+            value: value,
+            hint: "Opens the vehicle detail page.",
+            id: "fleet-vehicle-row-\(vehicle.id)"
+        )
     }
 
     // MARK: - Helpers

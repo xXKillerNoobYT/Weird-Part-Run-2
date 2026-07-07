@@ -23,10 +23,12 @@ struct IOSTrailersPage: View {
     private enum ActiveSheet: Identifiable {
         case help
         case createTrailer
+        case trailerDetail(Int64)
         var id: String {
             switch self {
             case .help: "help"
             case .createTrailer: "createTrailer"
+            case .trailerDetail(let id): "trailerDetail-\(id)"
             }
         }
     }
@@ -66,6 +68,10 @@ struct IOSTrailersPage: View {
                 switch sheet {
                 case .createTrailer:
                     IOSCreateTrailerSheet(onSaved: { loadData() })
+                case .trailerDetail(let trailerId):
+                    NavigationStack {
+                        IOSTrailerDetailPage(trailerId: trailerId)
+                    }
                 case .help:
                     PageHelpSheet(
                         title: "Trailers Help",
@@ -110,6 +116,13 @@ struct IOSTrailersPage: View {
                 List(filteredTrailers, id: \.id) { trailer in
                     NavigationLink(destination: IOSTrailerDetailPage(trailerId: trailer.id)) {
                         trailerRow(trailer)
+                    }
+                    .contextMenu {
+                        Button {
+                            activeSheet = .trailerDetail(trailer.id)
+                        } label: {
+                            Label("View Details", systemImage: "doc.text.magnifyingglass")
+                        }
                     }
                 }
                 .listStyle(.insetGrouped)
@@ -214,6 +227,25 @@ struct IOSTrailersPage: View {
             }
         }
         .padding(.vertical, 4)
+        .rowAccessibility(
+            label: "Trailer \(trailer.trailerNumber), \(trailer.trailerType)",
+            value: trailerAccessibilityValue(trailer),
+            hint: "Opens the trailer detail page.",
+            id: "fleet-trailer-row-\(trailer.id)"
+        )
+    }
+
+    /// VoiceOver value for a trailer row: status, then the current job and tow
+    /// vehicle when assigned.
+    private func trailerAccessibilityValue(_ trailer: FleetService.TrailerListItem) -> String {
+        var value = trailer.status.replacingOccurrences(of: "_", with: " ")
+        if let job = trailer.currentJobName {
+            value += ", on job \(job)"
+        }
+        if let vehicle = trailer.assignedVehicleName {
+            value += ", towed by \(vehicle)"
+        }
+        return value
     }
 
     // MARK: - Helpers

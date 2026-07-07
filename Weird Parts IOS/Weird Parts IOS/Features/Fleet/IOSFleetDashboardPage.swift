@@ -60,6 +60,8 @@ struct IOSFleetDashboardPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Shows help for the fleet dashboard.")
+                .accessibilityIdentifier("fleet-dashboard-help-button")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -199,6 +201,7 @@ struct IOSFleetDashboardPage: View {
                 Image(systemName: icon)
                     .font(.title3)
                     .foregroundStyle(color)
+                    .accessibilityHidden(true)
                 Spacer()
             }
             Text(value)
@@ -213,8 +216,23 @@ struct IOSFleetDashboardPage: View {
         .frame(minWidth: 120)
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(title): \(value)")
+        .rowAccessibility(
+            label: spokenCardTitle(title),
+            value: value,
+            id: "fleet-dashboard-card-\(stableAccessibilitySuffix(id: nil, name: title))"
+        )
+    }
+
+    /// Sentence-quality card titles for VoiceOver — visual text stays abbreviated.
+    private func spokenCardTitle(_ title: String) -> String {
+        switch title {
+        case "Maint. Due": return "Maintenance due"
+        case "Overdue Inspect": return "Overdue inspections"
+        case "Fuel MTD": return "Fuel month to date"
+        case "Miles MTD": return "Miles month to date"
+        case "Maint. MTD": return "Maintenance month to date"
+        default: return title
+        }
     }
 
     // MARK: - Vehicle Status List
@@ -255,6 +273,17 @@ struct IOSFleetDashboardPage: View {
                             vehicleStatusRow(vehicle, todayString: todayString)
                         }
                         .buttonStyle(.plain)
+                        .contextMenu {
+                            NavigationLink(value: vehicle.id) {
+                                Label("Open Vehicle Details", systemImage: "car")
+                            }
+                        }
+                        .rowAccessibility(
+                            label: "\(vehicle.vehicleName), \(vehicle.driverName ?? "unassigned")",
+                            value: vehicleStatusAccessibilityValue(vehicle, todayString: todayString),
+                            hint: "Opens the vehicle detail page.",
+                            id: "fleet-dashboard-vehicle-row-\(vehicle.id)"
+                        )
 
                         if index < vehicles.count - 1 {
                             Divider().padding(.leading, 44)
@@ -319,6 +348,16 @@ struct IOSFleetDashboardPage: View {
         .padding(.vertical, 10)
     }
 
+    private func vehicleStatusAccessibilityValue(_ vehicle: FleetService.VehicleStatusItem, todayString: String) -> String {
+        let inspection: String
+        if let inspDate = vehicle.lastInspectionDate {
+            inspection = inspDate.hasPrefix(todayString) ? "inspected today" : "no inspection today"
+        } else {
+            inspection = "never inspected"
+        }
+        return "\(vehicle.status.capitalized), \(inspection)"
+    }
+
     // MARK: - Upcoming Maintenance
 
     @ViewBuilder
@@ -368,6 +407,11 @@ struct IOSFleetDashboardPage: View {
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
+                        .rowAccessibility(
+                            label: item.vehicleName,
+                            value: upcomingMaintenanceAccessibilityValue(item),
+                            id: "fleet-dashboard-upcoming-maintenance-row-\(item.id)"
+                        )
 
                         if index < upcomingMaintenance.count - 1 {
                             Divider().padding(.leading, 12)
@@ -377,6 +421,19 @@ struct IOSFleetDashboardPage: View {
                 .background(Color(.secondarySystemGroupedBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             }
+        }
+    }
+
+    private func upcomingMaintenanceAccessibilityValue(_ item: FleetService.FleetMaintenanceItem) -> String {
+        // Round, don't truncate — 0.6 days is "due in 1 day", not "due today".
+        let days = Int(item.daysUntil.rounded())
+        let dayWord = abs(days) == 1 ? "day" : "days"
+        if days < 0 {
+            return "Overdue by \(abs(days)) \(dayWord)"
+        } else if days == 0 {
+            return "Due today"
+        } else {
+            return "Due in \(days) \(dayWord)"
         }
     }
 
@@ -466,6 +523,31 @@ struct IOSFleetDashboardPage: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
+        .rowAccessibility(
+            label: maintenanceActivityAccessibilityLabel(record),
+            value: maintenanceActivityAccessibilityValue(record),
+            id: "fleet-dashboard-recent-maintenance-row-\(record.id)"
+        )
+    }
+
+    private func maintenanceActivityAccessibilityLabel(_ record: FleetService.MaintenanceRow) -> String {
+        var label = record.vehicleName
+        if let typeName = record.maintenanceTypeName {
+            label += ", \(typeName)"
+        }
+        if let performer = record.performedByName {
+            label += " by \(performer)"
+        }
+        return label
+    }
+
+    private func maintenanceActivityAccessibilityValue(_ record: FleetService.MaintenanceRow) -> String {
+        var parts: [String] = []
+        if let cost = record.cost {
+            parts.append(String(format: "$%.2f", cost))
+        }
+        parts.append(String(record.performedAt.prefix(10)))
+        return parts.joined(separator: ", ")
     }
 
     // MARK: - Fleet Reports Link
@@ -500,6 +582,12 @@ struct IOSFleetDashboardPage: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             }
             .buttonStyle(.plain)
+            .rowAccessibility(
+                label: "Fleet Reports",
+                value: "Fuel, mileage, and maintenance trends",
+                hint: "Opens fleet reports.",
+                id: "fleet-dashboard-reports-link"
+            )
         }
     }
 

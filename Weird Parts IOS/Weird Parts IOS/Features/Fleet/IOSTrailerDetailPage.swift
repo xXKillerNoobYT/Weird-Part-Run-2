@@ -58,6 +58,8 @@ struct IOSTrailerDetailPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("fleet-trailer-help-button")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -99,6 +101,13 @@ struct IOSTrailerDetailPage: View {
             .padding(.horizontal)
             .padding(.vertical, 8)
             .background(Color(.systemGroupedBackground))
+            .rowAccessibility(
+                label: "Trailer location: \(trailer.isAtShop ? "at shop" : "in the field")",
+                value: trailer.isAtShop
+                    ? "Minimum and maximum stock rules relaxed"
+                    : "Minimum and maximum stock rules enforced",
+                id: "fleet-trailer-location-badge"
+            )
 
             // Tab picker
             Picker("Tab", selection: $selectedTab) {
@@ -201,6 +210,11 @@ struct IOSTrailerDetailPage: View {
                             }
                         }
                     }
+                    .rowAccessibility(
+                        label: "\(item.partName), quantity \(item.quantity)",
+                        value: stockAccessibilityValue(item, isAtShop: trailer.isAtShop),
+                        id: "fleet-trailer-stock-row-\(item.id)"
+                    )
                 }
             }
         }
@@ -243,6 +257,10 @@ struct IOSTrailerDetailPage: View {
                                 Text("×\(item.quantity)")
                                     .font(.caption).monospacedDigit()
                             }
+                            .rowAccessibility(
+                                label: "\(item.partName), quantity \(item.quantity)",
+                                id: "fleet-trailer-storage-item-row-\(item.id)"
+                            )
                         }
                     }
                     Text("\(unitStock.count)/\(unit.capacitySlots ?? 0) slots used")
@@ -267,6 +285,10 @@ struct IOSTrailerDetailPage: View {
                             Text("×\(item.quantity)")
                                 .font(.caption).monospacedDigit()
                         }
+                        .rowAccessibility(
+                            label: "\(item.partName), quantity \(item.quantity), not assigned to a storage unit",
+                            id: "fleet-trailer-unassigned-item-row-\(item.id)"
+                        )
                     }
                 }
             }
@@ -304,12 +326,48 @@ struct IOSTrailerDetailPage: View {
                         }
                         Spacer()
                     }
+                    .rowAccessibility(
+                        label: record.locationLabel ?? record.locationType.capitalized,
+                        value: historyAccessibilityValue(record),
+                        id: "fleet-trailer-history-row-\(record.id)"
+                    )
                 }
             }
         }
     }
 
     // MARK: - Helpers
+
+    /// VoiceOver value for an inventory stock row: storage unit plus, when MIN/MAX
+    /// is enforced away from the shop, the same health reading as the progress tint.
+    private func stockAccessibilityValue(_ item: FleetService.TrailerStockItem, isAtShop: Bool) -> String? {
+        var parts: [String] = []
+        if let unitName = item.storageUnitName {
+            parts.append("In \(unitName)")
+        }
+        if !isAtShop, let minVal = item.minQty, let target = item.targetQty, target > 0 {
+            if item.quantity < minVal {
+                parts.append("Below minimum")
+            } else if item.quantity >= target {
+                parts.append("At target")
+            } else {
+                parts.append("Below target")
+            }
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: ", ")
+    }
+
+    /// VoiceOver value for a location history row: arrival, departure, and recorder.
+    private func historyAccessibilityValue(_ record: FleetService.TrailerLocationRecord) -> String {
+        var value = "Arrived \(record.arrivedAt.prefix(16))"
+        if let departed = record.departedAt {
+            value += ", departed \(departed.prefix(16))"
+        }
+        if let by = record.recordedByName {
+            value += ", recorded by \(by)"
+        }
+        return value
+    }
 
     private func storageIcon(_ unitType: String) -> String {
         switch unitType {
