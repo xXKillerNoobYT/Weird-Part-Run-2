@@ -7,11 +7,28 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>WiredPart uses Bluetooth to find and connect to nearby devices running WiredPart so you can add them to your company and sync data without a network.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>WiredPart uses the camera to scan QR codes, barcodes, and documents for parts, tools, text recognition, document scanning, and device pairing.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>WiredPart connects to the shop computer and nearby devices on your local network to sync data.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>WiredPart records your location when you clock in/out and for mileage tracking on job sites.</string>
+	<!--
+	  NSBonjourServices is REQUIRED on iOS 14+ for the app to discover other
+	  devices. Both the LAN sync (Network.framework NWBrowser, "_wiredpart._tcp")
+	  and Bluetooth/Wi-Fi Multipeer (serviceType "wiredpart-sync" → Bonjour
+	  "_wiredpart-sync._tcp"/"._udp") are silently blocked and return zero peers
+	  unless their service types are listed here. Keep these in sync with:
+	    core/Sources/WiredPartCore/Sync/PeerDiscovery.swift   (_wiredpart._tcp)
+	    core/Sources/WiredPartCore/Sync/MultipeerManager.swift (wiredpart-sync)
+	-->
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_wiredpart._tcp</string>
+		<string>_wiredpart-sync._tcp</string>
+		<string>_wiredpart-sync._udp</string>
+	</array>
 </dict>
 </plist>

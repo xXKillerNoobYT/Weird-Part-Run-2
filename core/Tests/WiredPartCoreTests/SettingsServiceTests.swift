@@ -806,7 +806,9 @@ struct SettingsServiceTests {
         let db = try AppDatabase.openInMemoryDatabase()
         let svc = SettingsService(db: db)
 
-        // A brand-new in-memory DB with no writes has an empty _change_log
+        // Migration-112 triggers log service-init default writes and seeds are
+        // backfilled (excluded from audit); clear so this asserts the empty case.
+        try db.writer.write { try $0.execute(sql: "DELETE FROM _change_log") }
         let log = try svc.listAuditLog(limit: 50)
         #expect(log.isEmpty)
     }

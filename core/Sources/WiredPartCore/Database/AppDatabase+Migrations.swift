@@ -6016,4 +6016,64 @@ private func registerMigration111ChatAttachmentStorageRelative(_ migrator: inout
             defaultValue: 0
         )
     }
+
+    migrator.registerMigration("112_change_tracking_triggers") { db in
+        // ── Automatic change tracking ─────────────────────────────────────────
+        // ChangeTracker.trackChange existed but NO service ever called it, so
+        // _change_log stayed empty and ongoing device-to-device sync never moved
+        // a single record (found 2026-07-06: a job created on one device never
+        // reached its peer). Instead of hand-editing every write site in 27
+        // services, install AFTER INSERT/UPDATE/DELETE triggers on every synced
+        // business table — every write path, present and future, is captured at
+        // the database level.
+        //
+        // Echo guard: while sync APPLIES a peer's changes, a row sits in
+        // _sync_apply_guard (inside the same transaction), and the triggers'
+        // WHEN clause skips logging — otherwise every applied change would be
+        // re-logged and ping-pong between devices forever.
+        try db.create(table: "_sync_apply_guard") { t in
+            t.column("id", .integer).primaryKey()
+        }
+
+        // device_id is filled in by ChangeTracker at read time (triggers cannot
+        // know the device identity); '' marks "this device".
+        let existingTables = try Set(String.fetchAll(
+            db, sql: "SELECT name FROM sqlite_master WHERE type = 'table'"
+        ))
+        for table in ConflictResolver.allowedSyncTables.sorted() {
+            guard !table.hasPrefix("_"), existingTables.contains(table) else { continue }
+            let columns = try String.fetchAll(
+                db, sql: "SELECT name FROM pragma_table_info(?)", arguments: [table]
+            )
+            guard columns.contains("id") else { continue }
+
+            for (op, rowRef) in [("INSERT", "NEW"), ("UPDATE", "NEW"), ("DELETE", "OLD")] {
+                try db.execute(sql: """
+                    CREATE TRIGGER IF NOT EXISTS trg_sync_\(table)_\(op.lowercased())
+                    AFTER \(op) ON [\(table)]
+                    WHEN (SELECT COUNT(*) FROM _sync_apply_guard) = 0
+                    BEGIN
+                        INSERT INTO _change_log (device_id, table_name, record_id, operation)
+                        VALUES ('', '\(table)', \(rowRef).id, '\(op)');
+                    END
+                    """)
+            }
+
+            // Backfill: rows written BEFORE the triggers existed (the entire
+            // database, since nothing ever logged) get one INSERT entry each so
+            // the first sync after this migration delivers pre-existing data.
+            // Receivers INSERT OR IGNORE / LWW-merge, so re-delivery is safe.
+            // The changed_fields sentinel marks these as bootstrap rows so the
+            // user-facing audit log can exclude them (they are not user actions);
+            // sync ignores changed_fields for INSERTs and pushes them normally.
+            try db.execute(sql: """
+                INSERT INTO _change_log (device_id, table_name, record_id, operation, changed_fields)
+                SELECT '', '\(table)', id, 'INSERT', '{"__backfill__":1}' FROM [\(table)]
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM _change_log
+                    WHERE table_name = '\(table)' AND record_id = [\(table)].id
+                )
+                """)
+        }
+    }
 }

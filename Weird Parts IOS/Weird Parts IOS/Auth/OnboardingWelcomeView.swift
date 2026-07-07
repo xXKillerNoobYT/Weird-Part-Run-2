@@ -101,13 +101,23 @@ struct OnboardingWelcomeView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(.systemBackground))
             .navigationDestination(for: OnboardingPath.self) { path in
+                // Prime system permissions first on both paths. On the join path
+                // this is essential: the Local Network prompt must be answered
+                // before DevicePairingView starts Bonjour discovery, or the first
+                // scan silently finds nothing.
                 switch path {
                 case .createNew:
-                    BusinessProfileSetupView()
-                        .environmentObject(appCore)
+                    PermissionsPrimingView {
+                        BusinessProfileSetupView()
+                            .environmentObject(appCore)
+                    }
+                    .environmentObject(appCore)
                 case .joinExisting:
-                    DevicePairingView()
-                        .environmentObject(appCore)
+                    PermissionsPrimingView {
+                        DevicePairingView()
+                            .environmentObject(appCore)
+                    }
+                    .environmentObject(appCore)
                 }
             }
         }

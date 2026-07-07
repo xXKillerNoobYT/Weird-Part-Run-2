@@ -202,8 +202,13 @@ public enum ConflictResolver {
         // Per-location forecasting
         "location_stock_targets", "forecast_settings", "location_free_space",
         "target_recommendations",
-        // AI (not _text_history — that's local-only)
-        "part_image_features", "image_match_history",
+        // AI (not _text_history — that's local-only). part_image_features is
+        // intentionally ABSENT: its feature_vector is a NOT NULL BLOB, and row
+        // JSON cannot carry blobs (see PeerManager.jsonRecordDict) — every row
+        // silently failed to apply on the receiver. Feature vectors are
+        // device-derived from local photos; binary payloads belong to
+        // BinarySyncManager (Copilot review on PR #1422).
+        "image_match_history",
         // Sync infrastructure (these are managed by sync itself)
         "_change_log", "_conflict_log", "_vector_clock", "_device_registry",
         "_binary_attachments", "_sync_transfer_log",
@@ -238,6 +243,14 @@ public enum ConflictResolver {
 
             do {
                 try db.writer.write { dbConn in
+                    // Echo guard: while this transaction applies a PEER's change,
+                    // the change-tracking triggers (migration 112) must not log
+                    // the write — otherwise every applied change would be re-
+                    // pushed back to the peer forever. The guard row lives only
+                    // inside this transaction (rolled back with it on failure).
+                    try dbConn.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
+                    defer { try? dbConn.execute(sql: "DELETE FROM _sync_apply_guard") }
+
                     switch change.operation.uppercased() {
                     case "DELETE":
                         try applyDelete(db: dbConn, change: change, localDeviceId: localDevice)
@@ -295,6 +308,128 @@ public enum ConflictResolver {
                 arguments: [conflictId]
             )
         }
+    }
+
+    // MARK: - Manual Conflict Resolution
+
+    /// Which side the reviewer chose to keep.
+    public enum ConflictResolutionChoice: Sendable {
+        case keepLocal
+        case keepRemote
+    }
+
+    public enum ConflictReviewError: Error, LocalizedError, Sendable {
+        case missingConflictId
+        case tableNotAllowed(String)
+        case invalidRecordId(String)
+        case unknownField(table: String, field: String)
+        case deletionConflict
+
+        public var errorDescription: String? {
+            switch self {
+            case .missingConflictId:
+                return "This sync conflict is missing its id. Reload conflicts and try again."
+            case .tableNotAllowed(let table):
+                return "The conflicted table \"\(table)\" is not a synced table, so its value cannot be edited from review."
+            case .invalidRecordId(let id):
+                return "The conflicted record id \"\(id)\" is not valid."
+            case .unknownField(let table, let field):
+                return "The field \"\(field)\" no longer exists on \"\(table)\", so this conflict can only be dismissed."
+            case .deletionConflict:
+                return "One side of this conflict deleted the record. Restoring a deleted record isn't supported from review yet — recreate it manually if needed."
+            }
+        }
+    }
+
+    /// Apply the reviewer's chosen value to the live record, then mark the
+    /// conflict reviewed.
+    ///
+    /// LWW auto-resolution already wrote the *winner* into the row when the merge
+    /// ran; the conflict log preserves both sides. Before this existed, the review
+    /// UI's "keep local"/"keep remote" buttons only marked the row reviewed — the
+    /// user's choice was never applied, which silently kept the LWW winner
+    /// (data-loss surface found in the 2026-07-06 panel-quality audit).
+    ///
+    /// When the chosen side is the recorded loser, this writes it back to the
+    /// record, bumps `updated_at` (when the table has one) so the manual choice
+    /// wins future LWW rounds, and logs the write to `_change_log` so the decision
+    /// propagates to peers. Choosing the side LWW already applied is a no-op write
+    /// and just marks the conflict reviewed.
+    public static func applyConflictResolution(
+        db: AppDatabase,
+        conflict: ConflictLogEntry,
+        choice: ConflictResolutionChoice
+    ) throws {
+        guard let conflictId = conflict.id else {
+            throw ConflictReviewError.missingConflictId
+        }
+
+        let chosen = (choice == .keepLocal) ? conflict.localValue : conflict.remoteValue
+        let winnerIsChosen =
+            (choice == .keepLocal && conflict.winner.lowercased() == "local") ||
+            (choice == .keepRemote && conflict.winner.lowercased() == "remote")
+
+        if !winnerIsChosen {
+            // Deletion conflicts store a sentinel, not a field value — a field-level
+            // UPDATE cannot resurrect a deleted row.
+            if chosen == "(DELETED)" || conflict.localValue == "(DELETED)" || conflict.remoteValue == "(DELETED)" {
+                throw ConflictReviewError.deletionConflict
+            }
+            guard isAllowedTable(conflict.tableName) else {
+                throw ConflictReviewError.tableNotAllowed(conflict.tableName)
+            }
+            guard let recordId = Int64(conflict.recordId) else {
+                throw ConflictReviewError.invalidRecordId(conflict.recordId)
+            }
+
+            try db.writer.write { dbConn in
+                // Guard against the change-tracking triggers double-logging: this
+                // path records its own change entry via trackChange below.
+                try dbConn.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
+                defer { try? dbConn.execute(sql: "DELETE FROM _sync_apply_guard") }
+
+                // Whitelist the field against the table's real columns — conflict
+                // rows come from sync and must not be able to inject SQL.
+                let columns = try String.fetchAll(
+                    dbConn,
+                    sql: "SELECT name FROM pragma_table_info(?)",
+                    arguments: [conflict.tableName]
+                )
+                guard columns.contains(conflict.fieldName) else {
+                    throw ConflictReviewError.unknownField(table: conflict.tableName, field: conflict.fieldName)
+                }
+
+                let writeValue: String? = (chosen == "(NULL)") ? nil : chosen
+                if columns.contains("updated_at") {
+                    try dbConn.execute(
+                        sql: "UPDATE [\(conflict.tableName)] SET [\(conflict.fieldName)] = ?, updated_at = ? WHERE id = ?",
+                        arguments: [writeValue, CoreFormatters.nowISO(), recordId]
+                    )
+                } else {
+                    try dbConn.execute(
+                        sql: "UPDATE [\(conflict.tableName)] SET [\(conflict.fieldName)] = ? WHERE id = ?",
+                        arguments: [writeValue, recordId]
+                    )
+                }
+            }
+
+            // Propagate the human decision to peers like any other local edit.
+            // recordId is the guard-validated Int64 from above — never a 0
+            // fallback. A nil chosen value means SQL NULL, same as the "(NULL)"
+            // sentinel: NSNull here makes jsonEncode drop the field, leaving a
+            // bare change entry whose enriched record_data carries the real NULL
+            // to peers — NOT an empty string (Copilot review on PR #1422).
+            let chosenIsNull = (chosen == nil || chosen == "(NULL)")
+            try ChangeTracker.trackChange(
+                db: db,
+                tableName: conflict.tableName,
+                recordId: recordId,
+                operation: .update,
+                changedFields: [conflict.fieldName: (chosenIsNull ? NSNull() : chosen! as Any)]
+            )
+        }
+
+        try markConflictReviewed(db: db, conflictId: conflictId)
     }
 
     /// Get conflict statistics.
@@ -398,20 +533,33 @@ public enum ConflictResolver {
         let localRow = try getLocalRecord(db: db, tableName: table, recordId: recordId)
 
         guard let existingRow = localRow else {
-            // Record doesn't exist locally — plain INSERT (handles NULLs correctly)
+            // Record doesn't exist locally — plain INSERT.
+            //
+            // NULL handling: recordDataFields is [String: String?], so a NULL
+            // column is a PRESENT key with a nil inner value. The old check
+            // (`if case .none = recordDataFields[key] as String??`) only matched
+            // MISSING keys — present-but-NULL columns got a "?" placeholder with
+            // no bound argument, and the statement threw on the argument-count
+            // mismatch. The bug stayed invisible because the sender used to drop
+            // any row containing a NULL before it ever reached this code
+            // (see PeerManager.jsonRecordDict) — the two bugs masked each other
+            // until the Bluetooth full-snapshot sync delivered real NULL rows
+            // ("No User Found", 2026-07-06).
             let columns = recordDataFields.keys.sorted()
-            let placeholders = columns.map { key -> String in
-                if case .none = recordDataFields[key] as String?? { return "NULL" }
-                return "?"
-            }.joined(separator: ", ")
-            let columnList = columns.map { "\"\($0)\"" }.joined(separator: ", ")
-            let values: [String] = columns.compactMap { key -> String? in
-                if let val = recordDataFields[key] { return val }
-                return nil  // NULL columns use literal NULL, no parameter
+            var placeholders: [String] = []
+            var values: [String] = []
+            for key in columns {
+                if let present = recordDataFields[key], let value = present {
+                    placeholders.append("?")
+                    values.append(value)
+                } else {
+                    placeholders.append("NULL")
+                }
             }
+            let columnList = columns.map { "\"\($0)\"" }.joined(separator: ", ")
 
             try db.execute(
-                sql: "INSERT OR IGNORE INTO \(quotedTable(table)) (\(columnList)) VALUES (\(placeholders))",
+                sql: "INSERT OR IGNORE INTO \(quotedTable(table)) (\(columnList)) VALUES (\(placeholders.joined(separator: ", ")))",
                 arguments: StatementArguments(values)
             )
             return 0
@@ -458,20 +606,28 @@ public enum ConflictResolver {
         guard let existingRow = localRow else {
             // Record doesn't exist locally
             if let recordDataFields = parseJsonField(change.recordData) {
-                // We have full record data — INSERT it (handles NULLs correctly)
+                // We have full record data — INSERT it. Same present-but-NULL
+                // handling as applyInsert's plain-INSERT path: a NULL column is
+                // a PRESENT key with a nil inner value, and the old double-
+                // optional check here only matched MISSING keys, so NULL columns
+                // produced a "?" placeholder with no bound argument and the
+                // statement threw (Copilot review on PR #1422 — this was the
+                // second, unfixed copy of the applyInsert bug).
                 let columns = recordDataFields.keys.sorted()
-                let placeholders = columns.map { key -> String in
-                    if case .none = recordDataFields[key] as String?? { return "NULL" }
-                    return "?"
-                }.joined(separator: ", ")
-                let columnList = columns.map { "\"\($0)\"" }.joined(separator: ", ")
-                let values: [String] = columns.compactMap { key -> String? in
-                    if let val = recordDataFields[key] { return val }
-                    return nil
+                var placeholders: [String] = []
+                var values: [String] = []
+                for key in columns {
+                    if let present = recordDataFields[key], let value = present {
+                        placeholders.append("?")
+                        values.append(value)
+                    } else {
+                        placeholders.append("NULL")
+                    }
                 }
+                let columnList = columns.map { "\"\($0)\"" }.joined(separator: ", ")
 
                 try db.execute(
-                    sql: "INSERT OR IGNORE INTO \(quotedTable(table)) (\(columnList)) VALUES (\(placeholders))",
+                    sql: "INSERT OR IGNORE INTO \(quotedTable(table)) (\(columnList)) VALUES (\(placeholders.joined(separator: ", ")))",
                     arguments: StatementArguments(values)
                 )
                 return 0

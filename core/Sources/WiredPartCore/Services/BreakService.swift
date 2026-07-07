@@ -238,6 +238,24 @@ public final class BreakService: Sendable {
         }
     }
 
+    /// Update an existing bonus's amount together with its enabled flag.
+    ///
+    /// The settings screen previously only had `toggleBonus`, so editing the
+    /// AMOUNT of an existing bonus was silently dropped on save (2026-07-06
+    /// panel-quality audit) — the field accepted input that never persisted.
+    public func updateBonus(bonusId: Int64, bonusAmount: Double, isEnabled: Bool) throws {
+        do {
+            try db.writer.write { dbConn in
+                try dbConn.execute(sql: """
+                    UPDATE break_bonuses SET bonus_amount = ?, is_enabled = ? WHERE id = ?
+                    """, arguments: [bonusAmount, isEnabled, bonusId])
+            }
+        } catch {
+            if isTableNotFoundError(error) { return }
+            throw error
+        }
+    }
+
     // =========================================================================
     // MARK: - Break Records
     // =========================================================================

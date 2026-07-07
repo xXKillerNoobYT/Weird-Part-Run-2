@@ -759,7 +759,7 @@ struct WarehouseDashboardPage: View {
                 subPageLink(title: "Returns", icon: "arrow.uturn.left", color: .indigo, tabId: "warehouse-returns")
                 subPageLink(title: "Tools", icon: "wrench.and.screwdriver.fill", color: .brown, tabId: "warehouse-tools")
                 subPageLink(title: "Leaderboard", icon: "trophy.fill", color: .yellow, tabId: "warehouse-leaderboard")
-                subPageLink(title: "Network", icon: "antenna.radiowaves.left.and.right", color: .cyan, tabId: "warehouse-network")
+                // Network moved to its own top-level "Devices" module.
                 subPageLink(title: "Settings", icon: "gearshape.fill", color: .gray, tabId: "warehouse-settings")
             }
         }

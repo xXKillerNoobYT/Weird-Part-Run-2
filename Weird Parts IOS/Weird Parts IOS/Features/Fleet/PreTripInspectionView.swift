@@ -519,8 +519,15 @@ private struct InspectionStatusButton: View {
             .background(isSelected ? color.opacity(0.2) : Color.clear)
             .clipShape(Capsule())
             .overlay(Capsule().stroke(isSelected ? color : .secondary.opacity(0.3)))
+            // The visible capsule stays compact, but the tappable area meets the
+            // 44pt floor — these are the core OK/Issue/N/A actions of every
+            // checklist item and were ~24pt (2026-07-06 panel-quality audit).
+            .dsMinTapTarget()
         }
         .buttonStyle(.plain)
         .foregroundStyle(isSelected ? color : .secondary)
+        .accessibilityLabel(label)
+        .accessibilityValue(isSelected ? "Selected" : "")
+        .accessibilityHint("Sets this inspection item to \(label).")
     }
 }
