@@ -71,10 +71,14 @@ struct IOSReportTemplatesPage: View {
                         Image(systemName: "plus")
                     }
                     .accessibilityLabel("Add template")
+                    .accessibilityHint("Opens the new template form.")
+                    .accessibilityIdentifier("settings-report-templates-add-button")
                     Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
                     }
                     .accessibilityLabel("Help")
+                    .accessibilityHint("Opens help for this page.")
+                    .accessibilityIdentifier("settings-report-templates-help-button")
                 }
             }
         }
@@ -97,14 +101,15 @@ struct IOSReportTemplatesPage: View {
                 createSheet
             }
         }
-        .alert("Delete Template?", isPresented: Binding(
-            get: { deleteCandidate != nil },
-            set: { if !$0 { deleteCandidate = nil } }
-        )) {
-            Button("Delete", role: .destructive) { confirmDelete() }
-            Button("Cancel", role: .cancel) { deleteCandidate = nil }
-        } message: {
-            Text("This cannot be undone.")
+        .confirmDestruction(
+            ofRecordNamed: deleteCandidate?.name ?? "this template",
+            noun: "report template",
+            isPresented: Binding(
+                get: { deleteCandidate != nil },
+                set: { if !$0 { deleteCandidate = nil } }
+            )
+        ) {
+            confirmDelete()
         }
         .refreshable { loadTemplates() }
         .task { loadTemplates() }
@@ -192,6 +197,20 @@ struct IOSReportTemplatesPage: View {
 
             Spacer()
         }
+        .contextMenu {
+            Button(role: .destructive) {
+                deleteCandidate = template
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+        .rowAccessibility(
+            label: "\(template.name), \(reportTypeLabel(template.reportType)) template",
+            value: (template.isShared ? "Shared with team" : "Private")
+                + (template.lastRunAt.map { ", last run \($0.prefix(10))" } ?? ""),
+            hint: "Swipe up or down for the delete action.",
+            id: "settings-report-template-row-\(template.id)"
+        )
     }
 
     private func reportTypeLabel(_ type: String) -> String {

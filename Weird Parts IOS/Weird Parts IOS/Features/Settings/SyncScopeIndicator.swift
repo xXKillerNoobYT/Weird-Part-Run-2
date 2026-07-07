@@ -99,10 +99,15 @@ struct SyncScopeIndicator: View {
 
     var body: some View {
         if compact {
+            // In compact mode this icon is the ONLY sync-scope cue on the row
+            // (e.g. UserMenuSheet settings nav rows), so it must speak.
+            // No identifier here: compact indicators repeat per row on one
+            // screen, and a fixed per-scope id would duplicate. The enclosing
+            // row's identifier is the UI-test anchor.
             Image(systemName: scope.icon)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
+                .accessibilityLabel(scope.label)
         } else {
             HStack(spacing: 6) {
                 Image(systemName: scope.icon)

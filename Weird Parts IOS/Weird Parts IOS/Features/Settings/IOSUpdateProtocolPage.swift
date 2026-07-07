@@ -49,6 +49,8 @@ struct IOSUpdateProtocolPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-updates-help-button")
             }
         }
         .sheet(item: $activeSheet) { _ in

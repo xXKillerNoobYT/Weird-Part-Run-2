@@ -11,6 +11,7 @@ struct IOSJobStageTemplatesSettingsPage: View {
     @State private var templates: [JobsService.JobStageTemplate] = []
     @State private var selectedTemplateId: Int64?
     @State private var draftStages: [StageDraft] = []
+    @State private var loadedStages: [StageDraft] = []
     @State private var isLoading = true
     @State private var isSaving = false
     @State private var errorMessage: String?
@@ -25,6 +26,8 @@ struct IOSJobStageTemplatesSettingsPage: View {
     @State private var showingDuplicateTemplate = false
     @State private var showingRenameTemplate = false
     @State private var showingArchiveConfirmation = false
+    @State private var showingCancelChangesConfirmation = false
+    @State private var pendingStageDeleteOffsets: IndexSet?
     @State private var showingHelp = false
 
     private var selectedTemplate: JobsService.JobStageTemplate? {
@@ -47,6 +50,23 @@ struct IOSJobStageTemplatesSettingsPage: View {
     private var canRenameTemplate: Bool { !trimmedRenameTemplateName.isEmpty }
     private var canDuplicateTemplate: Bool { !trimmedDuplicateTemplateName.isEmpty }
 
+    private var hasUnsavedStageEdits: Bool { draftStages != loadedStages }
+
+    private var pendingStageDeleteName: String {
+        guard let first = pendingStageDeleteOffsets?.first,
+              draftStages.indices.contains(first) else { return "stage" }
+        let name = draftStages[first].name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? "Untitled stage" : name
+    }
+
+    private var archiveMessageSuffix: String {
+        let stagePhrase = DestructiveConfirmationCopy.countPhrase(
+            count: selectedTemplate?.stageCount ?? 0,
+            noun: "stage"
+        )
+        return "Its \(stagePhrase) will no longer appear in job create/edit pickers. Templates with active jobs are protected."
+    }
+
     var body: some View {
         Group {
             if isLoading {
@@ -66,11 +86,15 @@ struct IOSJobStageTemplatesSettingsPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-job-stage-templates-help-button")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { prepareCreateTemplate() } label: {
                     Label("New Template", systemImage: "plus")
                 }
+                .accessibilityHint("Creates a workflow template with three starter stages.")
+                .accessibilityIdentifier("settings-job-stage-new-template-button")
             }
         }
         .sheet(isPresented: $showingHelp) {
@@ -113,15 +137,40 @@ struct IOSJobStageTemplatesSettingsPage: View {
                 ? "Renames the selected workflow template. Existing jobs keep their current stage data."
                 : "Enter a template name before renaming this workflow.")
         }
-        .confirmationDialog(
-            "Archive this template?",
+        .confirmDestruction(
+            ofRecordNamed: selectedTemplate?.name ?? "template",
+            noun: "workflow template",
+            actionLabel: "Archive",
+            actionVerb: "archives",
             isPresented: $showingArchiveConfirmation,
+            messageSuffix: archiveMessageSuffix
+        ) {
+            archiveTemplate()
+        }
+        .confirmDestruction(
+            ofRecordNamed: pendingStageDeleteName,
+            noun: "stage",
+            actionLabel: "Remove",
+            isPresented: Binding(
+                get: { pendingStageDeleteOffsets != nil },
+                set: { if !$0 { pendingStageDeleteOffsets = nil } }
+            ),
+            messageSuffix: "Removal is applied when you save. Stages protected by live work remain after saving."
+        ) {
+            if let offsets = pendingStageDeleteOffsets {
+                deleteStage(at: offsets)
+            }
+            pendingStageDeleteOffsets = nil
+        }
+        .confirmationDialog(
+            "Discard Job Stage Templates changes?",
+            isPresented: $showingCancelChangesConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Archive Template", role: .destructive) { archiveTemplate() }
-            Button("Cancel", role: .cancel) { }
+            Button("Discard", role: .destructive) { reloadSelectedStages() }
+            Button("Keep editing", role: .cancel) {}
         } message: {
-            Text("Archived templates disappear from job create/edit pickers. Templates with active jobs are protected.")
+            Text("Unsaved stage edits will be lost.")
         }
         .task { loadTemplates() }
     }
@@ -204,24 +253,66 @@ struct IOSJobStageTemplatesSettingsPage: View {
                             .accessibilityHidden(true)
                         TextField("Stage name", text: $stage.name)
                             .textInputAutocapitalization(.words)
+                            .accessibilityLabel("Stage name")
+                            .accessibilityIdentifier("settings-job-stage-name-\(stage.id)")
+                    }
+                    .contextMenu {
+                        Button {
+                            if let index = draftStages.firstIndex(where: { $0.id == stage.id }), index > 0 {
+                                moveStage(from: IndexSet(integer: index), to: index - 1)
+                            }
+                        } label: {
+                            Label("Move Up", systemImage: "arrow.up")
+                        }
+                        .disabled(draftStages.first?.id == stage.id)
+
+                        Button {
+                            if let index = draftStages.firstIndex(where: { $0.id == stage.id }), index < draftStages.count - 1 {
+                                moveStage(from: IndexSet(integer: index), to: index + 2)
+                            }
+                        } label: {
+                            Label("Move Down", systemImage: "arrow.down")
+                        }
+                        .disabled(draftStages.last?.id == stage.id)
+
+                        Button(role: .destructive) {
+                            if let index = draftStages.firstIndex(where: { $0.id == stage.id }) {
+                                pendingStageDeleteOffsets = IndexSet(integer: index)
+                            }
+                        } label: {
+                            Label("Remove Stage", systemImage: "trash")
+                        }
                     }
                 }
                 .onMove(perform: moveStage)
-                .onDelete(perform: deleteStage)
+                .onDelete { offsets in
+                    pendingStageDeleteOffsets = offsets
+                }
             }
 
             HStack {
                 TextField("New stage name", text: $newStageName)
                     .textInputAutocapitalization(.words)
+                    .accessibilityLabel("New stage name")
+                    .accessibilityIdentifier("settings-job-stage-new-stage-field")
                 Button { addDraftStage() } label: {
                     Image(systemName: "plus.circle.fill")
+                        .dsMinTapTarget()
                 }
                 .disabled(newStageName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .accessibilityLabel("Add stage")
+                .accessibilityHint("Appends the typed stage to the end of this workflow.")
+                .accessibilityIdentifier("settings-job-stage-add-stage-button")
             }
 
             HStack {
-                Button("Cancel Changes", role: .cancel) { reloadSelectedStages() }
+                Button("Cancel Changes", role: .cancel) {
+                    if hasUnsavedStageEdits {
+                        showingCancelChangesConfirmation = true
+                    } else {
+                        reloadSelectedStages()
+                    }
+                }
                 Spacer()
                 Button { saveStages() } label: {
                     if isSaving {
@@ -231,6 +322,11 @@ struct IOSJobStageTemplatesSettingsPage: View {
                     }
                 }
                 .disabled(isSaving || selectedTemplateId == nil || draftStages.isEmpty)
+                .rowAccessibility(
+                    label: "Save Stages",
+                    value: isSaving ? "Saving" : nil,
+                    id: "settings-job-stage-save-stages-button"
+                )
             }
         } header: {
             Label("Stages", systemImage: "list.number")
@@ -277,6 +373,7 @@ struct IOSJobStageTemplatesSettingsPage: View {
                 loadStages(for: nextSelection)
             } else {
                 draftStages = []
+                loadedStages = []
             }
             isLoading = false
         } catch {
@@ -289,16 +386,19 @@ struct IOSJobStageTemplatesSettingsPage: View {
         guard let service = appCore.jobsService else {
             errorMessage = "Jobs service unavailable"
             draftStages = []
+            loadedStages = []
             return
         }
         do {
             draftStages = try service.listAllJobStages(templateId: templateId).map {
                 StageDraft(existingId: $0.id, name: $0.name, sortOrder: $0.sortOrder)
             }
+            loadedStages = draftStages
             errorMessage = nil
         } catch {
             errorMessage = userFriendlyError(error, context: "load template stages")
             draftStages = []
+            loadedStages = []
         }
     }
 

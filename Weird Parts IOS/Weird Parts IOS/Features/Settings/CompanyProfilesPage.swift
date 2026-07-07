@@ -69,6 +69,30 @@ struct CompanyProfilesPage: View {
                                     }
                                 }
                             }
+                            .rowAccessibility(
+                                label: profile.isPrimary == 1
+                                    ? "\(profile.companyName), primary profile"
+                                    : profile.companyName,
+                                value: [profile.branchName, profile.phone].compactMap { $0 }.joined(separator: ", "),
+                                hint: "Opens the profile editor. Swipe left to delete.",
+                                id: "settings-company-profile-row-\(stableAccessibilitySuffix(id: profile.id, name: profile.companyName))"
+                            )
+                            .contextMenu {
+                                // Mirrors the row tap (edit) and the trailing swipe
+                                // (delete) — the delete routes through the same
+                                // confirmation gate as the swipe action.
+                                Button {
+                                    activeSheet = .edit(profile)
+                                } label: {
+                                    Label("Edit Profile", systemImage: "pencil")
+                                }
+                                Button(role: .destructive) {
+                                    profileToDelete = profile
+                                    showDeleteConfirm = true
+                                } label: {
+                                    Label("Delete Profile", systemImage: "trash")
+                                }
+                            }
                             .swipeActions(edge: .trailing) {
                                 Button(role: .destructive) {
                                     profileToDelete = profile
@@ -100,12 +124,16 @@ struct CompanyProfilesPage: View {
                     Image(systemName: "plus")
                 }
                 .accessibilityLabel("Add company profile")
+                .accessibilityHint("Opens the new profile form.")
+                .accessibilityIdentifier("settings-company-profiles-add-button")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-company-profiles-help-button")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -131,16 +159,16 @@ struct CompanyProfilesPage: View {
         }
         .refreshable { loadProfiles() }
         .task { loadProfiles() }
-        .alert("Delete Profile", isPresented: $showDeleteConfirm) {
-            Button("Cancel", role: .cancel) { profileToDelete = nil }
-            Button("Delete", role: .destructive) {
-                if let profile = profileToDelete { deleteProfile(profile) }
-                profileToDelete = nil
-            }
-        } message: {
-            if let profile = profileToDelete {
-                Text("Are you sure you want to delete \"\(profile.companyName)\"? This cannot be undone.")
-            }
+        .confirmDestruction(
+            ofRecordNamed: profileToDelete?.companyName ?? "",
+            noun: "company profile",
+            isPresented: $showDeleteConfirm,
+            messageSuffix: profileToDelete?.isPrimary == 1
+                ? "This is the primary profile that appears on generated PDFs and documents."
+                : nil
+        ) {
+            if let profile = profileToDelete { deleteProfile(profile) }
+            profileToDelete = nil
         }
     }
 

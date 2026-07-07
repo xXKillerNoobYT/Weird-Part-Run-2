@@ -50,8 +50,22 @@ final class DestructiveConfirmationCopyTests: XCTestCase {
 
     func testRecordTitleNamesTheRecord() {
         XCTAssertEqual(
-            DestructiveConfirmationCopy.recordTitle(actionLabel: "Delete", recordName: "Kitchen remodel"),
+            DestructiveConfirmationCopy.recordTitle(actionLabel: "Delete", recordName: "Kitchen remodel", noun: "notebook"),
             "Delete 'Kitchen remodel'?"
+        )
+    }
+
+    func testRecordTitleFallsBackToNounWhenNameIsBlank() {
+        XCTAssertEqual(
+            DestructiveConfirmationCopy.recordTitle(actionLabel: "Delete", recordName: "   ", noun: "question"),
+            "Delete this question?"
+        )
+    }
+
+    func testRecordTitleTrimsWhitespaceAroundName() {
+        XCTAssertEqual(
+            DestructiveConfirmationCopy.recordTitle(actionLabel: "Delete", recordName: "  Panel A  ", noun: "schedule"),
+            "Delete 'Panel A'?"
         )
     }
 
@@ -95,11 +109,20 @@ final class DestructiveConfirmationCopyTests: XCTestCase {
         XCTAssertEqual(message, "This deletes the notebook 'Kitchen remodel'. This can't be undone from this screen.")
     }
 
+    func testDefaultRecordMessageFallsBackToNounWhenNameIsBlank() {
+        let message = DestructiveConfirmationCopy.defaultRecordMessage(
+            actionVerb: "deletes",
+            noun: "question",
+            recordName: ""
+        )
+        XCTAssertEqual(message, "This deletes this question. This can't be undone from this screen.")
+    }
+
     // MARK: - Defensive quoting
 
     func testQuotedUsesDoubleQuotesWhenNameHasApostrophe() {
         XCTAssertEqual(
-            DestructiveConfirmationCopy.recordTitle(actionLabel: "Delete", recordName: "Bob's order"),
+            DestructiveConfirmationCopy.recordTitle(actionLabel: "Delete", recordName: "Bob's order", noun: "order"),
             "Delete \"Bob's order\"?"
         )
     }

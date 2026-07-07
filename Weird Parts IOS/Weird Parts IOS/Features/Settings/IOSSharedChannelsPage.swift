@@ -34,6 +34,8 @@ struct IOSSharedChannelsPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-shared-channels-help-button")
             }
         }
         .sheet(item: $activeSheet) { _ in

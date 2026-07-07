@@ -18,6 +18,7 @@ struct IOSDatabaseResetPage: View {
     @State private var adminPin: String = ""
     @State private var errorMessage: String? = nil
     @State private var hasOtherDevices = false
+    @State private var showFinalConfirm = false
 
     private var isCurrentUserAdmin: Bool {
         appCore.hasPermission("manage_devices")
@@ -57,6 +58,8 @@ struct IOSDatabaseResetPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-db-reset-help-button")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -64,6 +67,12 @@ struct IOSDatabaseResetPage: View {
                 ("What This Page Does", "Permanently erases all data on this device and returns it to the first-run setup screen. This is useful when decommissioning a device or starting fresh."),
                 ("How to Use It", "Tap 'Request Database Reset' to begin. An administrator must enter their 4-digit PIN to authorize the reset. Once confirmed, the process cannot be undone."),
             ])
+        }
+        .alert("Erase all data on this device?", isPresented: $showFinalConfirm) {
+            Button("Cancel", role: .cancel) {}
+            Button("Erase Everything", role: .destructive) { confirmReset() }
+        } message: {
+            Text("This erases every job, part, order, and setting on this device and returns it to first-run setup. This cannot be undone.")
         }
         .task {
             loadDeviceStatus()
@@ -141,6 +150,8 @@ struct IOSDatabaseResetPage: View {
             } label: {
                 Label("Request Database Reset", systemImage: "arrow.counterclockwise.circle")
             }
+            .accessibilityHint("Starts the reset flow. An admin PIN is required before anything is erased.")
+            .accessibilityIdentifier("settings-db-reset-request-button")
         }
     }
 
@@ -173,13 +184,18 @@ struct IOSDatabaseResetPage: View {
                     let filtered = String(newValue.filter(\.isNumber).prefix(4))
                     if filtered != newValue { adminPin = filtered }
                 }
+                .accessibilityLabel("Admin PIN")
+                .accessibilityHint("Enter the 4-digit admin PIN to authorize erasing all data on this device.")
+                .accessibilityIdentifier("settings-db-reset-admin-pin-field")
 
             Button(role: .destructive) {
-                confirmReset()
+                showFinalConfirm = true
             } label: {
                 Text("Confirm Reset")
             }
             .disabled(!canConfirm)
+            .accessibilityHint("Shows a final confirmation before permanently erasing all data on this device.")
+            .accessibilityIdentifier("settings-db-reset-confirm-button")
 
             Button("Cancel", role: .cancel) {
                 cancelReset()
