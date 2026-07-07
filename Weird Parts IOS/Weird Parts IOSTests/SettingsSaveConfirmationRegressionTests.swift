@@ -11,7 +11,7 @@ final class SettingsSaveConfirmationRegressionTests: XCTestCase {
         ("IOSAuditSettingsPage", "Audit settings saved.", "auditSettingsSaveSuccessMessage"),
         ("IOSDispatchPreferencesPage", "Dispatch preferences saved.", "dispatchPreferencesSaveSuccessMessage"),
         ("IOSOrganizationThresholdsPage", "Organization thresholds saved.", "organizationThresholdsSaveSuccessMessage"),
-        ("IOSPreTripChecklistPage", "Checklist saved.", "preTripChecklistSaveSuccessMessage"),
+        ("IOSPreTripChecklistPage", "All checklists saved.", "preTripChecklistSaveSuccessMessage"),
     ]
 
     func testEachPageShowsSuccessConfirmationAfterSave() throws {

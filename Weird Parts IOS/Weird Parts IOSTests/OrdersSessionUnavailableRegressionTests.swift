@@ -236,12 +236,14 @@ final class OrdersSessionUnavailableRegressionTests: XCTestCase {
             "The suggestion confirmation alert should block invalid Add actions and show inline validation feedback."
         )
         XCTAssertTrue(
-            jpoCreationSource.contains("guard let qty = Int(parts[2].trimmingCharacters(in: .whitespaces)), qty > 0 else") &&
+            // .whitespacesAndNewlines, not .whitespaces — the parser was fixed
+            // as part of the trimming umbrella (AI output can end with \n).
+            jpoCreationSource.contains("guard let qty = Int(parts[2].trimmingCharacters(in: .whitespacesAndNewlines)), qty > 0 else") &&
                 jpoCreationSource.contains("return nil"),
             "AI suggestion parsing should reject malformed, zero, or negative quantities instead of silently coercing them to one."
         )
         XCTAssertFalse(
-            jpoCreationSource.contains("Int(parts[2].trimmingCharacters(in: .whitespaces)) ?? 1"),
+            jpoCreationSource.contains(") ?? 1"),
             "Malformed AI quantities must not be silently treated as valid quantity-one suggestions."
         )
         XCTAssertTrue(

@@ -79,8 +79,12 @@ final class TrackedSilentFailureFixesRegressionTests: XCTestCase {
             body.contains("templates = try service.getTemplates(templateType: \"job\")"),
             "loadTemplates must use a throwing read inside do/catch."
         )
+        // Match assignments only ("saveError =" / "saveError=") — a code COMMENT
+        // that merely mentions saveError must not fail this invariant. (This
+        // exact false positive happened when the implementation gained a
+        // "#1174: tracked separately from saveError" comment.)
         XCTAssertFalse(
-            body.contains("saveError"),
+            body.contains("saveError =") || body.contains("saveError="),
             "Template load failures must not be routed through saveError."
         )
     }

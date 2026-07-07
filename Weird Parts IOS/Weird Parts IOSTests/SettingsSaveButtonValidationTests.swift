@@ -9,23 +9,29 @@ final class SettingsSaveButtonValidationTests: XCTestCase {
     // MARK: - IOSDailyReportTemplatesPage
 
     func testDailyReportTemplatesPageHasIsDirtyGuard() throws {
+        // The page upgraded from a naive isDirty flag to signature-based dirty
+        // tracking (formSignature vs baselineFormSignature): reverting an edit
+        // back to the saved value correctly re-disables Save. Assert the new
+        // invariants, not the old flag names.
         let source = try Self.readSettingsSource("IOSDailyReportTemplatesPage.swift")
 
         XCTAssertTrue(
-            source.contains("@State private var isDirty = false"),
-            "IOSDailyReportTemplatesPage must declare isDirty state to track unsaved changes."
+            source.contains("@State private var hasUnsavedChanges = false"),
+            "IOSDailyReportTemplatesPage must declare hasUnsavedChanges state to track unsaved changes."
         )
         XCTAssertTrue(
-            source.contains(".disabled(!isDirty)"),
+            source.contains(".disabled(!hasUnsavedChanges)"),
             "IOSDailyReportTemplatesPage Save button must be disabled when no changes have been made."
         )
         XCTAssertTrue(
-            source.contains(".onChange(of: sections)") && source.contains(".onChange(of: aiInstructions)"),
-            "IOSDailyReportTemplatesPage must watch sections and aiInstructions to set isDirty."
+            source.contains(".onChange(of: formSignature)")
+                && source.contains("hasUnsavedChanges = formSignature != baselineFormSignature"),
+            "IOSDailyReportTemplatesPage must recompute dirtiness from the form signature (covers sections + aiInstructions)."
         )
         XCTAssertTrue(
-            source.contains("isDirty = false"),
-            "IOSDailyReportTemplatesPage must reset isDirty after save and after load."
+            source.contains("private func resetDirtyTracking()")
+                && source.contains("baselineFormSignature = formSignature"),
+            "IOSDailyReportTemplatesPage must reset dirty tracking after save and after load."
         )
     }
 
@@ -119,8 +125,8 @@ final class SettingsSaveButtonValidationTests: XCTestCase {
             "IOSPreTripChecklistPage Save button must be disabled when no changes have been made."
         )
         XCTAssertTrue(
-            source.contains(".onChange(of: checklists)"),
-            "IOSPreTripChecklistPage must watch the checklists dictionary to set isDirty."
+            source.contains(".onChange(of: drafts)"),
+            "IOSPreTripChecklistPage must watch the checklist drafts dictionary to set isDirty."
         )
         XCTAssertTrue(
             source.contains("isDirty = false"),

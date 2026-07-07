@@ -291,12 +291,25 @@ struct DevicePairingView: View {
         do {
             let code = pairingCode.trimmingCharacters(in: .whitespacesAndNewlines)
             if shop.isBluetooth {
-                // Pair entirely over Bluetooth — no Wi-Fi address required.
-                try await syncManager.pairWithPeerOverBluetooth(
-                    hostDeviceId: shop.id,
-                    hostName: shop.name,
-                    pairingCode: code
-                )
+                do {
+                    // Pair entirely over Bluetooth — no Wi-Fi address required.
+                    try await syncManager.pairWithPeerOverBluetooth(
+                        hostDeviceId: shop.id,
+                        hostName: shop.name,
+                        pairingCode: code
+                    )
+                } catch let e as MultipeerPairingError
+                    where shouldFallBackToLAN(e) && !shop.address.isEmpty {
+                    // Bluetooth couldn't complete but the peer also advertised a
+                    // Wi-Fi/LAN address (e.g. its Bluetooth radio is off) — fall
+                    // back to LAN pairing rather than dead-ending (Copilot review
+                    // on PR #1422). Bluetooth stays the primary path; Wi-Fi is
+                    // the speed/backup path.
+                    try await syncManager.pairWithShop(
+                        shopAddress: shop.address,
+                        pairingCode: code
+                    )
+                }
             } else {
                 // Pair with the shop over Wi-Fi/LAN — stores address and keys.
                 try await syncManager.pairWithShop(
@@ -313,6 +326,20 @@ struct DevicePairingView: View {
             errorMessage = userFriendlyError(error, context: "pair device")
         }
         isConnecting = false
+    }
+
+    /// Whether a failed Bluetooth pairing attempt should retry over the peer's
+    /// advertised Wi-Fi/LAN address. Connectivity-class failures (couldn't
+    /// connect, link dropped, host silent, Multipeer not running) are worth a
+    /// LAN retry. `.rejected` is NOT — the code itself was wrong or already
+    /// used, and retrying the same code over LAN would just burn the attempt.
+    private func shouldFallBackToLAN(_ error: MultipeerPairingError) -> Bool {
+        switch error {
+        case .connectionTimeout, .responseTimeout, .sendFailed, .notAvailable:
+            return true
+        case .rejected:
+            return false
+        }
     }
 
     private func bluetoothPairingErrorMessage(_ error: MultipeerPairingError) -> String {
