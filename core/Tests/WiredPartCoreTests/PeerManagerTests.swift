@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import GRDB
 @testable import WiredPartCore
 
 @Suite("PeerManager Tests")
@@ -466,6 +467,60 @@ struct PeerManagerTests {
         #expect(result.success == true)
         #expect(result.error == nil)
         #expect(!result.syncedAt.isEmpty)
+    }
+
+    // MARK: - Row → JSON serialization (the "No User Found" root cause)
+
+    @Test("Rows with NULL columns serialize to valid JSON and round-trip to a fresh DB")
+    func testNullColumnRowsSurviveSnapshotRoundTrip() throws {
+        let hostDB = try freshDB()
+
+        // Seed a user the way onboarding does: email/phone are NULL — the exact
+        // shape that used to fail JSONSerialization and get silently skipped,
+        // leaving a Bluetooth-joined device with no users to log in as.
+        let userId: Int64 = try {
+            var user = User(displayName: "Tester", pinHash: "hash", isActive: 1)
+            try hostDB.writer.write { dbConn in
+                try user.insert(dbConn)
+            }
+            return user.id!
+        }()
+
+        let row = try hostDB.writer.read { dbConn in
+            try Row.fetchOne(dbConn, sql: "SELECT * FROM users WHERE id = ?", arguments: [userId])
+        }
+        let dict = PeerManager.jsonRecordDict(from: try #require(row))
+
+        // NULL columns must be present as NSNull, and the dict must be valid JSON.
+        #expect(dict["email"] is NSNull)
+        #expect(JSONSerialization.isValidJSONObject(dict))
+        let jsonData = try JSONSerialization.data(withJSONObject: dict)
+        let recordData = try #require(String(data: jsonData, encoding: .utf8))
+
+        // Apply the snapshot-style change on a fresh (joiner) database.
+        let joinerDB = try freshDB()
+        let change = IncomingChange(
+            deviceId: "host-device",
+            tableName: "users",
+            recordId: String(userId),
+            operation: "INSERT",
+            recordData: recordData,
+            timestamp: "2026-07-06T12:00:00Z"
+        )
+        let mergeResult = try ConflictResolver.resolveAndApplyChanges(
+            db: joinerDB,
+            changes: [change],
+            localDeviceId: "joiner-device"
+        )
+        #expect(mergeResult.applied == 1, "apply result: applied=\(mergeResult.applied) skipped=\(mergeResult.skipped) errors=\(mergeResult.errors)")
+
+        let joined = try joinerDB.writer.read { dbConn in
+            try Row.fetchOne(dbConn, sql: "SELECT display_name, email, is_active FROM users WHERE id = ?", arguments: [userId])
+        }
+        let joinedRow = try #require(joined, "the seeded user must arrive on the joiner")
+        #expect(joinedRow["display_name"] == "Tester")
+        #expect((joinedRow["email"] as String?) == nil)
+        #expect(joinedRow["is_active"] == 1)
     }
 }
 

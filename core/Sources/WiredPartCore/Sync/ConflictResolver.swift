@@ -509,20 +509,33 @@ public enum ConflictResolver {
         let localRow = try getLocalRecord(db: db, tableName: table, recordId: recordId)
 
         guard let existingRow = localRow else {
-            // Record doesn't exist locally — plain INSERT (handles NULLs correctly)
+            // Record doesn't exist locally — plain INSERT.
+            //
+            // NULL handling: recordDataFields is [String: String?], so a NULL
+            // column is a PRESENT key with a nil inner value. The old check
+            // (`if case .none = recordDataFields[key] as String??`) only matched
+            // MISSING keys — present-but-NULL columns got a "?" placeholder with
+            // no bound argument, and the statement threw on the argument-count
+            // mismatch. The bug stayed invisible because the sender used to drop
+            // any row containing a NULL before it ever reached this code
+            // (see PeerManager.jsonRecordDict) — the two bugs masked each other
+            // until the Bluetooth full-snapshot sync delivered real NULL rows
+            // ("No User Found", 2026-07-06).
             let columns = recordDataFields.keys.sorted()
-            let placeholders = columns.map { key -> String in
-                if case .none = recordDataFields[key] as String?? { return "NULL" }
-                return "?"
-            }.joined(separator: ", ")
-            let columnList = columns.map { "\"\($0)\"" }.joined(separator: ", ")
-            let values: [String] = columns.compactMap { key -> String? in
-                if let val = recordDataFields[key] { return val }
-                return nil  // NULL columns use literal NULL, no parameter
+            var placeholders: [String] = []
+            var values: [String] = []
+            for key in columns {
+                if let present = recordDataFields[key], let value = present {
+                    placeholders.append("?")
+                    values.append(value)
+                } else {
+                    placeholders.append("NULL")
+                }
             }
+            let columnList = columns.map { "\"\($0)\"" }.joined(separator: ", ")
 
             try db.execute(
-                sql: "INSERT OR IGNORE INTO \(quotedTable(table)) (\(columnList)) VALUES (\(placeholders))",
+                sql: "INSERT OR IGNORE INTO \(quotedTable(table)) (\(columnList)) VALUES (\(placeholders.joined(separator: ", ")))",
                 arguments: StatementArguments(values)
             )
             return 0

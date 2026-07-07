@@ -867,10 +867,7 @@ public actor PeerManager {
                         if SettingsService.syncScope(for: key, category: category) == .device { continue }
                     }
 
-                    var dict: [String: Any] = [:]
-                    for column in row.columnNames {
-                        dict[column] = row[column] as Any
-                    }
+                    let dict = Self.jsonRecordDict(from: row)
                     guard let jsonData = try? JSONSerialization.data(withJSONObject: dict),
                           let recordData = String(data: jsonData, encoding: .utf8) else { continue }
 
@@ -1079,6 +1076,36 @@ public actor PeerManager {
 
     // MARK: - Private: Enrich Changes
 
+    /// JSON-safe dictionary from a GRDB row.
+    ///
+    /// `row[column] as Any` wraps SQL NULLs as Swift `Optional.none`, which
+    /// `JSONSerialization` rejects — so ANY row containing a NULL column failed
+    /// to serialize and was silently dropped from sync payloads. That is why the
+    /// seeded admin user (email/phone NULL) never arrived on a Bluetooth-joined
+    /// device ("No User Found", 2026-07-06). Map the database storage explicitly:
+    /// NULL → NSNull (the receiver's parseJsonField turns it back into SQL NULL),
+    /// numbers → NSNumber, text → String. Blobs also become NSNull — binary
+    /// payloads travel via BinarySyncManager, not row JSON, and the old path
+    /// dropped the entire row for them anyway.
+    internal static func jsonRecordDict(from row: Row) -> [String: Any] {
+        var dict: [String: Any] = [:]
+        for (column, dbValue) in row {
+            switch dbValue.storage {
+            case .null:
+                dict[column] = NSNull()
+            case .int64(let value):
+                dict[column] = NSNumber(value: value)
+            case .double(let value):
+                dict[column] = NSNumber(value: value)
+            case .string(let value):
+                dict[column] = value
+            case .blob:
+                dict[column] = NSNull()
+            }
+        }
+        return dict
+    }
+
     /// Add full record data to INSERT/UPDATE changes so the receiving peer
     /// can INSERT OR REPLACE them.
     internal func enrichChangesWithData(_ entries: [ChangeLogEntry]) throws -> [IncomingChange] {
@@ -1095,10 +1122,7 @@ public actor PeerManager {
                     )
                 }
                 if let row = row {
-                    var dict: [String: Any] = [:]
-                    for column in row.columnNames {
-                        dict[column] = row[column] as Any
-                    }
+                    let dict = Self.jsonRecordDict(from: row)
                     if let jsonData = try? JSONSerialization.data(withJSONObject: dict) {
                         recordData = String(data: jsonData, encoding: .utf8)
                     }
