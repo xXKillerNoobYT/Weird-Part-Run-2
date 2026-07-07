@@ -495,4 +495,112 @@ struct ConflictResolverTests {
         #expect(statsAfter.total == 1)
         #expect(statsAfter.unreviewed == 0)
     }
+
+    // MARK: - applyConflictResolution (manual review must actually apply the choice)
+
+    private func insertConflict(
+        db: AppDatabase,
+        recordId: Int64,
+        winner: String
+    ) throws {
+        try db.writer.write { dbConn in
+            var conflict = ConflictLogEntry(
+                tableName: "users",
+                recordId: String(recordId),
+                fieldName: "email",
+                localValue: "loser@local.com",
+                remoteValue: "winner@remote.com",
+                winner: winner,
+                localDevice: "dev-A",
+                remoteDevice: "dev-B",
+                localTs: "2026-03-14T09:00:00Z",
+                remoteTs: "2026-03-14T10:00:00Z",
+                resolvedAt: now
+            )
+            try conflict.insert(dbConn)
+        }
+    }
+
+    @Test("applyConflictResolution writes the chosen loser value and change-logs it")
+    func testApplyResolutionWritesLoserValue() throws {
+        let db = try freshDB()
+        // LWW already applied the remote winner to the row.
+        let userId = try insertUser(db: db, email: "winner@remote.com")
+        try insertConflict(db: db, recordId: userId, winner: "remote")
+        let conflict = try ConflictResolver.getUnreviewedConflicts(db: db)[0]
+
+        // Reviewer overrides LWW and keeps the LOCAL (losing) value.
+        try ConflictResolver.applyConflictResolution(db: db, conflict: conflict, choice: .keepLocal)
+
+        let email = try db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: "SELECT email FROM users WHERE id = ?", arguments: [userId])
+        }
+        #expect(email == "loser@local.com")
+
+        // The human decision must propagate to peers like any local edit.
+        let logged = try db.writer.read { dbConn in
+            try Int.fetchOne(
+                dbConn,
+                sql: "SELECT COUNT(*) FROM _change_log WHERE table_name = 'users' AND record_id = ?",
+                arguments: [userId]
+            )
+        } ?? 0
+        #expect(logged >= 1)
+        #expect(try ConflictResolver.getUnreviewedConflicts(db: db).isEmpty)
+    }
+
+    @Test("applyConflictResolution keeping the LWW winner is review-only")
+    func testApplyResolutionKeepingWinnerIsReviewOnly() throws {
+        let db = try freshDB()
+        let userId = try insertUser(db: db, email: "winner@remote.com")
+        try insertConflict(db: db, recordId: userId, winner: "remote")
+        let conflict = try ConflictResolver.getUnreviewedConflicts(db: db)[0]
+
+        // Reviewer confirms the value LWW already applied — no write, no change log.
+        try ConflictResolver.applyConflictResolution(db: db, conflict: conflict, choice: .keepRemote)
+
+        let email = try db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: "SELECT email FROM users WHERE id = ?", arguments: [userId])
+        }
+        #expect(email == "winner@remote.com")
+
+        let logged = try db.writer.read { dbConn in
+            try Int.fetchOne(
+                dbConn,
+                sql: "SELECT COUNT(*) FROM _change_log WHERE table_name = 'users' AND record_id = ?",
+                arguments: [userId]
+            )
+        } ?? 0
+        #expect(logged == 0)
+        #expect(try ConflictResolver.getUnreviewedConflicts(db: db).isEmpty)
+    }
+
+    @Test("applyConflictResolution rejects deletion conflicts with a clear error")
+    func testApplyResolutionRejectsDeletionConflicts() throws {
+        let db = try freshDB()
+        let userId = try insertUser(db: db, email: "kept@local.com")
+        try db.writer.write { dbConn in
+            var conflict = ConflictLogEntry(
+                tableName: "users",
+                recordId: String(userId),
+                fieldName: "email",
+                localValue: "kept@local.com",
+                remoteValue: "(DELETED)",
+                winner: "remote",
+                localDevice: "dev-A",
+                remoteDevice: "dev-B",
+                localTs: "2026-03-14T09:00:00Z",
+                remoteTs: "2026-03-14T10:00:00Z",
+                resolvedAt: now
+            )
+            try conflict.insert(dbConn)
+        }
+        let conflict = try ConflictResolver.getUnreviewedConflicts(db: db)[0]
+
+        #expect(throws: ConflictResolver.ConflictReviewError.self) {
+            try ConflictResolver.applyConflictResolution(db: db, conflict: conflict, choice: .keepLocal)
+        }
+        // Still unreviewed — a failed apply must not silently dismiss the conflict.
+        #expect(try ConflictResolver.getUnreviewedConflicts(db: db).count == 1)
+    }
 }

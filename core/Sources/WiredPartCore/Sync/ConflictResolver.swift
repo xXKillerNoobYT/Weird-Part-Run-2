@@ -297,6 +297,117 @@ public enum ConflictResolver {
         }
     }
 
+    // MARK: - Manual Conflict Resolution
+
+    /// Which side the reviewer chose to keep.
+    public enum ConflictResolutionChoice: Sendable {
+        case keepLocal
+        case keepRemote
+    }
+
+    public enum ConflictReviewError: Error, LocalizedError, Sendable {
+        case missingConflictId
+        case tableNotAllowed(String)
+        case invalidRecordId(String)
+        case unknownField(table: String, field: String)
+        case deletionConflict
+
+        public var errorDescription: String? {
+            switch self {
+            case .missingConflictId:
+                return "This sync conflict is missing its id. Reload conflicts and try again."
+            case .tableNotAllowed(let table):
+                return "The conflicted table \"\(table)\" is not a synced table, so its value cannot be edited from review."
+            case .invalidRecordId(let id):
+                return "The conflicted record id \"\(id)\" is not valid."
+            case .unknownField(let table, let field):
+                return "The field \"\(field)\" no longer exists on \"\(table)\", so this conflict can only be dismissed."
+            case .deletionConflict:
+                return "One side of this conflict deleted the record. Restoring a deleted record isn't supported from review yet — recreate it manually if needed."
+            }
+        }
+    }
+
+    /// Apply the reviewer's chosen value to the live record, then mark the
+    /// conflict reviewed.
+    ///
+    /// LWW auto-resolution already wrote the *winner* into the row when the merge
+    /// ran; the conflict log preserves both sides. Before this existed, the review
+    /// UI's "keep local"/"keep remote" buttons only marked the row reviewed — the
+    /// user's choice was never applied, which silently kept the LWW winner
+    /// (data-loss surface found in the 2026-07-06 panel-quality audit).
+    ///
+    /// When the chosen side is the recorded loser, this writes it back to the
+    /// record, bumps `updated_at` (when the table has one) so the manual choice
+    /// wins future LWW rounds, and logs the write to `_change_log` so the decision
+    /// propagates to peers. Choosing the side LWW already applied is a no-op write
+    /// and just marks the conflict reviewed.
+    public static func applyConflictResolution(
+        db: AppDatabase,
+        conflict: ConflictLogEntry,
+        choice: ConflictResolutionChoice
+    ) throws {
+        guard let conflictId = conflict.id else {
+            throw ConflictReviewError.missingConflictId
+        }
+
+        let chosen = (choice == .keepLocal) ? conflict.localValue : conflict.remoteValue
+        let winnerIsChosen =
+            (choice == .keepLocal && conflict.winner.lowercased() == "local") ||
+            (choice == .keepRemote && conflict.winner.lowercased() == "remote")
+
+        if !winnerIsChosen {
+            // Deletion conflicts store a sentinel, not a field value — a field-level
+            // UPDATE cannot resurrect a deleted row.
+            if chosen == "(DELETED)" || conflict.localValue == "(DELETED)" || conflict.remoteValue == "(DELETED)" {
+                throw ConflictReviewError.deletionConflict
+            }
+            guard isAllowedTable(conflict.tableName) else {
+                throw ConflictReviewError.tableNotAllowed(conflict.tableName)
+            }
+            guard let recordId = Int64(conflict.recordId) else {
+                throw ConflictReviewError.invalidRecordId(conflict.recordId)
+            }
+
+            try db.writer.write { dbConn in
+                // Whitelist the field against the table's real columns — conflict
+                // rows come from sync and must not be able to inject SQL.
+                let columns = try String.fetchAll(
+                    dbConn,
+                    sql: "SELECT name FROM pragma_table_info(?)",
+                    arguments: [conflict.tableName]
+                )
+                guard columns.contains(conflict.fieldName) else {
+                    throw ConflictReviewError.unknownField(table: conflict.tableName, field: conflict.fieldName)
+                }
+
+                let writeValue: String? = (chosen == "(NULL)") ? nil : chosen
+                if columns.contains("updated_at") {
+                    try dbConn.execute(
+                        sql: "UPDATE [\(conflict.tableName)] SET [\(conflict.fieldName)] = ?, updated_at = ? WHERE id = ?",
+                        arguments: [writeValue, CoreFormatters.nowISO(), recordId]
+                    )
+                } else {
+                    try dbConn.execute(
+                        sql: "UPDATE [\(conflict.tableName)] SET [\(conflict.fieldName)] = ? WHERE id = ?",
+                        arguments: [writeValue, recordId]
+                    )
+                }
+            }
+
+            // Propagate the human decision to peers like any other local edit.
+            try ChangeTracker.trackChange(
+                db: db,
+                tableName: conflict.tableName,
+                recordId: Int64(conflict.recordId) ?? 0,
+                operation: .update,
+                changedFields: [conflict.fieldName: (chosen == "(NULL)" ? NSNull() : (chosen ?? "") as Any)]
+            )
+        }
+
+        try markConflictReviewed(db: db, conflictId: conflictId)
+    }
+
     /// Get conflict statistics.
     public static func getConflictStats(
         db: AppDatabase

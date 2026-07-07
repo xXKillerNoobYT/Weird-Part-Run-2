@@ -114,14 +114,16 @@ struct SyncConflictReviewPage: View {
 
             switch severity {
             case .critical:
-                // Critical: side-by-side human decision
+                // Critical: side-by-side human decision. These APPLY the chosen
+                // value (writing back the LWW loser when picked, change-logged so
+                // the decision syncs) — they are not review-only dismissals.
                 CriticalConflictView(
                     conflict: conflict,
                     onResolveLocal: {
-                        withAnimation { markReviewed(conflict) }
+                        withAnimation { resolve(conflict, keepLocal: true) }
                     },
                     onResolveRemote: {
-                        withAnimation { markReviewed(conflict) }
+                        withAnimation { resolve(conflict, keepLocal: false) }
                     }
                 )
 
@@ -279,6 +281,21 @@ struct SyncConflictReviewPage: View {
         // Show just date and time portion
         let clean = ts.prefix(19).replacingOccurrences(of: "T", with: " ")
         return String(clean)
+    }
+
+    /// Apply the reviewer's chosen side (writing the value when it differs from
+    /// the LWW winner), then drop the row from the list on success.
+    private func resolve(_ conflict: ConflictLogEntry, keepLocal: Bool) {
+        guard let id = conflict.id else {
+            actionError = "This sync conflict cannot be resolved because its conflict id is missing. Reload conflicts and try again."
+            syncManager.surfaceConflictReviewActionFailure(actionError ?? "Sync conflict action failed.")
+            return
+        }
+        if syncManager.resolveConflict(conflict, keepLocal: keepLocal) {
+            conflicts.removeAll { $0.id == id }
+        } else {
+            actionError = syncManager.errorMessage ?? "Sync conflict could not be resolved."
+        }
     }
 
     private func markReviewed(_ conflict: ConflictLogEntry) {

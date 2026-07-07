@@ -580,20 +580,27 @@ struct AddNotebookEntrySheet: View {
     // MARK: - Checklist Encoding/Decoding
 
     private func encodeChecklistItems() -> String? {
-        let items = checklistItems.filter { !$0.text.isEmpty }.map {
-            ["text": $0.text, "checked": $0.checked ? "true" : "false"]
+        // `checked` must be a real JSON boolean: IOSNotebookDetailPage decodes it
+        // as a Codable Bool, and the old string form ("true"/"false") failed that
+        // decode silently — checklists saved here never rendered on the detail
+        // page (2026-07-06 panel-quality audit). Readers stay tolerant of the
+        // legacy string form so existing rows keep loading.
+        let items: [[String: Any]] = checklistItems.filter { !$0.text.isEmpty }.map {
+            ["text": $0.text, "checked": $0.checked]
         }
         guard !items.isEmpty, let data = try? JSONSerialization.data(withJSONObject: items) else { return nil }
         return String(data: data, encoding: .utf8)
     }
 
     private func loadChecklistItems(from json: String) {
+        // Tolerant read: accepts both the canonical Bool form and the legacy
+        // "true"/"false" string form written before the 2026-07-06 contract fix.
         guard let data = json.data(using: .utf8),
-              let array = try? JSONDecoder().decode([[String: String]].self, from: data) else { return }
-        checklistItems = array.map {
+              let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
+        checklistItems = array.map { item in
             ChecklistItemInput(
-                text: $0["text"] ?? "",
-                checked: $0["checked"] == "true"
+                text: item["text"] as? String ?? "",
+                checked: (item["checked"] as? Bool) ?? ((item["checked"] as? String) == "true")
             )
         }
     }

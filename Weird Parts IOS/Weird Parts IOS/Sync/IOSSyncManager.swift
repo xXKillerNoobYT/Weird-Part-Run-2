@@ -833,6 +833,35 @@ final class IOSSyncManager {
         }
     }
 
+    /// Apply the reviewer's chosen side of a conflict to the live record, then
+    /// mark it reviewed. Unlike `markConflictReviewed`, this actually writes the
+    /// chosen value when it differs from the LWW winner and change-logs it so the
+    /// decision syncs to peers.
+    @discardableResult
+    func resolveConflict(_ conflict: ConflictLogEntry, keepLocal: Bool) -> Bool {
+        guard let db else {
+            syncReviewActionFailed("Sync conflict could not be resolved because the database is unavailable.")
+            return false
+        }
+        do {
+            try ConflictResolver.applyConflictResolution(
+                db: db,
+                conflict: conflict,
+                choice: keepLocal ? .keepLocal : .keepRemote
+            )
+            refreshConflictCount()
+            refreshPendingCount()
+            return true
+        } catch {
+            syncReadFailed(
+                error,
+                context: "apply sync conflict resolution",
+                logMessage: "applyConflictResolution failed for id \(conflict.id.map(String.init) ?? "nil")"
+            )
+            return false
+        }
+    }
+
     /// Mark all unreviewed conflicts as reviewed.
     @discardableResult
     func markAllConflictsReviewed() -> Bool {
