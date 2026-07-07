@@ -455,7 +455,7 @@ struct IOSReceiveShipmentPage: View {
                         .accessibilityHint("Sets every line back to the quantity on the purchase order.")
                         .accessibilityIdentifier("receive-reset-expected")
                         .confirmDestruction(
-                            of: "received count",
+                            of: "line item",
                             count: sessionItems.count,
                             actionLabel: "Reset",
                             actionVerb: "resets",

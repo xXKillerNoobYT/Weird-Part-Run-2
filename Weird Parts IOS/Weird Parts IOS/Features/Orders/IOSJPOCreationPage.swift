@@ -470,7 +470,7 @@ struct IOSJPOCreationPage: View {
                         }
                         .accessibilityLabel("Search again for \(query)")
                         .accessibilityHint("Runs this recent search again.")
-                        .accessibilityIdentifier("orders-jpo-create-recent-search-\(query)")
+                        .accessibilityIdentifier("orders-jpo-create-recent-search-\(Self.searchSlug(query))")
                     }
                 }
             }
@@ -482,6 +482,13 @@ struct IOSJPOCreationPage: View {
             }
         }
         .padding(sizeClass == .regular ? 12 : 0)
+    }
+
+    /// Kebab-slug for accessibility identifiers — raw queries contain spaces
+    /// and punctuation, which make identifiers unpredictable in UI tests.
+    private static func searchSlug(_ query: String) -> String {
+        String(query.unicodeScalars.map { CharacterSet.alphanumerics.contains($0) ? Character($0) : "-" })
+            .lowercased()
     }
 
     private func searchResultRow(_ part: Part) -> some View {
@@ -530,9 +537,10 @@ struct IOSJPOCreationPage: View {
                     .dsMinTapTarget()
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Add \(part.name) to cart")
+            .accessibilityLabel(alreadyInCart(partId: part.id)
+                ? "Add another \(part.name) to cart"
+                : "Add \(part.name) to cart")
             .accessibilityHint("Adds one of this part to the order cart.")
-            .accessibilityAddTraits(alreadyInCart(partId: part.id) ? .isSelected : [])
             .accessibilityIdentifier("orders-jpo-create-search-add-\(part.id ?? 0)")
         }
         .padding(.vertical, 4)

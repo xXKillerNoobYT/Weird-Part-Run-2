@@ -120,7 +120,7 @@ struct IOSPurchaseOrdersPage: View {
         }
         .alert(
             poToCancel?.status == "draft"
-                ? "Delete Draft \(poToCancel?.poNumber ?? "")?"
+                ? "Delete Draft \(poToCancel?.poNumber ?? "PO")?"
                 : "Cancel \(poToCancel?.poNumber ?? "PO")?",
             isPresented: $showCancelConfirm
         ) {
