@@ -741,7 +741,7 @@ private struct LogFuelSheet: View {
             Form {
                 Section("Fuel Level") {
                     VStack(spacing: 12) {
-                        Text("\(Int(fuelPercent))%")
+                        Text("\(Int(fuelPercent.rounded()))%")
                             .font(.title)
                             .fontWeight(.bold)
                             .foregroundStyle(
@@ -750,7 +750,7 @@ private struct LogFuelSheet: View {
                             )
                         Slider(value: $fuelPercent, in: 0...100, step: 5)
                             .accessibilityLabel("Fuel level")
-                            .accessibilityValue("\(Int(fuelPercent)) percent")
+                            .accessibilityValue("\(Int(fuelPercent.rounded())) percent")
                             .accessibilityIdentifier("fleet-log-fuel-slider")
                     }
                     .padding(.vertical, 4)

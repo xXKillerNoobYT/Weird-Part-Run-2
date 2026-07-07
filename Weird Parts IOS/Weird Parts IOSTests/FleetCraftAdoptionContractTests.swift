@@ -44,11 +44,16 @@ final class FleetCraftAdoptionContractTests: XCTestCase {
 
     /// The driver-assignment selection state must stay audible: the row's
     /// accessibilityValue is the only non-visual cue (the checkmark is hidden).
+    /// Pins the structural condition (a selection-dependent value), not the
+    /// word — copy/localization can change without breaking this.
     func testAssignDriverSelectionStateIsAudible() throws {
         let source = try Self.readFleetSource(named: "IOSAssignDriverSheet.swift")
-        XCTAssertTrue(
-            source.contains("\"Selected\""),
-            "IOSAssignDriverSheet lost its audible selection state — the hidden checkmark must never be the only cue for which driver is selected."
+        XCTAssertNotNil(
+            source.range(
+                of: #"value:\s*selectedEmployeeId == employee\.id \?"#,
+                options: .regularExpression
+            ),
+            "IOSAssignDriverSheet lost its selection-conditional accessibility value — the hidden checkmark must never be the only cue for which driver is selected."
         )
     }
 

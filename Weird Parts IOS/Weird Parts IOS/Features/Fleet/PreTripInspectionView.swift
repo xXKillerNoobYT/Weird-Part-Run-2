@@ -226,7 +226,7 @@ struct PreTripInspectionView: View {
                     Label("Fuel Level", systemImage: "fuelpump")
                         .font(.subheadline)
                     Spacer()
-                    Text("\(Int(fuelLevel * 100))%")
+                    Text("\(Int((fuelLevel * 100).rounded()))%")
                         .font(.subheadline)
                         .fontWeight(.medium)
                         .monospacedDigit()
@@ -235,7 +235,7 @@ struct PreTripInspectionView: View {
                 Slider(value: $fuelLevel, in: 0...1, step: 0.05)
                     .tint(fuelColor)
                     .accessibilityLabel("Fuel level")
-                    .accessibilityValue("\(Int(fuelLevel * 100)) percent")
+                    .accessibilityValue("\(Int((fuelLevel * 100).rounded())) percent")
                     .accessibilityIdentifier("fleet-inspection-fuel-slider")
             }
         }
