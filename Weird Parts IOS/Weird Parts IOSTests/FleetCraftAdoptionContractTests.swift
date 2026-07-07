@@ -50,7 +50,7 @@ final class FleetCraftAdoptionContractTests: XCTestCase {
         let source = try Self.readFleetSource(named: "IOSAssignDriverSheet.swift")
         XCTAssertNotNil(
             source.range(
-                of: #"value:\s*selectedEmployeeId == employee\.id \?"#,
+                of: #"value:\s*selectedEmployeeId\s*==\s*employee\.id\s*\?"#,
                 options: .regularExpression
             ),
             "IOSAssignDriverSheet lost its selection-conditional accessibility value — the hidden checkmark must never be the only cue for which driver is selected."
