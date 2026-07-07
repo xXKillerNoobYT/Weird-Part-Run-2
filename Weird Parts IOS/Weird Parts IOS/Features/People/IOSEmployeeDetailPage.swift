@@ -979,7 +979,7 @@ private struct AddCertificationSheet: View {
                         .disabled(isSaving || certType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || certName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
-            .alert("Discard skill changes?", isPresented: $showDiscardAlert) {
+            .alert("Discard certification changes?", isPresented: $showDiscardAlert) {
                 Button("Discard", role: .destructive) { dismiss() }
                 Button("Keep Editing", role: .cancel) {}
             } message: {
@@ -1075,7 +1075,7 @@ private struct AddSkillSheet: View {
                         .disabled(isSaving || skillName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
-            .alert("Discard certification changes?", isPresented: $showDiscardAlert) {
+            .alert("Discard skill changes?", isPresented: $showDiscardAlert) {
                 Button("Discard", role: .destructive) { dismiss() }
                 Button("Keep Editing", role: .cancel) {}
             } message: {

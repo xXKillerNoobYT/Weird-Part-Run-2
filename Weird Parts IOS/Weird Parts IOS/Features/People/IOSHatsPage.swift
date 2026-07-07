@@ -458,7 +458,9 @@ private struct HatDetailSheet: View {
             loadError = "People service unavailable"
             return
         }
-        for index in offsets {
+        // Offsets sit in pendingMemberRemoval while the confirm is up; a
+        // refresh can shrink `members` in the meantime, so bounds-check.
+        for index in offsets where members.indices.contains(index) {
             let member = members[index]
             do {
                 try service.toggleHatAssignment(employeeId: member.id, hatId: hat.id, assign: false)
