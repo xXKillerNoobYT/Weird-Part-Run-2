@@ -217,6 +217,8 @@ struct PreTripInspectionView: View {
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
                     .frame(maxWidth: 120)
+                    .accessibilityLabel("Odometer reading in miles")
+                    .accessibilityIdentifier("fleet-inspection-odometer-field")
             }
 
             VStack(spacing: 8) {
@@ -232,6 +234,9 @@ struct PreTripInspectionView: View {
                 }
                 Slider(value: $fuelLevel, in: 0...1, step: 0.05)
                     .tint(fuelColor)
+                    .accessibilityLabel("Fuel level")
+                    .accessibilityValue("\(Int(fuelLevel * 100)) percent")
+                    .accessibilityIdentifier("fleet-inspection-fuel-slider")
             }
         }
     }
@@ -242,6 +247,8 @@ struct PreTripInspectionView: View {
         Section("Notes") {
             TextField("General observations...", text: $generalNotes, axis: .vertical)
                 .lineLimit(3...6)
+                .accessibilityLabel("General observations")
+                .accessibilityIdentifier("fleet-inspection-general-notes-field")
         }
     }
 
@@ -472,16 +479,22 @@ private struct InspectionItemRow: View {
             // Status buttons
             HStack(spacing: 8) {
                 InspectionStatusButton(label: "OK", systemImage: "checkmark.circle.fill",
-                                       color: .green, isSelected: item.status == "ok") {
+                                       color: .green, isSelected: item.status == "ok",
+                                       itemName: item.itemName,
+                                       identifier: "fleet-inspection-item-\(item.id)-ok") {
                     item.status = "ok"
                     item.notes = ""
                 }
                 InspectionStatusButton(label: "Issue", systemImage: "xmark.circle.fill",
-                                       color: .red, isSelected: item.status == "issue") {
+                                       color: .red, isSelected: item.status == "issue",
+                                       itemName: item.itemName,
+                                       identifier: "fleet-inspection-item-\(item.id)-issue") {
                     item.status = "issue"
                 }
                 InspectionStatusButton(label: "N/A", systemImage: "minus.circle.fill",
-                                       color: .gray, isSelected: item.status == "na") {
+                                       color: .gray, isSelected: item.status == "na",
+                                       itemName: item.itemName,
+                                       identifier: "fleet-inspection-item-\(item.id)-na") {
                     item.status = "na"
                     item.notes = ""
                 }
@@ -492,6 +505,8 @@ private struct InspectionItemRow: View {
                 TextField("Describe the issue...", text: $item.notes)
                     .font(.caption)
                     .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Issue description for \(item.itemName)")
+                    .accessibilityIdentifier("fleet-inspection-issue-notes-\(item.id)")
             }
         }
         .padding(.vertical, 4)
@@ -505,6 +520,8 @@ private struct InspectionStatusButton: View {
     let systemImage: String
     let color: Color
     let isSelected: Bool
+    let itemName: String
+    let identifier: String
     let action: () -> Void
 
     var body: some View {
@@ -527,7 +544,8 @@ private struct InspectionStatusButton: View {
         .buttonStyle(.plain)
         .foregroundStyle(isSelected ? color : .secondary)
         .accessibilityLabel(label)
-        .accessibilityValue(isSelected ? "Selected" : "")
-        .accessibilityHint("Sets this inspection item to \(label).")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityHint("Sets \(itemName) to \(label).")
+        .accessibilityIdentifier(identifier)
     }
 }

@@ -135,6 +135,26 @@ struct IOSTrailerLocationsPage: View {
             }
         }
         .padding(.vertical, 2)
+        .rowAccessibility(
+            label: "Trailer \(trailer.trailerNumber), \(trailer.trailerType)",
+            value: trailerAccessibilityValue(trailer),
+            id: "fleet-trailer-location-row-\(trailer.id)"
+        )
+    }
+
+    /// VoiceOver value for a trailer location row: status, then job site or yard,
+    /// then the tow vehicle when one is assigned.
+    private func trailerAccessibilityValue(_ trailer: FleetService.TrailerListItem) -> String {
+        var value = trailer.status.replacingOccurrences(of: "_", with: " ")
+        if let job = trailer.currentJobName {
+            value += ", at \(job)"
+        } else {
+            value += ", in the yard, unassigned"
+        }
+        if let vehicle = trailer.assignedVehicleName {
+            value += ", towed by \(vehicle)"
+        }
+        return value
     }
 
     private var filteredTrailers: [FleetService.TrailerListItem] {

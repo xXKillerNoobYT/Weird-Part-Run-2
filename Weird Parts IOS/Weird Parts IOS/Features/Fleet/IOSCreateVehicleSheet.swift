@@ -115,6 +115,8 @@ struct IOSCreateVehicleSheet: View {
         Section("Notes") {
             TextEditor(text: $notes)
                 .frame(minHeight: 60)
+                .accessibilityLabel("Notes")
+                .accessibilityIdentifier("fleet-create-vehicle-notes-field")
         }
     }
 

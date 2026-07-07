@@ -42,6 +42,8 @@ struct IOSTelematicsPage: View {
                         Image(systemName: "questionmark.circle")
                     }
                     .accessibilityLabel("Help")
+                    .accessibilityHint("Opens help for this page.")
+                    .accessibilityIdentifier("fleet-telematics-help-button")
                 }
             }
             .sheet(item: $activeSheet) { _ in
@@ -129,7 +131,7 @@ struct IOSTelematicsPage: View {
                     .font(.body)
                     .foregroundStyle(statusColor(location.status))
             }
-            .accessibilityLabel("Status: \(location.status.capitalized)")
+            .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
@@ -165,9 +167,25 @@ struct IOSTelematicsPage: View {
             }
         }
         .padding(.vertical, 4)
+        .rowAccessibility(
+            label: "\(location.vehicleName), \(location.status.capitalized)",
+            value: locationAccessibilityValue(location),
+            id: "fleet-location-row-\(location.id)"
+        )
     }
 
     // MARK: - Helpers
+
+    private func locationAccessibilityValue(_ location: FleetService.VehicleLocationRow) -> String {
+        var value = "Driver \(location.driverName)"
+        if let speed = location.speed {
+            value += ", \(String(format: "%.0f", speed)) miles per hour"
+        }
+        if !location.lastUpdated.isEmpty {
+            value += ", updated \(location.lastUpdated.prefix(16))"
+        }
+        return value
+    }
 
     private func statusColor(_ status: String) -> Color {
         switch status.lowercased() {

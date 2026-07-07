@@ -134,9 +134,13 @@ struct IOSVehicleDetailPage: View {
                                 Capsule().fill(selectedTab == tab ? Color.accentColor : Color.secondary.opacity(0.15))
                             )
                             .foregroundStyle(selectedTab == tab ? .white : .primary)
+                            // Visible capsule stays compact; hit area meets the 44pt floor.
+                            .dsMinTapTarget()
                     }
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
+                    .accessibilityHint("Shows the \(tab.rawValue) tab.")
+                    .accessibilityIdentifier("fleet-vehicle-tab-\(tab.rawValue.lowercased())")
                 }
             }
             .padding(.horizontal)
@@ -244,6 +248,11 @@ struct IOSVehicleDetailPage: View {
                             .frame(width: 60)
                         }
                     }
+                    .rowAccessibility(
+                        label: part.partName,
+                        value: "Quantity \(part.quantity) of target \(part.targetQty ?? 0)",
+                        id: "fleet-truck-stock-row-\(part.id)"
+                    )
                 }
             }
         }
@@ -269,6 +278,11 @@ struct IOSVehicleDetailPage: View {
                         Text("×\(part.quantity)")
                             .font(.subheadline).monospacedDigit()
                     }
+                    .rowAccessibility(
+                        label: "\(part.partName), \(part.sourceLocation ?? "unknown") to \(part.destinationLocation ?? "unknown")",
+                        value: "Quantity \(part.quantity)",
+                        id: "fleet-transfer-row-\(part.id)"
+                    )
                 }
             }
         }
@@ -296,6 +310,11 @@ struct IOSVehicleDetailPage: View {
                             .background(conditionColor(tool.condition).opacity(0.15))
                             .clipShape(Capsule())
                     }
+                    .rowAccessibility(
+                        label: "\(tool.toolName), checked out by \(tool.checkedOutBy)",
+                        value: "Condition \(tool.condition.capitalized)",
+                        id: "fleet-vehicle-tool-row-\(tool.id)"
+                    )
                 }
             }
         }
@@ -369,6 +388,14 @@ struct IOSVehicleDetailPage: View {
                     .foregroundStyle(.green)
             }
         }
+        .rowAccessibility(
+            label: "\(a.userName), \(a.assignmentType) assignment",
+            value: "Since \(a.startDate.prefix(10))"
+                + (a.endDate.map { " to \($0.prefix(10))" } ?? "")
+                + (a.isTakeHome ? ", take-home vehicle" : "")
+                + (a.isActive ? ", active" : ""),
+            id: "fleet-assignment-row-\(a.id)"
+        )
     }
 
     // MARK: - Maintenance Tab
@@ -407,6 +434,15 @@ struct IOSVehicleDetailPage: View {
                             }
                         }
                     }
+                    .rowAccessibility(
+                        label: "\(record.maintenanceTypeName ?? "Service"), \(record.performedAt.prefix(10))",
+                        value: [
+                            record.cost.map { String(format: "Cost $%.2f", $0) },
+                            record.odometerReading.map { "\($0.formatted()) miles" },
+                            record.performedByName.map { "by \($0)" }
+                        ].compactMap { $0 }.joined(separator: ", "),
+                        id: "fleet-maintenance-row-\(record.id)"
+                    )
                 }
             }
         }
@@ -441,6 +477,15 @@ struct IOSVehicleDetailPage: View {
                                 .font(.subheadline).foregroundStyle(.secondary)
                         }
                     }
+                    .rowAccessibility(
+                        label: "Fuel fill-up, \(log.logDate.prefix(10))",
+                        value: [
+                            log.gallons.map { String(format: "%.1f gallons", $0) },
+                            log.totalCost.map { String(format: "$%.2f", $0) },
+                            log.station.flatMap { $0.isEmpty ? nil : "at \($0)" }
+                        ].compactMap { $0 }.joined(separator: ", "),
+                        id: "fleet-fuel-row-\(log.id)"
+                    )
                 }
             }
         }
@@ -466,6 +511,14 @@ struct IOSVehicleDetailPage: View {
                         Text(String(log.logDate.prefix(10)))
                             .font(.caption).foregroundStyle(.secondary)
                     }
+                    .rowAccessibility(
+                        label: "Mileage log, \(log.logDate.prefix(10))",
+                        value: [
+                            log.totalMiles.map { String(format: "%.1f miles", $0) },
+                            log.purpose.flatMap { $0.isEmpty ? nil : $0 }
+                        ].compactMap { $0 }.joined(separator: ", "),
+                        id: "fleet-mileage-row-\(log.id)"
+                    )
                 }
             }
         }
@@ -494,7 +547,7 @@ struct IOSVehicleDetailPage: View {
                     HStack {
                         Image(systemName: inspectionIcon(record.result))
                             .foregroundStyle(inspectionColor(record.result))
-                            .accessibilityLabel("Status: \(record.result.capitalized)")
+                            .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(record.inspectorName).font(.subheadline)
                             Text(String(record.performedAt.prefix(10)))
@@ -517,6 +570,13 @@ struct IOSVehicleDetailPage: View {
                             .foregroundStyle(inspectionColor(record.result))
                             .clipShape(Capsule())
                     }
+                    .rowAccessibility(
+                        label: "Inspection by \(record.inspectorName), \(record.performedAt.prefix(10))",
+                        value: "Result \(record.result.capitalized)"
+                            + (record.odometerReading.map { ", \($0.formatted()) miles" } ?? "")
+                            + (record.notes.flatMap { $0.isEmpty ? nil : ", \($0)" } ?? ""),
+                        id: "fleet-inspection-row-\(record.id)"
+                    )
                 }
             }
         }

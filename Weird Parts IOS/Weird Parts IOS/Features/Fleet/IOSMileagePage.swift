@@ -59,6 +59,8 @@ struct IOSMileagePage: View {
                         Image(systemName: "questionmark.circle")
                     }
                     .accessibilityLabel("Help")
+                    .accessibilityHint("Shows help for mileage logs.")
+                    .accessibilityIdentifier("fleet-mileage-help-button")
                 }
             }
             .sheet(item: $activeSheet) { _ in
@@ -175,6 +177,24 @@ struct IOSMileagePage: View {
             }
         }
         .padding(.vertical, 4)
+        .rowAccessibility(
+            label: "\(log.vehicleName) mileage log, \(log.logDate)",
+            value: mileageRowAccessibilityValue(log),
+            id: "fleet-mileage-row-\(log.id)"
+        )
+    }
+
+    private func mileageRowAccessibilityValue(_ log: FleetService.MileageRow) -> String {
+        var value: String
+        if let miles = log.totalMiles {
+            value = "\(String(format: "%.1f", miles)) miles driven by \(log.userName)"
+        } else {
+            value = "Driven by \(log.userName)"
+        }
+        if let purpose = log.purpose, !purpose.isEmpty {
+            value += ", \(purpose)"
+        }
+        return value
     }
 
     // MARK: - Data Loading
