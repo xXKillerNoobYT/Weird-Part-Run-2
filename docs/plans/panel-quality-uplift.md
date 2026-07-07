@@ -51,7 +51,7 @@ Cross-area entity consistency (same job status = same color everywhere) · pagin
 ## 3. The Plan
 
 **Wave 1 (this session):** the two functional data bugs (conflict apply, checklist contract), the shared craft kit foundation (`rowAccessibility` + `dsMinTapTarget`), proof-of-adoption on the worst offenders (Fleet pre-trip, Office approvals), Dashboard dup-identifier, panel edge fix (done, 7f280bf9). Build + tests green → main.
-**Wave 2 (tracked in #1418):** remaining functional bugs (break-bonus edit, clock-in note, spending filter, unreachable approve sheet, dead code); area adoption passes for the kit (Orders/Settings/Fleet first — the grep-zero areas); destructive-confirm helper + adoption; Orders context menus.
+**Wave 2 (tracked in #1421):** remaining functional bugs (break-bonus edit, clock-in note, spending filter, unreachable approve sheet, dead code); area adoption passes for the kit (Orders/Settings/Fleet first — the grep-zero areas); destructive-confirm helper + adoption; Orders context menus.
 **Wave 3 (tracked):** LoadState consolidation, filter-bar contract tests, legend/mode-banner shared components, then the critic's missed dimensions as their own audit rounds (Dynamic Type XXL, first-run states, cross-area consistency).
 
 **Method for adoption passes:** per-area PRs using the shared kit, each with contract-pin tests (real invariants, not string-scans — see the stale source-scan repairs in 7f280bf9), Copilot-reviewed per repo policy.
@@ -62,4 +62,4 @@ Cross-area entity consistency (same job status = same color everywhere) · pagin
 - [x] Plan (this document)
 - [x] Wave 1 implementation — see commits on `claude/fervent-rhodes-03a6e8`
 - [x] Landed on main (build + affected tests green)
-- [ ] Wave 2 (#1418) · Wave 3 (#1418)
+- [ ] Wave 2 (#1421) · Wave 3 (#1421)
