@@ -31,9 +31,18 @@ nonisolated enum DestructiveConfirmationCopy {
         "\(actionLabel) \(countPhrase)?"
     }
 
+    /// Quotes a record name defensively: single quotes normally, double quotes
+    /// when the name contains an apostrophe ("Bob's"), and no wrapping in the
+    /// degenerate case where the name contains both quote styles.
+    static func quoted(_ name: String) -> String {
+        if !name.contains("'") { return "'\(name)'" }
+        if !name.contains("\"") { return "\"\(name)\"" }
+        return name
+    }
+
     /// "Delete 'Kitchen remodel'?"
     static func recordTitle(actionLabel: String, recordName: String) -> String {
-        "\(actionLabel) '\(recordName)'?"
+        "\(actionLabel) \(quoted(recordName))?"
     }
 
     /// Default body when the call site doesn't supply one. `suffix` carries
@@ -46,7 +55,7 @@ nonisolated enum DestructiveConfirmationCopy {
 
     /// Default body for the named-record shape.
     static func defaultRecordMessage(actionVerb: String, noun: String, recordName: String, suffix: String? = nil) -> String {
-        let base = "This \(actionVerb) the \(noun) '\(recordName)'. This can't be undone from this screen."
+        let base = "This \(actionVerb) the \(noun) \(quoted(recordName)). This can't be undone from this screen."
         guard let suffix, !suffix.isEmpty else { return base }
         return "\(base) \(suffix)"
     }

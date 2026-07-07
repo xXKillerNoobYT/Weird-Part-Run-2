@@ -94,4 +94,41 @@ final class DestructiveConfirmationCopyTests: XCTestCase {
         )
         XCTAssertEqual(message, "This deletes the notebook 'Kitchen remodel'. This can't be undone from this screen.")
     }
+
+    // MARK: - Defensive quoting
+
+    func testQuotedUsesDoubleQuotesWhenNameHasApostrophe() {
+        XCTAssertEqual(
+            DestructiveConfirmationCopy.recordTitle(actionLabel: "Delete", recordName: "Bob's order"),
+            "Delete \"Bob's order\"?"
+        )
+    }
+
+    func testQuotedDropsWrappingWhenNameHasBothQuoteStyles() {
+        XCTAssertEqual(
+            DestructiveConfirmationCopy.quoted("Bob's \"special\""),
+            "Bob's \"special\""
+        )
+    }
+}
+
+/// Behavioral contract for the shared stable-identifier suffix (CraftKit):
+/// record id when present, else a real kebab slug — never a colliding "0".
+final class StableAccessibilitySuffixTests: XCTestCase {
+
+    func testUsesIdWhenPresent() {
+        XCTAssertEqual(stableAccessibilitySuffix(id: 42, name: "Acme Supply"), "42")
+    }
+
+    func testSlugsNameWhenIdIsNil() {
+        XCTAssertEqual(stableAccessibilitySuffix(id: nil, name: "Acme Supply Co."), "acme-supply-co")
+    }
+
+    func testCollapsesConsecutiveSeparators() {
+        XCTAssertEqual(stableAccessibilitySuffix(id: nil, name: "A  &  B (main)"), "a-b-main")
+    }
+
+    func testFallsBackWhenNothingSurvivesSlugging() {
+        XCTAssertEqual(stableAccessibilitySuffix(id: nil, name: "!!!"), "unnamed")
+    }
 }

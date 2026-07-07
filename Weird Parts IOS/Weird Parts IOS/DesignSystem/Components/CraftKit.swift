@@ -47,10 +47,17 @@ extension View {
 }
 
 /// Stable accessibility-identifier suffix: the record id when present, else a
-/// kebab slug of the given name. Never a literal `0` — nil-id records would
+/// kebab slug of the given name (alphanumerics separated by single dashes,
+/// "unnamed" if nothing survives). Never a literal `0` — nil-id records would
 /// otherwise collide on the same identifier and make UI tests flaky.
 nonisolated func stableAccessibilitySuffix(id: Int64?, name: String) -> String {
-    id.map(String.init) ?? name.lowercased().replacingOccurrences(of: " ", with: "-")
+    if let id { return String(id) }
+    let slug = name.lowercased()
+        .map { $0.isLetter || $0.isNumber ? String($0) : "-" }
+        .joined()
+        .split(separator: "-")
+        .joined(separator: "-")
+    return slug.isEmpty ? "unnamed" : slug
 }
 
 /// Applies `.accessibilityValue` only when a value exists, so empty values don't
