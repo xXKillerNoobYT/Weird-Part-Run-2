@@ -4,9 +4,10 @@ final class SharedSheetPresentationDetentsTests: XCTestCase {
     func testSharedHelpAndDismissWrappersUseMediumLargePresentationDetents() throws {
         for file in ["PageHelpSheet.swift", "SheetDismissWrapper.swift"] {
             let source = try String(contentsOfFile: sharedSourcePath(file), encoding: .utf8)
-            XCTAssertTrue(
-                source.contains(".presentationDetents([.medium, .large])"),
-                "\(file) should provide medium/large sheet detents for app-wide short informational sheets."
+            assertContainsDetents(
+                source,
+                expectedDetents: "[.medium, .large]",
+                message: "\(file) should provide medium/large sheet detents for app-wide short informational sheets."
             )
             XCTAssertTrue(
                 source.contains(".presentationDragIndicator(.visible)"),
@@ -17,9 +18,10 @@ final class SharedSheetPresentationDetentsTests: XCTestCase {
 
     func testSharedFormSheetPinsLargePresentationDetent() throws {
         let source = try String(contentsOfFile: sharedSourcePath("FormSheet.swift"), encoding: .utf8)
-        XCTAssertTrue(
-            source.contains(".presentationDetents([.large])"),
-            "FormSheet should keep create/edit forms full-size while making the detent explicit."
+        assertContainsDetents(
+            source,
+            expectedDetents: "[.large]",
+            message: "FormSheet should keep create/edit forms full-size while making the detent explicit."
         )
         XCTAssertTrue(
             source.contains(".presentationDragIndicator(.visible)"),
@@ -29,14 +31,26 @@ final class SharedSheetPresentationDetentsTests: XCTestCase {
 
     func testQRScanSheetUsesMediumPresentationDetent() throws {
         let source = try String(contentsOfFile: scanningSourcePath("QRScanSheet.swift"), encoding: .utf8)
-        XCTAssertTrue(
-            source.contains(".presentationDetents([.medium])"),
-            "QRScanSheet should use a medium sheet detent for quick scan/manual-entry flows."
+        assertContainsDetents(
+            source,
+            expectedDetents: "[.medium]",
+            message: "QRScanSheet should use a medium sheet detent for quick scan/manual-entry flows."
         )
         XCTAssertTrue(
             source.contains(".presentationDragIndicator(.visible)"),
             "QRScanSheet should expose a visible drag indicator with its detent."
         )
+    }
+
+    private func assertContainsDetents(_ source: String, expectedDetents: String, message: String) {
+        let normalizedSource = source.replacingOccurrences(
+            of: #"\s+"#,
+            with: "",
+            options: .regularExpression
+        )
+        let normalizedExpected = ".presentationDetents(\(expectedDetents))"
+            .replacingOccurrences(of: #"\s+"#, with: "", options: .regularExpression)
+        XCTAssertTrue(normalizedSource.contains(normalizedExpected), message)
     }
 
     private func sharedSourcePath(_ fileName: String) -> String {
