@@ -323,7 +323,7 @@ private struct AddEmployeeSheet: View {
                         .disabled(displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || pin.count < 4)
                 }
             }
-            .alert("Discard changes?", isPresented: $showDiscardAlert) {
+            .alert("Discard employee changes?", isPresented: $showDiscardAlert) {
                 Button("Discard", role: .destructive) { dismiss() }
                 Button("Keep Editing", role: .cancel) {}
             } message: {
