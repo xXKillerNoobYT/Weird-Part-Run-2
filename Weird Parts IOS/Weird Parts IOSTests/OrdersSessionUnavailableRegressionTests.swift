@@ -242,8 +242,13 @@ final class OrdersSessionUnavailableRegressionTests: XCTestCase {
                 jpoCreationSource.contains("return nil"),
             "AI suggestion parsing should reject malformed, zero, or negative quantities instead of silently coercing them to one."
         )
-        XCTAssertFalse(
-            jpoCreationSource.contains(") ?? 1"),
+        XCTAssertNil(
+            // Anchored to the quantity parse itself — a bare ") ?? 1" scan would
+            // false-fail on unrelated nil-coalescing elsewhere in the page.
+            jpoCreationSource.range(
+                of: #"Int\(parts\[2\][^\n]*\?\?\s*1"#,
+                options: .regularExpression
+            ),
             "Malformed AI quantities must not be silently treated as valid quantity-one suggestions."
         )
         XCTAssertTrue(
