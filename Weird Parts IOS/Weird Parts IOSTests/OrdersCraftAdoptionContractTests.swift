@@ -3,8 +3,10 @@ import XCTest
 /// Adoption contract for the panel-quality craft pass over the Orders area
 /// (#1421 Wave 2, docs/plans/panel-quality-uplift.md).
 ///
-/// Pins the area-level invariants the 2026-07-07 adoption pass established —
-/// not exact strings, so pages can keep evolving:
+/// These are intentional source-token adoption checks (scans for `.contextMenu`,
+/// `.rowAccessibility(`, `"orders-` prefixes) — NOT user-visible copy assertions.
+/// They pin area-level adoption floors, not exact page content, so pages can
+/// keep evolving without breaking them:
 ///  1. Every Orders list/card page offers a context menu (rubric criterion 4:
 ///     ≥2 input paths to core actions). The area previously had zero.
 ///  2. The area uses stable `orders-` accessibility identifiers (UI-test

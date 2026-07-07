@@ -71,7 +71,7 @@ struct CreatePOSheet: View {
                             .accessibilityLabel("Supplier \(item.supplier.name)")
                             .accessibilityValue(selectedSupplierId == item.supplier.id ? "Selected" : "Not selected")
                             .accessibilityHint("Selects this supplier for the new purchase order.")
-                            .accessibilityIdentifier("orders-create-po-supplier-row-\(item.supplier.id ?? 0)")
+                            .accessibilityIdentifier("orders-create-po-supplier-row-\(item.supplier.id.map(String.init) ?? item.supplier.name.lowercased().replacingOccurrences(of: " ", with: "-"))")
                         }
                     }
                 }

@@ -1114,23 +1114,20 @@ struct IOSJPODetailPage: View {
 
     // MARK: - Helpers
 
-    /// Count-aware title for the reject confirmation — names the exact
-    /// selection size on the bulk path instead of a bare "Reject Part?".
+    /// The actionable context lives in the title — the single path names the
+    /// part, the bulk path states the exact selection count.
     private var rejectConfirmTitle: String {
-        if rejectingLineId != nil { return "Reject Part?" }
+        if let lineId = rejectingLineId {
+            let name = jpo?.lines.first(where: { $0.id == lineId })?.partName ?? "Part"
+            return "Reject '\(name)'?"
+        }
         let count = selectedLineIds.count
         return "Reject \(count) Selected Part\(count == 1 ? "" : "s")?"
     }
 
-    /// Names the single part being rejected, or states the exact bulk count.
+    /// The message carries only the notice; the title already asks the question.
     private var rejectConfirmMessage: String {
-        let notice = "A reason is required for rejection. The requester will be notified."
-        if let lineId = rejectingLineId {
-            let name = jpo?.lines.first(where: { $0.id == lineId })?.partName ?? "this part"
-            return "Reject '\(name)'? \(notice)"
-        }
-        let count = selectedLineIds.count
-        return "Reject \(count) selected part\(count == 1 ? "" : "s")? \(notice)"
+        "A reason is required for rejection. The requester will be notified."
     }
 
     private func statusColor(_ status: String) -> Color {
