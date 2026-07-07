@@ -238,6 +238,14 @@ public enum ConflictResolver {
 
             do {
                 try db.writer.write { dbConn in
+                    // Echo guard: while this transaction applies a PEER's change,
+                    // the change-tracking triggers (migration 112) must not log
+                    // the write — otherwise every applied change would be re-
+                    // pushed back to the peer forever. The guard row lives only
+                    // inside this transaction (rolled back with it on failure).
+                    try dbConn.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
+                    defer { try? dbConn.execute(sql: "DELETE FROM _sync_apply_guard") }
+
                     switch change.operation.uppercased() {
                     case "DELETE":
                         try applyDelete(db: dbConn, change: change, localDeviceId: localDevice)
@@ -370,6 +378,11 @@ public enum ConflictResolver {
             }
 
             try db.writer.write { dbConn in
+                // Guard against the change-tracking triggers double-logging: this
+                // path records its own change entry via trackChange below.
+                try dbConn.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
+                defer { try? dbConn.execute(sql: "DELETE FROM _sync_apply_guard") }
+
                 // Whitelist the field against the table's real columns — conflict
                 // rows come from sync and must not be able to inject SQL.
                 let columns = try String.fetchAll(

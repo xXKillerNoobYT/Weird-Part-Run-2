@@ -1122,9 +1122,19 @@ public actor PeerManager {
                     )
                 }
                 if let row = row {
-                    let dict = Self.jsonRecordDict(from: row)
-                    if let jsonData = try? JSONSerialization.data(withJSONObject: dict) {
-                        recordData = String(data: jsonData, encoding: .utf8)
+                    // Never push device-scoped settings (pairing/device identity)
+                    // to peers — same rule as the initial snapshot. A nil
+                    // recordData makes the receiver skip the change harmlessly.
+                    let isDeviceScopedSetting = entry.tableName == "settings"
+                        && SettingsService.syncScope(
+                            for: (row["key"] as? String) ?? "",
+                            category: row["category"] as? String
+                        ) == .device
+                    if !isDeviceScopedSetting {
+                        let dict = Self.jsonRecordDict(from: row)
+                        if let jsonData = try? JSONSerialization.data(withJSONObject: dict) {
+                            recordData = String(data: jsonData, encoding: .utf8)
+                        }
                     }
                 }
             }

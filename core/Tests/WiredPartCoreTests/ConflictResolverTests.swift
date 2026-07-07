@@ -527,6 +527,9 @@ struct ConflictResolverTests {
         // LWW already applied the remote winner to the row.
         let userId = try insertUser(db: db, email: "winner@remote.com")
         try insertConflict(db: db, recordId: userId, winner: "remote")
+        // Clear the trigger/backfill entries so the change-log assertions below
+        // see only what applyConflictResolution itself records.
+        try db.writer.write { try $0.execute(sql: "DELETE FROM _change_log") }
         let conflict = try ConflictResolver.getUnreviewedConflicts(db: db)[0]
 
         // Reviewer overrides LWW and keeps the LOCAL (losing) value.
@@ -554,6 +557,9 @@ struct ConflictResolverTests {
         let db = try freshDB()
         let userId = try insertUser(db: db, email: "winner@remote.com")
         try insertConflict(db: db, recordId: userId, winner: "remote")
+        // Clear the trigger/backfill entries so the change-log assertions below
+        // see only what applyConflictResolution itself records.
+        try db.writer.write { try $0.execute(sql: "DELETE FROM _change_log") }
         let conflict = try ConflictResolver.getUnreviewedConflicts(db: db)[0]
 
         // Reviewer confirms the value LWW already applied — no write, no change log.

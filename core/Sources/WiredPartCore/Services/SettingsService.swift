@@ -977,10 +977,14 @@ public final class SettingsService: Sendable {
     public func listAuditLog(limit: Int = 50) throws -> [AuditLogEntry] {
         do {
             return try db.writer.read { dbConnection in
+                // Exclude the migration-112 backfill bootstrap rows — they exist
+                // so pre-trigger data syncs to peers, but they are not user
+                // actions and would flood a fresh install's audit view.
                 let rows = try Row.fetchAll(dbConnection, sql: """
                     SELECT cl.id, cl.table_name, cl.operation, cl.timestamp AS changed_at,
                            cl.device_id
                     FROM _change_log cl
+                    WHERE cl.changed_fields IS NULL OR cl.changed_fields != '{"__backfill__":1}'
                     ORDER BY cl.timestamp DESC
                     LIMIT ?
                 """, arguments: [limit])
