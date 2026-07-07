@@ -600,12 +600,13 @@ struct IOSBreakSettingsPage: View {
             // Save bonuses
             let statePolicy = selectedPolicy(type: "state_required_paid")
             if let policyId = statePolicy?.id {
-                // Toggle existing bonuses
+                // Update existing bonuses — amount AND enabled flag. toggleBonus
+                // alone silently dropped edited amounts (2026-07-06 audit).
                 for bonus in bonuses {
                     if bonus.bonusType == "lunch" {
-                        try breakSvc.toggleBonus(bonusId: bonus.id ?? 0, isEnabled: lunchBonusEnabled)
+                        try breakSvc.updateBonus(bonusId: bonus.id ?? 0, bonusAmount: lunchBonusAmount, isEnabled: lunchBonusEnabled)
                     } else if bonus.bonusType == "break" {
-                        try breakSvc.toggleBonus(bonusId: bonus.id ?? 0, isEnabled: breakBonusEnabled)
+                        try breakSvc.updateBonus(bonusId: bonus.id ?? 0, bonusAmount: breakBonusAmount, isEnabled: breakBonusEnabled)
                     }
                 }
 

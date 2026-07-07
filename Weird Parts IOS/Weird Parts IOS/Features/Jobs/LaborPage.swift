@@ -59,8 +59,6 @@ struct LaborPage: View {
     @State private var users: [(id: Int64, name: String)] = []
     @State private var jobOptions: [JobsService.JobListItem] = []
 
-    private var effectiveStart: Date { dateRange.dateInterval?.start ?? customStart }
-    private var effectiveEnd: Date { dateRange.dateInterval?.end ?? customEnd }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -286,7 +284,7 @@ struct LaborPage: View {
             return
         }
         do {
-            try service.clockIn(userId: userId, jobId: jobId)
+            try service.clockIn(userId: userId, jobId: jobId, notes: clockInNote)
             activeSheet = nil
             clockInNote = ""
             selectedUserId = nil

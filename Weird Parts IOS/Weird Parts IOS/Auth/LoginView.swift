@@ -15,6 +15,7 @@ struct LoginView: View {
     @State private var errorMessage: String?
     @State private var isLoading = false
     @State private var usersLoaded = false
+    @State private var showStartOverConfirmation = false
     @FocusState private var pinFocused: Bool
 
     private var isAccessibilitySize: Bool {
@@ -112,13 +113,17 @@ struct LoginView: View {
                     }
                     .padding()
                 } else if users.isEmpty && usersLoaded {
+                    // Reachable mid-Bluetooth-join (data landed before users) or
+                    // after a failed initial sync. Must never be a dead end —
+                    // offer a re-check (sync may have just delivered the users)
+                    // and a way back to onboarding (2026-07-06 audit, #1417).
                     VStack(spacing: 12) {
                         Image(systemName: "person.slash")
                             .font(.largeTitle)
                             .foregroundStyle(.secondary)
                         Text("No Users Found")
                             .font(.headline)
-                        Text("Create an admin account first using the onboarding flow.")
+                        Text("If this device just joined a company, the user list may still be syncing — check again in a moment. Or start over to create or join a company.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -127,6 +132,42 @@ struct LoginView: View {
                             Text(error)
                                 .font(.caption)
                                 .foregroundStyle(.red)
+                        }
+
+                        Button {
+                            usersLoaded = false
+                            loadUsers()
+                        } label: {
+                            Label("Check Again", systemImage: "arrow.clockwise")
+                                .frame(minWidth: 170, minHeight: 44)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .accessibilityIdentifier("login-no-users-check-again")
+
+                        Button {
+                            showStartOverConfirmation = true
+                        } label: {
+                            Text("Start Over")
+                                .frame(minWidth: 170, minHeight: 44)
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("login-no-users-start-over")
+                        .confirmationDialog(
+                            "Go back to setup?",
+                            isPresented: $showStartOverConfirmation,
+                            titleVisibility: .visible
+                        ) {
+                            Button("Back to Setup") {
+                                // Mirrors AppCore's bootstrap reset: clearing the
+                                // flags + needsOnboarding routes back to Welcome
+                                // (Create New Business / Join Existing Business).
+                                UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
+                                UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+                                appCore.needsOnboarding = true
+                            }
+                            Button("Cancel", role: .cancel) {}
+                        } message: {
+                            Text("You'll return to the setup screen where you can create a company or join an existing one. Data already synced to this device is kept.")
                         }
                     }
                     .padding()
