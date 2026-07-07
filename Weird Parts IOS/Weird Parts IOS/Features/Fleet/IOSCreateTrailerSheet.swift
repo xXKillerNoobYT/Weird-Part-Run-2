@@ -36,6 +36,8 @@ struct IOSCreateTrailerSheet: View {
                 Section("Notes") {
                     TextEditor(text: $notes)
                         .frame(minHeight: 60)
+                        .accessibilityLabel("Notes")
+                        .accessibilityIdentifier("fleet-create-trailer-notes-field")
                 }
 
                 if let error = errorMessage {

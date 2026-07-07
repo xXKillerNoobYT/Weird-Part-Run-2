@@ -135,6 +135,12 @@ struct IOSAssignDriverSheet: View {
                 }
             }
         }
+        .rowAccessibility(
+            label: [employee.displayName, employee.hatNames].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", "),
+            value: selectedEmployeeId == employee.id ? "Selected" : nil,
+            hint: "Selects this employee as the driver.",
+            id: "fleet-assign-driver-row-\(employee.id)"
+        )
     }
 
     // MARK: - Filtering

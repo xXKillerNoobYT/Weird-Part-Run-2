@@ -45,6 +45,8 @@ struct IOSInspectionsPage: View {
                         Image(systemName: "questionmark.circle")
                     }
                     .accessibilityLabel("Help")
+                    .accessibilityHint("Opens help for this page.")
+                    .accessibilityIdentifier("fleet-inspections-help-button")
                 }
             }
             .sheet(item: $activeSheet) { _ in
@@ -156,9 +158,22 @@ struct IOSInspectionsPage: View {
             }
         }
         .padding(.vertical, 4)
+        .rowAccessibility(
+            label: "\(inspection.vehicleName) inspection, \(inspection.result.capitalized)",
+            value: inspectionAccessibilityValue(inspection),
+            id: "fleet-inspection-row-\(inspection.id)"
+        )
     }
 
     // MARK: - Helpers
+
+    private func inspectionAccessibilityValue(_ inspection: FleetService.InspectionRow) -> String {
+        var value = "Inspected by \(inspection.inspectorName) on \(inspection.inspectionDate.prefix(10))"
+        if let odo = inspection.odometerReading {
+            value += ", \(odo.formatted()) miles"
+        }
+        return value
+    }
 
     private func resultBadge(_ result: String) -> some View {
         let color = DS.SemanticColor.inspectionResult(result)
