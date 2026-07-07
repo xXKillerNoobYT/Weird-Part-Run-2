@@ -111,6 +111,8 @@ struct IOSBreakSettingsPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-break-settings-help-button")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -356,6 +358,10 @@ struct IOSBreakSettingsPage: View {
                         .keyboardType(.decimalPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 100)
+                        .dsMinTapTarget()
+                        .accessibilityLabel("Break bonus amount")
+                        .accessibilityHint("Dollar amount paid when an employee takes compliant breaks.")
+                        .accessibilityIdentifier("settings-break-bonus-amount-field")
                 }
             }
 
@@ -368,6 +374,10 @@ struct IOSBreakSettingsPage: View {
                         .keyboardType(.decimalPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 100)
+                        .dsMinTapTarget()
+                        .accessibilityLabel("Lunch bonus amount")
+                        .accessibilityHint("Dollar amount paid when an employee takes a compliant lunch.")
+                        .accessibilityIdentifier("settings-lunch-bonus-amount-field")
                 }
             }
 
@@ -446,6 +456,10 @@ struct IOSBreakSettingsPage: View {
                     .autocorrectionDisabled()
                     .frame(width: 80)
                     .font(.system(.body, design: .monospaced))
+                    .dsMinTapTarget()
+                    .accessibilityLabel("Morning break auto-fill time")
+                    .accessibilityHint("24-hour time in HH:mm format, used when auto-filling breaks at clock out.")
+                    .accessibilityIdentifier("settings-default-morning-break-field")
             }
 
             HStack {
@@ -458,6 +472,10 @@ struct IOSBreakSettingsPage: View {
                     .autocorrectionDisabled()
                     .frame(width: 80)
                     .font(.system(.body, design: .monospaced))
+                    .dsMinTapTarget()
+                    .accessibilityLabel("Lunch auto-fill time")
+                    .accessibilityHint("24-hour time in HH:mm format.")
+                    .accessibilityIdentifier("settings-default-lunch-field")
             }
 
             HStack {
@@ -470,6 +488,10 @@ struct IOSBreakSettingsPage: View {
                     .autocorrectionDisabled()
                     .frame(width: 80)
                     .font(.system(.body, design: .monospaced))
+                    .dsMinTapTarget()
+                    .accessibilityLabel("Afternoon break auto-fill time")
+                    .accessibilityHint("24-hour time in HH:mm format.")
+                    .accessibilityIdentifier("settings-default-afternoon-break-field")
             }
         } header: {
             HStack {

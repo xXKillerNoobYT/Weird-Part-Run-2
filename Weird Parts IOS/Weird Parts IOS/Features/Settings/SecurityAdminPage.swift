@@ -48,6 +48,8 @@ struct SecurityAdminPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-security-help-button")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -57,12 +59,22 @@ struct SecurityAdminPage: View {
             ])
         }
         .task { loadData() }
-        .alert("Force Logout", isPresented: $showForceLogoutConfirm) {
-            Button("Cancel", role: .cancel) { selectedSessionId = nil }
-            Button("Force Logout", role: .destructive) { forceLogout() }
-        } message: {
-            Text("This will immediately end the selected session. The user will need to log in again.")
+        .confirmDestruction(
+            ofRecordNamed: selectedSessionUserName,
+            noun: "session for",
+            actionLabel: "Force Logout",
+            actionVerb: "immediately ends",
+            isPresented: $showForceLogoutConfirm,
+            messageSuffix: "They will need to log in again."
+        ) {
+            forceLogout()
         }
+    }
+
+    /// Name of the user whose session is pending force-logout, so the
+    /// confirmation names whose access is being cut.
+    private var selectedSessionUserName: String {
+        sessions.first(where: { $0.id == selectedSessionId })?.userName ?? "this user"
     }
 
     private enum ActiveSheet: Identifiable {
@@ -98,9 +110,22 @@ struct SecurityAdminPage: View {
                         }
                     }
                     .padding(.vertical, 2)
+                    .rowAccessibility(
+                        label: "Device \(device.name), assigned to \(device.assignedUser)",
+                        value: deviceAccessibilityValue(device),
+                        id: "settings-security-device-\(device.id)"
+                    )
                 }
             }
         }
+    }
+
+    /// "Online, last seen 2026-07-06" — mirrors the visible status + last-seen
+    /// caption for VoiceOver.
+    private func deviceAccessibilityValue(_ device: AuthService.RegisteredDevice) -> String {
+        let status = device.status == "online" ? "Online" : device.status.capitalized
+        guard let lastSeen = device.lastSeenAt else { return status }
+        return "\(status), last seen \(lastSeen)"
     }
 
     // MARK: - Sessions Section
@@ -121,6 +146,11 @@ struct SecurityAdminPage: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
+                        .rowAccessibility(
+                            label: "Session for \(session.userName)",
+                            value: "Started \(session.createdAt)",
+                            id: "settings-security-session-\(session.id)"
+                        )
                         Spacer()
                         if appCore.hasPermission("manage_devices") {
                             Button {
@@ -129,12 +159,26 @@ struct SecurityAdminPage: View {
                             } label: {
                                 Image(systemName: "xmark.circle.fill")
                                     .foregroundStyle(.red)
+                                    .dsMinTapTarget()
+                                    .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
-                            .accessibilityLabel("Force logout")
+                            .accessibilityLabel("Force logout \(session.userName)")
+                            .accessibilityHint("Ends this session immediately. The user will need to log in again.")
+                            .accessibilityIdentifier("settings-security-force-logout-\(session.id)")
                         }
                     }
                     .padding(.vertical, 2)
+                    .contextMenu {
+                        if appCore.hasPermission("manage_devices") {
+                            Button(role: .destructive) {
+                                selectedSessionId = session.id
+                                showForceLogoutConfirm = true
+                            } label: {
+                                Label("Force Logout", systemImage: "xmark.circle")
+                            }
+                        }
+                    }
                 }
             }
         }

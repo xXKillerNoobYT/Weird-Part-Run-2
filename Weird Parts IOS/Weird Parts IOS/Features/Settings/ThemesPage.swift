@@ -58,6 +58,9 @@ struct ThemesPage: View {
                         .frame(minWidth: 44, minHeight: 44)
                         .contentShape(Rectangle())
                         .accessibilityAddTraits(primaryColor == hex ? .isSelected : [])
+                        .accessibilityLabel("\(name) accent color")
+                        .accessibilityHint("Sets the app accent color. Tap Save Theme to apply.")
+                        .accessibilityIdentifier("settings-themes-color-\(name.lowercased())")
                     }
                 }
                 .padding(.vertical, 4)
@@ -92,6 +95,8 @@ struct ThemesPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-themes-help-button")
             }
         }
         .sheet(item: $activeSheet) { _ in

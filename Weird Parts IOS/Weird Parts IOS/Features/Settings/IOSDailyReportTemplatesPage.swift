@@ -88,6 +88,8 @@ struct IOSDailyReportTemplatesPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-daily-report-templates-help-button")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -161,10 +163,26 @@ struct IOSDailyReportTemplatesPage: View {
                             Image(systemName: "lock.fill")
                                 .foregroundStyle(.secondary)
                                 .font(.caption)
-                                .accessibilityLabel("Status: Locked")
+                                .accessibilityHidden(true)
                         }
                         Toggle(section.name, isOn: $section.enabled)
                             .disabled(section.locked)
+                            .accessibilityHint(section.locked ? "Locked. This section is always included and cannot be disabled." : "")
+                            .accessibilityIdentifier("settings-report-section-toggle-\(section.id)")
+                    }
+                    .contextMenu {
+                        Button {
+                            moveSection(id: section.id, by: -1)
+                        } label: {
+                            Label("Move Up", systemImage: "arrow.up")
+                        }
+                        .disabled(sections.first?.id == section.id)
+                        Button {
+                            moveSection(id: section.id, by: 1)
+                        } label: {
+                            Label("Move Down", systemImage: "arrow.down")
+                        }
+                        .disabled(sections.last?.id == section.id)
                     }
                 }
                 .onMove { from, to in
@@ -324,6 +342,14 @@ struct IOSDailyReportTemplatesPage: View {
     private func resetDirtyTracking() {
         baselineFormSignature = formSignature
         hasUnsavedChanges = false
+    }
+
+    /// Context-menu mirror of the `.onMove` drag reorder — same mutation shape.
+    private func moveSection(id: String, by offset: Int) {
+        guard let index = sections.firstIndex(where: { $0.id == id }) else { return }
+        let target = index + offset
+        guard sections.indices.contains(target) else { return }
+        sections.move(fromOffsets: IndexSet(integer: index), toOffset: offset > 0 ? target + 1 : target)
     }
 
     // MARK: - Defaults

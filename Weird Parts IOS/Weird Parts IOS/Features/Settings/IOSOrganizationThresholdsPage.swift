@@ -89,6 +89,8 @@ struct IOSOrganizationThresholdsPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-org-thresholds-help-button")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -107,7 +109,7 @@ struct IOSOrganizationThresholdsPage: View {
             if hasUnsavedChanges { saveSuccessMessage = nil }
         }
         .confirmationDialog(
-            "Discard changes?",
+            "Discard Organization Thresholds changes?",
             isPresented: $showDiscardConfirmation,
             titleVisibility: .visible
         ) {
@@ -116,6 +118,8 @@ struct IOSOrganizationThresholdsPage: View {
                 dismiss()
             }
             Button("Keep editing", role: .cancel) {}
+        } message: {
+            Text("Your unsaved threshold edits will be lost.")
         }
     }
 
@@ -140,6 +144,9 @@ struct IOSOrganizationThresholdsPage: View {
                         .keyboardType(.decimalPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 60)
+                        .dsMinTapTarget()
+                        .accessibilityLabel("Base decay rate in percent per day")
+                        .accessibilityIdentifier("settings-org-base-decay-rate-field")
                     Text("% / day")
                         .foregroundStyle(.secondary)
                 }
@@ -151,6 +158,9 @@ struct IOSOrganizationThresholdsPage: View {
                         .keyboardType(.decimalPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 60)
+                        .dsMinTapTarget()
+                        .accessibilityLabel("Movement decay factor")
+                        .accessibilityIdentifier("settings-org-movement-decay-factor-field")
                 }
 
                 Text("Confidence decreases daily. Moving parts increases decay (things may have been misplaced).")
@@ -165,6 +175,9 @@ struct IOSOrganizationThresholdsPage: View {
                 VStack(alignment: .leading) {
                     Text("Trigger threshold: \(Int(auditThreshold))%")
                     Slider(value: $auditThreshold, in: 0...100, step: 5)
+                        .accessibilityLabel("Audit trigger threshold")
+                        .accessibilityValue("\(Int(auditThreshold)) percent")
+                        .accessibilityIdentifier("settings-org-audit-threshold-slider")
                 }
 
                 Stepper("Max recs/day: \(maxRecsPerDay)", value: $maxRecsPerDay, in: 1...10)
@@ -192,6 +205,9 @@ struct IOSOrganizationThresholdsPage: View {
                 VStack(alignment: .leading) {
                     Text("Target score: \(Int(targetScore))%")
                     Slider(value: $targetScore, in: 0...100, step: 5)
+                        .accessibilityLabel("Target organization score")
+                        .accessibilityValue("\(Int(targetScore)) percent")
+                        .accessibilityIdentifier("settings-org-target-score-slider")
                 }
                 Toggle("Show on dashboard", isOn: $showOnDashboard)
                 Toggle("Include in daily report", isOn: $includeInDailyReport)
@@ -219,6 +235,7 @@ struct IOSOrganizationThresholdsPage: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(!hasValidSettings)
                 .accessibilityHint(hasValidSettings ? "" : "Base decay rate and movement decay factor must be greater than zero.")
+                .accessibilityIdentifier("settings-org-thresholds-save-button")
             }
         }
         // Fix #149: dismiss keyboard when scrolling threshold settings

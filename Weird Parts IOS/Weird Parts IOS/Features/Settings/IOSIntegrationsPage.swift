@@ -57,6 +57,8 @@ struct IOSIntegrationsPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-integrations-help-button")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -76,7 +78,8 @@ struct IOSIntegrationsPage: View {
     // MARK: - Integration Row
 
     private func integrationRow(integration: Binding<Integration>) -> some View {
-        Toggle(isOn: integration.isEnabled) {
+        let syncStatus = integration.wrappedValue.lastSyncAt.map { "last synced \($0)" } ?? "never synced"
+        return Toggle(isOn: integration.isEnabled) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(integration.wrappedValue.name)
                     .font(.body)
@@ -93,6 +96,9 @@ struct IOSIntegrationsPage: View {
         .onChange(of: integration.wrappedValue.isEnabled) { _, newValue in
             toggleIntegration(integration.wrappedValue.id, enabled: newValue)
         }
+        .accessibilityLabel("\(integration.wrappedValue.name) integration. \(integration.wrappedValue.description)")
+        .accessibilityValue("\(integration.wrappedValue.isEnabled ? "On" : "Off"), \(syncStatus)")
+        .accessibilityIdentifier("settings-integration-toggle-\(stableAccessibilitySuffix(id: nil, name: integration.wrappedValue.id))")
     }
 
     // MARK: - Info Section

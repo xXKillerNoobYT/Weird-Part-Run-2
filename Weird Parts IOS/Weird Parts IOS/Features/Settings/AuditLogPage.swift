@@ -68,6 +68,8 @@ struct AuditLogPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-audit-log-help-button")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -118,6 +120,11 @@ struct AuditLogPage: View {
             }
         }
         .padding(.vertical, 2)
+        .rowAccessibility(
+            label: "\(entry.entityType.capitalized), \(entry.action.lowercased())",
+            value: entry.deviceId.map { "\(entry.timestamp), from device \($0.prefix(12))" } ?? entry.timestamp,
+            id: "settings-audit-log-row-\(entry.id)"
+        )
     }
 
     // MARK: - Helpers

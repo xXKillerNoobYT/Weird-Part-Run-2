@@ -96,6 +96,12 @@ struct IOSAIConfigPage: View {
                                 }
                             }
                         }
+                        .rowAccessibility(
+                            label: option.1,
+                            value: option.2,
+                            hint: "Selects this AI model.",
+                            id: "settings-ai-model-option-\(option.0)"
+                        )
                         .accessibilityAddTraits(selectedModel == option.0 ? .isSelected : [])
                     }
                 }
@@ -114,6 +120,13 @@ struct IOSAIConfigPage: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    .rowAccessibility(
+                        label: "Foundation Models availability",
+                        value: isCheckingAvailability
+                            ? "Checking"
+                            : (availabilityStatus.map { statusLabel($0) } ?? "Not checked"),
+                        id: "settings-ai-foundation-status-row"
+                    )
 
                     if let status = availabilityStatus, status != .available {
                         Text(statusReason(status))
@@ -159,6 +172,8 @@ struct IOSAIConfigPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-ai-config-help-button")
             }
         }
         .sheet(item: $activeSheet) { _ in

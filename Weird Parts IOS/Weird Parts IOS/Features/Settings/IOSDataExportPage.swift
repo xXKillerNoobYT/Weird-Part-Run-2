@@ -153,6 +153,8 @@ struct IOSDataExportPage: View {
                 }
                 .disabled(isExporting)
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-data-export-help-button")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -260,6 +262,9 @@ struct IOSDataExportPage: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(selectedTables.contains(table) ? .isSelected : [])
+                    .accessibilityLabel("\(table.replacingOccurrences(of: "_", with: " ")) table")
+                    .accessibilityHint("Toggles whether this table is included in the export.")
+                    .accessibilityIdentifier("settings-export-table-row-\(table.replacingOccurrences(of: "_", with: "-"))")
                 }
             }
         }
@@ -285,6 +290,10 @@ struct IOSDataExportPage: View {
             }
             .buttonStyle(.borderedProminent)
             .disabled(selectedTables.isEmpty || isExporting)
+            .accessibilityLabel("Export selected tables")
+            .accessibilityValue(isExporting ? "Export in progress" : exportSuccess ? "Export complete" : "")
+            .accessibilityHint("Writes the selected tables as \(selectedFormat.uppercased()) files and opens the share sheet.")
+            .accessibilityIdentifier("settings-export-selected-tables-button")
 
             Button {
                 exportFullDatabase()

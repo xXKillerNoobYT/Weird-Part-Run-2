@@ -56,6 +56,8 @@ struct SyncPage: View {
                         .keyboardType(.numberPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 80)
+                        .accessibilityLabel("Sync interval in seconds")
+                        .accessibilityIdentifier("settings-sync-interval-field")
                 }
             }
 
@@ -132,6 +134,11 @@ struct SyncPage: View {
                                     .lineLimit(1)
                             }
                         }
+                        .rowAccessibility(
+                            label: "Sync \(entry.success ? "succeeded" : "failed") on \(entry.date.formatted(.dateTime.month(.abbreviated).day().hour().minute()))",
+                            value: historyAccessibilityValue(entry),
+                            id: "settings-sync-history-\(entry.id.uuidString)"
+                        )
                     }
                 }
             }
@@ -159,6 +166,8 @@ struct SyncPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-sync-help-button")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -172,7 +181,7 @@ struct SyncPage: View {
             hasUnsavedChanges = formSignature != baselineFormSignature
         }
         .confirmationDialog(
-            "Discard changes?",
+            "Discard LAN Sync changes?",
             isPresented: $showDiscardConfirmation,
             titleVisibility: .visible
         ) {
@@ -181,6 +190,8 @@ struct SyncPage: View {
                 dismiss()
             }
             Button("Keep editing", role: .cancel) {}
+        } message: {
+            Text("Your unsaved sync settings will be lost.")
         }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK") { errorMessage = nil }
@@ -223,6 +234,24 @@ struct SyncPage: View {
             Label("Offline", systemImage: "wifi.slash")
                 .foregroundStyle(.orange)
         }
+    }
+
+    // MARK: - History Accessibility
+
+    /// Mirrors the visible counts for VoiceOver, but with the FULL error text
+    /// (the visible row truncates to 30 characters) and "No changes" when the
+    /// sync moved nothing.
+    private func historyAccessibilityValue(_ entry: IOSSyncManager.SyncHistoryEntry) -> String {
+        var parts: [String] = []
+        if entry.changesSent == 0 && entry.changesReceived == 0 && entry.conflicts == 0 {
+            parts.append("No changes")
+        } else {
+            parts.append("\(entry.changesSent) sent, \(entry.changesReceived) received, \(entry.conflicts) conflict\(entry.conflicts == 1 ? "" : "s")")
+        }
+        if let error = entry.error, !error.isEmpty {
+            parts.append(error)
+        }
+        return parts.joined(separator: ". ")
     }
 
     // MARK: - Load / Save

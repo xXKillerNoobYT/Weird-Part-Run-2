@@ -69,6 +69,8 @@ struct IOSDispatchPreferencesPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-dispatch-help-button")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -170,6 +172,7 @@ struct IOSDispatchPreferencesPage: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(!isDirty)
                 .accessibilityHint(isDirty ? "" : "Make changes to enable saving.")
+                .accessibilityIdentifier("settings-dispatch-save-button")
             }
         }
         .onChange(of: enableAISuggestions) { _, _ in markDirty() }

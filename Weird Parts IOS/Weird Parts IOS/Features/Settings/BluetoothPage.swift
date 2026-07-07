@@ -66,6 +66,11 @@ struct BluetoothPage: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
+                            .rowAccessibility(
+                                label: peer.name,
+                                value: peerTransportLabel(peer.state),
+                                id: "settings-bluetooth-peer-row-\(peer.id)"
+                            )
 
                             Spacer()
 
@@ -73,11 +78,17 @@ struct BluetoothPage: View {
                             // per-peer capability and targets the selected peer —
                             // unconnected Multipeer rows must not fire a global sync.
                             if peer.isManuallySyncable {
-                                Button("Sync") {
+                                Button {
                                     Task { await syncManager.syncWithPeer(peerDeviceId: peer.id) }
+                                } label: {
+                                    Text("Sync")
+                                        .dsMinTapTarget()
                                 }
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
+                                .accessibilityLabel("Sync with \(peer.name)")
+                                .accessibilityHint("Starts a data sync with this device.")
+                                .accessibilityIdentifier("settings-bluetooth-sync-peer-\(peer.id)")
                             } else if peer.state == "connecting" {
                                 ProgressView()
                                     .controlSize(.small)
@@ -99,6 +110,17 @@ struct BluetoothPage: View {
                             }
                         }
                         .frame(minHeight: 48)
+                        .contextMenu {
+                            // Mirrors the inline Sync button — same capability gate,
+                            // same targeted syncWithPeer call.
+                            if peer.isManuallySyncable {
+                                Button {
+                                    Task { await syncManager.syncWithPeer(peerDeviceId: peer.id) }
+                                } label: {
+                                    Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -127,6 +149,8 @@ struct BluetoothPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-bluetooth-help-button")
             }
         }
         .sheet(item: $activeSheet) { _ in

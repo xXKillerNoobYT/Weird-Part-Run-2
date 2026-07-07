@@ -37,6 +37,8 @@ struct AboutPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-about-help-button")
             }
         }
         .sheet(item: $activeSheet) { _ in
