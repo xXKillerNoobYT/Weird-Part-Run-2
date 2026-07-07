@@ -95,13 +95,18 @@ struct IOSPurchaseOrdersPage: View {
                                 Text(option.rawValue)
                                 if sortOption == option {
                                     Image(systemName: "checkmark")
+                                        .accessibilityHidden(true)
                                 }
                             }
                         }
+                        .accessibilityAddTraits(sortOption == option ? [.isSelected] : [])
                     }
                 } label: {
                     Label("Sort", systemImage: "arrow.up.arrow.down")
                 }
+                .accessibilityLabel("Sort purchase orders")
+                .accessibilityValue(sortOption.rawValue)
+                .accessibilityIdentifier("po-sort-menu")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
@@ -114,7 +119,9 @@ struct IOSPurchaseOrdersPage: View {
             sheetContent(for: sheet)
         }
         .alert(
-            poToCancel?.status == "draft" ? "Delete Draft?" : "Cancel PO?",
+            poToCancel?.status == "draft"
+                ? "Delete Draft \(poToCancel?.poNumber ?? "PO")?"
+                : "Cancel \(poToCancel?.poNumber ?? "PO")?",
             isPresented: $showCancelConfirm
         ) {
             TextField("Reason (required)", text: $cancelReason)
@@ -138,10 +145,15 @@ struct IOSPurchaseOrdersPage: View {
                 }
             }
         } message: {
+            // Deterministic first line so the stakes are always stated even
+            // while the AI summary is still generating (or fails to arrive).
+            let lead = poToCancel.map {
+                "This will \($0.status == "draft" ? "permanently delete draft" : "cancel") \($0.poNumber)."
+            } ?? ""
             if isGeneratingSummary {
-                Text("Generating summary...")
+                Text(lead.isEmpty ? "Generating summary..." : "\(lead) Generating summary...")
             } else {
-                Text(aiSummary)
+                Text(aiSummary.isEmpty ? lead : (lead.isEmpty ? aiSummary : "\(lead) \(aiSummary)"))
             }
         }
         .alert("Notice", isPresented: Binding(
@@ -226,7 +238,10 @@ struct IOSPurchaseOrdersPage: View {
                     SmartFilterCard(
                         title: status == "all" ? "All" : status.capitalized,
                         count: countForStatus(status),
-                        isSelected: statusFilter == status
+                        isSelected: statusFilter == status,
+                        accessibilityValue: "\(countForStatus(status)) purchase orders",
+                        accessibilityHint: "Filters the purchase order list by this status.",
+                        accessibilityId: "orders-pos-status-filter-\(status)"
                     ) {
                         statusFilter = status
                         loadData()
@@ -314,6 +329,35 @@ struct IOSPurchaseOrdersPage: View {
                         }
                     }
                 }
+                .contextMenu {
+                    Button {
+                        activeSheet = .scannedPODetail(po.id)
+                    } label: {
+                        Label("View Details", systemImage: "doc.text.magnifyingglass")
+                    }
+                    Button {
+                        UIPasteboard.general.string = po.poNumber
+                    } label: {
+                        Label("Copy PO Number", systemImage: "doc.on.doc")
+                    }
+                    if po.status == "draft" {
+                        Button(role: .destructive) {
+                            poToCancel = po
+                            Task { await generateAISummary(for: po) }
+                            showCancelConfirm = true
+                        } label: {
+                            Label("Delete Draft", systemImage: "trash")
+                        }
+                    } else if po.status != "received" && po.status != "cancelled" {
+                        Button(role: .destructive) {
+                            poToCancel = po
+                            Task { await generateAISummary(for: po) }
+                            showCancelConfirm = true
+                        } label: {
+                            Label("Cancel PO", systemImage: "xmark.circle")
+                        }
+                    }
+                }
             }
             .listStyle(.insetGrouped)
         }
@@ -378,6 +422,12 @@ struct IOSPurchaseOrdersPage: View {
             }
         }
         .padding(.vertical, 4)
+        .rowAccessibility(
+            label: "PO \(po.poNumber) from \(po.supplierName), \(po.status)",
+            value: "\(po.totalCost.map { String(format: "$%.2f", $0) } ?? "No total"), \(po.lineCount) lines",
+            hint: "Opens the purchase order details.",
+            id: "orders-po-row-\(po.id)"
+        )
     }
 
     // MARK: - Badges

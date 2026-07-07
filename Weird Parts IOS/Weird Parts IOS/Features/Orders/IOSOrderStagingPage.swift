@@ -139,6 +139,11 @@ struct IOSOrderStagingPage: View {
                     .foregroundStyle(stageFilter == nil ? .white : .primary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("All stages")
+                .accessibilityValue("\(allCount) parts")
+                .accessibilityAddTraits(stageFilter == nil ? [.isSelected] : [])
+                .accessibilityHint("Shows parts from every stage.")
+                .accessibilityIdentifier("orders-staging-stage-card-all")
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
@@ -167,6 +172,11 @@ struct IOSOrderStagingPage: View {
             .foregroundStyle(stageFilter == stage.id ? .white : .primary)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("\(stage.name) stage")
+        .accessibilityValue("\(count) parts")
+        .accessibilityAddTraits(stageFilter == stage.id ? [.isSelected] : [])
+        .accessibilityHint("Filters the parts list to this stage.")
+        .accessibilityIdentifier("orders-staging-stage-card-\(stage.id)")
     }
 
     private func stageColor(_ sortOrder: Int) -> Color {
@@ -253,9 +263,13 @@ struct IOSOrderStagingPage: View {
                                 .font(.subheadline)
                                 .fontWeight(.medium)
                                 .frame(maxWidth: .infinity)
+                                .dsMinTapTarget()
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(.green)
+                        .accessibilityLabel("Mark \(stageName) complete")
+                        .accessibilityHint("Releases the next stage's held parts.")
+                        .accessibilityIdentifier("orders-staging-mark-complete-\(stageId)")
                     }
                 } header: {
                     HStack {
@@ -324,13 +338,38 @@ struct IOSOrderStagingPage: View {
                         Text("Request Early")
                             .font(.caption2)
                             .fontWeight(.medium)
+                            .dsMinTapTarget()
                     }
                     .buttonStyle(.bordered)
                     .tint(.orange)
+                    .accessibilityLabel("Request early release of \(part.partName)")
+                    .accessibilityHint("Overrides the stage hold so this part can be ordered now.")
+                    .accessibilityIdentifier("orders-staging-request-early-\(part.id)")
                 }
             }
         }
         .padding(.vertical, 2)
+        .contextMenu {
+            if part.isHeld {
+                Button {
+                    requestEarly(jpoLineId: part.id)
+                } label: {
+                    Label("Request Early Release", systemImage: "lock.open")
+                }
+            }
+            if let code = part.partCode {
+                Button {
+                    UIPasteboard.general.string = code
+                } label: {
+                    Label("Copy Part Code", systemImage: "doc.on.doc")
+                }
+            }
+            Button {
+                UIPasteboard.general.string = part.jpoNumber
+            } label: {
+                Label("Copy JPO Number", systemImage: "doc.on.doc")
+            }
+        }
     }
 
     private func lineStatusBadge(_ status: String) -> some View {

@@ -161,8 +161,14 @@ struct IOSPartsOrderManagementPage: View {
                                 .fill(selectedSupplierId == supplier.id ? Color.accentColor : Color.secondary.opacity(0.15))
                         )
                         .foregroundStyle(selectedSupplierId == supplier.id ? .white : .primary)
+                        .dsMinTapTarget()
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(supplier.name)
+                    .accessibilityValue("\(supplier.poCount) purchase orders")
+                    .accessibilityAddTraits(selectedSupplierId == supplier.id ? [.isSelected] : [])
+                    .accessibilityHint("Shows parts ordered from this supplier.")
+                    .accessibilityIdentifier("orders-parts-mgmt-supplier-\(supplier.id)")
                 }
             }
             .padding(.horizontal)
@@ -175,11 +181,11 @@ struct IOSPartsOrderManagementPage: View {
     private var poStatusFilters: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
-                filterToggle("Draft", isOn: $showDraft, color: .secondary)
-                filterToggle("Active", isOn: $showActive, color: .blue)
-                filterToggle("Partial", isOn: $showPartial, color: .purple)
-                filterToggle("Received", isOn: $showReceived, color: .green)
-                filterToggle("Cancelled", isOn: $showCancelled, color: .red)
+                filterToggle("Draft", group: "po", isOn: $showDraft, color: .secondary)
+                filterToggle("Active", group: "po", isOn: $showActive, color: .blue)
+                filterToggle("Partial", group: "po", isOn: $showPartial, color: .purple)
+                filterToggle("Received", group: "po", isOn: $showReceived, color: .green)
+                filterToggle("Cancelled", group: "po", isOn: $showCancelled, color: .red)
             }
             .padding(.horizontal)
             .padding(.vertical, 4)
@@ -191,16 +197,18 @@ struct IOSPartsOrderManagementPage: View {
     private var partStatusFilters: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
-                filterToggle("Waiting", isOn: $showWaiting, color: .blue)
-                filterToggle("Backorder", isOn: $showBackorder, color: .red)
-                filterToggle("Received", isOn: $showReceivedParts, color: .green)
+                filterToggle("Waiting", group: "part", isOn: $showWaiting, color: .blue)
+                filterToggle("Backorder", group: "part", isOn: $showBackorder, color: .red)
+                filterToggle("Received", group: "part", isOn: $showReceivedParts, color: .green)
             }
             .padding(.horizontal)
             .padding(.vertical, 4)
         }
     }
 
-    private func filterToggle(_ label: String, isOn: Binding<Bool>, color: Color) -> some View {
+    /// `group` prefixes the accessibility identifier ("po" / "part") because
+    /// the same chip label ("Received") appears in both filter rows.
+    private func filterToggle(_ label: String, group: String, isOn: Binding<Bool>, color: Color) -> some View {
         Button {
             isOn.wrappedValue.toggle()
         } label: {
@@ -214,8 +222,13 @@ struct IOSPartsOrderManagementPage: View {
                 )
                 .overlay(Capsule().stroke(color.opacity(0.4), lineWidth: 1))
                 .foregroundStyle(isOn.wrappedValue ? color : .secondary)
+                .dsMinTapTarget()
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Show \(label) items")
+        .accessibilityValue(isOn.wrappedValue ? "On" : "Off")
+        .accessibilityHint("Toggles this status filter.")
+        .accessibilityIdentifier("orders-parts-mgmt-\(group)-filter-\(label.lowercased())")
     }
 
     // MARK: - Filtered Data
@@ -341,6 +354,20 @@ struct IOSPartsOrderManagementPage: View {
             }
         }
         .frame(minHeight: 50)
+        .contextMenu {
+            if let code = row.partCode {
+                Button {
+                    UIPasteboard.general.string = code
+                } label: {
+                    Label("Copy Part Code", systemImage: "doc.on.doc")
+                }
+            }
+            Button {
+                UIPasteboard.general.string = row.partName
+            } label: {
+                Label("Copy Part Name", systemImage: "doc.on.doc")
+            }
+        }
     }
 
     // The icon is the only channel conveying line status in the row, so it

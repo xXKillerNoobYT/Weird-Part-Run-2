@@ -277,6 +277,10 @@ struct POSendToSupplierSheet: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(type.label)
+        .accessibilityValue(selected ? "selected" : "not selected")
+        .accessibilityHint("Sets the email request type for this send.")
+        .accessibilityIdentifier("po-send-request-type-\(type.rawValue)")
     }
 
     /// Grouping toggle
@@ -301,6 +305,9 @@ struct POSendToSupplierSheet: View {
                     fetchSiblingPOs()
                 }
             }
+            .accessibilityLabel("Email grouping")
+            .accessibilityValue(groupEnabled ? "grouped, one email for all selected POs" : "individual, separate email per PO")
+            .accessibilityIdentifier("po-send-group-toggle")
 
             if groupEnabled && siblingPOsLoading {
                 HStack { ProgressView(); Text("Checking for other POs…").font(.caption).foregroundStyle(.secondary) }
@@ -334,6 +341,12 @@ struct POSendToSupplierSheet: View {
                     }
                 }
                 .font(.caption)
+                .dsMinTapTarget()
+                .accessibilityLabel(includedSiblingIds.count == siblingPOs.count
+                                    ? "Deselect all other purchase orders"
+                                    : "Select all \(siblingPOs.count) other purchase orders")
+                .accessibilityHint("Toggles every sibling purchase order in or out of this email.")
+                .accessibilityIdentifier("po-send-siblings-select-all")
             }
             Text("Choose which POs to bundle into this email. Each gets its own PDF attachment.")
                 .font(.caption).foregroundStyle(.secondary)
@@ -343,6 +356,11 @@ struct POSendToSupplierSheet: View {
             siblingRow(poNumber: po.poNumber, status: po.status,
                        lineCount: po.lines.count, total: po.totalCost,
                        isIncluded: true, isPrimary: true, id: po.id)
+                .rowAccessibility(
+                    label: "\(po.poNumber), this PO",
+                    value: "Always included, \(po.lines.count) item\(po.lines.count == 1 ? "" : "s")\(po.totalCost.map { String(format: ", $%.2f", $0) } ?? ""), \(po.status.replacingOccurrences(of: "_", with: " ").capitalized)",
+                    id: "po-send-sibling-primary-\(po.id)"
+                )
 
             ForEach(siblingPOs, id: \.id) { sibling in
                 siblingRow(
@@ -370,6 +388,7 @@ struct POSendToSupplierSheet: View {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.blue)
                     .font(.title3)
+                    .accessibilityHidden(true)
             } else {
                 Button {
                     withAnimation {
@@ -389,6 +408,9 @@ struct POSendToSupplierSheet: View {
                 .accessibilityLabel(isIncluded
                                     ? "Exclude \(poNumber) from this send"
                                     : "Include \(poNumber) in this send")
+                .accessibilityValue("\(lineCount) item\(lineCount == 1 ? "" : "s")\(total.map { String(format: ", $%.2f", $0) } ?? ""), \(status.replacingOccurrences(of: "_", with: " ").capitalized)")
+                .accessibilityAddTraits(isIncluded ? .isSelected : [])
+                .accessibilityIdentifier("po-send-sibling-toggle-\(id)")
             }
 
             VStack(alignment: .leading, spacing: 2) {
@@ -475,6 +497,8 @@ struct POSendToSupplierSheet: View {
             .tint(selectedRequestType.color)
             .controlSize(.large)
             .disabled(isGeneratingPDF || siblingPOsLoading || (groupEnabled && siblingPOsError != nil))
+            .accessibilityHint("Generates the PDF attachments and opens a pre-filled email.")
+            .accessibilityIdentifier("po-send-prep-mail")
 
             if !showConfirmSent {
                 Button { withAnimation { showConfirmSent = true } } label: {
@@ -484,6 +508,8 @@ struct POSendToSupplierSheet: View {
                 .buttonStyle(.bordered)
                 .controlSize(.large)
                 .tint(.green)
+                .accessibilityHint("Shows the confirm-sent section without opening Mail.")
+                .accessibilityIdentifier("po-send-already-sent")
             }
         }
     }
@@ -522,6 +548,9 @@ struct POSendToSupplierSheet: View {
             .tint(.green)
             .controlSize(.large)
             .disabled(isSaving)
+            .accessibilityLabel("Confirm sent to \(po.supplierName)")
+            .accessibilityHint("Records the send and advances order-request POs to Ordered.")
+            .accessibilityIdentifier("po-send-confirm-sent")
         }
         .padding()
         .background(Color(.secondarySystemGroupedBackground))

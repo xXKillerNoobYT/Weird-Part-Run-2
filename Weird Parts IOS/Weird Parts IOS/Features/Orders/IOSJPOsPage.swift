@@ -172,7 +172,10 @@ struct IOSJPOsPage: View {
                     SmartFilterCard(
                         title: status == "all" ? "All" : status.capitalized,
                         count: countForStatus(status),
-                        isSelected: statusFilter == status
+                        isSelected: statusFilter == status,
+                        accessibilityValue: "\(countForStatus(status)) JPOs",
+                        accessibilityHint: "Filters the JPO list by this status.",
+                        accessibilityId: "orders-jpos-status-filter-\(status)"
                     ) {
                         statusFilter = status
                     }
@@ -205,6 +208,18 @@ struct IOSJPOsPage: View {
                         .environmentObject(appCore)
                 } label: {
                     jpoRow(jpo)
+                }
+                .contextMenu {
+                    Button {
+                        activeSheet = .scannedJPODetail(jpo.id)
+                    } label: {
+                        Label("View Details", systemImage: "doc.text.magnifyingglass")
+                    }
+                    Button {
+                        UIPasteboard.general.string = "JPO #\(jpo.id)"
+                    } label: {
+                        Label("Copy JPO Number", systemImage: "doc.on.doc")
+                    }
                 }
             }
             .listStyle(.insetGrouped)
@@ -265,8 +280,13 @@ struct IOSJPOsPage: View {
             }
         }
         .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("JPO number \(jpo.id), \(jpo.jobName), status \(jpo.status), \(jpo.lineCount) line items, \(jpo.holdCount) on hold")
+        .rowAccessibility(
+            label: "JPO number \(jpo.id), \(jpo.jobName), requested by \(jpo.requestedByName)",
+            value: "Status \(jpo.status), \(jpo.priority) priority, \(jpo.lineCount) line items"
+                + (jpo.holdCount > 0 ? ", \(jpo.holdCount) on hold with questions" : ""),
+            hint: "Opens the JPO detail page.",
+            id: "orders-jpo-row-\(jpo.id)"
+        )
     }
 
     // MARK: - Badges

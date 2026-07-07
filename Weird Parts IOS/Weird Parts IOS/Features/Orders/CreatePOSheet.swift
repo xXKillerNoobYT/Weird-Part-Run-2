@@ -44,6 +44,8 @@ struct CreatePOSheet: View {
                                 .frame(width: 44, height: 44)
                         }
                         .accessibilityLabel("Scan supplier QR code")
+                        .accessibilityHint("Opens the camera to scan a supplier code.")
+                        .accessibilityIdentifier("orders-create-po-scan-supplier-qr")
                     }
 
                     if suppliers.isEmpty {
@@ -62,9 +64,14 @@ struct CreatePOSheet: View {
                                     if selectedSupplierId == item.supplier.id {
                                         Image(systemName: "checkmark.circle.fill")
                                             .foregroundStyle(Color.accentColor)
+                                            .accessibilityHidden(true)
                                     }
                                 }
                             }
+                            .accessibilityLabel("Supplier \(item.supplier.name)")
+                            .accessibilityValue(selectedSupplierId == item.supplier.id ? "Selected" : "Not selected")
+                            .accessibilityHint("Selects this supplier for the new purchase order.")
+                            .accessibilityIdentifier("orders-create-po-supplier-row-\(stableAccessibilitySuffix(id: item.supplier.id, name: item.supplier.name))")
                         }
                     }
                 }

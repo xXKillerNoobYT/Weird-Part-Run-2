@@ -37,6 +37,10 @@ struct IOSReceiveShipmentPage: View {
     // Unrouted items warning (62H)
     @State private var showUnroutedWarning = false
 
+    // Bulk quantity action confirmations
+    @State private var showResetToExpectedConfirm = false
+    @State private var showClearAllConfirm = false
+
     init(sessionId: Int64? = nil) {
         _activeSessionId = State(initialValue: sessionId)
         _isLoading = State(initialValue: sessionId == nil)
@@ -392,6 +396,9 @@ struct IOSReceiveShipmentPage: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
+                .accessibilityLabel("View details for PO \(po.poNumber) from \(po.supplierName)")
+                .accessibilityValue("\(po.lineCount) items, \(po.status.capitalized)")
+                .accessibilityIdentifier("receive-po-details-\(po.id)")
 
                 Button {
                     startReceiving(poId: po.id)
@@ -402,6 +409,9 @@ struct IOSReceiveShipmentPage: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .accessibilityLabel("Receive PO \(po.poNumber) from \(po.supplierName)")
+                .accessibilityHint("Starts a receiving session for this purchase order.")
+                .accessibilityIdentifier("receive-po-start-\(po.id)")
             }
         }
         .padding(.vertical, 4)
@@ -434,6 +444,24 @@ struct IOSReceiveShipmentPage: View {
                     // Reset to Expected / Clear All buttons (61L)
                     HStack(spacing: 12) {
                         Button {
+                            showResetToExpectedConfirm = true
+                        } label: {
+                            Label("Reset to Expected", systemImage: "arrow.counterclockwise")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.bordered)
+                        .dsMinTapTarget()
+                        .accessibilityLabel("Reset all received quantities to expected")
+                        .accessibilityHint("Sets every line back to the quantity on the purchase order.")
+                        .accessibilityIdentifier("receive-reset-expected")
+                        .confirmDestruction(
+                            of: "line item",
+                            count: sessionItems.count,
+                            actionLabel: "Reset",
+                            actionVerb: "resets",
+                            isPresented: $showResetToExpectedConfirm,
+                            messageSuffix: "Every quantity you entered is overwritten."
+                        ) {
                             let svc = appCore.warehouseService
                             let items = sessionItems
                             for item in items { receivedQtys[item.id] = item.expectedQty }
@@ -447,13 +475,27 @@ struct IOSReceiveShipmentPage: View {
                                 }
                                 if failed > 0 { actionError = "Failed to save \(failed) item(s). Pull down to refresh." }
                             }
+                        }
+
+                        Button(role: .destructive) {
+                            showClearAllConfirm = true
                         } label: {
-                            Label("Reset to Expected", systemImage: "arrow.counterclockwise")
+                            Label("Clear All", systemImage: "xmark.circle")
                                 .font(.caption)
                         }
                         .buttonStyle(.bordered)
-
-                        Button(role: .destructive) {
+                        .dsMinTapTarget()
+                        .accessibilityLabel("Clear all received quantities to zero")
+                        .accessibilityHint("Sets every line's received count to zero.")
+                        .accessibilityIdentifier("receive-clear-all")
+                        .confirmDestruction(
+                            of: "item",
+                            count: sessionItems.count,
+                            actionLabel: "Clear",
+                            actionVerb: "clears",
+                            isPresented: $showClearAllConfirm,
+                            messageSuffix: "Every received count is set to zero and saved immediately."
+                        ) {
                             let svc = appCore.warehouseService
                             let items = sessionItems
                             for item in items { receivedQtys[item.id] = 0 }
@@ -467,11 +509,7 @@ struct IOSReceiveShipmentPage: View {
                                 }
                                 if failed > 0 { actionError = "Failed to clear \(failed) item(s). Pull down to refresh." }
                             }
-                        } label: {
-                            Label("Clear All", systemImage: "xmark.circle")
-                                .font(.caption)
                         }
-                        .buttonStyle(.bordered)
                     }
                 }
 
@@ -501,6 +539,7 @@ struct IOSReceiveShipmentPage: View {
                                 Image(systemName: "exclamationmark.triangle.fill")
                                     .font(.caption2)
                                     .foregroundStyle(.orange)
+                                    .accessibilityHidden(true)
                             }
                             Spacer()
                             if let result = routingResults[item.id] {
@@ -535,6 +574,7 @@ struct IOSReceiveShipmentPage: View {
                                     Image(systemName: "arrow.right")
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
+                                        .accessibilityHidden(true)
                                     Text("Received: \(entry.received)")
                                         .font(.caption)
                                         .fontWeight(.medium)
@@ -758,6 +798,8 @@ struct IOSReceiveShipmentPage: View {
                     .buttonStyle(.plain)
                     .dsMinTapTarget()
                     .accessibilityLabel("Decrease quantity")
+                    .accessibilityValue("\(receivedQtys[item.id] ?? item.expectedQty)")
+                    .accessibilityIdentifier("receive-qty-decrease-\(item.id)")
 
                     Text("\(receivedQtys[item.id] ?? item.expectedQty)")
                         .font(.title3)
@@ -787,6 +829,8 @@ struct IOSReceiveShipmentPage: View {
                     .buttonStyle(.plain)
                     .dsMinTapTarget()
                     .accessibilityLabel("Increase quantity")
+                    .accessibilityValue("\(receivedQtys[item.id] ?? item.expectedQty)")
+                    .accessibilityIdentifier("receive-qty-increase-\(item.id)")
 
                     // Quick-fill to expected qty (shown when quantity differs)
                     if (receivedQtys[item.id] ?? item.expectedQty) != item.expectedQty {
@@ -809,6 +853,9 @@ struct IOSReceiveShipmentPage: View {
                                 .clipShape(Capsule())
                         }
                         .buttonStyle(.plain)
+                        .dsMinTapTarget()
+                        .accessibilityLabel("Set received quantity to expected \(item.expectedQty) for \(item.partName)")
+                        .accessibilityIdentifier("receive-qty-all-\(item.id)")
                     }
                 }
             }
@@ -861,6 +908,11 @@ struct IOSReceiveShipmentPage: View {
                             .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
+                    .dsMinTapTarget()
+                    .accessibilityLabel("Re-route \(item.partName)")
+                    .accessibilityValue(result.label)
+                    .accessibilityHint("Clears the routing decision and reopens the routing options.")
+                    .accessibilityIdentifier("receive-reroute-\(item.id)")
                 }
                 .padding(10)
                 .background(result.color.opacity(0.06))
@@ -881,6 +933,10 @@ struct IOSReceiveShipmentPage: View {
                 }
                 .buttonStyle(.bordered)
                 .tint(.blue)
+                .accessibilityLabel("Route \(item.partName)")
+                .accessibilityValue("\(qty) received")
+                .accessibilityHint("Opens routing options: stage for a job, put on shelf, or return.")
+                .accessibilityIdentifier("receive-route-\(item.id)")
             } else {
                 // Zero quantity — no routing needed
                 HStack(spacing: 6) {
@@ -919,6 +975,10 @@ struct IOSReceiveShipmentPage: View {
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .dsMinTapTarget()
+                .accessibilityLabel("Receipt price matches order price\(item.unitPrice.map { String(format: " of $%.2f", $0) } ?? "") for \(item.partName)")
+                .accessibilityValue(currentVerification.isMatches ? "selected" : "not selected")
+                .accessibilityIdentifier("receive-price-matches-\(itemId)")
 
                 Button {
                     priceVerifications[itemId] = .different(newPrice: 0)
@@ -932,6 +992,11 @@ struct IOSReceiveShipmentPage: View {
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .dsMinTapTarget()
+                .accessibilityLabel("Receipt price is different from order price for \(item.partName)")
+                .accessibilityValue(currentVerification.isDifferent ? "selected" : "not selected")
+                .accessibilityHint("Shows a field to enter the actual receipt price.")
+                .accessibilityIdentifier("receive-price-different-\(itemId)")
 
                 Button {
                     priceVerifications[itemId] = .notShown
@@ -945,6 +1010,10 @@ struct IOSReceiveShipmentPage: View {
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .dsMinTapTarget()
+                .accessibilityLabel("Price not shown on receipt for \(item.partName)")
+                .accessibilityValue(currentVerification.isNotShown ? "selected" : "not selected")
+                .accessibilityIdentifier("receive-price-not-shown-\(itemId)")
             }
 
             // New price input when "Different" is selected

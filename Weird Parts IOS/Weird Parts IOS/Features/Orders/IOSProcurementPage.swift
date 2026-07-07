@@ -281,8 +281,13 @@ struct IOSProcurementPage: View {
                     .fill(sourceFilter == filter ? Color.accentColor : Color.secondary.opacity(0.12))
             )
             .foregroundStyle(sourceFilter == filter ? .white : .primary)
+            .dsMinTapTarget()
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("\(label) filter, \(count) parts")
+        .accessibilityAddTraits(sourceFilter == filter ? .isSelected : [])
+        .accessibilityHint("Filters the procurement list by demand source.")
+        .accessibilityIdentifier("procurement-filter-\(filter ?? "all")")
     }
 
     // MARK: - Filtered Items
@@ -323,19 +328,53 @@ struct IOSProcurementPage: View {
                         .foregroundStyle(.secondary)
                     Spacer()
                     // Select/deselect all
-                    Button(checkedParts.count == filteredItems.count ? "Deselect All" : "Select All") {
+                    Button {
                         if checkedParts.count == filteredItems.count {
                             checkedParts.removeAll()
                         } else {
                             checkedParts = Set(filteredItems.map(\.id))
                         }
+                    } label: {
+                        Text(checkedParts.count == filteredItems.count ? "Deselect All" : "Select All")
+                            .font(.caption)
+                            .dsMinTapTarget()
                     }
-                    .font(.caption)
+                    .accessibilityLabel(checkedParts.count == filteredItems.count ? "Deselect all parts" : "Select all \(filteredItems.count) parts for PO generation")
+                    .accessibilityHint("Toggles the generation checkbox on every visible part.")
+                    .accessibilityIdentifier("procurement-select-all")
                 }
             }
 
             ForEach(filteredItems) { item in
                 procurementRow(item)
+                    .contextMenu {
+                        Button {
+                            if checkedParts.contains(item.id) {
+                                checkedParts.remove(item.id)
+                            } else {
+                                checkedParts.insert(item.id)
+                            }
+                        } label: {
+                            Label(
+                                checkedParts.contains(item.id) ? "Deselect" : "Select for PO Generation",
+                                systemImage: checkedParts.contains(item.id) ? "square" : "checkmark.square"
+                            )
+                        }
+                        if item.shopStock > 0 && item.totalDemand > 0 {
+                            Button {
+                                requestPullAction(item: item, pullQty: 0, orderQty: item.totalDemand)
+                            } label: {
+                                Label("Order All (No Pull)", systemImage: "cart")
+                            }
+                        }
+                        if let code = item.partCode {
+                            Button {
+                                UIPasteboard.general.string = code
+                            } label: {
+                                Label("Copy Part Code", systemImage: "doc.on.doc")
+                            }
+                        }
+                    }
             }
 
             // Preview + Generate section
@@ -479,10 +518,13 @@ struct IOSProcurementPage: View {
                     Image(systemName: checkedParts.contains(item.id) ? "checkmark.square.fill" : "square")
                         .foregroundStyle(checkedParts.contains(item.id) ? Color.accentColor : Color.secondary)
                         .accessibilityHidden(true)
+                        .dsMinTapTarget()
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(checkedParts.contains(item.id) ? "Deselect part" : "Select part")
+                .accessibilityLabel(checkedParts.contains(item.id) ? "Deselect \(item.partName)" : "Select \(item.partName) for PO generation")
                 .accessibilityAddTraits(checkedParts.contains(item.id) ? .isSelected : [])
+                .accessibilityHint("Includes or excludes this part from the generated purchase orders.")
+                .accessibilityIdentifier("procurement-check-\(item.id)")
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.partName)
@@ -500,6 +542,13 @@ struct IOSProcurementPage: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                .rowAccessibility(
+                    label: "\(item.partName), needs \(item.totalDemand), shop stock \(item.shopStock) of target \(item.targetStock)"
+                        + (item.urgency == "overstock" ? ", over maximum stock"
+                            : item.urgency == "understock" ? ", below minimum stock" : ""),
+                    value: "\(item.suppliers.count) suppliers available",
+                    id: "procurement-row-\(item.id)"
+                )
                 Spacer()
                 if item.totalDemand > 0 {
                     let orderQty = effectiveOrderQty(for: item)
@@ -610,8 +659,6 @@ struct IOSProcurementPage: View {
             }
         }
         .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(item.partName), need \(item.totalDemand), stock \(item.shopStock), target \(item.targetStock), \(item.urgency), \(item.suppliers.count) suppliers")
     }
 
     // MARK: - PO Preview + Generation
@@ -715,6 +762,9 @@ struct IOSProcurementPage: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(isGenerating || hasUnresolvedGeneralBrand)
+                    .accessibilityLabel("Generate \(poPreviewGroups.count) purchase order\(poPreviewGroups.count == 1 ? "" : "s")")
+                    .accessibilityHint("Opens a confirmation before creating the previewed purchase orders.")
+                    .accessibilityIdentifier("procurement-generate-pos")
 
                     Button {
                         withAnimation { showSavedToast = true }
@@ -723,6 +773,9 @@ struct IOSProcurementPage: View {
                             .font(.subheadline)
                     }
                     .buttonStyle(.bordered)
+                    .accessibilityLabel("Save selections for later")
+                    .accessibilityHint("Selections persist only while this page stays open.")
+                    .accessibilityIdentifier("procurement-save-for-later")
                 }
             }
         } header: {
@@ -890,7 +943,11 @@ struct IOSProcurementPage: View {
                         Text(splitByJPOPartId == item.id ? "Collapse" : "Split by JPO")
                             .font(.caption2)
                             .foregroundStyle(Color.accentColor)
+                            .dsMinTapTarget()
                     }
+                    .accessibilityLabel(splitByJPOPartId == item.id ? "Collapse per-JPO supplier selection for \(item.partName)" : "Split \(item.partName) supplier selection by JPO")
+                    .accessibilityHint("Assigns a different supplier to each job purchase order source.")
+                    .accessibilityIdentifier("procurement-split-jpo-\(item.id)")
                 }
             }
 
@@ -900,10 +957,19 @@ struct IOSProcurementPage: View {
             } else {
                 // Single supplier selection for the whole part
                 ForEach(item.suppliers) { supplier in
-                    supplierRow(supplier, isSelected: selectedSupplier[item.id] == supplier.id)
-                        .onTapGesture {
-                            selectedSupplier[item.id] = supplier.id
-                        }
+                    let isSelected = selectedSupplier[item.id] == supplier.id
+                    Button {
+                        selectedSupplier[item.id] = supplier.id
+                    } label: {
+                        supplierRow(supplier, isSelected: isSelected)
+                            .dsMinTapTarget()
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(supplierAccessibilityLabel(supplier))
+                    .accessibilityValue(supplier.unitPrice.map { String(format: "$%.2f per unit", $0) } ?? "no price on file")
+                    .accessibilityHint("Selects this supplier for \(item.partName).")
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                    .accessibilityIdentifier("procurement-supplier-\(item.id)-\(supplier.id)")
                 }
             }
 
@@ -974,6 +1040,8 @@ struct IOSProcurementPage: View {
                     }
                     .pickerStyle(.menu)
                     .font(.caption)
+                    .accessibilityLabel("Supplier for \(source.sourceName), quantity \(source.quantity)")
+                    .accessibilityIdentifier("procurement-jpo-supplier-picker-\(source.id)")
                 }
                 .padding(.vertical, 2)
             }
@@ -1058,6 +1126,22 @@ struct IOSProcurementPage: View {
         }
     }
 
+    /// VoiceOver label for a supplier option row: name plus preferred/tag qualifiers.
+    private func supplierAccessibilityLabel(_ supplier: OrdersService.PartSupplierOption) -> String {
+        var label = "Supplier \(supplier.name)"
+        if supplier.isPreferred {
+            label += ", preferred"
+        }
+        if supplier.tag == "cheapest" {
+            label += ", cheapest"
+        } else if supplier.tag == "rated" {
+            label += ", top rated"
+        } else if supplier.tag == "fastest" {
+            label += ", fastest"
+        }
+        return label
+    }
+
     // MARK: - Pull Options
 
     @ViewBuilder
@@ -1096,7 +1180,12 @@ struct IOSProcurementPage: View {
                             Text("Change")
                                 .font(.caption2)
                                 .foregroundStyle(Color.accentColor)
+                                .dsMinTapTarget()
                         }
+                        .accessibilityLabel("Change pull decision for \(item.partName)")
+                        .accessibilityValue(decision.pullQty > 0 ? "pulling \(decision.pullQty), ordering \(decision.orderQty)" : "ordering \(decision.orderQty)")
+                        .accessibilityHint("Clears the current pull choice so a different option can be picked.")
+                        .accessibilityIdentifier("procurement-change-pull-\(item.id)")
                     }
                     .padding(.vertical, 4)
                     .padding(.horizontal, 8)
@@ -1219,9 +1308,13 @@ struct IOSProcurementPage: View {
             .background(pullButtonBackground(style))
             .foregroundStyle(pullButtonForeground(style))
             .clipShape(RoundedRectangle(cornerRadius: 6))
+            .dsMinTapTarget()
         }
         .buttonStyle(.plain)
         .disabled(isLoading)
+        .accessibilityLabel("\(label), for \(item.partName)" + (style == .recommended ? ", recommended" : ""))
+        .accessibilityHint(pullQty > 0 ? "Moves stock from the warehouse shelf to pulled staging after confirmation." : "Records an order-only decision, no stock is pulled.")
+        .accessibilityIdentifier("procurement-pull-\(item.id)-\(pullQty)-\(orderQty)")
     }
 
     private func pullButtonBackground(_ style: PullButtonStyle) -> Color {
