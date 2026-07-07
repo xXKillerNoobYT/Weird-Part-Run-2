@@ -82,12 +82,19 @@ final class IOSSyncManager {
         case onboardingJoin
     }
 
+    /// Bluetooth/Multipeer sync is ON by default — offline peer-to-peer sync is
+    /// this app's primary transport (Wi-Fi is only a speed boost). The stored
+    /// flag exists so a user can explicitly turn it OFF; an unset flag means on.
+    static var bluetoothSyncEnabled: Bool {
+        if UserDefaults.standard.object(forKey: "bluetooth_sync_enabled") == nil { return true }
+        return UserDefaults.standard.bool(forKey: "bluetooth_sync_enabled")
+    }
+
     /// Whether real sync infrastructure is connected.
     /// True when a server address is configured OR Bluetooth sync is enabled.
     var isSyncAvailable: Bool {
         let hasServer = !(serverAddress ?? "").isEmpty
-        let btEnabled = UserDefaults.standard.bool(forKey: "bluetooth_sync_enabled")
-        return hasServer || btEnabled
+        return hasServer || Self.bluetoothSyncEnabled
     }
 
     /// Whether automatic launch/foreground sync is enabled by settings.
@@ -179,6 +186,22 @@ final class IOSSyncManager {
         // Load initial pending count and conflict state
         refreshPendingCount()
         refreshConflictCount()
+
+        // Bluetooth sync is ON by default: once this device belongs to a company,
+        // start peer discovery and the auto-sync timer at launch so devices find
+        // each other and exchange changes WITHOUT someone camping on the Devices
+        // page. Previously nothing auto-started peer sync post-onboarding, so a
+        // job created on one device never reached the other until a manual visit.
+        // Skipped under UI testing (network churn breaks XCTest runs).
+        let companyId = (try? settingsService.getSettingsByCategory("company")["company_id"]) ?? nil
+        if !ProcessInfo.processInfo.arguments.contains("-UITesting"),
+           Self.bluetoothSyncEnabled,
+           let companyId, !companyId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            startPeerDiscovery()
+            if isAutoSyncEnabled {
+                startAutoSync()
+            }
+        }
     }
 
     // MARK: - Auto-Sync
@@ -403,7 +426,7 @@ final class IOSSyncManager {
         // That is the manager `pairViaMultipeer` uses, so the discovered host can
         // actually be invited/paired. A separate MultipeerManager here would
         // double-browse the same service and leave pairing unable to reach the host.
-        let bluetoothDiscoveryEnabled = UserDefaults.standard.bool(forKey: "bluetooth_sync_enabled")
+        let bluetoothDiscoveryEnabled = Self.bluetoothSyncEnabled
 
         // Also start LAN peer discovery when available. Existing sync discovery
         // stays company-scoped. Join/onboarding discovery relaxes LAN browsing

@@ -1365,17 +1365,34 @@ struct IOSClockPage: View {
 
     // MARK: - Actions
 
-    private func clockIn(jobId: Int64?, isShop: Bool) {
-        // Check location permission before attempting clock-in
-        if needsLocationPermission {
-            logger.warning("ClockIn blocked — location permission not determined yet")
-            locationManager.requestPermission()
-            return
+    /// Company policy: is a device GPS location required to clock in?
+    /// Defaults to true (the app's historical behavior) unless the company
+    /// explicitly disabled it during setup (clock_location_required = "false").
+    /// The setting lives in the synced "company" category so every device
+    /// enforces the same rule.
+    private var isClockLocationRequired: Bool {
+        guard let service = appCore.settingsService,
+              let value = (try? service.getSettingValue("clock_location_required")) ?? nil else {
+            return true
         }
-        if locationManager.permissionDenied {
-            logger.warning("ClockIn blocked — location permission denied")
-            showLocationDeniedAlert = true
-            return
+        return value != "false"
+    }
+
+    private func clockIn(jobId: Int64?, isShop: Bool) {
+        // Location gating is company policy: when required, permission must be
+        // resolved before the clock starts; when the company disabled it, skip
+        // the prompts entirely and clock in without GPS.
+        if isClockLocationRequired {
+            if needsLocationPermission {
+                logger.warning("ClockIn blocked — location permission not determined yet")
+                locationManager.requestPermission()
+                return
+            }
+            if locationManager.permissionDenied {
+                logger.warning("ClockIn blocked — location permission denied")
+                showLocationDeniedAlert = true
+                return
+            }
         }
 
         guard let service = appCore.jobsService,
@@ -1391,6 +1408,14 @@ struct IOSClockPage: View {
             let lat = location?.coordinate.latitude
             let lng = location?.coordinate.longitude
             logger.info("GPS result: lat=\(lat ?? 0) lng=\(lng ?? 0)")
+
+            // Required-location companies must not get location-less time entries:
+            // permission can be granted yet still produce no fix (indoors, timeout).
+            if location == nil, isClockLocationRequired {
+                errorMessage = "Your company requires a GPS location to clock in. Move somewhere your device can get a location fix and try again."
+                logger.warning("ClockIn blocked — company requires location but no GPS fix was available")
+                return
+            }
 
             do {
                 // Check payment hold before allowing clock-in
