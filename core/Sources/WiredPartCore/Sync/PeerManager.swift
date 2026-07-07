@@ -870,7 +870,11 @@ public actor PeerManager {
                 let rows: [Row] = (try? await db.writer.read { dbConn in
                     try Row.fetchAll(
                         dbConn,
-                        sql: "SELECT * FROM [\(table)] LIMIT ? OFFSET ?",
+                        // ORDER BY rowid keeps LIMIT/OFFSET paging deterministic — without it
+                        // SQLite may return pages in any order, skipping/duplicating rows if
+                        // writes land mid-snapshot. rowid exists on every table here (none are
+                        // WITHOUT ROWID) and aliases the INTEGER PRIMARY KEY where one exists.
+                        sql: "SELECT * FROM [\(table)] ORDER BY rowid LIMIT ? OFFSET ?",
                         arguments: [batchSize, currentOffset]
                     )
                 }) ?? []

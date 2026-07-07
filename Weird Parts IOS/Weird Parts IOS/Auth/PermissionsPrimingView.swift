@@ -14,7 +14,6 @@ import WiredPartCore
 /// prompt must be answered before `DevicePairingView` starts Bonjour discovery,
 /// or the first discovery attempt silently finds nothing.
 struct PermissionsPrimingView<Next: View>: View {
-    @EnvironmentObject private var appCore: AppCore
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @StateObject private var permissions = PermissionsManager()
     @StateObject private var locationManager = LocationManager()
