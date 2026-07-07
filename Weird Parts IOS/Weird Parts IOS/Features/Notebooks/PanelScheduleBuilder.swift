@@ -119,55 +119,78 @@ struct PanelScheduleBuilder: View {
 
     // MARK: - Panel Grid
 
+    /// Adaptive grid-line color — reads as crisp panel lines in light AND dark mode
+    /// (the old hardcoded `.gray` spine glowed in dark mode; clear gaps left ragged
+    /// translucent seams between the tinted cells).
+    private var gridLineColor: Color { Color(.systemGray4) }
+
     private var panelGrid: some View {
-        VStack(spacing: 1) {
+        VStack(spacing: DS.Space.sm) {
+            // Move-mode banner lives OUTSIDE the bordered grid so it never breaks
+            // the panel frame's clean edges.
             if let movingCircuit = movingCircuitDescription {
                 Text("Move \(movingCircuit): tap a destination space or drag it onto the grid.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(.blue.opacity(0.08))
+                    .padding(.horizontal, DS.Space.sm)
+                    .padding(.vertical, DS.Space.xs)
+                    .background(DS.SemanticColor.info.opacity(0.08), in: RoundedRectangle(cornerRadius: DS.Radius.sm))
             }
 
-            // Column headers
-            HStack(spacing: 0) {
-                Text("#").font(.caption2).bold().frame(width: 22)
-                Text("A").font(.caption2).bold().frame(width: 26)
-                Text("Circuit").font(.caption2).bold()
-                Spacer()
-                Rectangle().fill(.clear).frame(width: 4)
-                Spacer()
-                Text("Circuit").font(.caption2).bold()
-                Text("A").font(.caption2).bold().frame(width: 26)
-                Text("#").font(.caption2).bold().frame(width: 22)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(.gray.opacity(0.1))
-
-            // Circuit rows — max() keeps the range valid even if a malformed
-            // negative totalSpaces slips past load-path clamping (#1239).
-            ForEach(0..<max(schedule.totalSpaces / 2, 0), id: \.self) { row in
-                let leftSpace = row * 2 + 1
-                let rightSpace = row * 2 + 2
-                let leftCircuit = schedule.circuits.first { $0.spaceNumber == leftSpace }
-                let rightCircuit = schedule.circuits.first { $0.spaceNumber == rightSpace }
-
+            // The grid itself: opaque cells laid over a grid-line-colored backing,
+            // so the 1pt gaps render as intentional, uniform panel lines — then the
+            // whole panel is clipped + stroked for a clean rounded outer edge (the
+            // owner-reported "funny edges").
+            VStack(spacing: 1) {
+                // Column headers
                 HStack(spacing: 0) {
-                    circuitCell(spaceNumber: leftSpace, circuit: leftCircuit, isLeft: true)
-
-                    Rectangle()
-                        .fill(.gray)
-                        .frame(width: 4, height: 44)
+                    Text("#").font(.caption2).bold().frame(width: 22)
+                    Text("A").font(.caption2).bold().frame(width: 26)
+                    Text("Circuit").font(.caption2).bold()
+                    Spacer()
+                    // Continuous center spine — same color as the row spine so the
+                    // panel's backbone runs unbroken from header to last row.
+                    Rectangle().fill(gridLineColor).frame(width: 4)
                         .accessibilityHidden(true)
+                    Spacer()
+                    Text("Circuit").font(.caption2).bold()
+                    Text("A").font(.caption2).bold().frame(width: 26)
+                    Text("#").font(.caption2).bold().frame(width: 22)
+                }
+                .padding(.horizontal, DS.Space.sm)
+                .padding(.vertical, DS.Space.xxs)
+                .background(Color(.secondarySystemBackground))
 
-                    circuitCell(spaceNumber: rightSpace, circuit: rightCircuit, isLeft: false)
+                // Circuit rows — max() keeps the range valid even if a malformed
+                // negative totalSpaces slips past load-path clamping (#1239).
+                ForEach(0..<max(schedule.totalSpaces / 2, 0), id: \.self) { row in
+                    let leftSpace = row * 2 + 1
+                    let rightSpace = row * 2 + 2
+                    let leftCircuit = schedule.circuits.first { $0.spaceNumber == leftSpace }
+                    let rightCircuit = schedule.circuits.first { $0.spaceNumber == rightSpace }
+
+                    HStack(spacing: 0) {
+                        circuitCell(spaceNumber: leftSpace, circuit: leftCircuit, isLeft: true)
+
+                        Rectangle()
+                            .fill(gridLineColor)
+                            .frame(width: 4)
+                            .accessibilityHidden(true)
+
+                        circuitCell(spaceNumber: rightSpace, circuit: rightCircuit, isLeft: false)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)   // spine stretches to full row height
                 }
             }
+            .background(gridLineColor)   // shows through the 1pt gaps as uniform grid lines
+            .clipShape(RoundedRectangle(cornerRadius: DS.Radius.sm))
+            .overlay(
+                RoundedRectangle(cornerRadius: DS.Radius.sm)
+                    .strokeBorder(gridLineColor, lineWidth: 1)
+            )
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, DS.Space.sm)
     }
 
     private func circuitCell(spaceNumber: Int, circuit: CircuitEntry?, isLeft: Bool) -> some View {
@@ -219,8 +242,12 @@ struct PanelScheduleBuilder: View {
             }
             .padding(.horizontal, 4)
             .padding(.vertical, 6)
+            .frame(maxHeight: .infinity)
             .frame(minHeight: 44)
-            .background(circuitBackground(circuit))
+            // Opaque base under the translucent classification tint: without it the
+            // tints composite over whatever is behind the grid, leaving ragged
+            // translucent seams at cell boundaries (the "funny edges").
+            .background(circuitBackground(circuit).background(Color(.systemBackground)))
             .overlay {
                 if movingCircuitId != nil {
                     RoundedRectangle(cornerRadius: 4)
