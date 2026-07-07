@@ -93,7 +93,7 @@ private enum PeerSyncHTTPError: LocalizedError {
 /// `[IncomingChange]` JSON array; the receiver falls back to that when envelope
 /// decoding fails, so this is backwards-compatible.
 struct MPEnvelope: Codable {
-    let type: String   // "changes" | "pairRequest" | "pairResponse"
+    let type: String   // "changes" | "pairRequest" | "pairResponse" | "fullSyncRequest" | "fullSyncComplete"
     let payload: Data
 }
 
@@ -1026,6 +1026,10 @@ public actor PeerManager {
         // Consume the code only once the acceptance was actually sent.
         if valid && delivered {
             await sState.clearActivePairingCode()
+            // The one-time code is consumed — close the cross-company connection
+            // window immediately (Copilot review on PR #1422: leaving it open
+            // weakened company isolation after a successful pairing).
+            setBluetoothPairingHostMode(false)
             logger.info("[PeerManager] Bluetooth pairing accepted + delivered for peer \(String(request.deviceId.prefix(8)), privacy: .public)")
         } else if valid {
             logger.error("[PeerManager] Bluetooth pairing valid but reply undelivered — code kept for retry")

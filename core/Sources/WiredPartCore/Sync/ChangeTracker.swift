@@ -50,8 +50,9 @@ public enum ChangeTracker {
             // (richer: changed_fields/old_values), UPGRADE the trigger's bare row
             // instead of inserting a duplicate — otherwise every reader of
             // _change_log (sync push, notebook history, audit log) sees doubles.
-            let upgraded = try Int.fetchOne(
-                dbConnection,
+            // Plain UPDATE + changesCount (not RETURNING — unsupported on older
+            // system SQLite builds; Copilot review on PR #1422).
+            try dbConnection.execute(
                 sql: """
                     UPDATE _change_log
                     SET device_id = ?, changed_fields = ?, old_values = ?
@@ -60,14 +61,13 @@ public enum ChangeTracker {
                         WHERE table_name = ? AND record_id = ? AND operation = ?
                           AND synced = 0 AND device_id = '' AND changed_fields IS NULL
                     )
-                    RETURNING id
                     """,
                 arguments: [
                     resolvedDeviceId, changedJSON, oldJSON,
                     tableName, recordId, operation.rawValue,
                 ]
             )
-            guard upgraded == nil else { return }
+            guard dbConnection.changesCount == 0 else { return }
 
             try dbConnection.execute(
                 sql: """

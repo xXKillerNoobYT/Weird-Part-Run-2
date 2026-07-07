@@ -540,7 +540,7 @@ struct IOSUnifiedApprovalsPage: View {
                 ProgressView()
             }
         }
-        .accessibilityHint("\(title)s this approval request.")
+        .accessibilityHint(title == "Deny" ? "Denies this approval request." : "\(title)s this approval request.")
     }
 
     private func statusBadge(_ status: String, color: Color) -> some View {

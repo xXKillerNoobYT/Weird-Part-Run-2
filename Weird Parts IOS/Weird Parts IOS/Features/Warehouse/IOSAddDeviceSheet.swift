@@ -73,6 +73,11 @@ struct IOSAddDeviceSheet: View {
                 }
             }
             .task { await loadCode() }
+            .onDisappear {
+                // Closing the sheet ends the pairing offer: invalidate the code
+                // and close the cross-company connection window on the host.
+                Task { await appCore.syncManager.endPairingOffer() }
+            }
         }
     }
 
@@ -189,6 +194,10 @@ struct IOSAddDeviceSheet: View {
     private func loadCode() async {
         isLoading = true
         errorMessage = nil
+        // Clear any previous code first: on regenerate-failure the old (already
+        // burned or stale) code must not keep rendering while the error hides
+        // behind it (Copilot review on PR #1422).
+        pairingCode = nil
         do {
             pairingCode = try await syncManager.issueShopPairingCode()
         } catch {

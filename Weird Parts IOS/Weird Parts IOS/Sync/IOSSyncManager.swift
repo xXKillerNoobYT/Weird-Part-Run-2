@@ -193,10 +193,18 @@ final class IOSSyncManager {
         // page. Previously nothing auto-started peer sync post-onboarding, so a
         // job created on one device never reached the other until a manual visit.
         // Skipped under UI testing (network churn breaks XCTest runs).
+        // "Belongs to a company" = has an active business profile (device that
+        // CREATED the company — may not have a company_id persisted yet) OR has
+        // a company_id setting (device that JOINED via pairing). Gating only on
+        // company_id left creator devices dark until they opened Add-a-Device
+        // once (Copilot review on PR #1422). startPeerDiscovery() generates and
+        // persists a company_id when one is missing.
         let companyId = (try? settingsService.getSettingsByCategory("company")["company_id"]) ?? nil
+        let hasProfile = (try? settingsService.hasBusinessProfile()) ?? false
+        let hasCompanyId = !(companyId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         if !ProcessInfo.processInfo.arguments.contains("-UITesting"),
            Self.bluetoothSyncEnabled,
-           let companyId, !companyId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+           hasProfile || hasCompanyId {
             startPeerDiscovery()
             if isAutoSyncEnabled {
                 startAutoSync()
@@ -569,6 +577,15 @@ final class IOSSyncManager {
         // the code handshake (the code is the security gate).
         await pm.setBluetoothPairingHostMode(true)
         return try await pm.issuePairingCode()
+    }
+
+    /// End an Add-a-Device pairing offer: invalidate any outstanding code and
+    /// close the cross-company Bluetooth connection window. Called when the
+    /// pairing sheet is dismissed (Copilot review on PR #1422 — the window must
+    /// not stay open once no code is being offered).
+    func endPairingOffer() async {
+        guard let pm = peerManager else { return }
+        await pm.clearPairingCode()
     }
 
     /// Joiner: pair with a Bluetooth-discovered host over Multipeer (no Wi-Fi).
