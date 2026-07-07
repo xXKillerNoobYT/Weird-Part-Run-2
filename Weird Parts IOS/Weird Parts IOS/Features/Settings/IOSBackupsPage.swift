@@ -124,6 +124,8 @@ struct IOSBackupsPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-backups-help-button")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -199,6 +201,12 @@ struct IOSBackupsPage: View {
                 }
             }
             .disabled(isCreatingBackup)
+            .rowAccessibility(
+                label: "Create backup now",
+                value: isCreatingBackup ? "Backup in progress" : (backupSuccess ? "Backup created" : nil),
+                hint: "Snapshots the current database to this device. Up to 7 backups are kept.",
+                id: "settings-backups-create-backup-button"
+            )
 
             Button {
                 showRestoreAlert = true
@@ -206,6 +214,11 @@ struct IOSBackupsPage: View {
                 Label("Restore from Backup", systemImage: "arrow.uturn.backward.circle")
             }
             .foregroundStyle(.orange)
+            .rowAccessibility(
+                label: "Restore from backup",
+                hint: "Shows how to restore. Restore itself must be done from the desktop app.",
+                id: "settings-backups-restore-info-button"
+            )
         }
     }
 

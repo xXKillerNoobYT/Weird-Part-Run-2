@@ -78,6 +78,8 @@ struct NotificationPrefsPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-notification-prefs-help-button")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -91,7 +93,7 @@ struct NotificationPrefsPage: View {
             hasUnsavedChanges = formSignature != baselineFormSignature
         }
         .confirmationDialog(
-            "Discard changes?",
+            "Discard Notifications changes?",
             isPresented: $showDiscardConfirmation,
             titleVisibility: .visible
         ) {
@@ -100,6 +102,8 @@ struct NotificationPrefsPage: View {
                 dismiss()
             }
             Button("Keep editing", role: .cancel) {}
+        } message: {
+            Text("Your unsaved notification preference edits will be lost.")
         }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK") { errorMessage = nil }

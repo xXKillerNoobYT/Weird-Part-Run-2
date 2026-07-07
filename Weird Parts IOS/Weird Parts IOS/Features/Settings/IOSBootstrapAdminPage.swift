@@ -48,6 +48,8 @@ struct IOSBootstrapAdminPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-bootstrap-admin-help-button")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -103,6 +105,23 @@ struct IOSBootstrapAdminPage: View {
             }
         }
         .padding(.vertical, 2)
+        .rowAccessibility(
+            label: "\(device.name), \(device.deviceType)",
+            value: deviceAccessibilityValue(device),
+            hint: "Read-only. Device approval is done from the desktop app.",
+            id: "settings-bootstrap-device-row-\(device.id)"
+        )
+    }
+
+    private func deviceAccessibilityValue(_ device: SettingsService.BootstrapDeviceRow) -> String {
+        var parts = [device.status.capitalized]
+        if let version = device.appVersion {
+            parts.append("app version \(version)")
+        }
+        if let lastCheckin = device.lastCheckin {
+            parts.append("last check-in \(lastCheckin)")
+        }
+        return parts.joined(separator: ", ")
     }
 
     private func statusBadge(_ status: String) -> some View {

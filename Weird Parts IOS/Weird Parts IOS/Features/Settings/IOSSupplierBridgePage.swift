@@ -47,6 +47,8 @@ struct IOSSupplierBridgePage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-supplier-bridge-help-button")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -85,6 +87,12 @@ struct IOSSupplierBridgePage: View {
                     .foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 2)
+                .rowAccessibility(
+                    label: "\(bridge.supplierName) supplier bridge",
+                    value: "\(bridge.status.capitalized), \(bridge.protocol_)"
+                        + (bridge.lastSyncAt.map { ", last sync \($0)" } ?? ""),
+                    id: "settings-supplier-bridge-row-\(bridge.id)"
+                )
             }
         }
     }
@@ -94,7 +102,7 @@ struct IOSSupplierBridgePage: View {
             Circle()
                 .fill(status == "connected" ? Color.green : (status == "error" ? Color.red : Color.orange))
                 .frame(width: 8, height: 8)
-                .accessibilityLabel("Status: \(status.capitalized)")
+                .accessibilityHidden(true)
             Text(status.capitalized)
                 .font(.caption)
                 .foregroundStyle(.secondary)

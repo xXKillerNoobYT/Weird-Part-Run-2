@@ -40,9 +40,12 @@ nonisolated enum DestructiveConfirmationCopy {
         return name
     }
 
-    /// "Delete 'Kitchen remodel'?"
-    static func recordTitle(actionLabel: String, recordName: String) -> String {
-        "\(actionLabel) \(quoted(recordName))?"
+    /// "Delete 'Kitchen remodel'?" — blank/whitespace names fall back to
+    /// "Delete this <noun>?" so the title never renders as "Delete ''?".
+    static func recordTitle(actionLabel: String, recordName: String, noun: String) -> String {
+        let trimmed = recordName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "\(actionLabel) this \(noun)?" }
+        return "\(actionLabel) \(quoted(trimmed))?"
     }
 
     /// Default body when the call site doesn't supply one. `suffix` carries
@@ -53,9 +56,12 @@ nonisolated enum DestructiveConfirmationCopy {
         return "\(base) \(suffix)"
     }
 
-    /// Default body for the named-record shape.
+    /// Default body for the named-record shape; blank names read as
+    /// "this <noun>" instead of an empty quoted string.
     static func defaultRecordMessage(actionVerb: String, noun: String, recordName: String, suffix: String? = nil) -> String {
-        let base = "This \(actionVerb) the \(noun) \(quoted(recordName)). This can't be undone from this screen."
+        let trimmed = recordName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let subject = trimmed.isEmpty ? "this \(noun)" : "the \(noun) \(quoted(trimmed))"
+        let base = "This \(actionVerb) \(subject). This can't be undone from this screen."
         guard let suffix, !suffix.isEmpty else { return base }
         return "\(base) \(suffix)"
     }
@@ -110,7 +116,7 @@ extension View {
     ) -> some View {
         let verb = actionVerb ?? "\(actionLabel.lowercased())s"
         return alert(
-            DestructiveConfirmationCopy.recordTitle(actionLabel: actionLabel, recordName: recordName),
+            DestructiveConfirmationCopy.recordTitle(actionLabel: actionLabel, recordName: recordName, noun: noun),
             isPresented: isPresented
         ) {
             Button("Cancel", role: .cancel) {}

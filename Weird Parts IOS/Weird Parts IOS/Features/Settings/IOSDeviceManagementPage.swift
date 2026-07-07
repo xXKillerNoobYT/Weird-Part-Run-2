@@ -31,8 +31,13 @@ struct IOSDeviceManagementPage: View {
                     }
                     Spacer()
                     Circle().fill(.green).frame(width: 10, height: 10)
-                        .accessibilityLabel("Status: Active")
+                        .accessibilityHidden(true)
                 }
+                .rowAccessibility(
+                    label: "\(UIDevice.current.name), this device",
+                    value: "iOS \(UIDevice.current.systemVersion), active",
+                    id: "settings-device-mgmt-this-device-row"
+                )
             }
 
             Section("Paired Devices") {
@@ -60,6 +65,12 @@ struct IOSDeviceManagementPage: View {
                     }
                 }
                 .disabled(isIssuingCode)
+                .rowAccessibility(
+                    label: "Pair new device",
+                    value: isIssuingCode ? "Generating code" : nil,
+                    hint: "Issues a one-time pairing code for a new device to join this business.",
+                    id: "settings-device-mgmt-pair-button"
+                )
 
                 if let error = pairingError {
                     Text(error)
@@ -76,6 +87,8 @@ struct IOSDeviceManagementPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-device-mgmt-help-button")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -144,7 +157,9 @@ private struct PairingCodeSheet: View {
                     .font(.system(size: 40, weight: .bold, design: .monospaced))
                     .kerning(2)
                     .textSelection(.enabled)
-                    .accessibilityLabel("Pairing code: \(code)")
+                    .accessibilityLabel("Pairing code")
+                    .accessibilityValue(code.map(String.init).joined(separator: " "))
+                    .accessibilityIdentifier("settings-pairing-code-text")
 
                 Text("On the new device, choose \"Join Existing Business\" during setup, connect to this device, and enter this code. The code is one-time use.")
                     .font(.subheadline)

@@ -48,6 +48,7 @@ struct ReportABugPage: View {
                 )
                 .frame(minHeight: 120)
                 .accessibilityLabel("Bug description")
+                .accessibilityIdentifier("settings-bug-description-editor")
             } header: {
                 Text("What happened")
             } footer: {
@@ -120,6 +121,8 @@ struct ReportABugPage: View {
             }
             .frame(minHeight: 44)
             .accessibilityLabel("Share bug report")
+            .accessibilityHint("Opens the share sheet with the full report attached.")
+            .accessibilityIdentifier("settings-bug-share-report-button")
 
             if let githubURL {
                 Link(destination: githubURL) {
@@ -127,6 +130,8 @@ struct ReportABugPage: View {
                 }
                 .frame(minHeight: 44)
                 .accessibilityLabel("Open a pre-filled GitHub issue")
+                .accessibilityHint("Opens GitHub in the browser with the report pre-filled.")
+                .accessibilityIdentifier("settings-bug-github-issue-button")
             } else {
                 Button {
                     urlBuildError = "Could not build the GitHub issue link. Use Share report instead, or try shortening the description."
@@ -135,6 +140,8 @@ struct ReportABugPage: View {
                 }
                 .frame(minHeight: 44)
                 .accessibilityLabel("Open a pre-filled GitHub issue")
+                .accessibilityHint("Opens GitHub in the browser with the report pre-filled.")
+                .accessibilityIdentifier("settings-bug-github-issue-button")
             }
         } footer: {
             Text("Share sends the report to any app (Messages, Mail, Notes). GitHub opens a pre-filled issue you can submit while signed in.")

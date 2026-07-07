@@ -50,7 +50,13 @@ struct PDFSettingsPage: View {
                         RoundedRectangle(cornerRadius: 4)
                             .fill(color)
                             .frame(width: 40, height: 20)
+                            .accessibilityHidden(true)
                     }
+                    .rowAccessibility(
+                        label: "Accent color preview",
+                        value: accentColor,
+                        id: "settings-pdf-accent-preview"
+                    )
                 }
             }
 
@@ -99,6 +105,8 @@ struct PDFSettingsPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-pdf-settings-help-button")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -112,7 +120,7 @@ struct PDFSettingsPage: View {
             hasUnsavedChanges = formSignature != baselineFormSignature
         }
         .confirmationDialog(
-            "Discard changes?",
+            "Discard PDF Settings changes?",
             isPresented: $showDiscardConfirmation,
             titleVisibility: .visible
         ) {
@@ -121,6 +129,8 @@ struct PDFSettingsPage: View {
                 dismiss()
             }
             Button("Keep editing", role: .cancel) {}
+        } message: {
+            Text("Your unsaved PDF settings edits will be lost.")
         }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK") { errorMessage = nil }

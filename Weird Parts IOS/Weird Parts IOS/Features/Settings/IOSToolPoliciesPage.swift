@@ -76,6 +76,8 @@ struct IOSToolPoliciesPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-tool-policies-help-button")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -193,7 +195,10 @@ struct IOSToolPoliciesPage: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!isDirty)
-                .accessibilityHint(isDirty ? "" : "Make changes to enable saving.")
+                // Hint only while disabled — an always-attached empty hint still
+                // registers a blank utterance in the VoiceOver rotor.
+                .accessibilityHint("Make changes to enable saving.", isEnabled: !isDirty)
+                .accessibilityIdentifier("settings-tool-policies-save-button")
             }
         }
         .onChange(of: maxCheckoutDays) { _, _ in markDirty() }
