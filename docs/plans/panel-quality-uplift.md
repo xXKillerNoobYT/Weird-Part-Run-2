@@ -62,4 +62,8 @@ Cross-area entity consistency (same job status = same color everywhere) · pagin
 - [x] Plan (this document)
 - [x] Wave 1 implementation — see commits on `claude/fervent-rhodes-03a6e8`
 - [x] Landed on main (build + affected tests green)
-- [ ] Wave 2 (#1421) · Wave 3 (#1421)
+- [x] Wave 2 functional bugs (07ed0486, PR #1422): break-bonus edit persists, clock-in note persists, Spending range wired, ToolApproveEditSheet reachable, dead effectiveStart/End removed, No-Users escape hatch
+- [x] Copilot review rounds 1–2 on PR #1422 addressed (9 findings: RETURNING removal, pairing host-mode closes on consume/dismiss, stale code cleared, auto-start gate = business profile OR company_id, BT→LAN pairing fallback, hint grammar, envelope docs)
+- [x] Full iOS unit suite green (2026-07-07): repaired 15 drifted source-scan/fixture tests (see #1421 comment for the table); UI-test bundle needs an unlocked screen → #1423
+- [ ] Wave 2 remainder (#1421): craft-kit adoption passes (Orders/Settings/Fleet), destructive-confirm helper + adoption, Orders context menus — next branch after #1422 merges
+- [ ] Wave 3 (#1421): LoadState consolidation, filter-bar contract tests, legend/mode-banner components, missed-dimension audits
