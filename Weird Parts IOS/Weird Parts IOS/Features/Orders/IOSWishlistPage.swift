@@ -106,8 +106,16 @@ struct IOSWishlistPage: View {
                         .font(.callout)
                         .foregroundStyle(.red)
                     Spacer()
-                    Button("Retry") { loadData() }
-                        .font(.callout)
+                    Button {
+                        loadData()
+                    } label: {
+                        Text("Retry")
+                            .font(.callout)
+                            .dsMinTapTarget()
+                    }
+                    .accessibilityLabel("Retry wishlist auto-approvals")
+                    .accessibilityHint("Reloads the wishlist and re-runs the auto-approval pass.")
+                    .accessibilityIdentifier("wishlist-auto-approval-retry")
                 }
                 .padding(.horizontal)
                 .padding(.vertical, 6)
@@ -235,6 +243,8 @@ struct IOSWishlistPage: View {
         .buttonStyle(.plain)
         .accessibilityLabel("\(filter.accessibilityTitle), \(count) items")
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityHint("Filters wishlist items by status.")
+        .accessibilityIdentifier("wishlist-filter-\(filter.rawValue)")
     }
 
     private func filterColor(_ filter: StatusFilter) -> Color {
@@ -517,6 +527,7 @@ struct IOSWishlistPage: View {
             RoundedRectangle(cornerRadius: 2)
                 .fill(priorityColor(item.priority))
                 .frame(width: 4, height: 44)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
@@ -583,6 +594,52 @@ struct IOSWishlistPage: View {
             }
         }
         .padding(.vertical, 4)
+        .contextMenu {
+            if item.status == "pending" {
+                Button {
+                    Haptics.impact(.medium)
+                    approveItem(item)
+                } label: {
+                    Label("Approve", systemImage: "checkmark.circle")
+                }
+            }
+            if item.status == "approved" {
+                Button {
+                    Haptics.impact(.medium)
+                    sendToProcurement(item)
+                } label: {
+                    Label("Send to PO", systemImage: "shippingbox")
+                }
+            }
+            if item.status == "pending" || item.status == "approved" {
+                Button(role: .destructive) {
+                    Haptics.impact(.medium)
+                    activeSheet = .dismiss(item)
+                } label: {
+                    Label("Dismiss", systemImage: "xmark.circle")
+                }
+            }
+            if item.status == "dismissed" {
+                Button {
+                    Haptics.impact(.medium)
+                    reopenItem(item)
+                } label: {
+                    Label("Reopen", systemImage: "arrow.uturn.left")
+                }
+            }
+            Button(role: .destructive) {
+                itemToDelete = item
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+        .rowAccessibility(
+            label: "\(item.partName), \(item.priority) priority, suggested quantity \(item.qtySuggested)"
+                + (item.reason.map { ", \($0)" } ?? ""),
+            value: item.status == "sent_to_procurement" ? "sent to procurement" : item.status,
+            hint: "Swipe for approve, send to procurement, dismiss, reopen, and delete actions.",
+            id: "wishlist-row-\(item.id ?? 0)"
+        )
     }
 
     // MARK: - Badges
@@ -1012,7 +1069,7 @@ private struct AddWishlistItemSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .interactiveDismissDisabled(isDirty || isSaving)
             .confirmationDialog(
-                "Discard changes?",
+                "Discard new wishlist item?",
                 isPresented: $showCancelConfirmation,
                 titleVisibility: .visible
             ) {

@@ -104,8 +104,9 @@ struct IOSJPODetailPage: View {
         .sheet(item: $activeSheet) { sheet in
             sheetContent(for: sheet)
         }
-        // Reject confirmation with required reason
-        .alert("Reject Part?", isPresented: $showRejectConfirm) {
+        // Reject confirmation with required reason. Kept as a plain .alert
+        // (not .confirmDestruction) because it hosts the reason TextField.
+        .alert(rejectConfirmTitle, isPresented: $showRejectConfirm) {
             TextField("Reason (required)", text: $rejectReason)
             Button("Cancel", role: .cancel) { rejectReason = "" }
             Button("Reject", role: .destructive) {
@@ -121,7 +122,7 @@ struct IOSJPODetailPage: View {
                 rejectReason = ""
             }
         } message: {
-            Text("A reason is required for rejection. The requester will be notified.")
+            Text(rejectConfirmMessage)
         }
         // Hold question prompt
         .alert("Ask About This Part", isPresented: $showHoldPrompt) {
@@ -388,9 +389,12 @@ struct IOSJPODetailPage: View {
                         .foregroundStyle(selectedLineIds.contains(line.id) ? Color.accentColor : .secondary)
                         .font(.title3)
                         .accessibilityHidden(true)
+                        .dsMinTapTarget()
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(selectedLineIds.contains(line.id) ? "Deselect line item" : "Select line item")
+                .accessibilityLabel(selectedLineIds.contains(line.id) ? "Deselect \(line.partName ?? "Unknown Part")" : "Select \(line.partName ?? "Unknown Part")")
+                .accessibilityHint(selectedLineIds.contains(line.id) ? "Removes this line from the bulk action selection." : "Adds this line to the bulk action selection.")
+                .accessibilityIdentifier("orders-jpo-detail-select-line-\(line.id)")
                 .accessibilityAddTraits(selectedLineIds.contains(line.id) ? .isSelected : [])
 
                 // Status icon
@@ -429,6 +433,54 @@ struct IOSJPODetailPage: View {
         }
         .padding(10)
         .dsCard()
+        .contextMenu { lineContextMenu(line) }
+    }
+
+    // MARK: - Line Context Menu
+
+    /// Context-menu mirror of the inline line actions — same state writes,
+    /// same status gating, and Reject routes through the same confirmation.
+    @ViewBuilder
+    private func lineContextMenu(_ line: OrdersService.JPOLineRow) -> some View {
+        if line.lineStatus == "pending" || line.lineStatus == "on_hold" {
+            Button { approveLine(line.id) } label: {
+                Label("Approve", systemImage: "checkmark.circle.fill")
+            }
+        }
+        if line.lineStatus == "pending" || line.lineStatus == "transfer" {
+            Button {
+                holdingLineId = line.id
+                holdingPartName = line.partName ?? "Part"
+                showHoldPrompt = true
+            } label: {
+                Label("Hold…", systemImage: "pause.circle.fill")
+            }
+        }
+        if line.lineStatus == "pending" || line.lineStatus == "transfer" || line.lineStatus == "on_hold" {
+            Button(role: .destructive) {
+                rejectingLineId = line.id
+                showRejectConfirm = true
+            } label: {
+                Label("Reject…", systemImage: "xmark.circle.fill")
+            }
+        }
+        if line.lineStatus == "on_hold", let threadId = line.chatThreadId {
+            Button { activeSheet = .viewChat(threadId) } label: {
+                Label("View Discussion", systemImage: "bubble.left.and.bubble.right.fill")
+            }
+        }
+        Button {
+            if selectedLineIds.contains(line.id) {
+                selectedLineIds.remove(line.id)
+            } else {
+                selectedLineIds.insert(line.id)
+            }
+        } label: {
+            Label(
+                selectedLineIds.contains(line.id) ? "Deselect for Bulk Action" : "Select for Bulk Action",
+                systemImage: selectedLineIds.contains(line.id) ? "checkmark.circle.fill" : "circle"
+            )
+        }
     }
 
     // MARK: - Line Status Content
@@ -441,9 +493,13 @@ struct IOSJPODetailPage: View {
                 Button { approveLine(line.id) } label: {
                     Label("Approve", systemImage: "checkmark.circle.fill")
                         .font(.caption2)
+                        .dsMinTapTarget()
                 }
                 .buttonStyle(.bordered)
                 .tint(.green)
+                .accessibilityLabel("Approve \(line.partName ?? "Unknown Part")")
+                .accessibilityHint("Checks shop stock and routes to transfer or procurement.")
+                .accessibilityIdentifier("orders-jpo-detail-approve-\(line.id)")
 
                 Button {
                     holdingLineId = line.id
@@ -452,9 +508,13 @@ struct IOSJPODetailPage: View {
                 } label: {
                     Label("Hold", systemImage: "pause.circle.fill")
                         .font(.caption2)
+                        .dsMinTapTarget()
                 }
                 .buttonStyle(.bordered)
                 .tint(.yellow)
+                .accessibilityLabel("Hold \(line.partName ?? "Unknown Part") and ask a question")
+                .accessibilityHint("Opens a question prompt that notifies the requester.")
+                .accessibilityIdentifier("orders-jpo-detail-hold-\(line.id)")
 
                 Button {
                     rejectingLineId = line.id
@@ -462,9 +522,13 @@ struct IOSJPODetailPage: View {
                 } label: {
                     Label("Reject", systemImage: "xmark.circle.fill")
                         .font(.caption2)
+                        .dsMinTapTarget()
                 }
                 .buttonStyle(.bordered)
                 .tint(.red)
+                .accessibilityLabel("Reject \(line.partName ?? "Unknown Part")")
+                .accessibilityHint("Requires a rejection reason.")
+                .accessibilityIdentifier("orders-jpo-detail-reject-\(line.id)")
             }
 
         case "transfer":
@@ -485,9 +549,13 @@ struct IOSJPODetailPage: View {
                     } label: {
                         Label("Hold", systemImage: "pause.circle.fill")
                             .font(.caption2)
+                            .dsMinTapTarget()
                     }
                     .buttonStyle(.bordered)
                     .tint(.yellow)
+                    .accessibilityLabel("Hold \(line.partName ?? "Unknown Part") and ask a question")
+                    .accessibilityHint("Cancels the pending transfer and opens a question prompt.")
+                    .accessibilityIdentifier("orders-jpo-detail-hold-\(line.id)")
 
                     Button {
                         rejectingLineId = line.id
@@ -495,9 +563,13 @@ struct IOSJPODetailPage: View {
                     } label: {
                         Label("Reject", systemImage: "xmark.circle.fill")
                             .font(.caption2)
+                            .dsMinTapTarget()
                     }
                     .buttonStyle(.bordered)
                     .tint(.red)
+                    .accessibilityLabel("Reject \(line.partName ?? "Unknown Part")")
+                    .accessibilityHint("Cancels the pending transfer; requires a reason.")
+                    .accessibilityIdentifier("orders-jpo-detail-reject-\(line.id)")
                 }
             }
 
@@ -523,16 +595,24 @@ struct IOSJPODetailPage: View {
                             .background(Color.orange.opacity(0.12))
                             .foregroundStyle(.orange)
                             .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .dsMinTapTarget()
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Open hold discussion for \(line.partName ?? "Unknown Part")")
+                    .accessibilityHint("Opens the Q&A chat thread for this hold.")
+                    .accessibilityIdentifier("orders-jpo-detail-discussion-\(line.id)")
                 }
                 HStack(spacing: 8) {
                     Button { approveLine(line.id) } label: {
                         Label("Approve", systemImage: "checkmark.circle.fill")
                             .font(.caption2)
+                            .dsMinTapTarget()
                     }
                     .buttonStyle(.bordered)
                     .tint(.green)
+                    .accessibilityLabel("Approve \(line.partName ?? "Unknown Part")")
+                    .accessibilityHint("Releases the hold and routes to transfer or procurement.")
+                    .accessibilityIdentifier("orders-jpo-detail-approve-\(line.id)")
 
                     Button {
                         rejectingLineId = line.id
@@ -540,9 +620,13 @@ struct IOSJPODetailPage: View {
                     } label: {
                         Label("Reject", systemImage: "xmark.circle.fill")
                             .font(.caption2)
+                            .dsMinTapTarget()
                     }
                     .buttonStyle(.bordered)
                     .tint(.red)
+                    .accessibilityLabel("Reject \(line.partName ?? "Unknown Part")")
+                    .accessibilityHint("Requires a rejection reason.")
+                    .accessibilityIdentifier("orders-jpo-detail-reject-\(line.id)")
                 }
             }
 
@@ -662,16 +746,23 @@ struct IOSJPODetailPage: View {
                 Button { approveSelected() } label: {
                     Label("Approve", systemImage: "checkmark.circle.fill")
                         .font(.caption)
+                        .dsMinTapTarget()
                 }
                 .buttonStyle(.bordered)
                 .tint(.green)
+                .accessibilityLabel("Approve \(selectedLineIds.count) selected line item\(selectedLineIds.count == 1 ? "" : "s")")
+                .accessibilityIdentifier("orders-jpo-detail-bulk-approve")
 
                 Button { holdSelected() } label: {
                     Label("Hold", systemImage: "questionmark.circle")
                         .font(.caption)
+                        .dsMinTapTarget()
                 }
                 .buttonStyle(.bordered)
                 .tint(.yellow)
+                .accessibilityLabel("Hold \(selectedLineIds.count) selected line item\(selectedLineIds.count == 1 ? "" : "s")")
+                .accessibilityHint("Opens the bulk hold sheet to enter one reason for all.")
+                .accessibilityIdentifier("orders-jpo-detail-bulk-hold")
 
                 Button {
                     showRejectConfirm = true
@@ -679,9 +770,13 @@ struct IOSJPODetailPage: View {
                 } label: {
                     Label("Reject", systemImage: "xmark.circle.fill")
                         .font(.caption)
+                        .dsMinTapTarget()
                 }
                 .buttonStyle(.bordered)
                 .tint(.red)
+                .accessibilityLabel("Reject \(selectedLineIds.count) selected line item\(selectedLineIds.count == 1 ? "" : "s")")
+                .accessibilityHint("Requires a rejection reason.")
+                .accessibilityIdentifier("orders-jpo-detail-bulk-reject")
             }
             .padding(.horizontal)
             .padding(.vertical, 10)
@@ -1019,6 +1114,25 @@ struct IOSJPODetailPage: View {
 
     // MARK: - Helpers
 
+    /// Count-aware title for the reject confirmation — names the exact
+    /// selection size on the bulk path instead of a bare "Reject Part?".
+    private var rejectConfirmTitle: String {
+        if rejectingLineId != nil { return "Reject Part?" }
+        let count = selectedLineIds.count
+        return "Reject \(count) Selected Part\(count == 1 ? "" : "s")?"
+    }
+
+    /// Names the single part being rejected, or states the exact bulk count.
+    private var rejectConfirmMessage: String {
+        let notice = "A reason is required for rejection. The requester will be notified."
+        if let lineId = rejectingLineId {
+            let name = jpo?.lines.first(where: { $0.id == lineId })?.partName ?? "this part"
+            return "Reject '\(name)'? \(notice)"
+        }
+        let count = selectedLineIds.count
+        return "Reject \(count) selected part\(count == 1 ? "" : "s")? \(notice)"
+    }
+
     private func statusColor(_ status: String) -> Color {
         switch status {
         case "pending": .orange
@@ -1126,6 +1240,10 @@ private struct AddJPOLineItemSheet: View {
                             Spacer()
                             Button("Change") { selectedPart = nil }
                                 .font(.caption)
+                                .dsMinTapTarget()
+                                .accessibilityLabel("Change selected part")
+                                .accessibilityHint("Clears \(part.name) so you can search again.")
+                                .accessibilityIdentifier("orders-jpo-detail-add-line-change-part")
                         }
                         .padding(.vertical, 2)
                     } else if !searchResults.isEmpty {
@@ -1145,6 +1263,12 @@ private struct AddJPOLineItemSheet: View {
                                 }
                             }
                             .foregroundStyle(.primary)
+                            .rowAccessibility(
+                                label: "Select \(part.name)",
+                                value: part.code,
+                                hint: "Chooses this part for the new line item.",
+                                id: "orders-jpo-detail-add-line-part-\(part.id ?? 0)"
+                            )
                         }
                     }
                 }

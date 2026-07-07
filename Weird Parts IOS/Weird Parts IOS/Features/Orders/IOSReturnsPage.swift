@@ -116,6 +116,11 @@ struct IOSReturnsPage: View {
             .foregroundStyle(statusFilter == filter ? .white : .primary)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("\(label) returns")
+        .accessibilityValue("\(count)")
+        .accessibilityAddTraits(statusFilter == filter ? [.isSelected] : [])
+        .accessibilityHint("Filters the returns list by status.")
+        .accessibilityIdentifier("returns-filter-\(filter ?? "all")")
     }
 
     // MARK: - Returns List
@@ -198,6 +203,20 @@ struct IOSReturnsPage: View {
             }
         }
         .padding(.vertical, 4)
+        .contextMenu {
+            Button {
+                UIPasteboard.general.string = "RET #\(ret.id)"
+            } label: {
+                Label("Copy Return ID", systemImage: "doc.on.doc")
+            }
+        }
+        .rowAccessibility(
+            label: "Return #\(ret.id), \(ret.returnType.replacingOccurrences(of: "_", with: " "))"
+                + (ret.supplierName.map { ", \($0)" } ?? ""),
+            value: "Status \(ret.status), \(ret.lineCount) items"
+                + (ret.creditAmount.map { String(format: ", $%.2f credit", $0) } ?? ""),
+            id: "returns-row-\(ret.id)"
+        )
     }
 
     // MARK: - Badges

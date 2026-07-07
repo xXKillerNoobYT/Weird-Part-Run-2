@@ -47,9 +47,13 @@ struct SupplierPickerSheet: View {
                                 Image(systemName: "chevron.right")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
+                                    .accessibilityHidden(true)
                             }
                         }
                         .disabled(isGenerating)
+                        .accessibilityLabel(supplierRowLabel(item))
+                        .accessibilityHint("Generates a purchase order from this supplier.")
+                        .accessibilityIdentifier("supplier-picker-row-\(item.supplier.id ?? 0)")
                     }
                     .listStyle(.insetGrouped)
                 }
@@ -78,6 +82,13 @@ struct SupplierPickerSheet: View {
             }
             .task { loadSuppliers() }
         }
+    }
+
+    private func supplierRowLabel(_ item: PartsService.SupplierWithCount) -> String {
+        if let contact = item.supplier.contactName, !contact.isEmpty {
+            return "\(item.supplier.name), contact \(contact)"
+        }
+        return item.supplier.name
     }
 
     private var filteredSuppliers: [PartsService.SupplierWithCount] {

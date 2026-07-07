@@ -117,13 +117,15 @@ struct IOSPODetailPage: View {
             sheetContent(for: sheet)
         }
         // Delete Draft confirmation
-        .alert("Delete Draft?", isPresented: $showDeleteConfirmation) {
-            Button("Keep Draft", role: .cancel) {}
-            Button("Delete", role: .destructive) {
-                Task { await deleteDraftPO() }
-            }
-        } message: {
-            Text("This will permanently delete this draft purchase order.")
+        .confirmDestruction(
+            ofRecordNamed: po?.poNumber ?? "#\(poId)",
+            noun: "draft purchase order",
+            actionLabel: "Delete",
+            actionVerb: "permanently deletes",
+            isPresented: $showDeleteConfirmation,
+            messageSuffix: "This also removes its \(DestructiveConfirmationCopy.countPhrase(count: po?.lines.count ?? 0, noun: "line item"))."
+        ) {
+            Task { await deleteDraftPO() }
         }
         // Cancel PO confirmation
         .alert("Cancel Purchase Order?", isPresented: $showCancelConfirmation) {
@@ -140,7 +142,7 @@ struct IOSPODetailPage: View {
                 }
             }
         } message: {
-            Text("This will cancel the entire purchase order. A reason is required.")
+            Text("This will cancel \(po?.poNumber ?? "this purchase order") and all \(DestructiveConfirmationCopy.countPhrase(count: po?.lines.count ?? 0, noun: "line item")). A reason is required.")
         }
         // Cancel Remaining confirmation
         .alert("Cancel Remaining Items?", isPresented: $showCancelRemainingConfirmation) {
@@ -157,7 +159,8 @@ struct IOSPODetailPage: View {
                 }
             }
         } message: {
-            Text("This will cancel all unreceived items. Contact the supplier first to confirm. A reason is required.")
+            let remainingCount = po?.lines.filter { $0.quantityOrdered > $0.quantityReceived }.count ?? 0
+            Text("This will cancel \(DestructiveConfirmationCopy.countPhrase(count: remainingCount, noun: "unreceived item")) on \(po?.poNumber ?? "this PO"). Contact the supplier first to confirm. A reason is required.")
         }
         // Mark as Submitted confirmation
         .confirmationDialog(
@@ -272,8 +275,10 @@ struct IOSPODetailPage: View {
                                         Image(systemName: "phone.fill")
                                             .font(.title3)
                                             .foregroundStyle(.green)
+                                            .dsMinTapTarget()
                                     }
-                                    .accessibilityLabel("Call supplier")
+                                    .accessibilityLabel("Call \(sup.name)")
+                                    .accessibilityIdentifier("orders-po-contact-call-supplier")
                                 }
                                 if let email = sup.email, !email.isEmpty,
                                    let url = URL(string: "mailto:\(email)") {
@@ -281,8 +286,10 @@ struct IOSPODetailPage: View {
                                         Image(systemName: "envelope.fill")
                                             .font(.title3)
                                             .foregroundStyle(.blue)
+                                            .dsMinTapTarget()
                                     }
-                                    .accessibilityLabel("Email supplier")
+                                    .accessibilityLabel("Email \(sup.name)")
+                                    .accessibilityIdentifier("orders-po-contact-email-supplier")
                                 }
                             }
                         }
@@ -329,6 +336,13 @@ struct IOSPODetailPage: View {
                                     }
                                 }
                                 .foregroundStyle(.primary)
+                                .rowAccessibility(
+                                    label: channel.channelName,
+                                    value: (channel.unreadCount > 0 ? "\(channel.unreadCount) unread. " : "")
+                                        + (channel.lastMessageAt.map { "Last message \(String($0.prefix(10)))" } ?? "No messages yet"),
+                                    hint: "Opens this channel's messages.",
+                                    id: "orders-po-supplier-channel-\(channel.channelId)"
+                                )
                             }
                         }
 
@@ -370,8 +384,10 @@ struct IOSPODetailPage: View {
                                         Image(systemName: "arrow.up.circle.fill")
                                             .font(.title3)
                                             .foregroundStyle(Color.accentColor)
+                                            .dsMinTapTarget()
                                     }
                                     .accessibilityLabel("Send message")
+                                    .accessibilityIdentifier("orders-po-send-supplier-message")
                                     .disabled(newSupplierMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                                 }
                             }
@@ -403,7 +419,13 @@ struct IOSPODetailPage: View {
                                 .background(Color.accentColor.opacity(0.12))
                                 .foregroundStyle(Color.accentColor)
                                 .clipShape(RoundedRectangle(cornerRadius: 10))
+                                .dsMinTapTarget()
                         }
+                        .rowAccessibility(
+                            label: "Create supplier channel",
+                            hint: "Creates a chat bridge with \(po?.supplierName ?? "the supplier").",
+                            id: "orders-po-create-supplier-channel"
+                        )
                         .padding(.horizontal, 32)
                         Spacer()
                     }
@@ -569,6 +591,12 @@ struct IOSPODetailPage: View {
                                     }
                                 }
                                 .foregroundStyle(.primary)
+                                .rowAccessibility(
+                                    label: "Supplier \(sup.name), \(swc.partCount) parts linked",
+                                    value: selectedSupplierId == sup.id ? "Selected" : "Not selected",
+                                    hint: "Selects this supplier for the double order.",
+                                    id: "orders-po-double-order-supplier-\(sup.id ?? 0)"
+                                )
                             }
                         }
                     }
@@ -869,8 +897,14 @@ struct IOSPODetailPage: View {
                                                     .background(Color.blue.opacity(0.12))
                                                     .foregroundStyle(.blue)
                                                     .clipShape(RoundedRectangle(cornerRadius: 8))
+                                                    .dsMinTapTarget()
                                             }
                                             .buttonStyle(.plain)
+                                            .rowAccessibility(
+                                                label: "Send direct message to \(detail.requestedByName)",
+                                                hint: "Creates a DM channel with the JPO creator.",
+                                                id: "orders-po-contact-creator-dm-\(detail.id)"
+                                            )
 
                                             if let notes = detail.notes, !notes.isEmpty {
                                                 VStack(alignment: .leading, spacing: 2) {
@@ -926,8 +960,11 @@ struct IOSPODetailPage: View {
                                                 .background(Color.blue.opacity(0.12))
                                                 .foregroundStyle(.blue)
                                                 .clipShape(Capsule())
+                                                .dsMinTapTarget()
                                         }
                                         .buttonStyle(.plain)
+                                        .accessibilityLabel("Send direct message to \(submitter)")
+                                        .accessibilityIdentifier("orders-po-contact-submitter-dm")
                                     }
                                 }
                             }
@@ -1000,7 +1037,10 @@ struct IOSPODetailPage: View {
                                         .background(Color.blue.opacity(0.12))
                                         .foregroundStyle(.blue)
                                         .clipShape(RoundedRectangle(cornerRadius: 10))
+                                        .dsMinTapTarget()
                                 }
+                                .accessibilityLabel("Send direct message to \(submitter)")
+                                .accessibilityIdentifier("orders-po-contact-submitter-dm-fallback")
                                 .padding(.horizontal, 32)
                             }
                         }
@@ -1487,18 +1527,30 @@ struct IOSPODetailPage: View {
                     } label: {
                         Label("Update ETA", systemImage: "calendar.badge.clock")
                             .font(.caption2)
+                            .dsMinTapTarget()
                     }
                     .buttonStyle(.bordered)
                     .tint(.orange)
+                    .rowAccessibility(
+                        label: "Update ETA for \(line.partName ?? "Item")",
+                        hint: "Opens the expected delivery date picker.",
+                        id: "orders-po-line-update-eta-\(line.id)"
+                    )
 
                     Button {
                         activeSheet = .doubleOrder
                     } label: {
                         Label("Double Order", systemImage: "doc.on.doc")
                             .font(.caption2)
+                            .dsMinTapTarget()
                     }
                     .buttonStyle(.bordered)
                     .tint(.blue)
+                    .rowAccessibility(
+                        label: "Double order \(line.partName ?? "Item") from another supplier",
+                        hint: "Re-orders remaining items with an alternate supplier.",
+                        id: "orders-po-line-double-order-\(line.id)"
+                    )
                 }
                 .padding(.top, 2)
             }
@@ -1511,15 +1563,48 @@ struct IOSPODetailPage: View {
                     } label: {
                         Label("Edit Qty / Price", systemImage: "pencil")
                             .font(.caption2)
+                            .dsMinTapTarget()
                     }
                     .buttonStyle(.bordered)
                     .tint(Color.accentColor)
+                    .rowAccessibility(
+                        label: "Edit quantity or price for \(line.partName ?? "Item")",
+                        value: "Quantity \(line.quantityOrdered)",
+                        hint: "Opens the line item editor.",
+                        id: "orders-po-line-edit-\(line.id)"
+                    )
                 }
                 .padding(.top, 2)
             }
         }
         .padding(10)
         .dsCard()
+        .contextMenu {
+            if isDraft {
+                Button {
+                    activeSheet = .editLineItem(line)
+                } label: {
+                    Label("Edit Qty / Price", systemImage: "pencil")
+                }
+            }
+            if line.lineStatus == "backorder" {
+                Button {
+                    activeSheet = .updateETA
+                } label: {
+                    Label("Update ETA", systemImage: "calendar.badge.clock")
+                }
+                Button {
+                    activeSheet = .doubleOrder
+                } label: {
+                    Label("Double Order", systemImage: "doc.on.doc")
+                }
+            }
+            Button {
+                UIPasteboard.general.string = line.partName ?? "Item"
+            } label: {
+                Label("Copy Part Name", systemImage: "doc.on.clipboard")
+            }
+        }
     }
 
     // MARK: - Line Status Icon
@@ -1565,6 +1650,7 @@ struct IOSPODetailPage: View {
     private func receiptHistorySection() -> some View {
         let hasEntries = !receiptHistoryEntries.isEmpty
         let hasBatches = !receiptBatches.isEmpty
+        let totalSessions = hasEntries ? receiptHistoryEntries.count : receiptBatches.count
 
         if hasEntries || hasBatches || receiptHistoryError != nil {
             VStack(alignment: .leading, spacing: 8) {
@@ -1581,8 +1667,10 @@ struct IOSPODetailPage: View {
                         } label: {
                             Label("Retry", systemImage: "arrow.clockwise")
                                 .font(.caption)
+                                .dsMinTapTarget()
                         }
                         .accessibilityLabel("Retry loading receipt history")
+                        .accessibilityIdentifier("orders-po-receipt-history-retry")
                     }
                 }
 
@@ -1597,7 +1685,6 @@ struct IOSPODetailPage: View {
                             .font(.headline)
                             .foregroundStyle(.primary)
 
-                        let totalSessions = hasEntries ? receiptHistoryEntries.count : receiptBatches.count
                         Text("(\(totalSessions))")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -1625,8 +1712,15 @@ struct IOSPODetailPage: View {
                             .foregroundStyle(.secondary)
                             .accessibilityHidden(true)
                     }
+                    .dsMinTapTarget()
                 }
                 .buttonStyle(.plain)
+                .rowAccessibility(
+                    label: "Receipt history, \(totalSessions) session\(totalSessions == 1 ? "" : "s")",
+                    value: isReceiptHistoryExpanded ? "Expanded" : "Collapsed",
+                    hint: "Shows the receiving timeline.",
+                    id: "orders-po-receipt-history-toggle"
+                )
 
                 // Expanded content
                 if isReceiptHistoryExpanded {
@@ -1732,6 +1826,12 @@ struct IOSPODetailPage: View {
                 }
             }
             .buttonStyle(.plain)
+            .rowAccessibility(
+                label: "Receiving session on \(formatSessionDate(entry.sessionDate)), \(entry.totalItemsReceived) units received by \(entry.receivedBy)",
+                value: (entry.hasDiscrepancies ? "Has discrepancies. " : "") + (isExpanded ? "Expanded" : "Collapsed"),
+                hint: "Shows per-item receipt details.",
+                id: "orders-po-receipt-entry-\(entry.id)"
+            )
 
             // Per-item details (expanded)
             if isExpanded {
@@ -1913,8 +2013,10 @@ struct IOSPODetailPage: View {
                                 Image(systemName: "phone.fill")
                                     .font(.title3)
                                     .foregroundStyle(.green)
+                                    .dsMinTapTarget()
                             }
-                            .accessibilityLabel("Call supplier")
+                            .accessibilityLabel("Call \(sup.name)")
+                            .accessibilityIdentifier("orders-po-crm-call-supplier")
                         }
                         if let email = sup.email, !email.isEmpty,
                            let url = URL(string: "mailto:\(email)") {
@@ -1922,8 +2024,10 @@ struct IOSPODetailPage: View {
                                 Image(systemName: "envelope.fill")
                                     .font(.title3)
                                     .foregroundStyle(.blue)
+                                    .dsMinTapTarget()
                             }
-                            .accessibilityLabel("Email supplier")
+                            .accessibilityLabel("Email \(sup.name)")
+                            .accessibilityIdentifier("orders-po-crm-email-supplier")
                         }
                         Button {
                             activeSheet = .contactSupplier
@@ -1931,8 +2035,13 @@ struct IOSPODetailPage: View {
                             Image(systemName: "message.fill")
                                 .font(.title3)
                                 .foregroundStyle(.orange)
+                                .dsMinTapTarget()
                         }
-                        .accessibilityLabel("Message supplier")
+                        .rowAccessibility(
+                            label: "Message \(po.supplierName)",
+                            hint: "Opens the supplier chat sheet.",
+                            id: "orders-po-crm-message-supplier"
+                        )
                     }
                 }
             }
@@ -1953,7 +2062,13 @@ struct IOSPODetailPage: View {
                 } label: {
                     Label("View Supplier Profile", systemImage: "person.crop.rectangle")
                         .font(.caption)
+                        .dsMinTapTarget()
                 }
+                .rowAccessibility(
+                    label: "View supplier profile for \(sup.name)",
+                    hint: "Opens the supplier profile summary.",
+                    id: "orders-po-view-supplier-profile"
+                )
             } else {
                 Label("Supplier profile unavailable", systemImage: "person.crop.rectangle")
                     .font(.caption)
@@ -2022,9 +2137,11 @@ struct IOSPODetailPage: View {
                         Image(systemName: "arrow.up.circle.fill")
                             .font(.title3)
                             .foregroundStyle(Color.accentColor)
+                            .dsMinTapTarget()
                     }
                     .disabled(newNoteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .accessibilityLabel("Add note")
+                    .accessibilityIdentifier("orders-po-add-note")
                 }
 
                 if poNotes.isEmpty {
@@ -2180,7 +2297,13 @@ struct IOSPODetailPage: View {
     }
 
     private func actionButton(_ title: String, icon: String, color: Color, action: @escaping () async -> Void) -> some View {
-        Button {
+        // Kebab-case the title so every status action gets a stable identifier
+        // (e.g. "Send to Supplier" -> "orders-po-action-send-to-supplier").
+        let identifierSlug = title.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+            .joined(separator: "-")
+        return Button {
             Task { await action() }
         } label: {
             Label(title, systemImage: icon)
@@ -2191,8 +2314,10 @@ struct IOSPODetailPage: View {
                 .background(color.opacity(0.12))
                 .foregroundStyle(color)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
+                .dsMinTapTarget()
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("orders-po-action-\(identifierSlug)")
     }
 
     // MARK: - Status Transitions

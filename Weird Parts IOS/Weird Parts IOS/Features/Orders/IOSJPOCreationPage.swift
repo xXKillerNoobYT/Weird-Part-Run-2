@@ -308,12 +308,18 @@ struct IOSJPOCreationPage: View {
                             .foregroundStyle(.green)
                     }
                     Spacer()
-                    Button("Change") {
+                    Button {
                         clockedInJobId = nil
                         selectedJobId = nil
                         selectedJobName = ""
+                    } label: {
+                        Text("Change")
+                            .font(.caption)
+                            .dsMinTapTarget()
                     }
-                    .font(.caption)
+                    .accessibilityLabel("Change job")
+                    .accessibilityHint("Clears the clocked-in job so you can pick a different one.")
+                    .accessibilityIdentifier("orders-jpo-create-change-job")
                 }
             } else {
                 // Job picker
@@ -373,8 +379,11 @@ struct IOSJPOCreationPage: View {
                 Button { activeSheet = .qrScanner } label: {
                     Label("Scan", systemImage: "qrcode.viewfinder")
                         .font(.caption)
+                        .dsMinTapTarget()
                 }
-                .accessibilityLabel("Scan QR code")
+                .accessibilityLabel("Scan part QR code")
+                .accessibilityHint("Opens the camera to scan a part code.")
+                .accessibilityIdentifier("orders-jpo-create-scan-part-qr")
             }
 
             HStack {
@@ -393,9 +402,11 @@ struct IOSJPOCreationPage: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.secondary)
+                            .dsMinTapTarget()
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Clear search")
+                    .accessibilityIdentifier("orders-jpo-create-clear-search")
                 }
             }
             .padding(8)
@@ -419,8 +430,10 @@ struct IOSJPOCreationPage: View {
                     } label: {
                         Label("Retry", systemImage: "arrow.clockwise")
                             .font(.caption)
+                            .dsMinTapTarget()
                     }
                     .accessibilityLabel("Retry part search")
+                    .accessibilityIdentifier("orders-jpo-create-search-retry")
                 }
                 .padding(.vertical, 8)
             } else if searchResults.isEmpty && !searchText.isEmpty && searchText.count >= 2 {
@@ -453,7 +466,11 @@ struct IOSJPOCreationPage: View {
                                     .font(.caption)
                             }
                             .foregroundStyle(.secondary)
+                            .dsMinTapTarget()
                         }
+                        .accessibilityLabel("Search again for \(query)")
+                        .accessibilityHint("Runs this recent search again.")
+                        .accessibilityIdentifier("orders-jpo-create-recent-search-\(query)")
                     }
                 }
             }
@@ -510,10 +527,13 @@ struct IOSJPOCreationPage: View {
                     .font(.title3)
                     .foregroundStyle(alreadyInCart(partId: part.id) ? .green : Color.accentColor)
                     .accessibilityHidden(true)
+                    .dsMinTapTarget()
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(alreadyInCart(partId: part.id) ? "Already in cart" : "Add to cart")
+            .accessibilityLabel("Add \(part.name) to cart")
+            .accessibilityHint("Adds one of this part to the order cart.")
             .accessibilityAddTraits(alreadyInCart(partId: part.id) ? .isSelected : [])
+            .accessibilityIdentifier("orders-jpo-create-search-add-\(part.id ?? 0)")
         }
         .padding(.vertical, 4)
     }
@@ -557,6 +577,15 @@ struct IOSJPOCreationPage: View {
                             highlightedCartPartId = item.partId
                             loadSuggestions()
                         }
+                        // Mirror the tap gesture for VoiceOver without collapsing the
+                        // row's child controls (stepper, remove, brand picker).
+                        .accessibilityLabel("\(item.partName), quantity \(item.quantity), \(item.shopStock) in stock")
+                        .accessibilityHint("Shows companion suggestions for this part.")
+                        .accessibilityAction(named: "Show suggestions") {
+                            highlightedCartPartId = item.partId
+                            loadSuggestions()
+                        }
+                        .accessibilityIdentifier("orders-jpo-create-cart-row-\(item.partId)")
                         .background(
                             highlightedCartPartId == item.partId
                                 ? Color.accentColor.opacity(0.08)
@@ -632,7 +661,9 @@ struct IOSJPOCreationPage: View {
                 .pickerStyle(.segmented)
                 .controlSize(.mini)
                 .frame(maxWidth: 220)
+                .dsMinTapTarget()
                 .accessibilityLabel("Brand selection mode for \(item.partName)")
+                .accessibilityIdentifier("orders-jpo-create-brand-mode-\(item.partId)")
             }
 
             Spacer()
@@ -646,9 +677,12 @@ struct IOSJPOCreationPage: View {
                 } label: {
                     Image(systemName: "minus.circle")
                         .foregroundStyle(.secondary)
+                        .dsMinTapTarget()
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Decrease quantity")
+                .accessibilityLabel("Decrease quantity of \(item.partName)")
+                .accessibilityValue("\(cartItems[index].quantity)")
+                .accessibilityIdentifier("orders-jpo-create-qty-minus-\(item.partId)")
 
                 Text("\(cartItems[index].quantity)")
                     .font(.subheadline)
@@ -661,9 +695,12 @@ struct IOSJPOCreationPage: View {
                 } label: {
                     Image(systemName: "plus.circle")
                         .foregroundStyle(Color.accentColor)
+                        .dsMinTapTarget()
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Increase quantity")
+                .accessibilityLabel("Increase quantity of \(item.partName)")
+                .accessibilityValue("\(cartItems[index].quantity)")
+                .accessibilityIdentifier("orders-jpo-create-qty-plus-\(item.partId)")
             }
 
             // Remove button
@@ -673,20 +710,25 @@ struct IOSJPOCreationPage: View {
                 Image(systemName: "trash")
                     .font(.caption)
                     .foregroundStyle(.red)
+                    .dsMinTapTarget()
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Remove from cart")
-            .confirmationDialog("Remove from cart?", isPresented: Binding(
-                get: { pendingRemoveIndex == index },
-                set: { if !$0 { pendingRemoveIndex = nil } }
-            ), titleVisibility: .visible) {
-                Button("Remove", role: .destructive) {
-                    if let idx = pendingRemoveIndex, idx < cartItems.count {
-                        cartItems.remove(at: idx)
-                    }
-                    pendingRemoveIndex = nil
+            .accessibilityLabel("Remove \(item.partName) from cart")
+            .accessibilityHint("Asks for confirmation before removing.")
+            .accessibilityIdentifier("orders-jpo-create-remove-\(item.partId)")
+            .confirmDestruction(
+                ofRecordNamed: item.partName,
+                noun: "cart item",
+                actionLabel: "Remove",
+                isPresented: Binding(
+                    get: { pendingRemoveIndex == index },
+                    set: { if !$0 { pendingRemoveIndex = nil } }
+                )
+            ) {
+                if let idx = pendingRemoveIndex, idx < cartItems.count {
+                    cartItems.remove(at: idx)
                 }
-                Button("Cancel", role: .cancel) { pendingRemoveIndex = nil }
+                pendingRemoveIndex = nil
             }
         }
         .padding(.vertical, 4)
@@ -825,9 +867,13 @@ struct IOSJPOCreationPage: View {
                     Text("+ Add \(suggestedQty)")
                         .font(.caption2)
                         .fontWeight(.medium)
+                        .dsMinTapTarget()
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
+                .accessibilityLabel("Add \(suggestedQty) \(partName) to cart")
+                .accessibilityHint("Opens a quantity confirmation dialog.")
+                .accessibilityIdentifier("orders-jpo-create-suggestion-add-\(pid)")
             } else {
                 Text("Not in catalog")
                     .font(.caption2)
