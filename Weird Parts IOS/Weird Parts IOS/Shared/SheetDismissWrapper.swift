@@ -60,6 +60,7 @@ struct SheetDismissWrapper<Content: View>: View {
                 }
                 .environment(\.sheetDismiss, dismissAction)
         }
+        .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
     }
 }
