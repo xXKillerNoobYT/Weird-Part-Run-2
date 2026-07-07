@@ -61,7 +61,7 @@ struct SecurityAdminPage: View {
         .task { loadData() }
         .confirmDestruction(
             ofRecordNamed: selectedSessionUserName,
-            noun: "session for",
+            noun: "session",
             actionLabel: "Force Logout",
             actionVerb: "immediately ends",
             isPresented: $showForceLogoutConfirm,
@@ -72,10 +72,11 @@ struct SecurityAdminPage: View {
     }
 
     /// Name of the user whose session is pending force-logout, so the
-    /// confirmation names whose access is being cut.
+    /// confirmation names whose access is being cut. Empty when the session
+    /// can't be resolved — the helper then renders "Force Logout this session?".
     private var selectedSessionUserName: String {
-        guard let selectedSessionId else { return "this user" }
-        return sessions.first(where: { $0.id == selectedSessionId })?.userName ?? "this user"
+        guard let selectedSessionId else { return "" }
+        return sessions.first(where: { $0.id == selectedSessionId })?.userName ?? ""
     }
 
     private enum ActiveSheet: Identifiable {

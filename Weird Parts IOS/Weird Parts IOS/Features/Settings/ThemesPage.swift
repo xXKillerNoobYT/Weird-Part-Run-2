@@ -60,7 +60,7 @@ struct ThemesPage: View {
                         .accessibilityAddTraits(primaryColor == hex ? .isSelected : [])
                         .accessibilityLabel("\(name) accent color")
                         .accessibilityHint("Sets the app accent color. Tap Save Theme to apply.")
-                        .accessibilityIdentifier("settings-themes-color-\(name.lowercased())")
+                        .accessibilityIdentifier("settings-themes-color-\(stableAccessibilitySuffix(id: nil, name: name))")
                     }
                 }
                 .padding(.vertical, 4)
