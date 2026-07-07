@@ -891,12 +891,13 @@ public actor PeerManager {
                     guard let jsonData = try? JSONSerialization.data(withJSONObject: dict),
                           let recordData = String(data: jsonData, encoding: .utf8) else { continue }
 
-                    let recordId: String
-                    if let idValue = row["id"] as? Int64 {
-                        recordId = String(idValue)
-                    } else {
-                        recordId = "0"
-                    }
+                    // Rows without a usable Int64 primary key are skipped — a "0"
+                    // fallback would collapse multiple rows onto one id on the
+                    // receiver (Copilot review on PR #1422). All whitelisted
+                    // business tables use an `id` autoincrement PK, so this is
+                    // pure defense.
+                    guard let idValue = row["id"] as? Int64 else { continue }
+                    let recordId = String(idValue)
                     // Prefer the row's own updated_at for LWW fairness; the joiner is
                     // fresh so there is nothing local to conflict with either way.
                     let timestamp = (row["updated_at"] as? String) ?? fallbackTimestamp
@@ -1108,9 +1109,13 @@ public actor PeerManager {
     /// seeded admin user (email/phone NULL) never arrived on a Bluetooth-joined
     /// device ("No User Found", 2026-07-06). Map the database storage explicitly:
     /// NULL → NSNull (the receiver's parseJsonField turns it back into SQL NULL),
-    /// numbers → NSNumber, text → String. Blobs also become NSNull — binary
-    /// payloads travel via BinarySyncManager, not row JSON, and the old path
-    /// dropped the entire row for them anyway.
+    /// numbers → NSNumber, text → String. Blob columns are OMITTED entirely —
+    /// binary payloads travel via BinarySyncManager, not row JSON. Omitting
+    /// (vs the old NSNull mapping) matters on the merge path: an explicit NULL
+    /// would overwrite a real blob on the receiver (e.g. business_profiles
+    /// .logo_data cleared remotely whenever any other profile field changed),
+    /// while a missing key means "leave this column alone" (Copilot review on
+    /// PR #1422).
     internal static func jsonRecordDict(from row: Row) -> [String: Any] {
         var dict: [String: Any] = [:]
         for (column, dbValue) in row {
@@ -1124,7 +1129,7 @@ public actor PeerManager {
             case .string(let value):
                 dict[column] = value
             case .blob:
-                dict[column] = NSNull()
+                continue
             }
         }
         return dict

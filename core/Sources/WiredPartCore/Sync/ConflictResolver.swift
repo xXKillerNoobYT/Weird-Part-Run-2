@@ -202,8 +202,13 @@ public enum ConflictResolver {
         // Per-location forecasting
         "location_stock_targets", "forecast_settings", "location_free_space",
         "target_recommendations",
-        // AI (not _text_history — that's local-only)
-        "part_image_features", "image_match_history",
+        // AI (not _text_history — that's local-only). part_image_features is
+        // intentionally ABSENT: its feature_vector is a NOT NULL BLOB, and row
+        // JSON cannot carry blobs (see PeerManager.jsonRecordDict) — every row
+        // silently failed to apply on the receiver. Feature vectors are
+        // device-derived from local photos; binary payloads belong to
+        // BinarySyncManager (Copilot review on PR #1422).
+        "image_match_history",
         // Sync infrastructure (these are managed by sync itself)
         "_change_log", "_conflict_log", "_vector_clock", "_device_registry",
         "_binary_attachments", "_sync_transfer_log",
@@ -409,12 +414,18 @@ public enum ConflictResolver {
             }
 
             // Propagate the human decision to peers like any other local edit.
+            // recordId is the guard-validated Int64 from above — never a 0
+            // fallback. A nil chosen value means SQL NULL, same as the "(NULL)"
+            // sentinel: NSNull here makes jsonEncode drop the field, leaving a
+            // bare change entry whose enriched record_data carries the real NULL
+            // to peers — NOT an empty string (Copilot review on PR #1422).
+            let chosenIsNull = (chosen == nil || chosen == "(NULL)")
             try ChangeTracker.trackChange(
                 db: db,
                 tableName: conflict.tableName,
-                recordId: Int64(conflict.recordId) ?? 0,
+                recordId: recordId,
                 operation: .update,
-                changedFields: [conflict.fieldName: (chosen == "(NULL)" ? NSNull() : (chosen ?? "") as Any)]
+                changedFields: [conflict.fieldName: (chosenIsNull ? NSNull() : chosen! as Any)]
             )
         }
 
@@ -595,20 +606,28 @@ public enum ConflictResolver {
         guard let existingRow = localRow else {
             // Record doesn't exist locally
             if let recordDataFields = parseJsonField(change.recordData) {
-                // We have full record data — INSERT it (handles NULLs correctly)
+                // We have full record data — INSERT it. Same present-but-NULL
+                // handling as applyInsert's plain-INSERT path: a NULL column is
+                // a PRESENT key with a nil inner value, and the old double-
+                // optional check here only matched MISSING keys, so NULL columns
+                // produced a "?" placeholder with no bound argument and the
+                // statement threw (Copilot review on PR #1422 — this was the
+                // second, unfixed copy of the applyInsert bug).
                 let columns = recordDataFields.keys.sorted()
-                let placeholders = columns.map { key -> String in
-                    if case .none = recordDataFields[key] as String?? { return "NULL" }
-                    return "?"
-                }.joined(separator: ", ")
-                let columnList = columns.map { "\"\($0)\"" }.joined(separator: ", ")
-                let values: [String] = columns.compactMap { key -> String? in
-                    if let val = recordDataFields[key] { return val }
-                    return nil
+                var placeholders: [String] = []
+                var values: [String] = []
+                for key in columns {
+                    if let present = recordDataFields[key], let value = present {
+                        placeholders.append("?")
+                        values.append(value)
+                    } else {
+                        placeholders.append("NULL")
+                    }
                 }
+                let columnList = columns.map { "\"\($0)\"" }.joined(separator: ", ")
 
                 try db.execute(
-                    sql: "INSERT OR IGNORE INTO \(quotedTable(table)) (\(columnList)) VALUES (\(placeholders))",
+                    sql: "INSERT OR IGNORE INTO \(quotedTable(table)) (\(columnList)) VALUES (\(placeholders.joined(separator: ", ")))",
                     arguments: StatementArguments(values)
                 )
                 return 0
