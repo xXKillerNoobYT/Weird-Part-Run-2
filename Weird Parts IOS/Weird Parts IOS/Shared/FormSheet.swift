@@ -63,5 +63,7 @@ struct FormSheet<Content: View>: View {
                 onDiscard: { dismiss() }
             )
         }
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
     }
 }
