@@ -129,13 +129,10 @@ struct PanelScheduleBuilder: View {
             // Move-mode banner lives OUTSIDE the bordered grid so it never breaks
             // the panel frame's clean edges.
             if let movingCircuit = movingCircuitDescription {
-                Text("Move \(movingCircuit): tap a destination space or drag it onto the grid.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, DS.Space.sm)
-                    .padding(.vertical, DS.Space.xs)
-                    .background(DS.SemanticColor.info.opacity(0.08), in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+                PanelQualityInstructionBanner(
+                    message: "Move \(movingCircuit): tap a destination space or drag it onto the grid.",
+                    accessibilityIdentifier: "panelScheduleMoveModeBanner"
+                )
             }
 
             // The grid itself: opaque cells laid over a grid-line-colored backing,
