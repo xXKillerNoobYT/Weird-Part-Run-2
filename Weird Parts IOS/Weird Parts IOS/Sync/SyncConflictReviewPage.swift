@@ -43,13 +43,8 @@ struct SyncConflictReviewPage: View {
                 if !conflicts.isEmpty {
                     ToolbarItem(placement: .primaryAction) {
                         Button("Accept All") {
-                            guard conflicts.allSatisfy({ $0.id != nil }) else {
-                                actionError = "One or more sync conflicts cannot be reviewed because their conflict id is missing. Reload conflicts and try again."
-                                syncManager.surfaceConflictReviewActionFailure(actionError ?? "Sync conflict action failed.")
-                                return
-                            }
                             if syncManager.markAllConflictsReviewed() {
-                                conflicts = []
+                                loadConflicts()
                             } else {
                                 actionError = syncManager.errorMessage ?? "Sync conflicts could not be marked reviewed."
                             }

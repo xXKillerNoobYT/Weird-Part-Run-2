@@ -29,7 +29,7 @@ Sixteen checkable criteria — what "Panel-Builder quality" concretely means:
 ### 2a. Verified functional bugs found by the audit (fix FIRST — these are broken, not unpolished)
 | Sev | Finding | File | Status |
 |-----|---------|------|--------|
-| 🔴 | **Sync conflict resolution is cosmetic** — all 4 "pick local/remote" callbacks funnel to `markReviewed()` which only deletes the row; NO value-application path exists. Data-loss surface masquerading as a feature | `Sync/SyncConflictReviewPage.swift` | **fixed this wave** |
+| 🔴 | **Sync conflict resolution is cosmetic** — all 4 "pick local/remote" callbacks funnel to `markReviewed()` which only deletes the row; NO value-application path exists. Data-loss surface masquerading as a feature | `Sync/SyncConflictReviewPage.swift` | **fixed this wave**; review follow-up now also keeps hard/critical rows out of bulk acceptance and classifies the persisted Parts cost/markup/MIN/TARGET/MAX fields as mandatory-choice conflicts |
 | 🔴 | Notebooks checklist **encode/decode contract mismatch** — `encodeChecklistItems()` persists `"true"/"false"` strings that the decoder doesn't accept | `Notebooks/AddNotebookEntrySheet.swift:584` + `IOSNotebookDetailPage` | **fixed this wave** |
 | 🟠 | Settings Break: editing an existing bonus **amount silently dropped** (only the toggle persists) | `Settings/IOSBreakSettingsPage.swift:604` | tracked |
 | 🟠 | Jobs: clock-in **note collected but never persisted** (`clockIn(userId:jobId:)` has no notes param) | `Jobs/LaborPage.swift:289` | tracked |

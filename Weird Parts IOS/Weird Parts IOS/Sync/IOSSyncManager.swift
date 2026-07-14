@@ -902,7 +902,10 @@ final class IOSSyncManager {
         }
     }
 
-    /// Mark all unreviewed conflicts as reviewed.
+    /// Mark auto-resolvable conflicts as reviewed in bulk.
+    ///
+    /// Hard and critical conflicts deliberately remain pending because dismissing
+    /// them without an explicit side would silently preserve the prior LWW winner.
     @discardableResult
     func markAllConflictsReviewed() -> Bool {
         guard let db else {
@@ -922,6 +925,10 @@ final class IOSSyncManager {
         }
         var allReviewed = true
         for conflict in conflicts {
+            let severity = SyncConflictClassifier.classify(conflict)
+            guard SyncConflictClassifier.isAutoResolvable(severity) else {
+                continue
+            }
             guard let id = conflict.id else {
                 allReviewed = false
                 syncReviewActionFailed("A sync conflict could not be marked reviewed because its conflict id is missing. Reload conflicts and try again.")
