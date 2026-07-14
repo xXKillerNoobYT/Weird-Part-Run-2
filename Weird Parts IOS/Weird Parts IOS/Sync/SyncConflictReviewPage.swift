@@ -284,7 +284,8 @@ struct SyncConflictReviewPage: View {
     }
 
     private func friendlyFieldName(_ name: String) -> String {
-        name.replacingOccurrences(of: "_", with: " ").capitalized
+        if name == "company_cost_price" { return "Unit Cost" }
+        return name.replacingOccurrences(of: "_", with: " ").capitalized
     }
 
     private func formatTimestamp(_ ts: String) -> String {

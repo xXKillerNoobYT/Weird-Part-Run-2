@@ -213,6 +213,10 @@ struct CriticalConflictView: View {
                         .buttonStyle(.borderedProminent)
                         .tint(.blue)
                         .controlSize(.small)
+                        .dsMinTapTarget()
+                        .accessibilityLabel("Use This Device Value")
+                        .accessibilityHint("Selects the local value for confirmation.")
+                        .accessibilityIdentifier("syncConflictUseLocalValue")
                 }
                 .frame(maxWidth: .infinity)
 
@@ -234,6 +238,10 @@ struct CriticalConflictView: View {
                         .buttonStyle(.borderedProminent)
                         .tint(.purple)
                         .controlSize(.small)
+                        .dsMinTapTarget()
+                        .accessibilityLabel("Use Remote Value")
+                        .accessibilityHint("Selects the remote value for confirmation.")
+                        .accessibilityIdentifier("syncConflictUseRemoteValue")
                 }
                 .frame(maxWidth: .infinity)
             }
