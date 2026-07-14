@@ -902,6 +902,33 @@ final class IOSSyncManager {
         }
     }
 
+    /// Persist an AI/device/manual merged-text choice, audit it, then mark the
+    /// hard conflict reviewed. The core resolver guarantees all-or-nothing state.
+    @discardableResult
+    func resolveTextConflict(_ conflict: ConflictLogEntry, selectedValue: String) -> Bool {
+        guard let db else {
+            syncReviewActionFailed("Sync text conflict could not be resolved because the database is unavailable.")
+            return false
+        }
+        do {
+            try ConflictResolver.applyTextConflictResolution(
+                db: db,
+                conflict: conflict,
+                selectedValue: selectedValue
+            )
+            refreshConflictCount()
+            refreshPendingCount()
+            return true
+        } catch {
+            syncReadFailed(
+                error,
+                context: "apply sync text conflict resolution",
+                logMessage: "applyTextConflictResolution failed for id \(conflict.id.map(String.init) ?? "nil")"
+            )
+            return false
+        }
+    }
+
     /// Mark auto-resolvable conflicts as reviewed in bulk.
     ///
     /// Hard and critical conflicts deliberately remain pending because dismissing

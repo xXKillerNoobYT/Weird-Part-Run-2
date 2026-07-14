@@ -320,25 +320,162 @@ public enum ConflictResolver {
 
     public enum ConflictReviewError: Error, LocalizedError, Sendable {
         case missingConflictId
+        case conflictNotPending(Int64)
         case tableNotAllowed(String)
         case invalidRecordId(String)
         case unknownField(table: String, field: String)
+        case fieldNotTextResolvable(table: String, field: String)
+        case missingLiveRecord(table: String, recordId: String)
         case deletionConflict
 
         public var errorDescription: String? {
             switch self {
             case .missingConflictId:
                 return "This sync conflict is missing its id. Reload conflicts and try again."
+            case .conflictNotPending(let id):
+                return "Sync conflict \(id) is no longer pending. Reload conflicts and try again."
             case .tableNotAllowed(let table):
                 return "The conflicted table \"\(table)\" is not a synced table, so its value cannot be edited from review."
             case .invalidRecordId(let id):
                 return "The conflicted record id \"\(id)\" is not valid."
             case .unknownField(let table, let field):
                 return "The field \"\(field)\" no longer exists on \"\(table)\", so this conflict can only be dismissed."
+            case .fieldNotTextResolvable(let table, let field):
+                return "The field \"\(field)\" on \"\(table)\" is not approved for merged-text resolution."
+            case .missingLiveRecord(let table, let recordId):
+                return "The conflicted \"\(table)\" record \(recordId) no longer exists. Reload conflicts and try again."
             case .deletionConflict:
                 return "One side of this conflict deleted the record. Restoring a deleted record isn't supported from review yet — recreate it manually if needed."
             }
         }
+    }
+
+    /// Text fields for which a reviewer may persist an AI/device/manual String.
+    /// This is intentionally narrower than the table whitelist: arbitrary text
+    /// must never become a generic write primitive for financial or control data.
+    private static let textResolutionFields: Set<String> = [
+        "notes", "description", "content", "reason", "comment",
+        "body", "summary", "instructions", "message", "details",
+        "remarks", "observation",
+    ]
+
+    /// Shared field-policy check used by both conflict classification and the
+    /// persistence boundary so the UI cannot offer a write the core will reject.
+    public static func isTextResolutionField(_ fieldName: String) -> Bool {
+        textResolutionFields.contains(fieldName.lowercased())
+    }
+
+    /// Persist an explicit merged-text choice and review the conflict atomically.
+    ///
+    /// The conflict row is reloaded inside the transaction, so callers cannot
+    /// alter its table/field metadata. The live write, timestamp bump, audit/change
+    /// log, and reviewed flag either all commit or all roll back.
+    public static func applyTextConflictResolution(
+        db: AppDatabase,
+        conflict: ConflictLogEntry,
+        selectedValue: String
+    ) throws {
+        guard let conflictId = conflict.id else {
+            throw ConflictReviewError.missingConflictId
+        }
+
+        try db.writer.write { dbConn in
+            guard let persisted = try ConflictLogEntry.fetchOne(dbConn, key: conflictId),
+                  persisted.reviewed == 0 else {
+                throw ConflictReviewError.conflictNotPending(conflictId)
+            }
+            guard isAllowedTable(persisted.tableName) else {
+                throw ConflictReviewError.tableNotAllowed(persisted.tableName)
+            }
+            guard isTextResolutionField(persisted.fieldName) else {
+                throw ConflictReviewError.fieldNotTextResolvable(
+                    table: persisted.tableName,
+                    field: persisted.fieldName
+                )
+            }
+            guard let recordId = Int64(persisted.recordId) else {
+                throw ConflictReviewError.invalidRecordId(persisted.recordId)
+            }
+            if persisted.localValue == "(DELETED)" || persisted.remoteValue == "(DELETED)" {
+                throw ConflictReviewError.deletionConflict
+            }
+
+            let columns = try String.fetchAll(
+                dbConn,
+                sql: "SELECT name FROM pragma_table_info(?)",
+                arguments: [persisted.tableName]
+            )
+            guard columns.contains(persisted.fieldName) else {
+                throw ConflictReviewError.unknownField(
+                    table: persisted.tableName,
+                    field: persisted.fieldName
+                )
+            }
+
+            let oldValue = try String.fetchOne(
+                dbConn,
+                sql: "SELECT [\(persisted.fieldName)] FROM [\(persisted.tableName)] WHERE id = ?",
+                arguments: [recordId]
+            )
+            let exists = try Bool.fetchOne(
+                dbConn,
+                sql: "SELECT EXISTS(SELECT 1 FROM [\(persisted.tableName)] WHERE id = ?)",
+                arguments: [recordId]
+            ) ?? false
+            guard exists else {
+                throw ConflictReviewError.missingLiveRecord(
+                    table: persisted.tableName,
+                    recordId: persisted.recordId
+                )
+            }
+
+            // Suppress generic table triggers because this transaction writes one
+            // richer change entry containing both the selected and replaced text.
+            try dbConn.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
+            defer { try? dbConn.execute(sql: "DELETE FROM _sync_apply_guard") }
+
+            if columns.contains("updated_at") {
+                try dbConn.execute(
+                    sql: "UPDATE [\(persisted.tableName)] SET [\(persisted.fieldName)] = ?, updated_at = ? WHERE id = ?",
+                    arguments: [selectedValue, CoreFormatters.nowISO(), recordId]
+                )
+            } else {
+                try dbConn.execute(
+                    sql: "UPDATE [\(persisted.tableName)] SET [\(persisted.fieldName)] = ? WHERE id = ?",
+                    arguments: [selectedValue, recordId]
+                )
+            }
+
+            let changedJSON = try jsonString([persisted.fieldName: selectedValue])
+            let oldJSON = try jsonString([persisted.fieldName: oldValue ?? NSNull()])
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO _change_log
+                        (device_id, table_name, record_id, operation, changed_fields, old_values)
+                    VALUES (?, ?, ?, 'UPDATE', ?, ?)
+                    """,
+                arguments: [
+                    DeviceIdentity.current,
+                    persisted.tableName,
+                    recordId,
+                    changedJSON,
+                    oldJSON,
+                ]
+            )
+
+            try dbConn.execute(
+                sql: "UPDATE _conflict_log SET reviewed = 1 WHERE id = ? AND reviewed = 0",
+                arguments: [conflictId]
+            )
+            guard dbConn.changesCount == 1 else {
+                throw ConflictReviewError.conflictNotPending(conflictId)
+            }
+        }
+    }
+
+    private static func jsonString(_ object: [String: Any]) throws -> String {
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        return String(decoding: data, as: UTF8.self)
     }
 
     /// Apply the reviewer's chosen value to the live record, then mark the

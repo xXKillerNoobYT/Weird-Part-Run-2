@@ -47,14 +47,9 @@ enum SyncConflictClassifier {
         if criticalFields.contains(field) { return .critical }
 
         // Hard: text content where both edits could have value
-        let textFields: Set<String> = [
-            "notes", "description", "content", "reason", "comment",
-            "body", "summary", "instructions", "message", "details",
-            "remarks", "observation",
-        ]
         let localHasContent = !(conflict.localValue ?? "").isEmpty
         let remoteHasContent = !(conflict.remoteValue ?? "").isEmpty
-        if textFields.contains(field) && localHasContent && remoteHasContent {
+        if ConflictResolver.isTextResolutionField(field) && localHasContent && remoteHasContent {
             return .hard
         }
 

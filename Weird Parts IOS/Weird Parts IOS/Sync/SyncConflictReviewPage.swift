@@ -135,8 +135,8 @@ struct SyncConflictReviewPage: View {
             case .hard:
                 // Hard: show AI merge button or AI resolution if available
                 if let resolution = aiResolutions[conflict.id ?? 0] {
-                    AIConflictResolutionView(resolution: resolution) { _ in
-                        withAnimation { markReviewed(conflict) }
+                    AIConflictResolutionView(resolution: resolution) { selectedValue in
+                        withAnimation { resolveText(conflict, selectedValue: selectedValue) }
                     }
                 } else {
                     // Standard view with AI merge button
@@ -301,6 +301,23 @@ struct SyncConflictReviewPage: View {
             conflicts.removeAll { $0.id == id }
         } else {
             actionError = syncManager.errorMessage ?? "Sync conflict could not be resolved."
+        }
+    }
+
+    /// Persist the exact AI/device/manual String selected for a hard conflict.
+    /// The row remains visible unless the atomic live-write + audit + review
+    /// transaction succeeds.
+    private func resolveText(_ conflict: ConflictLogEntry, selectedValue: String) {
+        guard let id = conflict.id else {
+            actionError = "This sync text conflict cannot be resolved because its conflict id is missing. Reload conflicts and try again."
+            syncManager.surfaceConflictReviewActionFailure(actionError ?? "Sync conflict action failed.")
+            return
+        }
+        if syncManager.resolveTextConflict(conflict, selectedValue: selectedValue) {
+            aiResolutions[id] = nil
+            conflicts.removeAll { $0.id == id }
+        } else {
+            actionError = syncManager.errorMessage ?? "Sync text conflict could not be resolved."
         }
     }
 

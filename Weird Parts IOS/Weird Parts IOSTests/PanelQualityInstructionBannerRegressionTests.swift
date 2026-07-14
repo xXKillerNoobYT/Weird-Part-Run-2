@@ -47,6 +47,14 @@ final class PanelQualityInstructionBannerRegressionTests: XCTestCase {
             "Sync conflict review must keep the existing critical choose-local/choose-remote flow; the imported banner is guidance, not a downgrade to accept-only review."
         )
         XCTAssertTrue(
+            source.contains("resolveText(conflict, selectedValue: selectedValue)"),
+            "Hard-conflict callbacks must persist the exact AI/device/manual String instead of discarding it and marking review-only."
+        )
+        XCTAssertFalse(
+            source.contains("AIConflictResolutionView(resolution: resolution) { _ in"),
+            "The hard-conflict callback must not discard the selected resolution String."
+        )
+        XCTAssertTrue(
             source.contains(".dsMinTapTarget()"),
             "Conflict action buttons should keep the shared 44pt minimum target rather than reverting to compact controls."
         )

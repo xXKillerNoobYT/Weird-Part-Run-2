@@ -609,4 +609,145 @@ struct ConflictResolverTests {
         // Still unreviewed — a failed apply must not silently dismiss the conflict.
         #expect(try ConflictResolver.getUnreviewedConflicts(db: db).count == 1)
     }
+
+    // MARK: - applyTextConflictResolution
+
+    private func textConflictDatabase() throws -> (db: AppDatabase, jobId: Int64, conflict: ConflictLogEntry) {
+        let db = try freshDB()
+        let jobId = try db.writer.write { dbConn -> Int64 in
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO jobs (job_number, job_name, status, notes, created_at, updated_at)
+                    VALUES ('SYNC-TEXT-1', 'Text Conflict', 'active', 'LWW winner', ?, ?)
+                    """,
+                arguments: ["2000-01-01T00:00:00Z", "2000-01-01T00:00:00Z"]
+            )
+            let id = dbConn.lastInsertedRowID
+            var conflict = ConflictLogEntry(
+                tableName: "jobs",
+                recordId: String(id),
+                fieldName: "notes",
+                localValue: "Device A edit",
+                remoteValue: "Device B edit",
+                winner: "remote",
+                localDevice: "dev-A",
+                remoteDevice: "dev-B",
+                localTs: "2026-07-14T09:00:00Z",
+                remoteTs: "2026-07-14T10:00:00Z",
+                resolvedAt: now
+            )
+            try conflict.insert(dbConn)
+            try dbConn.execute(sql: "DELETE FROM _change_log")
+            return id
+        }
+        let conflict = try #require(ConflictResolver.getUnreviewedConflicts(db: db).first)
+        return (db, jobId, conflict)
+    }
+
+    @Test("AI merge, either device edit, and manual text persist and are audited")
+    func testApplyTextConflictResolutionPersistsEverySelectionKind() throws {
+        let selections = [
+            "AI merge": "Device A edit plus Device B edit",
+            "device A": "Device A edit",
+            "device B": "Device B edit",
+            "manual": "Reviewer's exact rewrite",
+        ]
+
+        for (kind, selectedValue) in selections {
+            let fixture = try textConflictDatabase()
+            try ConflictResolver.applyTextConflictResolution(
+                db: fixture.db,
+                conflict: fixture.conflict,
+                selectedValue: selectedValue
+            )
+
+            let result = try fixture.db.writer.read { dbConn in
+                let notes = try String.fetchOne(
+                    dbConn,
+                    sql: "SELECT notes FROM jobs WHERE id = ?",
+                    arguments: [fixture.jobId]
+                )
+                let updatedAt = try String.fetchOne(
+                    dbConn,
+                    sql: "SELECT updated_at FROM jobs WHERE id = ?",
+                    arguments: [fixture.jobId]
+                )
+                let change = try Row.fetchOne(
+                    dbConn,
+                    sql: """
+                        SELECT changed_fields, old_values FROM _change_log
+                        WHERE table_name = 'jobs' AND record_id = ? AND operation = 'UPDATE'
+                        ORDER BY id DESC LIMIT 1
+                        """,
+                    arguments: [fixture.jobId]
+                )
+                return (notes, updatedAt, change)
+            }
+            #expect(result.0 == selectedValue, "\(kind) selection was not persisted")
+            #expect(result.1 != "2000-01-01T00:00:00Z", "\(kind) did not bump updated_at")
+            #expect((result.2?["changed_fields"] as String?).map { $0.contains(selectedValue) } == true)
+            #expect((result.2?["old_values"] as String?).map { $0.contains("LWW winner") } == true)
+            #expect(try ConflictResolver.getUnreviewedConflicts(db: fixture.db).isEmpty)
+        }
+    }
+
+    @Test("A failed text resolution rolls back the live write, audit, and reviewed flag")
+    func testApplyTextConflictResolutionFailureLeavesConflictPending() throws {
+        let fixture = try textConflictDatabase()
+        try fixture.db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                CREATE TRIGGER reject_conflict_review
+                BEFORE UPDATE OF reviewed ON _conflict_log
+                BEGIN
+                    SELECT RAISE(ABORT, 'forced review failure');
+                END
+                """)
+        }
+
+        #expect(throws: (any Error).self) {
+            try ConflictResolver.applyTextConflictResolution(
+                db: fixture.db,
+                conflict: fixture.conflict,
+                selectedValue: "Must roll back"
+            )
+        }
+
+        let state = try fixture.db.writer.read { dbConn in
+            let notes = try String.fetchOne(
+                dbConn,
+                sql: "SELECT notes FROM jobs WHERE id = ?",
+                arguments: [fixture.jobId]
+            )
+            let changes = try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM _change_log") ?? -1
+            return (notes, changes)
+        }
+        #expect(state.0 == "LWW winner")
+        #expect(state.1 == 0)
+        #expect(try ConflictResolver.getUnreviewedConflicts(db: fixture.db).count == 1)
+    }
+
+    @Test("Text resolution rejects non-whitelisted fields without dismissing the conflict")
+    func testApplyTextConflictResolutionRejectsNonWhitelistedField() throws {
+        let fixture = try textConflictDatabase()
+        var tampered = fixture.conflict
+        tampered.fieldName = "status"
+
+        // The persisted conflict metadata wins over caller input, so tampering the
+        // in-memory object cannot redirect the write. Replace the persisted field
+        // to prove the explicit text-field whitelist itself rejects the request.
+        try fixture.db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE _conflict_log SET field_name = 'status' WHERE id = ?",
+                arguments: [fixture.conflict.id]
+            )
+        }
+        #expect(throws: ConflictResolver.ConflictReviewError.self) {
+            try ConflictResolver.applyTextConflictResolution(
+                db: fixture.db,
+                conflict: tampered,
+                selectedValue: "closed"
+            )
+        }
+        #expect(try ConflictResolver.getUnreviewedConflicts(db: fixture.db).count == 1)
+    }
 }
