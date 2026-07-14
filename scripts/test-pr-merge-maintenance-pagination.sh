@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Verifies pr-merge-maintenance inspects the full open PR queue by default.
+# Canonical regression for pr-merge-maintenance queue pagination and explicit caps.
+# This supersedes the legacy tests/pr-merge-maintenance-scan-counts.sh mock, which
+# exercised the pre-REST-pagination `gh pr list` implementation removed by #1061.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
