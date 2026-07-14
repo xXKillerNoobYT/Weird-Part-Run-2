@@ -182,6 +182,9 @@ def write_pdf(path: Path, title: str, parts: list[Part], style: int) -> None:
     objects: list[str] = []
     pages_refs = []
     chunks = [parts[i:i + 32] for i in range(0, len(parts), 32)]
+    # Each page contributes one content object and one page object. Reserve the
+    # single font object after those pairs so every page can reference it.
+    font_obj_no = len(chunks) * 2 + 1
     for page_no, chunk in enumerate(chunks, start=1):
         lines = [title, f"Style {style + 1} page {page_no}: verify OCR table extraction before committing.", "Code | Name | Category | Brand | Cost | Unit | Qty"]
         lines += [f"{p.code} | {p.name} | {p.category} | {p.brand} | {p.cost_price} | {p.unit} | {p.quantity}" for p in chunk]
@@ -198,8 +201,8 @@ def write_pdf(path: Path, title: str, parts: list[Part], style: int) -> None:
         objects.append(f"<< /Length {len(stream.encode('utf-8'))} >>\nstream\n{stream}\nendstream")
         page_obj_no = len(objects) + 1
         pages_refs.append(page_obj_no)
-        objects.append(f"<< /Type /Page /Parent 0 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 {len(objects)+2} 0 R >> >> /Contents {content_obj_no} 0 R >>")
-    font_obj_no = len(objects) + 1
+        objects.append(f"<< /Type /Page /Parent 0 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 {font_obj_no} 0 R >> >> /Contents {content_obj_no} 0 R >>")
+    assert len(objects) + 1 == font_obj_no
     objects.append("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
     pages_obj_no = len(objects) + 1
     kids = " ".join(f"{n} 0 R" for n in pages_refs)

@@ -1,5 +1,6 @@
 import csv
 import json
+import re
 import zipfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -60,10 +61,74 @@ def test_docx_fixtures_are_valid_openxml_with_30_plus_rows():
         assert "verify" in text.lower()
 
 
-def test_pdf_fixtures_have_pdf_header_and_30_plus_table_rows():
+def _pdf_objects(data: bytes) -> dict[int, bytes]:
+    return {
+        int(match.group(1)): match.group(2)
+        for match in re.finditer(rb"(?m)^(\d+) 0 obj\n(.*?)\nendobj$", data, re.DOTALL)
+    }
+
+
+def _pdf_text_lines(content_object: bytes) -> list[str]:
+    stream = re.search(rb"stream\n(.*?)\nendstream", content_object, re.DOTALL)
+    assert stream is not None, "Page content object is missing its stream"
+    strings = re.findall(rb"\(((?:\\.|[^\\)])*)\) Tj", stream.group(1))
+    return [
+        value.replace(rb"\(", b"(")
+        .replace(rb"\)", b")")
+        .replace(rb"\\", bytes((92,)))
+        .decode("utf-8")
+        for value in strings
+    ]
+
+
+def test_pdf_fixtures_resolve_fonts_and_extract_every_table_row():
+    manifest = json.loads((FIXTURES / "manifest.json").read_text())
+    expected_rows = {
+        entry["file"]: entry["rows"]
+        for entry in manifest["files"]
+        if entry["format"] == "pdf"
+    }
+
     for path in sorted((FIXTURES / "pdf").glob("*.pdf")):
         data = path.read_bytes()
         assert data.startswith(b"%PDF-1.4"), path
-        # Generated text stream contains escaped table separators as plain bytes.
-        assert data.count(b" | ") >= 31, path
         assert b"startxref" in data
+
+        objects = _pdf_objects(data)
+        pages = [obj for obj in objects.values() if re.search(rb"/Type /Page\b", obj)]
+        assert pages, f"No page objects found in {path}"
+
+        extracted_pages: list[list[str]] = []
+        for page in pages:
+            font_ref = re.search(rb"/F1 (\d+) 0 R", page)
+            content_ref = re.search(rb"/Contents (\d+) 0 R", page)
+            assert font_ref is not None, f"Page has no /F1 resource in {path}"
+            assert content_ref is not None, f"Page has no content reference in {path}"
+
+            font = objects.get(int(font_ref.group(1)))
+            assert font is not None and b"/Type /Font" in font, (
+                f"Page /F1 does not resolve to a font object in {path}"
+            )
+            content = objects.get(int(content_ref.group(1)))
+            assert content is not None, f"Page content reference is invalid in {path}"
+            extracted_pages.append(_pdf_text_lines(content))
+
+        assert extracted_pages[0], f"Page 1 extraction is empty in {path}"
+        assert "Code | Name | Category | Brand | Cost | Unit | Qty" in extracted_pages[0]
+        first_page_rows = [
+            line
+            for line in extracted_pages[0]
+            if line.count(" | ") == 6 and not line.startswith("Code | ")
+        ]
+        assert len(first_page_rows) == 32, f"Page 1 must expose its first 32 parts in {path}"
+
+        all_rows = [
+            line
+            for page_lines in extracted_pages
+            for line in page_lines
+            if line.count(" | ") == 6 and not line.startswith("Code | ")
+        ]
+        relative_path = str(path.relative_to(FIXTURES))
+        assert len(all_rows) == expected_rows[relative_path], (
+            f"Extracted row count does not match the manifest for {path}"
+        )
