@@ -266,14 +266,18 @@ struct QRScanSheet: View {
             return
         }
 
-        // Skip duplicate consecutive scans
-        if let current = resultCode, current == payload, resultIsFound { return }
+        // Claim the processing slot atomically on MainActor. Camera streams can
+        // deliver the same payload again while the first database lookup awaits.
+        let shouldSkip = await MainActor.run {
+            if isProcessing { return true }
+            if let current = resultCode, current == payload, resultIsFound { return true }
 
-        await MainActor.run {
             isProcessing = true
             scanError = nil
             typeMismatch = false
+            return false
         }
+        if shouldSkip { return }
 
         do {
             let service = QRAutoFillService(db: db)
@@ -290,6 +294,9 @@ struct QRScanSheet: View {
 
             let gotMismatch = expectedType != nil && result.entityType != expectedType
 
+            let shouldAutoComplete = result.isFound
+                && (expectedType == nil || result.entityType == expectedType)
+
             await MainActor.run {
                 resultTitle = title
                 resultIsFound = result.isFound
@@ -297,19 +304,11 @@ struct QRScanSheet: View {
                 resultCode = result.code
                 typeMismatch = gotMismatch
                 isProcessing = false
-            }
 
-            // Auto-dismiss if we found a matching result
-            if result.isFound {
-                if let expected = expectedType {
-                    if result.entityType == expected {
-                        await MainActor.run { dismiss() }
-                        onResult(result)
-                    }
-                    // Type mismatch → don't dismiss, show warning
-                } else {
-                    // Accept any type
-                    await MainActor.run { dismiss() }
+                // Every result callback mutates parent SwiftUI state. Keep the
+                // callback and dismissal in one MainActor transaction.
+                if shouldAutoComplete {
+                    dismiss()
                     onResult(result)
                 }
             }

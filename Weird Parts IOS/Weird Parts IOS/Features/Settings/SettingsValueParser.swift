@@ -60,8 +60,8 @@ struct SettingsValueParser {
     }
 }
 
-struct SettingsHydrationError: LocalizedError, Equatable {
-    struct InvalidEntry: Equatable {
+nonisolated struct SettingsHydrationError: LocalizedError, Equatable, Sendable {
+    struct InvalidEntry: Equatable, Sendable {
         let key: String
         let value: String
         let expectedType: String

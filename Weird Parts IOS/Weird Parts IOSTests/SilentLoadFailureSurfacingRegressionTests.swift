@@ -162,8 +162,8 @@ final class SilentLoadFailureSurfacingRegressionTests: XCTestCase {
         )
         // The write pass moved to a detached background task (DIS-006):
         // the raw error is captured off-main (autoApprovalFailure = error) and
-        // mapped to user copy inside MainActor.run, because userFriendlyError
-        // is main-actor-isolated. Assert both halves of that chain.
+        // mapped to user copy before the surrounding MainActor state update.
+        // Assert both halves of that chain.
         XCTAssertTrue(
             source.contains("autoApprovalFailure = error"),
             "A processAutoApprovals failure must be captured, not swallowed."
