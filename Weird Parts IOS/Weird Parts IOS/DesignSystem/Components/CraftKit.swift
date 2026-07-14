@@ -59,16 +59,25 @@ struct PanelQualityInstructionBanner: View {
     var accessibilityIdentifier: String
 
     var body: some View {
-        Label(message, systemImage: icon)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            .padding(.horizontal, DS.Space.sm)
-            .padding(.vertical, DS.Space.xs)
-            .background(tint.opacity(0.08), in: RoundedRectangle(cornerRadius: DS.Radius.sm))
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(message)
-            .accessibilityIdentifier(accessibilityIdentifier)
+        HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
+            Image(systemName: icon)
+                .fixedSize()
+                .accessibilityHidden(true)
+            Text(message)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, DS.Space.sm)
+        .padding(.vertical, DS.Space.xs)
+        .frame(minHeight: 44, alignment: .leading)
+        .background(tint.opacity(0.08), in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(message)
+        .accessibilityIdentifier(accessibilityIdentifier)
     }
 }
 

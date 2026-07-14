@@ -143,6 +143,58 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
         }
     }
 
+    func testCriticalLocalResolutionHasAccessibleTargetAndRemovesConflict() throws {
+        try assertCriticalResolution(choiceIdentifier: "syncConflictUseLocalValue", screenshotName: "critical-local-resolved")
+    }
+
+    func testCriticalRemoteResolutionHasAccessibleTargetAndRemovesConflict() throws {
+        try assertCriticalResolution(choiceIdentifier: "syncConflictUseRemoteValue", screenshotName: "critical-remote-resolved")
+    }
+
+    private func assertCriticalResolution(choiceIdentifier: String, screenshotName: String) throws {
+        guard isManualCaptureOptedIn else {
+            throw XCTSkip("Conflict fixture capture is not opted in.")
+        }
+
+        app.launch()
+        let user = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'loginUserRow_'"))
+            .firstMatch
+        XCTAssertTrue(user.waitForExistence(timeout: 12))
+        user.tap()
+        let pin = app.secureTextFields["loginPINField"]
+        XCTAssertTrue(pin.waitForExistence(timeout: 5))
+        pin.tap()
+        pin.typeText("1234")
+        app.buttons["loginSignInButton"].tap()
+
+        let review = app.buttons["syncConflictBanner"]
+        XCTAssertTrue(review.waitForExistence(timeout: 12))
+        review.tap()
+        let unitCost = app.staticTexts["Unit Cost"]
+        for _ in 0..<5 where !unitCost.exists {
+            app.swipeUp()
+            _ = unitCost.waitForExistence(timeout: 1)
+        }
+        XCTAssertTrue(unitCost.exists)
+
+        let choice = app.buttons[choiceIdentifier]
+        for _ in 0..<5 where !choice.isHittable {
+            app.swipeUp()
+            _ = choice.waitForExistence(timeout: 1)
+        }
+        XCTAssertTrue(choice.exists)
+        XCTAssertGreaterThanOrEqual(choice.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(choice.frame.height, 44)
+        choice.tap()
+
+        let alert = app.alerts["Confirm Critical Write Decision"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 5))
+        alert.buttons["Confirm"].tap()
+        XCTAssertTrue(unitCost.waitForNonExistence(timeout: 8))
+        XCTAssertFalse(app.alerts["Sync conflict action failed"].exists)
+        capture(screenshotName)
+    }
+
     private func capture(_ name: String) {
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name
