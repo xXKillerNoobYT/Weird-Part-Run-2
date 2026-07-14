@@ -12,6 +12,19 @@ name: "CodeQL Security Scan"
 # Companion to GITHUB FLOW's code-review sub-task (which posts commit
 # comments for direct-to-main commits). CodeQL handles security;
 # GITHUB FLOW handles general code quality.
+#
+# Operations contract:
+# - Inputs: repository Swift sources plus .github/codeql/codeql-config.yml.
+# - Output: SARIF uploaded directly to GitHub Code Scanning; no Actions artifact
+#   is retained because Code Scanning is the review/source-of-truth surface.
+# - Logs/check URL: the "Analyze (swift)" job in the triggering Actions run and
+#   the repository Security > Code scanning page.
+# - Review cadence: every main push and weekly Monday scan; use workflow_dispatch
+#   to rerun after a transient failure or a missed schedule.
+# - Failure threshold: any analysis or Code Scanning upload failure keeps this
+#   job red and requires a GitHub/Paperclip CI issue before the next merge train.
+# - Rollback: revert the direct-upload change only if Code Scanning itself is
+#   unavailable; do not restore long-lived duplicate SARIF artifacts by default.
 
 on:
   workflow_dispatch: # re-fire a missed weekly full scan manually
@@ -109,12 +122,7 @@ jobs:
         uses: github/codeql-action/analyze@v3
         with:
           category: "/language:${{ matrix.language }}"
-          output: codeql-results
-          upload: never
-
-      - name: Upload CodeQL SARIF artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: codeql-${{ matrix.language }}-sarif
-          path: codeql-results
-          if-no-files-found: error
+          # Upload directly to Code Scanning. The previous duplicate Actions
+          # artifact used 90-day retention and made otherwise-successful scans
+          # fail when repository artifact storage was exhausted (#1437).
+          upload: always
