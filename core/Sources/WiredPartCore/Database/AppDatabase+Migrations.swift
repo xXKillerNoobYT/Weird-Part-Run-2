@@ -150,6 +150,7 @@ extension AppDatabase {
         registerMigration109DispatchPreferenceBackfill(&migrator)
         registerMigration110InspectionTemplateRequiredFlag(&migrator)
         registerMigration111ChatAttachmentStorageRelative(&migrator)
+        registerMigration113TeamMutationAttribution(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6075,5 +6076,19 @@ private func registerMigration111ChatAttachmentStorageRelative(_ migrator: inout
                 )
                 """)
         }
+    }
+}
+
+// MARK: - Migration 113: Team mutation actor attribution
+
+/// Records the authorized actor for every team and membership mutation. Existing
+/// rows remain nullable because their historical actor cannot be reconstructed.
+private func registerMigration113TeamMutationAttribution(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("113_team_mutation_attribution") { db in
+        try addColumnIfMissing(db, table: "employee_teams", column: "created_by", type: .integer)
+        try addColumnIfMissing(db, table: "employee_teams", column: "updated_by", type: .integer)
+        try addColumnIfMissing(db, table: "employee_teams", column: "deleted_by", type: .integer)
+        try addColumnIfMissing(db, table: "employee_team_members", column: "added_by", type: .integer)
+        try addColumnIfMissing(db, table: "employee_team_members", column: "removed_by", type: .integer)
     }
 }

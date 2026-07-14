@@ -56,6 +56,15 @@ struct IOSMainView: View {
     /// Filtered modules in the user's preferred order.
     private var orderedModules: [AppModule] {
         let modules = tabPrefs.orderedModules(from: filteredModules)
+        if isUITestingOpenTeams {
+            guard let peopleIndex = modules.firstIndex(where: { $0.id == "people" }) else {
+                return modules
+            }
+            var reordered = modules
+            let people = reordered.remove(at: peopleIndex)
+            reordered.insert(people, at: min(3, reordered.count))
+            return reordered
+        }
         if isUITestingOpenWarehouse {
             guard let warehouseIndex = modules.firstIndex(where: { $0.id == "warehouse" }) else {
                 return modules
@@ -112,6 +121,12 @@ struct IOSMainView: View {
         isUITestingOpenWarehouseLocations || isUITestingOpenWarehouseDashboard
     }
 
+    /// Test-only deep link for team permission UI regression coverage.
+    private var isUITestingOpenTeams: Bool {
+        let args = ProcessInfo.processInfo.arguments
+        return args.contains("-UITesting") && args.contains("-UITestingOpenTeams")
+    }
+
     /// First 4 ordered modules shown as dedicated bottom tabs.
     private var primaryModules: [AppModule] {
         Array(orderedModules.prefix(4))
@@ -165,7 +180,15 @@ struct IOSMainView: View {
         }
         .onAppear {
             tabPrefs.load(userId: appCore.currentUser?.id)
-            if isUITestingOpenPartsCategories {
+            if isUITestingOpenTeams {
+                selectedModuleId = "people"
+                expandedModuleId = "people"
+                selectedTabPath = "/people/teams"
+                moduleNavigationRequests["people"] = ModuleNavigationRequest(
+                    moduleId: "people",
+                    tabId: "people-teams"
+                )
+            } else if isUITestingOpenPartsCategories {
                 selectedModuleId = "parts"
                 expandedModuleId = "parts"
                 selectedTabPath = "/parts/categories"

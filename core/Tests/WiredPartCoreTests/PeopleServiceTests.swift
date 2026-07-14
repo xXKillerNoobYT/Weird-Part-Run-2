@@ -164,13 +164,13 @@ struct PeopleServiceTests {
     func testTeamLifecycle() throws {
         let env = try E2ETestHelpers.setUp()
 
-        let teamId = try env.people.createTeam(name: "Alpha Team", description: "First team")
+        let teamId = try env.people.createTeam(name: "Alpha Team", description: "First team", actorUserId: env.adminUserId)
         #expect(teamId > 0)
 
         let teams = try env.people.listTeams()
         #expect(teams.contains(where: { $0.name == "Alpha Team" }))
 
-        try env.people.addTeamMember(teamId: teamId, userId: env.adminUserId, role: "lead")
+        try env.people.addTeamMember(teamId: teamId, userId: env.adminUserId, role: "lead", actorUserId: env.adminUserId)
         let userTeamIds = try env.people.listTeamIdsForUser(userId: env.adminUserId)
         #expect(userTeamIds == Set([teamId]))
 
@@ -180,17 +180,17 @@ struct PeopleServiceTests {
         let detail = try env.people.getTeamDetail(teamId: teamId)
         #expect(detail?.name == "Alpha Team")
 
-        try env.people.updateTeam(teamId: teamId, name: "Beta Team", description: "Renamed")
+        try env.people.updateTeam(teamId: teamId, name: "Beta Team", description: "Renamed", actorUserId: env.adminUserId)
         let updatedDetail = try env.people.getTeamDetail(teamId: teamId)
         #expect(updatedDetail?.name == "Beta Team")
 
         if let membershipId = members.first?.membershipId {
-            try env.people.removeTeamMember(membershipId: membershipId)
+            try env.people.removeTeamMember(membershipId: membershipId, actorUserId: env.adminUserId)
             let afterRemove = try env.people.getTeamMembers(teamId: teamId)
             #expect(afterRemove.isEmpty)
         }
 
-        try env.people.deleteTeam(teamId: teamId)
+        try env.people.deleteTeam(teamId: teamId, actorUserId: env.adminUserId)
         let afterDelete = try env.people.listTeams()
         #expect(!afterDelete.contains(where: { $0.id == teamId }))
     }
@@ -198,9 +198,177 @@ struct PeopleServiceTests {
     @Test("Get available employees for team")
     func testAvailableEmployeesForTeam() throws {
         let env = try E2ETestHelpers.setUp()
-        let teamId = try env.people.createTeam(name: "Avail Team", description: nil)
+        let teamId = try env.people.createTeam(name: "Avail Team", description: nil, actorUserId: env.adminUserId)
         let available = try env.people.getAvailableEmployeesForTeam(teamId: teamId)
         #expect(available.count >= 1)
+    }
+
+    @Test("Team mutations require manage_people before writing")
+    func testTeamMutationsRequireManagePeopleBeforeWriting() throws {
+        let env = try E2ETestHelpers.setUp()
+        let actorWithoutPermission = try env.auth.createUser(displayName: "Field User", pin: "2468")
+        let expectedError = ServicePermissionGate.GateError.insufficientPermissions(required: "manage_people")
+
+        #expect(throws: expectedError) {
+            try env.people.createTeam(name: "Denied Team", description: nil, actorUserId: actorWithoutPermission)
+        }
+        #expect(throws: expectedError) {
+            try env.people.createTeam(name: "   ", description: nil, actorUserId: actorWithoutPermission)
+        }
+        let deniedCreateCount = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM employee_teams WHERE name = 'Denied Team'") ?? 0
+        }
+        #expect(deniedCreateCount == 0)
+
+        let teamId = try env.people.createTeam(name: "Authorized Team", description: "Original", actorUserId: env.adminUserId)
+        #expect(throws: expectedError) {
+            try env.people.updateTeam(
+                teamId: teamId,
+                name: "Denied Rename",
+                description: "Denied",
+                actorUserId: actorWithoutPermission
+            )
+        }
+        #expect(throws: expectedError) {
+            try env.people.updateTeam(
+                teamId: teamId,
+                name: "",
+                description: nil,
+                actorUserId: actorWithoutPermission
+            )
+        }
+        let afterDeniedUpdate = try env.db.writer.read { db in
+            try Row.fetchOne(
+                db,
+                sql: "SELECT name, description, updated_by, deleted_at FROM employee_teams WHERE id = ?",
+                arguments: [teamId]
+            )
+        }
+        #expect(afterDeniedUpdate?["name"] as String? == "Authorized Team")
+        #expect(afterDeniedUpdate?["description"] as String? == "Original")
+        #expect(afterDeniedUpdate?["updated_by"] as Int64? == env.adminUserId)
+        #expect(afterDeniedUpdate?["deleted_at"] as String? == nil)
+
+        #expect(throws: expectedError) {
+            try env.people.deleteTeam(teamId: teamId, actorUserId: actorWithoutPermission)
+        }
+        let deletedAtAfterDeniedDelete = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT deleted_at FROM employee_teams WHERE id = ?", arguments: [teamId])
+        }
+        #expect(deletedAtAfterDeniedDelete == nil)
+
+        #expect(throws: expectedError) {
+            try env.people.addTeamMember(
+                teamId: teamId,
+                userId: actorWithoutPermission,
+                role: "member",
+                actorUserId: actorWithoutPermission
+            )
+        }
+        let deniedMemberCount = try env.db.writer.read { db in
+            try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM employee_team_members WHERE team_id = ? AND user_id = ?",
+                arguments: [teamId, actorWithoutPermission]
+            ) ?? 0
+        }
+        #expect(deniedMemberCount == 0)
+
+        try env.people.addTeamMember(
+            teamId: teamId,
+            userId: env.adminUserId,
+            role: "lead",
+            actorUserId: env.adminUserId
+        )
+        let membershipId = try #require(try env.db.writer.read { db in
+            try Int64.fetchOne(
+                db,
+                sql: "SELECT id FROM employee_team_members WHERE team_id = ? AND user_id = ?",
+                arguments: [teamId, env.adminUserId]
+            )
+        })
+
+        #expect(throws: expectedError) {
+            try env.people.removeTeamMember(membershipId: membershipId, actorUserId: actorWithoutPermission)
+        }
+        let memberAfterDeniedRemove = try env.db.writer.read { db in
+            try Row.fetchOne(
+                db,
+                sql: "SELECT deleted_at, removed_by FROM employee_team_members WHERE id = ?",
+                arguments: [membershipId]
+            )
+        }
+        #expect(memberAfterDeniedRemove?["deleted_at"] as String? == nil)
+        #expect(memberAfterDeniedRemove?["removed_by"] as Int64? == nil)
+    }
+
+    @Test("Admin team mutations persist actor attribution")
+    func testTeamMutationsPersistActorAttribution() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let teamId = try env.people.createTeam(
+            name: "Audit Team",
+            description: "Created",
+            actorUserId: env.adminUserId
+        )
+        let createdTeam = try env.db.writer.read { db in
+            try Row.fetchOne(
+                db,
+                sql: "SELECT created_by, updated_by FROM employee_teams WHERE id = ?",
+                arguments: [teamId]
+            )
+        }
+        #expect(createdTeam?["created_by"] as Int64? == env.adminUserId)
+        #expect(createdTeam?["updated_by"] as Int64? == env.adminUserId)
+
+        try env.people.updateTeam(
+            teamId: teamId,
+            name: "Audit Team Updated",
+            description: "Updated",
+            actorUserId: env.adminUserId
+        )
+        let updatedBy = try env.db.writer.read { db in
+            try Int64.fetchOne(db, sql: "SELECT updated_by FROM employee_teams WHERE id = ?", arguments: [teamId])
+        }
+        #expect(updatedBy == env.adminUserId)
+
+        try env.people.addTeamMember(
+            teamId: teamId,
+            userId: env.adminUserId,
+            role: "lead",
+            actorUserId: env.adminUserId
+        )
+        let memberRow = try #require(try env.db.writer.read { db in
+            try Row.fetchOne(
+                db,
+                sql: "SELECT id, added_by, removed_by FROM employee_team_members WHERE team_id = ? AND user_id = ?",
+                arguments: [teamId, env.adminUserId]
+            )
+        })
+        let membershipId: Int64 = memberRow["id"] ?? 0
+        #expect(memberRow["added_by"] as Int64? == env.adminUserId)
+        #expect(memberRow["removed_by"] as Int64? == nil)
+
+        try env.people.removeTeamMember(membershipId: membershipId, actorUserId: env.adminUserId)
+        let removedBy = try env.db.writer.read { db in
+            try Int64.fetchOne(
+                db,
+                sql: "SELECT removed_by FROM employee_team_members WHERE id = ?",
+                arguments: [membershipId]
+            )
+        }
+        #expect(removedBy == env.adminUserId)
+
+        try env.people.deleteTeam(teamId: teamId, actorUserId: env.adminUserId)
+        let deletedTeam = try env.db.writer.read { db in
+            try Row.fetchOne(
+                db,
+                sql: "SELECT deleted_by, updated_by FROM employee_teams WHERE id = ?",
+                arguments: [teamId]
+            )
+        }
+        #expect(deletedTeam?["deleted_by"] as Int64? == env.adminUserId)
+        #expect(deletedTeam?["updated_by"] as Int64? == env.adminUserId)
     }
 
     @Test("getTeamMembers excludes soft-deleted users via JOIN-condition guard")
@@ -208,8 +376,8 @@ struct PeopleServiceTests {
         let env = try E2ETestHelpers.setUp()
 
         // Create a team with the admin user as a member
-        let teamId = try env.people.createTeam(name: "Tombstone Team", description: nil)
-        try env.people.addTeamMember(teamId: teamId, userId: env.adminUserId, role: "lead")
+        let teamId = try env.people.createTeam(name: "Tombstone Team", description: nil, actorUserId: env.adminUserId)
+        try env.people.addTeamMember(teamId: teamId, userId: env.adminUserId, role: "lead", actorUserId: env.adminUserId)
 
         // Baseline: the member appears
         let before = try env.people.getTeamMembers(teamId: teamId)
@@ -367,8 +535,8 @@ struct PeopleServiceTests {
     @Test("getTeamMembers returns members after addTeamMember")
     func testGetTeamMembers() throws {
         let env = try E2ETestHelpers.setUp()
-        let teamId = try env.people.createTeam(name: "Crew Alpha")
-        try env.people.addTeamMember(teamId: teamId, userId: env.adminUserId)
+        let teamId = try env.people.createTeam(name: "Crew Alpha", actorUserId: env.adminUserId)
+        try env.people.addTeamMember(teamId: teamId, userId: env.adminUserId, actorUserId: env.adminUserId)
 
         let members = try env.people.getTeamMembers(teamId: teamId)
         #expect(members.count == 1)
@@ -378,7 +546,7 @@ struct PeopleServiceTests {
     @Test("getTeamJobs returns empty when no jobs assigned to team")
     func testGetTeamJobsEmpty() throws {
         let env = try E2ETestHelpers.setUp()
-        let teamId = try env.people.createTeam(name: "Crew Beta")
+        let teamId = try env.people.createTeam(name: "Crew Beta", actorUserId: env.adminUserId)
         let jobs = try env.people.getTeamJobs(teamId: teamId)
         #expect(jobs.isEmpty)
     }
@@ -712,10 +880,10 @@ struct PeopleServiceTests {
     @Test("updateTeam is a no-op on a soft-deleted team")
     func testUpdateTeam_noOpOnSoftDeletedTeam() throws {
         let env = try E2ETestHelpers.setUp()
-        let teamId = try env.people.createTeam(name: "OriginalTeam", description: "desc")
-        try env.people.deleteTeam(teamId: teamId)
+        let teamId = try env.people.createTeam(name: "OriginalTeam", description: "desc", actorUserId: env.adminUserId)
+        try env.people.deleteTeam(teamId: teamId, actorUserId: env.adminUserId)
         // Regression: UPDATE employee_teams ... WHERE id = ? had no deleted_at guard.
-        try env.people.updateTeam(teamId: teamId, name: "ShouldNotStick", description: nil)
+        try env.people.updateTeam(teamId: teamId, name: "ShouldNotStick", description: nil, actorUserId: env.adminUserId)
 
         let name = try env.db.writer.read { db in
             try String.fetchOne(db, sql: "SELECT name FROM employee_teams WHERE id = ?", arguments: [teamId])
@@ -829,10 +997,10 @@ struct PeopleServiceTests {
     func testCreateTeam_rejectsBlankName() throws {
         let env = try E2ETestHelpers.setUp()
         #expect(throws: PeopleService.PeopleError.requiredFieldEmpty("name")) {
-            try env.people.createTeam(name: "", description: nil)
+            try env.people.createTeam(name: "", description: nil, actorUserId: env.adminUserId)
         }
         #expect(throws: PeopleService.PeopleError.requiredFieldEmpty("name")) {
-            try env.people.createTeam(name: "   ", description: "someDesc")
+            try env.people.createTeam(name: "   ", description: "someDesc", actorUserId: env.adminUserId)
         }
         let count = try env.db.writer.read { db in
             try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM employee_teams WHERE name = '' OR name = '   '") ?? 0
@@ -888,24 +1056,30 @@ struct PeopleServiceTests {
     @Test("addTeamMember rejects tombstoned user and silently skips tombstoned team")
     func testAddTeamMember_guardsTombstonedParents() throws {
         let env = try E2ETestHelpers.setUp()
-        let teamId = try env.people.createTeam(name: "Guard Team", description: nil)
+        let teamId = try env.people.createTeam(name: "Guard Team", description: nil, actorUserId: env.adminUserId)
+        let tombstonedUserId = try env.auth.createUser(displayName: "Former Employee", pin: "2468")
         // Tombstone the user
         try env.db.writer.write { db in
             try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
-                           arguments: [env.adminUserId])
+                           arguments: [tombstonedUserId])
         }
         #expect(throws: PeopleService.PeopleError.self) {
-            try env.people.addTeamMember(teamId: teamId, userId: env.adminUserId, role: "lead")
+            try env.people.addTeamMember(
+                teamId: teamId,
+                userId: tombstonedUserId,
+                role: "lead",
+                actorUserId: env.adminUserId
+            )
         }
         // Now tombstone team — should silently return (preserving existing caller
         // semantic of INSERT OR IGNORE being a safe no-op).
         let env2 = try E2ETestHelpers.setUp()
-        let teamId2 = try env2.people.createTeam(name: "Tombed Team", description: nil)
+        let teamId2 = try env2.people.createTeam(name: "Tombed Team", description: nil, actorUserId: env2.adminUserId)
         try env2.db.writer.write { db in
             try db.execute(sql: "UPDATE employee_teams SET deleted_at = datetime('now') WHERE id = ?",
                            arguments: [teamId2])
         }
-        try env2.people.addTeamMember(teamId: teamId2, userId: env2.adminUserId, role: "member")
+        try env2.people.addTeamMember(teamId: teamId2, userId: env2.adminUserId, role: "member", actorUserId: env2.adminUserId)
         let count = try env2.db.writer.read { db in
             try Int.fetchOne(db, sql: """
                 SELECT COUNT(*) FROM employee_team_members WHERE team_id = ?
@@ -1004,13 +1178,19 @@ struct PeopleServiceTests {
     @Test("addTeamMember rejects inactive user (is_active = 0)")
     func testAddTeamMember_rejectsInactiveUser() throws {
         let env = try E2ETestHelpers.setUp()
-        let teamId = try env.people.createTeam(name: "Active Guard Team")
+        let teamId = try env.people.createTeam(name: "Active Guard Team", actorUserId: env.adminUserId)
+        let inactiveUserId = try env.auth.createUser(displayName: "Inactive Employee", pin: "2468")
         try env.db.writer.write { db in
             try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?",
-                           arguments: [env.adminUserId])
+                           arguments: [inactiveUserId])
         }
         #expect(throws: PeopleService.PeopleError.self) {
-            try env.people.addTeamMember(teamId: teamId, userId: env.adminUserId, role: "member")
+            try env.people.addTeamMember(
+                teamId: teamId,
+                userId: inactiveUserId,
+                role: "member",
+                actorUserId: env.adminUserId
+            )
         }
     }
 
@@ -1091,9 +1271,9 @@ struct PeopleServiceTests {
     @Test("updateTeam rejects blank name")
     func testUpdateTeam_rejectsBlankName() throws {
         let env = try E2ETestHelpers.setUp()
-        let teamId = try env.people.createTeam(name: "Original Name")
+        let teamId = try env.people.createTeam(name: "Original Name", actorUserId: env.adminUserId)
         #expect(throws: PeopleService.PeopleError.requiredFieldEmpty("name")) {
-            try env.people.updateTeam(teamId: teamId, name: "  ", description: nil)
+            try env.people.updateTeam(teamId: teamId, name: "  ", description: nil, actorUserId: env.adminUserId)
         }
     }
 
@@ -1154,8 +1334,8 @@ struct PeopleServiceTests {
     @Test("listTeams excludes inactive teams")
     func testListTeams_excludesInactive() throws {
         let env = try E2ETestHelpers.setUp()
-        let teamId = try env.people.createTeam(name: "Active Team")
-        let inactiveTeamId = try env.people.createTeam(name: "Inactive Team")
+        let teamId = try env.people.createTeam(name: "Active Team", actorUserId: env.adminUserId)
+        let inactiveTeamId = try env.people.createTeam(name: "Inactive Team", actorUserId: env.adminUserId)
         try env.db.writer.write { db in
             try db.execute(sql: "UPDATE employee_teams SET is_active = 0 WHERE id = ?", arguments: [inactiveTeamId])
         }

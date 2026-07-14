@@ -346,7 +346,11 @@ Teams need a **full detail page**, not just a list.
 - Remove members (with confirmation)
 - Designate team lead
 - View member availability (shows time-off conflicts)
-- Hat required: `manage_teams`
+- Permission required for every team or membership mutation: `manage_people`
+- Team mutation service contracts require the acting user ID, verify `manage_people`
+  inside the same database transaction as the write, and persist actor attribution.
+- Users with `view_people` but without `manage_people` retain read-only access to the
+  Teams list and detail pages; create/edit/delete/add/remove controls are not exposed.
 
 ---
 
@@ -409,7 +413,7 @@ Key service methods:
 | Hat | What It Controls |
 |-----|-----------------|
 | `manage_hats` | Toggle hats on/off for employees |
-| `manage_teams` | Create/edit/delete teams, manage members |
+| `manage_people` | Create/edit/delete teams and manage team members |
 | `view_customer_financials` | See payment tracking, outstanding amounts |
 | `view_contractor_notes` | See contractor notes |
 | `manage_certifications` | Add/edit/remove employee certifications |

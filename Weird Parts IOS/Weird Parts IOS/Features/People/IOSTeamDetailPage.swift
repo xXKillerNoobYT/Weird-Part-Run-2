@@ -18,6 +18,10 @@ struct IOSTeamDetailPage: View {
     @State private var memberToRemove: PeopleService.TeamMemberDetail?
     @State private var showRemoveMemberConfirm = false
 
+    private var canManageTeams: Bool {
+        appCore.hasPermission("manage_people")
+    }
+
     private enum ActiveSheet: Identifiable {
         case editTeam
         case addMember
@@ -51,21 +55,23 @@ struct IOSTeamDetailPage: View {
         .navigationTitle(team?.name ?? "Team")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Button { activeSheet = .addMember } label: {
-                        Label("Add Member", systemImage: "person.badge.plus")
+                if canManageTeams {
+                    Menu {
+                        Button { activeSheet = .addMember } label: {
+                            Label("Add Member", systemImage: "person.badge.plus")
+                        }
+                        Button { activeSheet = .editTeam } label: {
+                            Label("Edit Team", systemImage: "pencil")
+                        }
+                        Divider()
+                        Button(role: .destructive) { showDeleteConfirm = true } label: {
+                            Label("Delete Team", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
                     }
-                    Button { activeSheet = .editTeam } label: {
-                        Label("Edit Team", systemImage: "pencil")
-                    }
-                    Divider()
-                    Button(role: .destructive) { showDeleteConfirm = true } label: {
-                        Label("Delete Team", systemImage: "trash")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
+                    .accessibilityLabel("Team actions")
                 }
-                .accessibilityLabel("Team actions")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
@@ -188,11 +194,13 @@ struct IOSTeamDetailPage: View {
                             }
                         }
                         .swipeActions(edge: .trailing) {
-                            Button(role: .destructive) {
-                                memberToRemove = member
-                                showRemoveMemberConfirm = true
-                            } label: {
-                                Label("Remove", systemImage: "person.badge.minus")
+                            if canManageTeams {
+                                Button(role: .destructive) {
+                                    memberToRemove = member
+                                    showRemoveMemberConfirm = true
+                                } label: {
+                                    Label("Remove", systemImage: "person.badge.minus")
+                                }
                             }
                         }
                     }
@@ -273,12 +281,16 @@ struct IOSTeamDetailPage: View {
     }
 
     private func removeMember(_ member: PeopleService.TeamMemberDetail) async {
-        guard let service = appCore.peopleService else {
+        guard let service = appCore.peopleService,
+              let actorUserId = appCore.currentUser?.id else {
             actionError = "Service not available"
             return
         }
         do {
-            try service.removeTeamMember(membershipId: member.membershipId)
+            try service.removeTeamMember(
+                membershipId: member.membershipId,
+                actorUserId: actorUserId
+            )
             actionError = nil
             await loadData()
         } catch {
@@ -287,12 +299,13 @@ struct IOSTeamDetailPage: View {
     }
 
     private func deleteTeam() async {
-        guard let service = appCore.peopleService else {
+        guard let service = appCore.peopleService,
+              let actorUserId = appCore.currentUser?.id else {
             actionError = "Service not available"
             return
         }
         do {
-            try service.deleteTeam(teamId: teamId)
+            try service.deleteTeam(teamId: teamId, actorUserId: actorUserId)
             await MainActor.run { dismiss() }
         } catch {
             actionError = userFriendlyError(error, context: "delete team")
@@ -364,7 +377,8 @@ private struct EditTeamSheet: View {
     }
 
     private func save() {
-        guard let service = appCore.peopleService else {
+        guard let service = appCore.peopleService,
+              let actorUserId = appCore.currentUser?.id else {
             errorMessage = "People service unavailable"
             return
         }
@@ -372,7 +386,8 @@ private struct EditTeamSheet: View {
             try service.updateTeam(
                 teamId: teamId,
                 name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-                description: description.isEmpty ? nil : description
+                description: description.isEmpty ? nil : description,
+                actorUserId: actorUserId
             )
             dismiss()
             onSave()
@@ -466,12 +481,17 @@ private struct AddMemberSheet: View {
     }
 
     private func addEmployee(_ employee: PeopleService.EmployeeListItem) {
-        guard let service = appCore.peopleService else {
+        guard let service = appCore.peopleService,
+              let actorUserId = appCore.currentUser?.id else {
             errorMessage = "Service not available"
             return
         }
         do {
-            try service.addTeamMember(teamId: teamId, userId: employee.id)
+            try service.addTeamMember(
+                teamId: teamId,
+                userId: employee.id,
+                actorUserId: actorUserId
+            )
             // Remove from list and refresh
             employees.removeAll { $0.id == employee.id }
             onAdd()
