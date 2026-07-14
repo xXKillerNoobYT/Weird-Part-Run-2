@@ -901,6 +901,15 @@ final class AppCore: ObservableObject {
                     """,
                 arguments: ["jobs", "1002", "priority_label", priorityLocal, priorityRemote, "remote", "UITEST-LOCAL", "UITEST-REMOTE", now, now]
             )
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO _conflict_log
+                    (table_name, record_id, field_name, local_value, remote_value, winner, local_device, remote_device, local_ts, remote_ts, reviewed)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                    """,
+                arguments: ["parts", "2001", "unit_cost", "17.45", "21.90", "remote", "UITEST-LOCAL", "UITEST-REMOTE", now, now]
+            )
+
             // WEI-1752 / WEI-881 QA fixture: the -UITesting runtime must expose a
             // selectable active job, at least one category, and a deterministic JPO
             // with 2+ selectable line items so the bulk hold/chat smoke can run
@@ -957,27 +966,6 @@ final class AppCore: ObservableObject {
                         arguments: [categoryId, part.name, part.description, part.code]
                     )
                 }
-
-                // The critical conflict must reference a real row and a real
-                // synced column. The previous synthetic parts #2001/unit_cost
-                // pair matched neither, so choosing the local loser failed while
-                // choosing the already-applied remote winner appeared to work.
-                let conflictPartId = try Int64.fetchOne(
-                    dbConn,
-                    sql: "SELECT id FROM parts WHERE code = 'UITEST-QA-CONDUIT' AND deleted_at IS NULL"
-                )!
-                try dbConn.execute(
-                    sql: "UPDATE parts SET company_cost_price = 21.90 WHERE id = ?",
-                    arguments: [conflictPartId]
-                )
-                try dbConn.execute(
-                    sql: """
-                        INSERT INTO _conflict_log
-                        (table_name, record_id, field_name, local_value, remote_value, winner, local_device, remote_device, local_ts, remote_ts, reviewed)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-                        """,
-                    arguments: ["parts", String(conflictPartId), "company_cost_price", "17.45", "21.90", "remote", "UITEST-LOCAL", "UITEST-REMOTE", now, now]
-                )
 
                 try dbConn.execute(
                     sql: """

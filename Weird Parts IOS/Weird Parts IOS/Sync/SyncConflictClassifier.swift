@@ -34,7 +34,7 @@ enum SyncConflictClassifier {
             "qty", "stock", "cost", "price", "total", "budget",
             "forecast_adu_30", "min_stock", "target_stock", "max_stock",
             "current_stock", "committed_qty", "on_order_qty",
-            "unit_cost", "company_cost_price", "sell_price", "markup_percent",
+            "unit_cost", "sell_price", "markup_percent",
             "regular_hours", "overtime_hours", "total_hours",
             "amount", "balance", "rate", "hourly_rate",
         ]

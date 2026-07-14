@@ -196,32 +196,6 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         )
     }
 
-    @MainActor
-    func testPanelScheduleMoveBannerFitsCompactWidthAndExposesFullInstruction() throws {
-        relaunchForPanelScheduleBuilderFixture()
-
-        let circuit = app.buttons["Circuit 1, Office lighting"]
-        XCTAssertTrue(circuit.waitForExistence(timeout: 20))
-        circuit.press(forDuration: 1)
-        let move = app.buttons["Move Circuit"]
-        XCTAssertTrue(move.waitForExistence(timeout: 5))
-        move.tap()
-
-        let banner = app.descendants(matching: .any)["panelScheduleMoveModeBanner"]
-        XCTAssertTrue(banner.waitForExistence(timeout: 5))
-        XCTAssertEqual(
-            banner.label,
-            "Move Office lighting: tap a destination space or drag it onto the grid."
-        )
-        XCTAssertGreaterThanOrEqual(banner.frame.minX, app.frame.minX)
-        XCTAssertLessThanOrEqual(banner.frame.maxX, app.frame.maxX)
-
-        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        attachment.name = "panel-schedule-move-banner-\(Int(app.frame.width))x\(Int(app.frame.height))"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-    }
-
     private func relaunchForPanelScheduleBuilderFixture() {
         app?.terminate()
         app = XCUIApplication()

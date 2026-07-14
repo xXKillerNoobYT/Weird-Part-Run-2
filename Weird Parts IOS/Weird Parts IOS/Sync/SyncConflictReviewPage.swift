@@ -75,16 +75,6 @@ struct SyncConflictReviewPage: View {
     private var conflictList: some View {
         List {
             Section {
-                PanelQualityInstructionBanner(
-                    message: "Review conflicts before accepting: critical rows let you choose the exact value, while lower-risk rows keep the highlighted winner.",
-                    icon: "arrow.triangle.merge",
-                    tint: .orange,
-                    accessibilityIdentifier: "syncConflictReviewInstructionBanner"
-                )
-                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-            }
-
-            Section {
                 HStack(spacing: 12) {
                     summaryCard(title: "Total", value: "\(conflicts.count)", color: .orange)
                     summaryCard(title: "Tables", value: "\(uniqueTables)", color: .blue)
@@ -155,7 +145,7 @@ struct SyncConflictReviewPage: View {
                     .font(.caption)
                     .buttonStyle(.bordered)
                     .tint(.purple)
-                    .dsMinTapTarget()
+                    .controlSize(.small)
                     .disabled(isRequestingAI)
                 }
 
@@ -203,8 +193,8 @@ struct SyncConflictReviewPage: View {
             }
             .font(.caption)
             .buttonStyle(.borderedProminent)
+            .controlSize(.small)
             .tint(.green)
-            .dsMinTapTarget()
         }
     }
 
@@ -284,8 +274,7 @@ struct SyncConflictReviewPage: View {
     }
 
     private func friendlyFieldName(_ name: String) -> String {
-        if name == "company_cost_price" { return "Unit Cost" }
-        return name.replacingOccurrences(of: "_", with: " ").capitalized
+        name.replacingOccurrences(of: "_", with: " ").capitalized
     }
 
     private func formatTimestamp(_ ts: String) -> String {
