@@ -6,189 +6,408 @@
       "format": "csv",
       "rows": 36,
       "style": 1,
-      "supplier": "Codale Branch Quote"
+      "supplier": "Codale Branch Quote",
+      "layout": "csv-header-1",
+      "headerSignature": [
+        "code",
+        "name",
+        "category",
+        "brand",
+        "supplier",
+        "unit",
+        "cost_price",
+        "markup_percent",
+        "quantity",
+        "upc",
+        "notes"
+      ]
     },
     {
       "file": "xlsx/parts-import-style-01.xlsx",
       "format": "xlsx",
       "rows": 36,
       "style": 1,
-      "supplier": "Codale Branch Quote"
+      "supplier": "Codale Branch Quote",
+      "layout": "xlsx-header-1",
+      "headerSignature": [
+        "code",
+        "name",
+        "category",
+        "brand",
+        "supplier",
+        "unit",
+        "cost_price",
+        "markup_percent",
+        "quantity",
+        "upc",
+        "notes"
+      ]
     },
     {
       "file": "csv/parts-import-style-02.csv",
       "format": "csv",
       "rows": 37,
       "style": 2,
-      "supplier": "Codale Counter Export"
+      "supplier": "Codale Counter Export",
+      "layout": "csv-header-2",
+      "headerSignature": [
+        "supplier",
+        "brand",
+        "code",
+        "name",
+        "unit",
+        "quantity",
+        "cost_price",
+        "category",
+        "markup_percent",
+        "notes"
+      ]
     },
     {
       "file": "xlsx/parts-import-style-02.xlsx",
       "format": "xlsx",
       "rows": 37,
       "style": 2,
-      "supplier": "Codale Counter Export"
+      "supplier": "Codale Counter Export",
+      "layout": "xlsx-header-2",
+      "headerSignature": [
+        "supplier",
+        "brand",
+        "code",
+        "name",
+        "unit",
+        "quantity",
+        "cost_price",
+        "category",
+        "markup_percent",
+        "notes"
+      ]
     },
     {
       "file": "csv/parts-import-style-03.csv",
       "format": "csv",
       "rows": 38,
       "style": 3,
-      "supplier": "Mountain West Electrical"
+      "supplier": "Mountain West Electrical",
+      "layout": "csv-header-3",
+      "headerSignature": [
+        "code",
+        "name",
+        "cost_price",
+        "quantity",
+        "unit",
+        "category",
+        "brand",
+        "supplier"
+      ]
     },
     {
       "file": "xlsx/parts-import-style-03.xlsx",
       "format": "xlsx",
       "rows": 38,
       "style": 3,
-      "supplier": "Mountain West Electrical"
+      "supplier": "Mountain West Electrical",
+      "layout": "xlsx-header-3",
+      "headerSignature": [
+        "name",
+        "code",
+        "brand",
+        "category",
+        "cost_price",
+        "markup_percent",
+        "unit",
+        "quantity",
+        "supplier",
+        "upc",
+        "notes"
+      ]
     },
     {
       "file": "csv/parts-import-style-04.csv",
       "format": "csv",
       "rows": 36,
       "style": 4,
-      "supplier": "Industrial Supply House"
+      "supplier": "Industrial Supply House",
+      "layout": "csv-header-4",
+      "headerSignature": [
+        "name",
+        "code",
+        "category",
+        "supplier",
+        "brand",
+        "upc",
+        "unit",
+        "cost_price",
+        "markup_percent",
+        "quantity"
+      ]
     },
     {
       "file": "xlsx/parts-import-style-04.xlsx",
       "format": "xlsx",
       "rows": 36,
       "style": 4,
-      "supplier": "Industrial Supply House"
+      "supplier": "Industrial Supply House",
+      "layout": "xlsx-header-4",
+      "headerSignature": [
+        "category",
+        "code",
+        "name",
+        "supplier",
+        "brand",
+        "unit",
+        "quantity",
+        "cost_price",
+        "notes"
+      ]
     },
     {
       "file": "csv/parts-import-style-05.csv",
       "format": "csv",
       "rows": 37,
       "style": 5,
-      "supplier": "Jobsite Stock Recount"
+      "supplier": "Jobsite Stock Recount",
+      "layout": "csv-header-5",
+      "headerSignature": [
+        "name",
+        "category",
+        "code",
+        "brand",
+        "cost_price",
+        "unit",
+        "notes"
+      ]
     },
     {
       "file": "xlsx/parts-import-style-05.xlsx",
       "format": "xlsx",
       "rows": 37,
       "style": 5,
-      "supplier": "Jobsite Stock Recount"
+      "supplier": "Jobsite Stock Recount",
+      "layout": "xlsx-header-5",
+      "headerSignature": [
+        "code",
+        "category",
+        "name",
+        "cost_price",
+        "brand",
+        "supplier",
+        "upc",
+        "quantity",
+        "unit"
+      ]
     },
     {
       "file": "csv/parts-import-style-06.csv",
       "format": "csv",
       "rows": 38,
       "style": 6,
-      "supplier": "Service Van Replenishment"
+      "supplier": "Service Van Replenishment",
+      "layout": "csv-header-6",
+      "headerSignature": [
+        "category",
+        "name",
+        "code",
+        "supplier",
+        "cost_price",
+        "markup_percent",
+        "quantity",
+        "upc"
+      ]
     },
     {
       "file": "xlsx/parts-import-style-06.xlsx",
       "format": "xlsx",
       "rows": 38,
       "style": 6,
-      "supplier": "Service Van Replenishment"
+      "supplier": "Service Van Replenishment",
+      "layout": "xlsx-header-6",
+      "headerSignature": [
+        "supplier",
+        "name",
+        "category",
+        "code",
+        "notes",
+        "cost_price",
+        "markup_percent",
+        "brand",
+        "unit",
+        "quantity"
+      ]
     },
     {
       "file": "csv/parts-import-style-07.csv",
       "format": "csv",
       "rows": 36,
       "style": 7,
-      "supplier": "Lighting Retrofit Bid"
+      "supplier": "Lighting Retrofit Bid",
+      "layout": "csv-header-7",
+      "headerSignature": [
+        "code",
+        "category",
+        "name",
+        "brand",
+        "supplier",
+        "quantity",
+        "unit",
+        "cost_price",
+        "notes"
+      ]
     },
     {
       "file": "xlsx/parts-import-style-07.xlsx",
       "format": "xlsx",
       "rows": 36,
       "style": 7,
-      "supplier": "Lighting Retrofit Bid"
+      "supplier": "Lighting Retrofit Bid",
+      "layout": "xlsx-header-7",
+      "headerSignature": [
+        "brand",
+        "name",
+        "code",
+        "category",
+        "supplier",
+        "unit",
+        "cost_price",
+        "upc",
+        "notes"
+      ]
     },
     {
       "file": "csv/parts-import-style-08.csv",
       "format": "csv",
       "rows": 37,
       "style": 8,
-      "supplier": "Panel Shop Order"
+      "supplier": "Panel Shop Order",
+      "layout": "csv-header-8",
+      "headerSignature": [
+        "supplier",
+        "category",
+        "brand",
+        "name",
+        "code",
+        "upc",
+        "cost_price",
+        "unit",
+        "markup_percent",
+        "notes",
+        "quantity"
+      ]
     },
     {
       "file": "xlsx/parts-import-style-08.xlsx",
       "format": "xlsx",
       "rows": 37,
       "style": 8,
-      "supplier": "Panel Shop Order"
+      "supplier": "Panel Shop Order",
+      "layout": "xlsx-header-8",
+      "headerSignature": [
+        "upc",
+        "code",
+        "name",
+        "category",
+        "brand",
+        "supplier",
+        "cost_price",
+        "markup_percent",
+        "quantity",
+        "unit",
+        "notes"
+      ]
     },
     {
       "file": "pdf/parts-import-ocr-style-01.pdf",
       "format": "pdf",
       "rows": 34,
       "style": 1,
-      "supplier": "Codale Branch Quote"
+      "supplier": "Codale Branch Quote",
+      "layout": "distributor-table",
+      "headerSignature": "Code | Name | Category | Brand | Cost | Unit | Qty"
     },
     {
       "file": "pdf/parts-import-ocr-style-02.pdf",
       "format": "pdf",
       "rows": 35,
       "style": 2,
-      "supplier": "Codale Counter Export"
+      "supplier": "Codale Counter Export",
+      "layout": "counter-quote",
+      "headerSignature": "SKU \u2014 Description \u2014 Manufacturer \u2014 Family \u2014 Net \u2014 UOM \u2014 Count"
     },
     {
       "file": "pdf/parts-import-ocr-style-03.pdf",
       "format": "pdf",
       "rows": 36,
       "style": 3,
-      "supplier": "Mountain West Electrical"
+      "supplier": "Mountain West Electrical",
+      "layout": "inventory-ledger",
+      "headerSignature": "Category / Item / Part Code / On Hand / Unit / Make / Cost"
     },
     {
       "file": "pdf/parts-import-ocr-style-04.pdf",
       "format": "pdf",
       "rows": 37,
       "style": 4,
-      "supplier": "Industrial Supply House"
+      "supplier": "Industrial Supply House",
+      "layout": "bid-schedule",
+      "headerSignature": "Line; Product; Catalog No.; Brand; Group; Unit Cost; Pack"
     },
     {
       "file": "pdf/parts-import-ocr-style-05.pdf",
       "format": "pdf",
       "rows": 38,
       "style": 5,
-      "supplier": "Jobsite Stock Recount"
+      "supplier": "Jobsite Stock Recount",
+      "layout": "warehouse-pick-list",
+      "headerSignature": "PART :: GROUP :: DESCRIPTION :: MAKE :: QTY :: UOM :: PRICE"
     },
     {
       "file": "pdf/parts-import-ocr-style-06.pdf",
       "format": "pdf",
       "rows": 39,
       "style": 6,
-      "supplier": "Service Van Replenishment"
+      "supplier": "Service Van Replenishment",
+      "layout": "service-van-recount",
+      "headerSignature": "Item,Description,Category,Unit,Count,Brand,Replacement Cost"
     },
     {
       "file": "docx/parts-import-word-style-01.docx",
       "format": "docx",
       "rows": 33,
       "style": 1,
-      "supplier": "Mountain West Electrical"
+      "supplier": "Mountain West Electrical",
+      "layout": "paragraph-catalog"
     },
     {
       "file": "docx/parts-import-word-style-02.docx",
       "format": "docx",
       "rows": 34,
       "style": 2,
-      "supplier": "Industrial Supply House"
+      "supplier": "Industrial Supply House",
+      "layout": "word-table"
     },
     {
       "file": "docx/parts-import-word-style-03.docx",
       "format": "docx",
       "rows": 35,
       "style": 3,
-      "supplier": "Jobsite Stock Recount"
+      "supplier": "Jobsite Stock Recount",
+      "layout": "tabbed-counter-export"
     },
     {
       "file": "docx/parts-import-word-style-04.docx",
       "format": "docx",
       "rows": 36,
       "style": 4,
-      "supplier": "Service Van Replenishment"
+      "supplier": "Service Van Replenishment",
+      "layout": "labeled-product-cards"
     },
     {
       "file": "docx/parts-import-word-style-05.docx",
       "format": "docx",
       "rows": 37,
       "style": 5,
-      "supplier": "Lighting Retrofit Bid"
+      "supplier": "Lighting Retrofit Bid",
+      "layout": "two-line-stock-cards"
     }
   ]
 }

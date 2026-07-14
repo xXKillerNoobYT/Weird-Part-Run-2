@@ -333,6 +333,39 @@ struct PartsServiceAdvancedTests {
         #expect(part.fields["part_type"] == "field-kit")
     }
 
+    @Test("committed CRLF CSV fixtures preview and import every manifest row")
+    func testCommittedCRLFFixturesPreviewAndImportEveryManifestRow() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let fixtureRoot = repositoryRoot.appendingPathComponent("docs/testing/parts-import-fixtures")
+        let manifestData = try Data(contentsOf: fixtureRoot.appendingPathComponent("manifest.json"))
+        let manifest = try #require(JSONSerialization.jsonObject(with: manifestData) as? [String: Any])
+        let files = try #require(manifest["files"] as? [[String: Any]])
+        let csvFixtures = files.filter { $0["format"] as? String == "csv" }
+
+        #expect(csvFixtures.count == 8)
+        for fixture in csvFixtures {
+            let relativePath = try #require(fixture["file"] as? String)
+            let expectedRows = try #require(fixture["rows"] as? Int)
+            let data = try Data(contentsOf: fixtureRoot.appendingPathComponent(relativePath))
+            let csv = try #require(String(data: data, encoding: .utf8))
+            let env = try E2ETestHelpers.setUp()
+
+            #expect(data.range(of: Data("\r\n".utf8)) != nil, "Fixture must exercise CRLF parsing: \(relativePath)")
+            let preview = try env.parts.previewPartsImportCSV(csv)
+            #expect(preview.totalRows == expectedRows, "Preview row mismatch for \(relativePath)")
+            #expect(preview.newParts.count == expectedRows, "Preview did not accept every row in \(relativePath)")
+            #expect(preview.errors.isEmpty, "Preview errors for \(relativePath): \(preview.errors)")
+
+            let result = try env.parts.commitPartsImportCSV(preview)
+            #expect(result.created == expectedRows, "Commit row mismatch for \(relativePath)")
+            #expect(try env.parts.getImportExportStats().totalParts == expectedRows)
+        }
+    }
+
     @Test("previewPartsImportCSV reports invalid cost_price and markup_percent values with row and column context")
     func testPreviewPartsImportCSVRejectsInvalidNumericValues() throws {
         let env = try E2ETestHelpers.setUp()

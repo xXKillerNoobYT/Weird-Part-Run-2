@@ -1,39 +1,39 @@
-supplier,brand,code,name,unit,quantity,cost_price,category,markup_percent,notes
-Service Van Replenishment,Leviton,D-06-001,Decorator Receptacle #7,ea,7,$4.71,Devices,30,Fixture row 1; verify supplier/category mapping before import.
-Service Van Replenishment,Minerallac,F-06-002,Strut Strap #8,ea,10,$0.95,Fasteners,12,Fixture row 2; verify supplier/category mapping before import.
-Service Van Replenishment,Southwire,W-06-003,8 AWG THHN Copper Wire 250 ft spool,ft,13,$0.29,Wire,15,Fixture row 3; verify supplier/category mapping before import.
-Service Van Replenishment,Allied Tube,C-06-004,2 in EMT Conduit 10 ft,stick,16,$6.75,Conduit,18,Fixture row 4; verify supplier/category mapping before import.
-Service Van Replenishment,Bridgeport,F-06-005,EMT Set-Screw Connector #11,ea,19,$1.53,Fittings,21,Fixture row 5; verify supplier/category mapping before import.
-Service Van Replenishment,Square D,B-06-006,20A 1-pole QO Plug-On Breaker,ea,22,$15.93,Breakers,24,Fixture row 6; verify supplier/category mapping before import.
-Service Van Replenishment,Raco,B-06-007,Steel Device Box #1,ea,25,$3.61,Boxes,27,Fixture row 7; verify supplier/category mapping before import.
-Service Van Replenishment,Lithonia,L-06-008,LED Flat Panel #2,ea,28,$63.18,Lighting,30,Fixture row 8; verify supplier/category mapping before import.
-Service Van Replenishment,Leviton,D-06-009,Decorator Receptacle #3,ea,31,$4.47,Devices,12,Fixture row 9; verify supplier/category mapping before import.
-Service Van Replenishment,Minerallac,F-06-010,Strut Strap #4,ea,34,$0.90,Fasteners,15,Fixture row 10; verify supplier/category mapping before import.
-Service Van Replenishment,Southwire,W-06-011,12 AWG THHN Copper Wire 250 ft spool,ft,37,$0.27,Wire,18,Fixture row 11; verify supplier/category mapping before import.
-Service Van Replenishment,Allied Tube,C-06-012,1 in EMT Conduit 10 ft,stick,40,$10.80,Conduit,21,Fixture row 12; verify supplier/category mapping before import.
-Service Van Replenishment,Bridgeport,F-06-013,EMT Set-Screw Connector #7,ea,43,$1.42,Fittings,24,Fixture row 13; verify supplier/category mapping before import.
-Service Van Replenishment,Square D,B-06-014,50A 1-pole QO Plug-On Breaker,ea,46,$14.89,Breakers,27,Fixture row 14; verify supplier/category mapping before import.
-Service Van Replenishment,Raco,B-06-015,Steel Device Box #9,ea,1,$3.39,Boxes,30,Fixture row 15; verify supplier/category mapping before import.
-Service Van Replenishment,Lithonia,L-06-016,LED Flat Panel #10,ea,4,$59.54,Lighting,12,Fixture row 16; verify supplier/category mapping before import.
-Service Van Replenishment,Leviton,D-06-017,Decorator Receptacle #11,ea,7,$4.23,Devices,15,Fixture row 17; verify supplier/category mapping before import.
-Service Van Replenishment,Minerallac,F-06-018,Strut Strap #12,ea,10,$0.85,Fasteners,18,Fixture row 18; verify supplier/category mapping before import.
-Service Van Replenishment,Southwire,W-06-019,6 AWG THHN Copper Wire 250 ft spool,ft,13,$0.26,Wire,21,Fixture row 19; verify supplier/category mapping before import.
-Service Van Replenishment,Allied Tube,C-06-020,1/2 in EMT Conduit 10 ft,stick,16,$10.29,Conduit,24,Fixture row 20; verify supplier/category mapping before import.
-Service Van Replenishment,Bridgeport,F-06-021,EMT Set-Screw Connector #3,ea,19,$2.27,Fittings,27,Fixture row 21; verify supplier/category mapping before import.
-Service Van Replenishment,Square D,B-06-022,30A 1-pole QO Plug-On Breaker,ea,22,$13.85,Breakers,30,Fixture row 22; verify supplier/category mapping before import.
-Service Van Replenishment,Raco,B-06-023,Steel Device Box #5,ea,25,$3.17,Boxes,12,Fixture row 23; verify supplier/category mapping before import.
-Service Van Replenishment,Lithonia,L-06-024,LED Flat Panel #6,ea,28,$55.89,Lighting,15,Fixture row 24; verify supplier/category mapping before import.
-Service Van Replenishment,Leviton,D-06-025,Decorator Receptacle #7,ea,31,$3.98,Devices,18,Fixture row 25; verify supplier/category mapping before import.
-Service Van Replenishment,Minerallac,F-06-026,Strut Strap #8,ea,34,$0.81,Fasteners,21,Fixture row 26; verify supplier/category mapping before import.
-Service Van Replenishment,Southwire,W-06-027,10 AWG THHN Copper Wire 250 ft spool,ft,37,$0.25,Wire,24,Fixture row 27; verify supplier/category mapping before import.
-Service Van Replenishment,Allied Tube,C-06-028,1-1/4 in EMT Conduit 10 ft,stick,40,$9.79,Conduit,27,Fixture row 28; verify supplier/category mapping before import.
-Service Van Replenishment,Bridgeport,F-06-029,EMT Set-Screw Connector #11,ea,43,$2.17,Fittings,30,Fixture row 29; verify supplier/category mapping before import.
-Service Van Replenishment,Square D,B-06-030,15A 1-pole QO Plug-On Breaker,ea,46,$22.16,Breakers,12,Fixture row 30; verify supplier/category mapping before import.
-Service Van Replenishment,Raco,B-06-031,Steel Device Box #1,ea,1,$2.95,Boxes,15,Fixture row 31; verify supplier/category mapping before import.
-Service Van Replenishment,Lithonia,L-06-032,LED Flat Panel #2,ea,4,$52.24,Lighting,18,Fixture row 32; verify supplier/category mapping before import.
-Service Van Replenishment,Leviton,D-06-033,Decorator Receptacle #3,ea,7,$3.74,Devices,21,Fixture row 33; verify supplier/category mapping before import.
-Service Van Replenishment,Minerallac,F-06-034,Strut Strap #4,ea,10,$0.76,Fasteners,24,Fixture row 34; verify supplier/category mapping before import.
-Service Van Replenishment,Southwire,W-06-035,14 AWG THHN Copper Wire 250 ft spool,ft,13,$0.23,Wire,27,Fixture row 35; verify supplier/category mapping before import.
-Service Van Replenishment,Allied Tube,C-06-036,3/4 in EMT Conduit 10 ft,stick,16,$9.28,Conduit,30,Fixture row 36; verify supplier/category mapping before import.
-Service Van Replenishment,Bridgeport,F-06-037,EMT Set-Screw Connector #7,ea,19,$2.06,Fittings,12,Fixture row 37; verify supplier/category mapping before import.
-Service Van Replenishment,Square D,B-06-038,40A 1-pole QO Plug-On Breaker,ea,22,$21.12,Breakers,15,Fixture row 38; verify supplier/category mapping before import.
+category,name,code,supplier,cost_price,markup_percent,quantity,upc
+Devices,Decorator Receptacle #7,D-06-001,Service Van Replenishment,$4.71,30,7,880000006001
+Fasteners,Strut Strap #8,F-06-002,Service Van Replenishment,$0.95,12,10,880000006002
+Wire,8 AWG THHN Copper Wire 250 ft spool,W-06-003,Service Van Replenishment,$0.29,15,13,880000006003
+Conduit,2 in EMT Conduit 10 ft,C-06-004,Service Van Replenishment,$6.75,18,16,880000006004
+Fittings,EMT Set-Screw Connector #11,F-06-005,Service Van Replenishment,$1.53,21,19,880000006005
+Breakers,20A 1-pole QO Plug-On Breaker,B-06-006,Service Van Replenishment,$15.93,24,22,880000006006
+Boxes,Steel Device Box #1,B-06-007,Service Van Replenishment,$3.61,27,25,880000006007
+Lighting,LED Flat Panel #2,L-06-008,Service Van Replenishment,$63.18,30,28,880000006008
+Devices,Decorator Receptacle #3,D-06-009,Service Van Replenishment,$4.47,12,31,880000006009
+Fasteners,Strut Strap #4,F-06-010,Service Van Replenishment,$0.90,15,34,880000006010
+Wire,12 AWG THHN Copper Wire 250 ft spool,W-06-011,Service Van Replenishment,$0.27,18,37,880000006011
+Conduit,1 in EMT Conduit 10 ft,C-06-012,Service Van Replenishment,$10.80,21,40,880000006012
+Fittings,EMT Set-Screw Connector #7,F-06-013,Service Van Replenishment,$1.42,24,43,880000006013
+Breakers,50A 1-pole QO Plug-On Breaker,B-06-014,Service Van Replenishment,$14.89,27,46,880000006014
+Boxes,Steel Device Box #9,B-06-015,Service Van Replenishment,$3.39,30,1,880000006015
+Lighting,LED Flat Panel #10,L-06-016,Service Van Replenishment,$59.54,12,4,880000006016
+Devices,Decorator Receptacle #11,D-06-017,Service Van Replenishment,$4.23,15,7,880000006017
+Fasteners,Strut Strap #12,F-06-018,Service Van Replenishment,$0.85,18,10,880000006018
+Wire,6 AWG THHN Copper Wire 250 ft spool,W-06-019,Service Van Replenishment,$0.26,21,13,880000006019
+Conduit,1/2 in EMT Conduit 10 ft,C-06-020,Service Van Replenishment,$10.29,24,16,880000006020
+Fittings,EMT Set-Screw Connector #3,F-06-021,Service Van Replenishment,$2.27,27,19,880000006021
+Breakers,30A 1-pole QO Plug-On Breaker,B-06-022,Service Van Replenishment,$13.85,30,22,880000006022
+Boxes,Steel Device Box #5,B-06-023,Service Van Replenishment,$3.17,12,25,880000006023
+Lighting,LED Flat Panel #6,L-06-024,Service Van Replenishment,$55.89,15,28,880000006024
+Devices,Decorator Receptacle #7,D-06-025,Service Van Replenishment,$3.98,18,31,880000006025
+Fasteners,Strut Strap #8,F-06-026,Service Van Replenishment,$0.81,21,34,880000006026
+Wire,10 AWG THHN Copper Wire 250 ft spool,W-06-027,Service Van Replenishment,$0.25,24,37,880000006027
+Conduit,1-1/4 in EMT Conduit 10 ft,C-06-028,Service Van Replenishment,$9.79,27,40,880000006028
+Fittings,EMT Set-Screw Connector #11,F-06-029,Service Van Replenishment,$2.17,30,43,880000006029
+Breakers,15A 1-pole QO Plug-On Breaker,B-06-030,Service Van Replenishment,$22.16,12,46,880000006030
+Boxes,Steel Device Box #1,B-06-031,Service Van Replenishment,$2.95,15,1,880000006031
+Lighting,LED Flat Panel #2,L-06-032,Service Van Replenishment,$52.24,18,4,880000006032
+Devices,Decorator Receptacle #3,D-06-033,Service Van Replenishment,$3.74,21,7,880000006033
+Fasteners,Strut Strap #4,F-06-034,Service Van Replenishment,$0.76,24,10,880000006034
+Wire,14 AWG THHN Copper Wire 250 ft spool,W-06-035,Service Van Replenishment,$0.23,27,13,880000006035
+Conduit,3/4 in EMT Conduit 10 ft,C-06-036,Service Van Replenishment,$9.28,30,16,880000006036
+Fittings,EMT Set-Screw Connector #7,F-06-037,Service Van Replenishment,$2.06,12,19,880000006037
+Breakers,40A 1-pole QO Plug-On Breaker,B-06-038,Service Van Replenishment,$21.12,15,22,880000006038

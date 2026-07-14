@@ -1,13 +1,13 @@
 %PDF-1.4
 1 0 obj
-<< /Length 3053 >>
+<< /Length 3065 >>
 stream
 BT
 /F1 8 Tf
 50 760 Td
 (Codale Branch Quote — OCR Parts Catalog Fixture) Tj
 0 -14 Td
-(Style 1 page 1: verify OCR table extraction before committing.) Tj
+(Layout distributor-table; page 1; verify OCR extraction before committing.) Tj
 0 -14 Td
 (Code | Name | Category | Brand | Cost | Unit | Qty) Tj
 0 -14 Td
@@ -81,14 +81,14 @@ endobj
 << /Type /Page /Parent 6 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 1 0 R >>
 endobj
 3 0 obj
-<< /Length 381 >>
+<< /Length 393 >>
 stream
 BT
 /F1 8 Tf
 50 760 Td
 (Codale Branch Quote — OCR Parts Catalog Fixture) Tj
 0 -14 Td
-(Style 1 page 2: verify OCR table extraction before committing.) Tj
+(Layout distributor-table; page 2; verify OCR extraction before committing.) Tj
 0 -14 Td
 (Code | Name | Category | Brand | Cost | Unit | Qty) Tj
 0 -14 Td
@@ -114,14 +114,14 @@ xref
 0 8
 0000000000 65535 f 
 0000000009 00000 n 
-0000003114 00000 n 
-0000003240 00000 n 
-0000003672 00000 n 
-0000003798 00000 n 
-0000003868 00000 n 
-0000003931 00000 n 
+0000003126 00000 n 
+0000003252 00000 n 
+0000003696 00000 n 
+0000003822 00000 n 
+0000003892 00000 n 
+0000003955 00000 n 
 trailer
 << /Size 8 /Root 7 0 R >>
 startxref
-3980
+4004
 %%EOF

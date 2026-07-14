@@ -14,6 +14,10 @@ def _manifest_rows() -> dict[str, int]:
     return {entry["file"]: entry["rows"] for entry in manifest["files"]}
 
 
+def _manifest_entries() -> list[dict]:
+    return json.loads((FIXTURES / "manifest.json").read_text())["files"]
+
+
 def test_parts_import_fixture_manifest_contract():
     manifest_path = FIXTURES / "manifest.json"
     assert manifest_path.exists(), "Run scripts/generate_parts_import_fixtures.py first"
@@ -55,36 +59,66 @@ def test_csv_fixtures_have_importable_required_columns_and_30_plus_rows():
         assert all(row["code"].strip() and row["name"].strip() and row["category"].strip() for row in rows)
 
 
+def test_fixture_pack_has_materially_distinct_layout_signatures():
+    entries = _manifest_entries()
+    expected_unique = {"csv": 8, "xlsx": 8, "pdf": 6, "docx": 5}
+    for fixture_format, expected_count in expected_unique.items():
+        format_entries = [entry for entry in entries if entry["format"] == fixture_format]
+        assert len({entry["layout"] for entry in format_entries}) == expected_count
+
+    csv_headers = set()
+    for path in sorted((FIXTURES / "csv").glob("*.csv")):
+        with path.open(newline="", encoding="utf-8") as f:
+            csv_headers.add(tuple(next(csv.reader(f))))
+        assert b"\r\n" in path.read_bytes(), path
+    assert len(csv_headers) == 8
+
+
 def test_xlsx_fixtures_are_valid_openxml_with_30_plus_data_rows():
     ns = {"main": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
     expected_rows = _manifest_rows()
+    header_signatures = set()
     for path in sorted((FIXTURES / "xlsx").glob("*.xlsx")):
         with zipfile.ZipFile(path) as z:
             names = set(z.namelist())
             assert "xl/workbook.xml" in names
             assert "xl/worksheets/sheet1.xml" in names
             sheet = ET.fromstring(z.read("xl/worksheets/sheet1.xml"))
+            shared = ET.fromstring(z.read("xl/sharedStrings.xml"))
+        shared_values = [node.text or "" for node in shared.findall("main:si/main:t", ns)]
         rows = sheet.findall(".//main:sheetData/main:row", ns)
+        first_row_values = []
+        for cell in rows[0].findall("main:c", ns):
+            value_node = cell.find("main:v", ns)
+            assert value_node is not None and value_node.text is not None
+            first_row_values.append(shared_values[int(value_node.text)])
+        header_signatures.add(tuple(first_row_values))
         relative_path = str(path.relative_to(FIXTURES))
         assert len(rows) - 1 == expected_rows[relative_path], path  # Exclude the header.
+    assert len(header_signatures) == 8
 
 
 def test_docx_fixtures_are_valid_openxml_with_30_plus_rows():
     ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
     expected_rows = _manifest_rows()
+    layouts = set()
+    structures = set()
     for path in sorted((FIXTURES / "docx").glob("*.docx")):
         with zipfile.ZipFile(path) as z:
             assert "word/document.xml" in set(z.namelist())
-            doc = ET.fromstring(z.read("word/document.xml"))
+            document_xml = z.read("word/document.xml")
+            doc = ET.fromstring(document_xml)
         text = "\n".join(t.text or "" for t in doc.findall(".//w:t", ns))
-        table_rows = [
-            line
-            for line in text.splitlines()
-            if line.count(" | ") == 6 and not line.startswith("Code | ")
-        ]
+        layout = re.search(r"Layout ([a-z-]+);", text)
+        assert layout is not None
+        layouts.add(layout.group(1))
+        structures.add((b"<w:tbl>" in document_xml, b"xml:space=\"preserve\"" in document_xml, len(doc.findall(".//w:p", ns))))
+        part_codes = re.findall(r"\b[A-Z]{1,3}-\d{2}-\d{3}\b", text)
         relative_path = str(path.relative_to(FIXTURES))
-        assert len(table_rows) == expected_rows[relative_path], path
+        assert len(part_codes) == expected_rows[relative_path], path
         assert "verify" in text.lower()
+    assert len(layouts) == 5
+    assert len(structures) == 5
 
 
 def _pdf_objects(data: bytes) -> dict[int, bytes]:
@@ -109,6 +143,8 @@ def _pdf_text_lines(content_object: bytes) -> list[str]:
 
 def test_pdf_fixtures_resolve_fonts_and_extract_every_table_row():
     expected_rows = _manifest_rows()
+    headers = set()
+    layouts = set()
 
     for path in sorted((FIXTURES / "pdf").glob("*.pdf")):
         data = path.read_bytes()
@@ -135,21 +171,20 @@ def test_pdf_fixtures_resolve_fonts_and_extract_every_table_row():
             extracted_pages.append(_pdf_text_lines(content))
 
         assert extracted_pages[0], f"Page 1 extraction is empty in {path}"
-        assert "Code | Name | Category | Brand | Cost | Unit | Qty" in extracted_pages[0]
-        first_page_rows = [
-            line
-            for line in extracted_pages[0]
-            if line.count(" | ") == 6 and not line.startswith("Code | ")
-        ]
-        assert len(first_page_rows) == 32, f"Page 1 must expose its first 32 parts in {path}"
+        layout = re.search(r"Layout ([a-z-]+);", extracted_pages[0][1])
+        assert layout is not None
+        layouts.add(layout.group(1))
+        headers.add(extracted_pages[0][2])
 
-        all_rows = [
-            line
+        all_codes = [
+            code
             for page_lines in extracted_pages
             for line in page_lines
-            if line.count(" | ") == 6 and not line.startswith("Code | ")
+            for code in re.findall(r"\b[A-Z]{1,3}-\d{2}-\d{3}\b", line)
         ]
         relative_path = str(path.relative_to(FIXTURES))
-        assert len(all_rows) == expected_rows[relative_path], (
+        assert len(all_codes) == expected_rows[relative_path], (
             f"Extracted row count does not match the manifest for {path}"
         )
+    assert len(headers) == 6
+    assert len(layouts) == 6
