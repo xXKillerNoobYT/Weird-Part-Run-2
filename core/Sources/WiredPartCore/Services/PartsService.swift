@@ -6710,7 +6710,7 @@ public final class PartsService: Sendable {
 
     private func optionalImportNumberMatches(_ imported: String?, _ existing: Double) -> Bool {
         guard let imported else { return true }
-        guard let importedNumber = Double(imported.trimmingCharacters(in: .whitespacesAndNewlines)) else { return false }
+        guard let importedNumber = parsedPartsImportNumeric(imported) else { return false }
         return abs(importedNumber - existing) < 0.000_001
     }
 

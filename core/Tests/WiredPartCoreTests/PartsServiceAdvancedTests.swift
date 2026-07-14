@@ -1251,6 +1251,36 @@ struct PartsServiceAdvancedTests {
         #expect(preview.errors.contains { $0.rowNumber == 5 })
     }
 
+    @Test("previewPartsImportCSV treats formatted equivalent numerics as duplicates")
+    func testPreviewPartsImportCSVTreatsFormattedEquivalentNumericsAsDuplicates() throws {
+        let env = try E2ETestHelpers.setUp()
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "Formatted Numeric Category")
+        _ = try env.parts.createPart(
+            categoryId: categoryId,
+            name: "Currency Equivalent Part",
+            code: "FMT-COST-001",
+            companyCostPrice: 1_234.50,
+            companyMarkupPercent: 25.0
+        )
+        _ = try env.parts.createPart(
+            categoryId: categoryId,
+            name: "Percent Equivalent Part",
+            code: "FMT-MARKUP-001",
+            companyCostPrice: 12.50,
+            companyMarkupPercent: 35.0
+        )
+
+        let preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,cost_price,markup_percent
+        Currency Equivalent Part,FMT-COST-001,Formatted Numeric Category,"$1,234.50",25
+        Percent Equivalent Part,FMT-MARKUP-001,Formatted Numeric Category,12.50,35%
+        """)
+
+        let decisionsByRow = Dictionary(uniqueKeysWithValues: preview.decisions.map { ($0.rowNumber, $0.classification) })
+        #expect(decisionsByRow[2] == .duplicateSkip)
+        #expect(decisionsByRow[3] == .duplicateSkip)
+    }
+
     @Test("previewPartsImportCSV classifies update when mutable import fields differ")
     func testPreviewPartsImportCSVClassifiesUpdateWhenMutableFieldsDiffer() throws {
         let env = try E2ETestHelpers.setUp()

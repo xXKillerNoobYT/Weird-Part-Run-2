@@ -67,7 +67,7 @@ XLSX_FIELD_SETS = [
 
 PDF_LAYOUTS = [
     ("distributor-table", "Code | Name | Category | Brand | Cost | Unit | Qty", ("code", "name", "category", "brand", "cost_price", "unit", "quantity"), " | "),
-    ("counter-quote", "SKU — Description — Manufacturer — Family — Net — UOM — Count", ("code", "name", "brand", "category", "cost_price", "unit", "quantity"), " — "),
+    ("counter-quote", "SKU - Description - Manufacturer - Family - Net - UOM - Count", ("code", "name", "brand", "category", "cost_price", "unit", "quantity"), " - "),
     ("inventory-ledger", "Category / Item / Part Code / On Hand / Unit / Make / Cost", ("category", "name", "code", "quantity", "unit", "brand", "cost_price"), " / "),
     ("bid-schedule", "Line; Product; Catalog No.; Brand; Group; Unit Cost; Pack", ("quantity", "name", "code", "brand", "category", "cost_price", "unit"), "; "),
     ("warehouse-pick-list", "PART :: GROUP :: DESCRIPTION :: MAKE :: QTY :: UOM :: PRICE", ("code", "category", "name", "brand", "quantity", "unit", "cost_price"), " :: "),
@@ -207,6 +207,11 @@ def write_xlsx(path: Path, parts: list[Part], style: int) -> None:
 
 
 def pdf_escape(text: str) -> str:
+    # The deterministic fixture PDF uses the built-in Type1 Helvetica font,
+    # whose text stream must stay PDFDocEncoding/ASCII-compatible. Reject
+    # unsupported text here rather than emitting UTF-8 bytes that native PDF
+    # consumers extract as NUL or replacement characters.
+    text.encode("ascii")
     return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
@@ -331,8 +336,8 @@ def main() -> None:
         supplier = SUPPLIERS[i]
         parts = build_parts(34 + i, supplier, i + 20)
         pdf_path = OUT / "pdf" / f"parts-import-ocr-style-{i+1:02d}.pdf"
-        write_pdf(pdf_path, f"{supplier} — OCR Parts Catalog Fixture", parts, i)
-        manifest.append({"file": str(pdf_path.relative_to(OUT)), "format": "pdf", "rows": len(parts), "style": i + 1, "supplier": supplier, "layout": PDF_LAYOUTS[i][0], "headerSignature": PDF_LAYOUTS[i][1]})
+        write_pdf(pdf_path, f"{supplier} - OCR Parts Catalog Fixture", parts, i)
+        manifest.append({"file": str(pdf_path.relative_to(OUT)), "format": "pdf", "rows": len(parts), "style": i + 1, "supplier": supplier, "layout": PDF_LAYOUTS[i][0], "headerSignature": PDF_LAYOUTS[i][1], "separator": PDF_LAYOUTS[i][3]})
 
     for i in range(5):
         supplier = SUPPLIERS[i + 2]

@@ -1,12 +1,31 @@
 import csv
 import json
 import re
+import subprocess
 import zipfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "docs" / "testing" / "parts-import-fixtures"
+
+PDFKIT_EXTRACTOR = r"""
+import Foundation
+import PDFKit
+
+var extracted: [String: String] = [:]
+for path in CommandLine.arguments.dropFirst() {
+    let url = URL(fileURLWithPath: path)
+    guard let document = PDFDocument(url: url) else {
+        fputs("PDFKit could not open \(path)\n", stderr)
+        exit(2)
+    }
+    let pages = (0..<document.pageCount).compactMap { document.page(at: $0)?.string }
+    extracted[url.lastPathComponent] = pages.joined(separator: "\n")
+}
+let data = try JSONSerialization.data(withJSONObject: extracted, options: [.sortedKeys])
+FileHandle.standardOutput.write(data)
+"""
 
 
 def _manifest_rows() -> dict[str, int]:
@@ -188,3 +207,25 @@ def test_pdf_fixtures_resolve_fonts_and_extract_every_table_row():
         )
     assert len(headers) == 6
     assert len(layouts) == 6
+
+
+def test_pdfkit_extracts_declared_headers_and_separators_without_invalid_text():
+    entries = [entry for entry in _manifest_entries() if entry["format"] == "pdf"]
+    paths = [FIXTURES / entry["file"] for entry in entries]
+    result = subprocess.run(
+        ["xcrun", "swift", "-e", PDFKIT_EXTRACTOR, *(str(path) for path in paths)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    extracted = json.loads(result.stdout)
+
+    assert set(extracted) == {path.name for path in paths}
+    assert len(entries) == len(paths)
+    for entry, path in zip(entries, paths):
+        text = extracted[path.name]
+        assert "\0" not in text, path
+        assert "\ufffd" not in text, path
+        assert entry["headerSignature"] in text, path
+        assert entry["separator"] in entry["headerSignature"], path
+        assert text.count(entry["separator"]) >= entry["rows"], path
