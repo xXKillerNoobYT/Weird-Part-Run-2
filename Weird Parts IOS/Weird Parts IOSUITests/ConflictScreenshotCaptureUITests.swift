@@ -113,11 +113,13 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
             sheetScroll.swipeUp()
         }
 
-        let useThisButtons = app.buttons.matching(NSPredicate(format: "label == 'Use This'"))
-        if useThisButtons.count > 0 {
-            useThisButtons.element(boundBy: useThisButtons.count - 1).tap()
+        let useLocalButtons = app.buttons.matching(
+            NSPredicate(format: "identifier == 'syncConflictUseLocalValue'")
+        )
+        if useLocalButtons.count > 0 {
+            useLocalButtons.element(boundBy: useLocalButtons.count - 1).tap()
         } else {
-            XCTFail("No 'Use This' buttons found on the conflict review sheet")
+            XCTFail("No local-value choice found on the conflict review sheet")
         }
 
         let alert = app.alerts["Confirm Critical Write Decision"]
@@ -127,12 +129,16 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
             alert.buttons["Cancel"].tap()
             capture("05-critical-cancel-returned")
 
-            let useThisAgain = app.buttons.matching(NSPredicate(format: "label == 'Use This'"))
-            if useThisAgain.count > 0 {
-                useThisAgain.element(boundBy: useThisAgain.count - 1).tap()
+            let useRemoteButtons = app.buttons.matching(
+                NSPredicate(format: "identifier == 'syncConflictUseRemoteValue'")
+            )
+            if useRemoteButtons.count > 0 {
+                useRemoteButtons.element(boundBy: useRemoteButtons.count - 1).tap()
                 if alert.waitForExistence(timeout: 5) {
                     alert.buttons["Confirm"].tap()
                 }
+            } else {
+                XCTFail("No remote-value choice found after cancelling the critical decision")
             }
             capture("06-critical-confirm-completed")
         } else {
