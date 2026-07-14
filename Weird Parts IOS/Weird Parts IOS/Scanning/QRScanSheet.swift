@@ -1,8 +1,38 @@
 import SwiftUI
 import WiredPartCore
+#if canImport(UIKit)
+import UIKit
+#endif
 #if !targetEnvironment(macCatalyst)
 import VisionKit
 #endif
+
+struct QRScanDeliveryGate {
+    private(set) var activePayload: String?
+    private(set) var completedPayload: String?
+
+    var isProcessing: Bool { activePayload != nil }
+
+    mutating func claim(_ payload: String) -> Bool {
+        guard activePayload == nil, completedPayload != payload else { return false }
+        activePayload = payload
+        return true
+    }
+
+    mutating func finish(_ payload: String, shouldComplete: Bool) -> Bool {
+        guard activePayload == payload else { return false }
+        activePayload = nil
+        guard shouldComplete, completedPayload != payload else { return false }
+        completedPayload = payload
+        return true
+    }
+
+    mutating func fail(_ payload: String) {
+        if activePayload == payload {
+            activePayload = nil
+        }
+    }
+}
 
 /// Reusable QR scan sheet. Present as a `.sheet`, get a callback with the result.
 /// Automatically dismisses after a successful scan that matches the expected type.
@@ -28,12 +58,14 @@ struct QRScanSheet: View {
     @State private var resultEntityType: QREntityType?
     @State private var resultCode: String?
     @State private var typeMismatch = false
-    @State private var isProcessing = false
+    @State private var deliveryGate = QRScanDeliveryGate()
 
     // Manual entry
     @State private var manualCode = ""
 
     @State private var scanner: IOSQRScanner?
+
+    private var isProcessing: Bool { deliveryGate.isProcessing }
 
     private var isScannerSupported: Bool {
         #if targetEnvironment(macCatalyst)
@@ -71,6 +103,9 @@ struct QRScanSheet: View {
             .onDisappear {
                 scanner?.stopScanning()
             }
+            .onChange(of: statusAccessibilityLabel) { _, status in
+                announceStatus(status)
+            }
         }
         .presentationDetents([.medium])
         .presentationDragIndicator(.visible)
@@ -96,11 +131,6 @@ struct QRScanSheet: View {
                 .stroke(Color.white.opacity(0.5), lineWidth: 2)
                 .frame(width: 250, height: 250)
 
-            if isProcessing {
-                ProgressView()
-                    .tint(.white)
-                    .scaleEffect(1.5)
-            }
         }
     }
 
@@ -109,42 +139,9 @@ struct QRScanSheet: View {
     @ViewBuilder
     private var bottomSection: some View {
         VStack(spacing: 12) {
-            // Result feedback
-            if let error = scanError {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .font(.subheadline)
-                    .foregroundStyle(.red)
-                    .padding(.horizontal)
-                    .padding(.top, 12)
-            } else if let title = resultTitle {
-                HStack(spacing: 8) {
-                    Image(systemName: resultIsFound ? "checkmark.circle.fill" : "questionmark.circle.fill")
-                        .foregroundStyle(resultIsFound ? .green : .orange)
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(resultIsFound ? "Found: \(title)" : "Not found: \(resultCode ?? "")")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                        if typeMismatch, let got = resultEntityType, let expected = expectedType {
-                            Text("Expected \(expected.rawValue), got \(got.rawValue)")
-                                .font(.caption)
-                                .foregroundStyle(.orange)
-                        }
-                    }
-                }
+            feedbackStatusView
                 .padding(.horizontal)
                 .padding(.top, 12)
-            } else {
-                HStack(spacing: 8) {
-                    Image(systemName: "viewfinder")
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                    Text("Point camera at a QR code")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.top, 12)
-            }
 
             // Manual entry
             HStack(spacing: 8) {
@@ -154,10 +151,13 @@ struct QRScanSheet: View {
                     .onSubmit { processManualEntry() }
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
+                    .accessibilityLabel("QR code")
+                    .accessibilityIdentifier("qrScanManualCodeField")
 
                 Button("Look Up") { processManualEntry() }
                     .buttonStyle(.bordered)
                     .disabled(manualCode.isBlankRequiredText || isProcessing)
+                    .accessibilityIdentifier("qrScanLookUpButton")
             }
             .padding(.horizontal)
             .padding(.bottom, 12)
@@ -185,32 +185,92 @@ struct QRScanSheet: View {
                     .textFieldStyle(.roundedBorder)
                     .submitLabel(.search)
                     .onSubmit { processManualEntry() }
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .accessibilityLabel("QR code")
+                    .accessibilityIdentifier("qrScanManualCodeField")
 
                 Button("Look Up") { processManualEntry() }
                     .buttonStyle(.borderedProminent)
                     .disabled(manualCode.isBlankRequiredText || isProcessing)
+                    .accessibilityIdentifier("qrScanLookUpButton")
             }
             .padding(.horizontal, 24)
 
-            if let error = scanError {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .font(.subheadline)
-                    .foregroundStyle(.red)
-            }
-
-            if let title = resultTitle {
-                HStack(spacing: 8) {
-                    Image(systemName: resultIsFound ? "checkmark.circle.fill" : "questionmark.circle.fill")
-                        .foregroundStyle(resultIsFound ? .green : .orange)
-                        .accessibilityHidden(true)
-                    Text(resultIsFound ? "Found: \(title)" : "Not found")
-                        .font(.subheadline)
-                }
-            }
+            feedbackStatusView
+                .padding(.horizontal, 24)
 
             Spacer()
         }
         .background(Color(.systemBackground))
+    }
+
+    @ViewBuilder
+    private var feedbackStatusView: some View {
+        HStack(spacing: 8) {
+            if isProcessing {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityHidden(true)
+                Text("Looking up…")
+                    .fontWeight(.medium)
+            } else if let error = scanError {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                    .accessibilityHidden(true)
+                Text(error)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.red)
+            } else if typeMismatch, let got = resultEntityType, let expected = expectedType {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .accessibilityHidden(true)
+                Text("Expected \(expected.rawValue), got \(got.rawValue)")
+                    .fontWeight(.medium)
+                    .foregroundStyle(.orange)
+            } else if let title = resultTitle {
+                Image(systemName: resultIsFound ? "checkmark.circle.fill" : "questionmark.circle.fill")
+                    .foregroundStyle(resultIsFound ? .green : .orange)
+                    .accessibilityHidden(true)
+                Text(resultIsFound ? "Found: \(title)" : "Not found: \(resultCode ?? "")")
+                    .fontWeight(.medium)
+                    .foregroundStyle(resultIsFound ? .green : .orange)
+            } else {
+                Image(systemName: "viewfinder")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Text(isScannerSupported ? "Point camera at a QR code" : "Enter a QR code to look it up")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(.subheadline)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("qrScanStatus")
+        .accessibilityLabel(statusAccessibilityLabel)
+        .accessibilityAddTraits(.updatesFrequently)
+    }
+
+    private var statusAccessibilityLabel: String {
+        if isProcessing {
+            return "Looking up…"
+        }
+        if let error = scanError {
+            return error
+        }
+        if typeMismatch, let got = resultEntityType, let expected = expectedType {
+            return "Expected \(expected.rawValue), got \(got.rawValue)"
+        }
+        if let title = resultTitle {
+            return resultIsFound ? "Found: \(title)" : "Not found: \(resultCode ?? "")"
+        }
+        return isScannerSupported ? "Point camera at a QR code" : "Enter a QR code to look it up"
+    }
+
+    private func announceStatus(_ status: String) {
+        #if canImport(UIKit)
+        UIAccessibility.post(notification: .announcement, argument: status)
+        #endif
     }
 
     // MARK: - Scanning
@@ -269,15 +329,21 @@ struct QRScanSheet: View {
         // Claim the processing slot atomically on MainActor. Camera streams can
         // deliver the same payload again while the first database lookup awaits.
         let shouldSkip = await MainActor.run {
-            if isProcessing { return true }
-            if let current = resultCode, current == payload, resultIsFound { return true }
+            guard deliveryGate.claim(payload) else { return true }
 
-            isProcessing = true
             scanError = nil
+            resultTitle = nil
+            resultIsFound = false
+            resultEntityType = nil
+            resultCode = nil
             typeMismatch = false
             return false
         }
         if shouldSkip { return }
+
+        // Let SwiftUI render and announce the loading state before the local
+        // synchronous lookup begins, even when the database responds quickly.
+        await Task.yield()
 
         do {
             let service = QRAutoFillService(db: db)
@@ -298,24 +364,27 @@ struct QRScanSheet: View {
                 && (expectedType == nil || result.entityType == expectedType)
 
             await MainActor.run {
+                let shouldComplete = deliveryGate.finish(
+                    payload,
+                    shouldComplete: shouldAutoComplete
+                )
                 resultTitle = title
                 resultIsFound = result.isFound
                 resultEntityType = result.entityType
                 resultCode = result.code
                 typeMismatch = gotMismatch
-                isProcessing = false
 
                 // Every result callback mutates parent SwiftUI state. Keep the
                 // callback and dismissal in one MainActor transaction.
-                if shouldAutoComplete {
+                if shouldComplete {
                     dismiss()
                     onResult(result)
                 }
             }
         } catch {
             await MainActor.run {
+                deliveryGate.fail(payload)
                 scanError = userFriendlyError(error, context: "scan item")
-                isProcessing = false
             }
         }
     }
