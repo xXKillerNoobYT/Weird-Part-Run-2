@@ -18,10 +18,10 @@ permissions:
 jobs:
   tracked-artifacts:
     name: Tracked artifact guard
-    # Pure-python guard — no Xcode needed. Owner authorized cloud-runner spend
-    # (2026-07-02) so lightweight PR gates run on hosted Linux in parallel
-    # instead of queueing behind the single local Mac runner.
-    runs-on: ubuntu-latest
+    # Pure-python guard — no Xcode needed, but this private repo currently
+    # sees GitHub-hosted zero-step failures (runner_id=0), so run on WPR2's
+    # self-hosted Mac labels until hosted capacity/billing is restored.
+    runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
     timeout-minutes: 5
     steps:
       - name: Checkout repository

@@ -34,10 +34,10 @@ permissions:
 
 jobs:
   maintain-prs:
-    # Pure gh/bash automation — no Xcode needed. Owner authorized cloud-runner
-    # spend (2026-07-02); running the train-feeder on hosted Linux means PRs
-    # keep rebasing/merging even while the Mac runner is busy with CodeQL.
-    runs-on: ubuntu-latest
+    # Scheduled merge-train automation uses the private WPR2 self-hosted Mac
+    # runners so private-repo GitHub-hosted capacity/billing failures do not
+    # produce zero-step runs (runner_id=0) and stall PR maintenance.
+    runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
     timeout-minutes: 10
     env:
       # Use a PAT when configured: GITHUB_TOKEN-authored update-branch merge

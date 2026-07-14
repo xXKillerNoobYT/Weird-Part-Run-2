@@ -33,9 +33,11 @@ jobs:
   required-codeql-compat:
     name: CodeQL
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    # Echo-only compatibility context — no Xcode needed. Owner authorized
-    # cloud-runner spend (2026-07-02) so this gate never queues behind the Mac.
-    runs-on: ubuntu-latest
+    # Echo-only compatibility context — no Xcode needed, but this private repo
+    # currently sees GitHub-hosted zero-step failures (runner_id=0), so keep
+    # required PR gates on WPR2's self-hosted Mac labels until hosted
+    # capacity/billing is restored.
+    runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
     timeout-minutes: 5
     steps:
       - name: Required CodeQL compatibility gate
@@ -44,7 +46,7 @@ jobs:
           echo "The Swift scanner job remains named Analyze (swift)."
 
   # PR-level required gate. The full Swift analysis hangs on GitHub-hosted
-  # macOS and is too slow to gate every PR, so PRs get this fast hosted-Linux
+  # macOS and is too slow to gate every PR, so PRs get this fast recovery
   # gate under the same required check name, while push/schedule events run
   # the real analysis on the local Mac runner (job below). The two jobs' `if`
   # conditions are mutually exclusive, so the "Analyze (swift)" check context
@@ -52,7 +54,7 @@ jobs:
   analyze-pr-gate:
     name: Analyze (swift)
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
     timeout-minutes: 5
     steps:
       - name: Swift CodeQL PR recovery gate
