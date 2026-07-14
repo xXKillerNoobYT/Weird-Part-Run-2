@@ -21,8 +21,6 @@ struct JobReportsPage: View {
 
     private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
 
-    private var effectiveStart: Date { dateRange.dateInterval?.start ?? customStart }
-    private var effectiveEnd: Date { dateRange.dateInterval?.end ?? customEnd }
 
     private var filteredReports: [JobsService.DailyReportRow] {
         guard !searchText.isEmpty else { return reports }

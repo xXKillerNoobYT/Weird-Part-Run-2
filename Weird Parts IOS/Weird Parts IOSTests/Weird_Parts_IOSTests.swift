@@ -359,6 +359,10 @@ struct Weird_Parts_IOSTests {
         let settings = SettingsService(db: db)
         try settings.upsertSetting(key: "shop_server_address", value: "http://127.0.0.1:9", category: "sync")
         try settings.upsertSetting(key: "auto_sync", value: "false", category: "sync")
+        // Migration 112's backfill + the trigger-logged setting writes above all
+        // land in _change_log; clear it so syncStatusDescription reads "Ready"
+        // instead of "N changes waiting to sync".
+        try await db.writer.write { try $0.execute(sql: "DELETE FROM _change_log") }
         let manager = IOSSyncManager()
         manager.configure(db: db, settingsService: settings)
         manager.startAutoSync(intervalSeconds: 60)
@@ -490,11 +494,10 @@ struct Weird_Parts_IOSTests {
         let pairingSource = try String(contentsOf: pairingSourceURL, encoding: .utf8)
 
         #expect(source.contains("allowAnyCompanyPeerDiscovery: mode == .onboardingJoin"))
-        #expect(source.contains("advertiseSelf: mode == .existingCompanySync"))
         #expect(source.contains("if mode == .existingCompanySync"))
         #expect(source.contains("Task { await pm.stopPeerSync() }"))
-        #expect(source.contains("if bluetoothDiscoveryEnabled && mode == .onboardingJoin"))
-        #expect(source.contains("startMultipeer: bluetoothDiscoveryEnabled && mode == .existingCompanySync"))
+        #expect(source.contains("hasActiveMultipeerDiscovery: bluetoothDiscoveryEnabled && mode == .onboardingJoin"))
+        #expect(source.contains("startMultipeer: bluetoothDiscoveryEnabled && (mode == .existingCompanySync || mode == .onboardingJoin)"))
         #expect(source.contains("startSyncServer: mode == .existingCompanySync"))
         #expect(source.contains("if await pm.getState().running"))
         #expect(source.contains("peerDiscoveryStartupTask?.cancel()"))
@@ -502,13 +505,21 @@ struct Weird_Parts_IOSTests {
         #expect(source.contains("guard isCurrentPeerDiscoveryStartup(startupGeneration) else { return }"))
         #expect(source.contains("if !isScanning"))
         #expect(source.contains("await pm.stopPeerSync()"))
-        #expect(source.contains("state: peer.multipeerState == \"connected\" ? \"connected\" : peer.transport"))
-        #expect(source.contains("peer.state == \"multipeer\" || (peer.state == \"connected\" && peer.address == nil)"))
-        #expect(source.contains("address: formattedPeerAddress(host: peer.host, port: Int(peer.port))"))
+        // Peer rows now render a richer multipeer display state, and the
+        // manual-sync eligibility moved into isManuallySyncablePeer.
+        #expect(source.contains("? Self.multipeerDisplayState(peer.multipeerState)"))
+        #expect(source.contains(": (peer.multipeerState == \"connected\" ? \"connected\" : peer.transport)"))
+        #expect(source.contains("private static func isManuallySyncablePeer("))
+        #expect(source.contains("return transport == \"lan\" && address != nil"))
+        #expect(source.contains("let address = formattedPeerAddress(host: peer.host, port: Int(peer.port))"))
         #expect(source.contains("host.contains(\":\") && !host.hasPrefix(\"[\") ? \"[\\(host)]\" : host"))
         #expect(source.contains("await pm.stopMultipeerDiscovery()"))
         #expect(source.contains("let multipeerOnly = mpPeers.filter { !nonMultipeerIds.contains($0.id) }"))
-        #expect(pairingSource.contains("guard let address = peer.address else"))
+        // Bluetooth-first pairing: rows no longer require a LAN address, but the
+        // address must be PRESERVED on the selected shop and used as the
+        // connectivity-failure fallback path (Copilot review on PR #1422).
+        #expect(pairingSource.contains("address: peer.address ?? \"\""))
+        #expect(pairingSource.contains("shouldFallBackToLAN(e) && !shop.address.isEmpty"))
         #expect(pairingSource.contains("syncManager.stopPeerDiscovery()"))
         #expect(pairingSource.contains(".onDisappear"))
         #expect(pairingSource.contains("stopOnboardingDiscoveryIfAbandoned()"))
@@ -843,8 +854,10 @@ struct Weird_Parts_IOSTests {
         let source = try String(contentsOf: timesheetsURL, encoding: .utf8)
 
         #expect(!source.contains("CoreFormatters.parseDateTime(segment.clockIn) ?? Date()"), "Malformed original clock-in must not default correction pickers to the current time")
-        #expect(source.contains("Original clock-in timestamp is malformed"), "Malformed clock-in needs user-facing data-integrity copy")
-        #expect(source.contains("Original clock-out timestamp is malformed"), "Malformed clock-out needs user-facing data-integrity copy")
+        // The user-facing copy moved into the shared ReportsError type — assert
+        // the centralized construction for both fields instead of inline strings.
+        #expect(source.contains("ReportsError.invalidTimesheetOriginalTimestamp(\"clock-in\").localizedDescription"), "Malformed clock-in needs user-facing data-integrity copy")
+        #expect(source.contains("ReportsError.invalidTimesheetOriginalTimestamp(\"clock-out\").localizedDescription"), "Malformed clock-out needs user-facing data-integrity copy")
         #expect(source.contains(".disabled(isSaving || originalTimestampError != nil)"), "The correction save action must stay disabled while original timestamps are malformed")
         #expect(source.contains("if let originalTimestampError"), "The save path needs a guard even if a disabled button is bypassed")
     }
@@ -1175,9 +1188,11 @@ struct Weird_Parts_IOSTests {
         #expect(source.contains("case .share(let urls):"), "The share sheet should receive the generated export file URLs from the active sheet")
         #expect(source.contains("ReportShareSheet(items: urls)"), "The share sheet should receive the generated export file URLs")
         #expect(!source.contains("showShareSheet"), "Data export should avoid a second sheet boolean that can race the help sheet")
-        #expect(source.contains("guard !urls.isEmpty else"), "Selected-table exports with no rows should not claim a transferable export completed")
+        // The empty-rows guard is now an if/else branch (same invariant:
+        // empty result -> error message, never a success + share sheet).
+        #expect(source.contains("if urls.isEmpty {"), "Selected-table exports with no rows should not claim a transferable export completed")
         #expect(source.contains("No rows were exported from the selected tables"), "Empty selected-table exports should show a clear user-facing message")
-        let emptyExportGuard = try #require(source.range(of: "guard !urls.isEmpty else"))
+        let emptyExportGuard = try #require(source.range(of: "if urls.isEmpty {"))
         let selectedExportSuccess = try #require(source.range(of: "exportSuccess = true", range: emptyExportGuard.upperBound..<source.endIndex))
         let selectedSharePresentation = try #require(source.range(of: "activeSheet = .share(urls)", range: selectedExportSuccess.upperBound..<source.endIndex))
         #expect(selectedExportSuccess.lowerBound < selectedSharePresentation.lowerBound, "Selected-table exports should present sharing only after success is recorded")

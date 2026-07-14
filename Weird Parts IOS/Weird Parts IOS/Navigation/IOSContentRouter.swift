@@ -147,8 +147,10 @@ struct IOSContentRouter: View {
             WarehouseRouter(tabId: "warehouse-tools")
         case "/warehouse/leaderboard":
             WarehouseRouter(tabId: "warehouse-leaderboard")
-        case "/warehouse/network":
-            WarehouseRouter(tabId: "warehouse-network")
+        // Network/devices is now its own top-level "Devices" module. The old
+        // /warehouse/network path is kept as an alias for any existing deep links.
+        case "/devices/network", "/warehouse/network":
+            IOSWarehouseNetworkPage()
         case "/warehouse/settings":
             WarehouseRouter(tabId: "warehouse-settings")
 

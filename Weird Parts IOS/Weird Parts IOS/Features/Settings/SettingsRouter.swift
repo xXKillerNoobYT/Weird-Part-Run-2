@@ -193,6 +193,13 @@ private struct IOSPurchaseOrderSettingsPage: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
+        .rowAccessibility(
+            label: "Grouping mode: \(groupingMode.displayName)",
+            value: groupingMode == .perSupplierMixed
+                ? "Creates one draft PO per supplier. Job attribution stays on each line item."
+                : "Creates separate draft POs for each supplier and job. Job attribution still stays on each line item.",
+            id: "settings-purchase-orders-grouping-summary"
+        )
     }
 
     private func loadSettings() {

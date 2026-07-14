@@ -21,8 +21,10 @@ final class DashboardDynamicTypeRegressionTests: XCTestCase {
     func testDashboardScrollContentAddsAccessibilityBottomInset() throws {
         let source = try Self.readDashboardViewSource()
 
+        // The inset now ALSO clears the AI FAB (aiFabClearance + accessibility
+        // extra) — assert the accessibility component is still present.
         XCTAssertTrue(
-            source.contains(".padding(.bottom, dynamicTypeSize.isAccessibilitySize ? DS.Space.xxxxl : 0)"),
+            source.contains(".padding(.bottom, aiFabClearance + (dynamicTypeSize.isAccessibilitySize ? DS.Space.xxxxl : 0))"),
             "Dashboard content should add extra bottom spacing at accessibility sizes so onboarding card content is not occluded by bottom chrome."
         )
     }

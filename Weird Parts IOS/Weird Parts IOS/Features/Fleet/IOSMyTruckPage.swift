@@ -21,6 +21,7 @@ struct IOSMyTruckPage: View {
     @State private var loadError: String?
     @State private var inventoryTab: InventoryTab = .truckStock
     @State private var activeSheet: ActiveSheet?
+    @State private var showTrailerDetail = false
 
     enum InventoryTab: String, CaseIterable {
         case truckStock = "Truck Stock"
@@ -82,10 +83,22 @@ struct IOSMyTruckPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("fleet-my-truck-help-button")
             }
         }
         .sheet(item: $activeSheet) { sheet in
             sheetContent(sheet)
+        }
+        .navigationDestination(isPresented: Binding(
+            // Guarded: never push a blank destination if stats reload and the
+            // trailer disappears while the flag is set.
+            get: { showTrailerDetail && vehicleStats?.trailerId != nil },
+            set: { showTrailerDetail = $0 }
+        )) {
+            if let trailerId = vehicleStats?.trailerId {
+                IOSTrailerDetailPage(trailerId: trailerId)
+            }
         }
     }
 
@@ -174,6 +187,11 @@ struct IOSMyTruckPage: View {
                 }
             }
             .padding(.vertical, 4)
+            .rowAccessibility(
+                label: "\(v.vehicleName), vehicle \(v.vehicleNumber)",
+                value: vehicleHeaderAccessibilityValue(v),
+                id: "fleet-my-truck-vehicle-header"
+            )
         }
     }
 
@@ -232,14 +250,32 @@ struct IOSMyTruckPage: View {
     private var quickActionsSection: some View {
         Section("Quick Actions") {
             HStack(spacing: 12) {
-                QuickActionBtn(title: "Log Fuel", icon: "fuelpump.fill", color: .blue) {
+                QuickActionBtn(
+                    title: "Log Fuel",
+                    icon: "fuelpump.fill",
+                    color: .blue,
+                    hint: "Opens the fuel level logging form.",
+                    id: "fleet-my-truck-log-fuel-button"
+                ) {
                     activeSheet = .logFuel
                 }
                 .requiresPermission("log_fleet")
-                QuickActionBtn(title: "Report Issue", icon: "exclamationmark.triangle.fill", color: .red) {
+                QuickActionBtn(
+                    title: "Report Issue",
+                    icon: "exclamationmark.triangle.fill",
+                    color: .red,
+                    hint: "Opens the vehicle issue report form.",
+                    id: "fleet-my-truck-report-issue-button"
+                ) {
                     activeSheet = .reportIssue
                 }
-                QuickActionBtn(title: "Add Part", icon: "plus.circle.fill", color: .green) {
+                QuickActionBtn(
+                    title: "Add Part",
+                    icon: "plus.circle.fill",
+                    color: .green,
+                    hint: "Opens the transfer item form.",
+                    id: "fleet-my-truck-add-part-button"
+                ) {
                     activeSheet = .addTransferItem
                 }
                 .requiresPermission("log_fleet")
@@ -285,6 +321,11 @@ struct IOSMyTruckPage: View {
                                 .frame(width: 60)
                             }
                         }
+                        .rowAccessibility(
+                            label: "\(item.partName), quantity \(item.quantity)",
+                            value: stockHealthDescription(item),
+                            id: "fleet-truck-stock-row-\(item.id)"
+                        )
                     }
                 }
 
@@ -304,6 +345,11 @@ struct IOSMyTruckPage: View {
                             Text("×\(item.quantity)")
                                 .font(.subheadline).monospacedDigit()
                         }
+                        .rowAccessibility(
+                            label: "\(item.partName), quantity \(item.quantity) in transit",
+                            value: "From \(item.sourceLocation ?? "unknown") to \(item.destinationLocation ?? "unknown")",
+                            id: "fleet-transfer-item-row-\(item.id)"
+                        )
                     }
                 }
             }
@@ -321,6 +367,14 @@ struct IOSMyTruckPage: View {
                 if let trailerId = stats.trailerId {
                     NavigationLink(destination: IOSTrailerDetailPage(trailerId: trailerId)) {
                         trailerRow(stats)
+                    }
+                    .contextMenu {
+                        // Mirrors the row tap — same trailer detail destination.
+                        Button {
+                            showTrailerDetail = true
+                        } label: {
+                            Label("View Trailer Details", systemImage: "truck.box")
+                        }
                     }
                 } else {
                     trailerRow(stats)
@@ -344,6 +398,12 @@ struct IOSMyTruckPage: View {
             }
             Spacer()
         }
+        .rowAccessibility(
+            label: "Trailer \(stats.trailerName ?? "Trailer")",
+            value: "Attached",
+            id: "fleet-my-truck-trailer-row-\(stableAccessibilitySuffix(id: stats.trailerId, name: stats.trailerName ?? "trailer"))"
+        )
+        .accessibilityHint("Opens the trailer detail page.", isEnabled: stats.trailerId != nil)
     }
 
     // MARK: - Recent Mileage
@@ -371,6 +431,11 @@ struct IOSMyTruckPage: View {
                                 .fontWeight(.medium)
                         }
                     }
+                    .rowAccessibility(
+                        label: "Mileage log, \(log.logDate.prefix(10))",
+                        value: mileageAccessibilityValue(log),
+                        id: "fleet-my-truck-mileage-row-\(log.id)"
+                    )
                 }
             }
         }
@@ -408,6 +473,11 @@ struct IOSMyTruckPage: View {
                             }
                         }
                     }
+                    .rowAccessibility(
+                        label: "Fuel log, \(log.logDate.prefix(10))",
+                        value: fuelAccessibilityValue(log),
+                        id: "fleet-my-truck-fuel-row-\(log.id)"
+                    )
                 }
             }
         }
@@ -501,6 +571,57 @@ struct IOSMyTruckPage: View {
         }
     }
 
+    /// Header details (status, make/model/year, odometer, plate) as one VoiceOver value.
+    private func vehicleHeaderAccessibilityValue(_ v: FleetService.VehicleDetail) -> String {
+        var parts: [String] = [v.status.capitalized]
+        if let make = v.make, let model = v.model {
+            if let year = v.year {
+                parts.append("\(make) \(model) (\(String(year)))")
+            } else {
+                parts.append("\(make) \(model)")
+            }
+        }
+        if let odo = v.currentOdometer {
+            parts.append("\(odo.formatted()) miles")
+        }
+        if let plate = v.licensePlate, !plate.isEmpty {
+            parts.append("plate \(plate)")
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    /// Spells out the stock-health progress bar (mirrors its tint logic).
+    private func stockHealthDescription(_ item: FleetService.VehicleStockItem) -> String? {
+        guard let target = item.targetQty, target > 0 else { return nil }
+        if item.quantity < (item.minQty ?? 0) { return "Below minimum" }
+        return item.quantity >= target ? "At target" : "Below target"
+    }
+
+    private func mileageAccessibilityValue(_ log: FleetService.MileageRow) -> String? {
+        var parts: [String] = []
+        if let miles = log.totalMiles {
+            parts.append(String(format: "%.1f miles", miles))
+        }
+        if let purpose = log.purpose, !purpose.isEmpty {
+            parts.append(purpose)
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: ", ")
+    }
+
+    private func fuelAccessibilityValue(_ log: FleetService.FuelRow) -> String? {
+        var parts: [String] = []
+        if let gal = log.gallons {
+            parts.append(String(format: "%.1f gallons", gal))
+        }
+        if let cost = log.totalCost {
+            parts.append(String(format: "$%.2f", cost))
+        }
+        if let station = log.station, !station.isEmpty {
+            parts.append("at \(station)")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: ", ")
+    }
+
     // MARK: - Data Loading
 
     private func loadData() {
@@ -565,8 +686,11 @@ private struct MyVehicleSmartCard: View {
         .frame(minWidth: 90)
         .background(color.opacity(0.1))
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(title): \(value)")
+        .rowAccessibility(
+            label: title,
+            value: value,
+            id: "fleet-my-truck-card-\(stableAccessibilitySuffix(id: nil, name: title))"
+        )
     }
 }
 
@@ -576,6 +700,8 @@ private struct QuickActionBtn: View {
     let title: String
     let icon: String
     let color: Color
+    let hint: String
+    let id: String
     let action: () -> Void
 
     var body: some View {
@@ -595,6 +721,8 @@ private struct QuickActionBtn: View {
             .clipShape(RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
+        .accessibilityHint(hint)
+        .accessibilityIdentifier(id)
     }
 }
 
@@ -613,7 +741,7 @@ private struct LogFuelSheet: View {
             Form {
                 Section("Fuel Level") {
                     VStack(spacing: 12) {
-                        Text("\(Int(fuelPercent))%")
+                        Text("\(Int(fuelPercent.rounded()))%")
                             .font(.title)
                             .fontWeight(.bold)
                             .foregroundStyle(
@@ -621,6 +749,9 @@ private struct LogFuelSheet: View {
                                 fuelPercent < 50 ? .orange : .green
                             )
                         Slider(value: $fuelPercent, in: 0...100, step: 5)
+                            .accessibilityLabel("Fuel level")
+                            .accessibilityValue("\(Int(fuelPercent.rounded())) percent")
+                            .accessibilityIdentifier("fleet-log-fuel-slider")
                     }
                     .padding(.vertical, 4)
                 }

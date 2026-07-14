@@ -108,6 +108,8 @@ struct IOSForecastSettingsPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-forecast-help-button")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -123,7 +125,7 @@ struct IOSForecastSettingsPage: View {
             hasUnsavedChanges = formSignature != baselineFormSignature
         }
         .confirmationDialog(
-            "Discard changes?",
+            "Discard Forecast Config changes?",
             isPresented: $showDiscardConfirmation,
             titleVisibility: .visible
         ) {
@@ -132,6 +134,8 @@ struct IOSForecastSettingsPage: View {
                 dismiss()
             }
             Button("Keep editing", role: .cancel) {}
+        } message: {
+            Text("Unsaved forecast edits will be lost.")
         }
     }
 
@@ -191,9 +195,9 @@ struct IOSForecastSettingsPage: View {
 
             // Common multipliers
             Section {
-                multiplierRow("MIN", value: $commonMinMult)
-                multiplierRow("TARGET", value: $commonTargetMult)
-                multiplierRow("MAX", value: $commonMaxMult)
+                multiplierRow("MIN", section: "Common", value: $commonMinMult)
+                multiplierRow("TARGET", section: "Common", value: $commonTargetMult)
+                multiplierRow("MAX", section: "Common", value: $commonMaxMult)
             } header: {
                 Label("Common Part Multipliers", systemImage: "circle")
             } footer: {
@@ -202,9 +206,9 @@ struct IOSForecastSettingsPage: View {
 
             // Critical multipliers
             Section {
-                multiplierRow("MIN", value: $criticalMinMult)
-                multiplierRow("TARGET", value: $criticalTargetMult)
-                multiplierRow("MAX", value: $criticalMaxMult)
+                multiplierRow("MIN", section: "Critical", value: $criticalMinMult)
+                multiplierRow("TARGET", section: "Critical", value: $criticalTargetMult)
+                multiplierRow("MAX", section: "Critical", value: $criticalMaxMult)
             } header: {
                 Label("Critical Part Multipliers", systemImage: "exclamationmark.circle")
             }
@@ -214,6 +218,9 @@ struct IOSForecastSettingsPage: View {
                 VStack(alignment: .leading) {
                     Text("Suppress below \(Int(freeSpaceThreshold))% free space")
                     Slider(value: $freeSpaceThreshold, in: 0...100, step: 5)
+                        .accessibilityLabel("Free space suppression threshold")
+                        .accessibilityValue("\(Int(freeSpaceThreshold)) percent")
+                        .accessibilityIdentifier("settings-forecast-free-space-slider")
                 }
                 Text("Locations with low free space won't receive 'add new part' recommendations.")
                     .font(.caption)
@@ -242,14 +249,15 @@ struct IOSForecastSettingsPage: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!hasValidSettings)
-                .accessibilityHint(hasValidSettings ? "" : "All multipliers and free-space threshold must be greater than zero.")
+                .accessibilityHint("All multipliers and free-space threshold must be greater than zero.", isEnabled: !hasValidSettings)
+                .accessibilityIdentifier("settings-forecast-save-button")
             }
         }
         // Fix #149: dismiss keyboard when scrolling forecast settings
         .scrollDismissesKeyboard(.interactively)
     }
 
-    private func multiplierRow(_ label: String, value: Binding<Double>) -> some View {
+    private func multiplierRow(_ label: String, section: String, value: Binding<Double>) -> some View {
         HStack {
             Text(label)
             Spacer()
@@ -257,6 +265,10 @@ struct IOSForecastSettingsPage: View {
                 .keyboardType(.decimalPad)
                 .multilineTextAlignment(.trailing)
                 .frame(width: 60)
+                .dsMinTapTarget()
+                .accessibilityLabel("\(section) part \(label) multiplier")
+                .accessibilityHint("Enter a multiplier greater than zero.")
+                .accessibilityIdentifier("settings-forecast-\(section.lowercased())-\(label.lowercased())-multiplier")
         }
     }
 

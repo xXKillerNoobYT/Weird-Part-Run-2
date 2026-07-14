@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import GRDB
 @testable import WiredPartCore
 
 @Suite("PeerManager Tests")
@@ -7,6 +8,15 @@ struct PeerManagerTests {
 
     private func freshDB() throws -> AppDatabase {
         try AppDatabase.openInMemoryDatabase()
+    }
+
+    /// Migration 112 backfills every seeded reference row into _change_log so
+    /// pre-trigger data syncs on first contact. Tests that assert on SPECIFIC
+    /// change entries clear that backfill first.
+    private func clearChangeLog(_ db: AppDatabase) async throws {
+        try await db.writer.write { dbConn in
+            try dbConn.execute(sql: "DELETE FROM _change_log")
+        }
     }
 
     @Test("Initial state is not running with empty peers")
@@ -124,23 +134,16 @@ struct PeerManagerTests {
     @Test("enrichChangesWithData includes record_data for INSERT")
     func testEnrichInsert() async throws {
         let db = try freshDB()
+        try await clearChangeLog(db)
 
-        // Insert a user
+        // Insert a user — the migration-112 triggers log the change
+        // automatically (no manual trackChange call needed anymore).
         try await db.writer.write { dbConn in
             try dbConn.execute(sql: """
                 INSERT INTO users (display_name, pin_hash, is_active)
                 VALUES ('Alice', 'hash123', 1)
                 """)
         }
-
-        // Create a change log entry for that user
-        try ChangeTracker.trackChange(
-            db: db,
-            tableName: "users",
-            recordId: 1,
-            operation: .insert,
-            deviceId: "test-device"
-        )
 
         let pm = PeerManager(db: db)
         let pending = try ChangeTracker.getPendingChanges(db: db)
@@ -155,6 +158,7 @@ struct PeerManagerTests {
     @Test("enrichChangesWithData skips record_data for DELETE")
     func testEnrichDelete() async throws {
         let db = try freshDB()
+        try await clearChangeLog(db)
 
         try ChangeTracker.trackChange(
             db: db,
@@ -228,6 +232,10 @@ struct PeerManagerTests {
             deviceName: "Local Device",
             companyId: "local-company"
         )
+
+        // No pending changes → the push leg is skipped and the PULL error path
+        // is what this test exercises (clears the migration-112 backfill).
+        try await clearChangeLog(db)
 
         let foreignState = SyncServerState(
             deviceId: "foreign-dev",
@@ -303,19 +311,14 @@ struct PeerManagerTests {
         let db = try freshDB()
         let pm = PeerManager(db: db)
 
+        try await clearChangeLog(db)
+        // The migration-112 triggers auto-log this insert as the one pending change.
         try await db.writer.write { dbConn in
             try dbConn.execute(sql: """
                 INSERT INTO users (display_name, pin_hash, is_active)
                 VALUES ('Alice', 'hash123', 1)
                 """)
         }
-        try ChangeTracker.trackChange(
-            db: db,
-            tableName: "users",
-            recordId: 1,
-            operation: .insert,
-            deviceId: "local-dev"
-        )
 
         try await pm.startPeerSync(
             deviceId: "local-dev",
@@ -466,6 +469,109 @@ struct PeerManagerTests {
         #expect(result.success == true)
         #expect(result.error == nil)
         #expect(!result.syncedAt.isEmpty)
+    }
+
+    // MARK: - Row → JSON serialization (the "No User Found" root cause)
+
+    @Test("Rows with NULL columns serialize to valid JSON and round-trip to a fresh DB")
+    func testNullColumnRowsSurviveSnapshotRoundTrip() throws {
+        let hostDB = try freshDB()
+
+        // Seed a user the way onboarding does: email/phone are NULL — the exact
+        // shape that used to fail JSONSerialization and get silently skipped,
+        // leaving a Bluetooth-joined device with no users to log in as.
+        let userId: Int64 = try {
+            var user = User(displayName: "Tester", pinHash: "hash", isActive: 1)
+            try hostDB.writer.write { dbConn in
+                try user.insert(dbConn)
+            }
+            return user.id!
+        }()
+
+        let row = try hostDB.writer.read { dbConn in
+            try Row.fetchOne(dbConn, sql: "SELECT * FROM users WHERE id = ?", arguments: [userId])
+        }
+        let dict = PeerManager.jsonRecordDict(from: try #require(row))
+
+        // NULL columns must be present as NSNull, and the dict must be valid JSON.
+        #expect(dict["email"] is NSNull)
+        #expect(JSONSerialization.isValidJSONObject(dict))
+        let jsonData = try JSONSerialization.data(withJSONObject: dict)
+        let recordData = try #require(String(data: jsonData, encoding: .utf8))
+
+        // Apply the snapshot-style change on a fresh (joiner) database.
+        let joinerDB = try freshDB()
+        let change = IncomingChange(
+            deviceId: "host-device",
+            tableName: "users",
+            recordId: String(userId),
+            operation: "INSERT",
+            recordData: recordData,
+            timestamp: "2026-07-06T12:00:00Z"
+        )
+        let mergeResult = try ConflictResolver.resolveAndApplyChanges(
+            db: joinerDB,
+            changes: [change],
+            localDeviceId: "joiner-device"
+        )
+        #expect(mergeResult.applied == 1, "apply result: applied=\(mergeResult.applied) skipped=\(mergeResult.skipped) errors=\(mergeResult.errors)")
+
+        let joined = try joinerDB.writer.read { dbConn in
+            try Row.fetchOne(dbConn, sql: "SELECT display_name, email, is_active FROM users WHERE id = ?", arguments: [userId])
+        }
+        let joinedRow = try #require(joined, "the seeded user must arrive on the joiner")
+        #expect(joinedRow["display_name"] == "Tester")
+        #expect((joinedRow["email"] as String?) == nil)
+        #expect(joinedRow["is_active"] == 1)
+    }
+
+    // MARK: - Automatic change tracking (migration 112 triggers)
+
+    @Test("A job created on device A is auto-tracked, syncs to device B, and does not echo")
+    func testJobCreationAutoTracksAndSyncsWithoutEcho() async throws {
+        let deviceA = try freshDB()
+        let deviceB = try freshDB()
+
+        // Create a job through plain SQL (any write path hits the triggers —
+        // that is the point: no service has to remember to call trackChange).
+        try await deviceA.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO jobs (job_number, job_name, status, created_at, updated_at)
+                VALUES ('TEST-001', 'Tablet Test Job', 'active', datetime('now'), datetime('now'))
+                """)
+        }
+
+        // The trigger must have logged it, and the read must attribute it to us.
+        let pendingA = try ChangeTracker.getPendingChanges(db: deviceA)
+        let jobChange = try #require(
+            pendingA.first(where: { $0.tableName == "jobs" }),
+            "creating a job must auto-log a change entry"
+        )
+        #expect(jobChange.operation == "INSERT")
+        #expect(!jobChange.deviceId.isEmpty, "device id must be filled at read time")
+
+        // Push it to device B the way peer sync does (enrich → apply).
+        let pmA = PeerManager(db: deviceA)
+        let enriched = try await pmA.testEnrichChanges([jobChange])
+        let result = try ConflictResolver.resolveAndApplyChanges(
+            db: deviceB,
+            changes: enriched,
+            localDeviceId: "device-b"
+        )
+        #expect(result.applied == 1)
+
+        let jobOnB = try await deviceB.writer.read { dbConn in
+            try Row.fetchOne(dbConn, sql: "SELECT job_name FROM jobs WHERE job_number = 'TEST-001'")
+        }
+        #expect(try #require(jobOnB)["job_name"] == "Tablet Test Job")
+
+        // Echo guard: applying A's change on B must NOT create a pending change
+        // on B — otherwise the change ping-pongs between devices forever.
+        let pendingB = try ChangeTracker.getPendingChanges(db: deviceB)
+        #expect(
+            pendingB.first(where: { $0.tableName == "jobs" }) == nil,
+            "sync-applied writes must not re-enter the change log"
+        )
     }
 }
 

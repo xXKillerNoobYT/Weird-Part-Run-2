@@ -14,11 +14,13 @@ struct IOSWarehouseNetworkPage: View {
     private enum ActiveSheet: Identifiable {
         case help
         case peerBrowser
+        case addDevice
 
         var id: String {
             switch self {
             case .help: return "help"
             case .peerBrowser: return "peerBrowser"
+            case .addDevice: return "addDevice"
             }
         }
     }
@@ -82,6 +84,18 @@ struct IOSWarehouseNetworkPage: View {
                     }
                     .labelStyle(.titleAndIcon)
 
+                    // Post-onboarding pairing: let this device host a pairing code
+                    // so a new phone/tablet can join the same company here (not
+                    // only during first-run onboarding).
+                    Button {
+                        activeSheet = .addDevice
+                    } label: {
+                        Label("Add a Device", systemImage: "plus.circle")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .labelStyle(.titleAndIcon)
+
                     if let errorMessage = syncManager.errorMessage {
                         Label(errorMessage, systemImage: "exclamationmark.triangle")
                             .font(.caption)
@@ -122,6 +136,9 @@ struct IOSWarehouseNetworkPage: View {
                 )
             case .peerBrowser:
                 IOSPeerBrowser()
+                    .environmentObject(appCore)
+            case .addDevice:
+                IOSAddDeviceSheet()
                     .environmentObject(appCore)
             }
         }

@@ -1324,9 +1324,10 @@ public final class JobsService: Sendable {
         userId: Int64,
         jobId: Int64,
         gpsLat: Double? = nil,
-        gpsLng: Double? = nil
+        gpsLng: Double? = nil,
+        notes: String? = nil
     ) throws -> Int64 {
-        try clockIn(userId: userId, jobId: jobId, at: Date(), gpsLat: gpsLat, gpsLng: gpsLng)
+        try clockIn(userId: userId, jobId: jobId, at: Date(), gpsLat: gpsLat, gpsLng: gpsLng, notes: notes)
     }
 
     /// Deterministic clock-in variant for imported time entries, tests, and job-switch flows.
@@ -1336,7 +1337,8 @@ public final class JobsService: Sendable {
         jobId: Int64,
         at clockInAt: Date,
         gpsLat: Double? = nil,
-        gpsLng: Double? = nil
+        gpsLng: Double? = nil,
+        notes: String? = nil
     ) throws -> Int64 {
         let clockInTimestamp = Self.sqliteTimestamp(clockInAt)
         return try db.writer.write { dbConn in
@@ -1346,7 +1348,8 @@ public final class JobsService: Sendable {
                 jobId: jobId,
                 clockInTimestamp: clockInTimestamp,
                 gpsLat: gpsLat,
-                gpsLng: gpsLng
+                gpsLng: gpsLng,
+                notes: notes
             )
         }
     }
@@ -3402,7 +3405,8 @@ public final class JobsService: Sendable {
         jobId: Int64,
         clockInTimestamp: String,
         gpsLat: Double?,
-        gpsLng: Double?
+        gpsLng: Double?,
+        notes: String? = nil
     ) throws -> Int64 {
         try requireActiveUser(dbConn, userId: userId)
 
@@ -3430,13 +3434,18 @@ public final class JobsService: Sendable {
             throw JobsError.alreadyClockedIn(userId: userId, jobId: jobId)
         }
 
+        // Persist the optional clock-in note — the Labor page collected one for
+        // months but the service had no parameter for it, so it was silently
+        // dropped (2026-07-06 panel-quality audit).
+        let trimmedNotes = notes?.trimmingCharacters(in: .whitespacesAndNewlines)
         try dbConn.execute(
             sql: """
                 INSERT INTO labor_entries
-                    (user_id, job_id, clock_in, clock_in_gps_lat, clock_in_gps_lng, status, created_at)
-                VALUES (?, ?, ?, ?, ?, 'clocked_in', ?)
+                    (user_id, job_id, clock_in, clock_in_gps_lat, clock_in_gps_lng, status, notes, created_at)
+                VALUES (?, ?, ?, ?, ?, 'clocked_in', ?, ?)
                 """,
-            arguments: [userId, jobId, clockInTimestamp, gpsLat, gpsLng, clockInTimestamp]
+            arguments: [userId, jobId, clockInTimestamp, gpsLat, gpsLng,
+                        (trimmedNotes?.isEmpty == false) ? trimmedNotes : nil, clockInTimestamp]
         )
         return dbConn.lastInsertedRowID
     }

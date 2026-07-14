@@ -17,9 +17,13 @@ final class PanelScheduleBuilderAccessibilityTests: XCTestCase {
             source.contains(".frame(minHeight: 44)"),
             "Circuit cells should provide at least a 44pt tap target while preserving dense row content."
         )
+        // The spine used to be fixed at 44pt (`.frame(width: 4, height: 44)`), which
+        // left gaps beside rows that grow taller under Dynamic Type ("funny edges").
+        // It now stretches to the full row height: width-only frame + fixedSize row.
         XCTAssertTrue(
-            source.contains(".frame(width: 4, height: 44)"),
-            "The center separator should match the expanded 44pt circuit-row height."
+            source.contains(".frame(width: 4)") &&
+                source.contains(".fixedSize(horizontal: false, vertical: true)"),
+            "The center spine should span the full circuit-row height (width-only frame + row fixedSize), not a fixed 44pt."
         )
         XCTAssertTrue(
             source.contains(".contentShape(Rectangle())"),
@@ -33,7 +37,10 @@ final class PanelScheduleBuilderAccessibilityTests: XCTestCase {
             source.contains("openCircuitEditor(spaceNumber: spaceNumber, circuit: circuit)") &&
                 source.contains(".accessibilityLabel(circuitAccessibilityLabel(spaceNumber: spaceNumber, circuit: circuit))") &&
                 source.contains(".accessibilityValue(circuitAccessibilityValue(circuit))") &&
-                source.contains(".accessibilityHint(\"Opens the editor for circuit \\(spaceNumber).\")") &&
+                // The hint is conditional since move-mode landed: editor hint normally,
+                // placement hint while a circuit is being moved. Both must exist.
+                source.contains("Opens the editor for circuit \\(spaceNumber).") &&
+                source.contains("Moves the selected circuit here.") &&
                 source.contains(".accessibilityIdentifier(\"panel-schedule-circuit-\\(spaceNumber)\")"),
             "Each real circuit button should expose label/value/hint/identifier directly while preserving its editor action."
         )
@@ -77,10 +84,13 @@ final class PanelScheduleBuilderAccessibilityTests: XCTestCase {
     func testSpareCircuitSavesNormalizeHiddenActiveMetadata() throws {
         let source = try Self.readNotebookSource("PanelScheduleBuilder.swift")
 
+        // updateCircuit was refactored to validate on a `candidate` copy before
+        // committing to `schedule` — the normalization invariant is unchanged, the
+        // writes just target the candidate now.
         XCTAssertTrue(
             source.contains("let normalized = circuit.normalizedForPersistence()") &&
-                source.contains("schedule.circuits[index] = normalized") &&
-                source.contains("schedule.circuits.append(normalized)"),
+                source.contains("candidate.circuits[index] = normalized") &&
+                source.contains("candidate.circuits.append(normalized)"),
             "Updating a circuit should normalize spare entries before they are kept in builder state."
         )
         XCTAssertTrue(

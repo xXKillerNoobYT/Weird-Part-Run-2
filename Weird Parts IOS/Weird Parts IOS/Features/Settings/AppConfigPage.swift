@@ -28,6 +28,7 @@ struct AppConfigPage: View {
     @State private var configLoadFailed = false
     @State private var hasUnsavedChanges = false
     @State private var showDiscardConfirmation = false
+    @State private var showRestartTourConfirmation = false
     @State private var baselineFormSignature = ""
 
     /// Fix #150: input validity gate for the Save button — all numeric text fields must be non-empty positive integers.
@@ -61,6 +62,8 @@ struct AppConfigPage: View {
                         .keyboardType(.numberPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 80)
+                        .accessibilityLabel("Auto-lock timeout in minutes")
+                        .accessibilityIdentifier("settings-app-config-auto-lock-field")
                 }
             }
 
@@ -72,6 +75,8 @@ struct AppConfigPage: View {
                         .keyboardType(.numberPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 80)
+                        .accessibilityLabel("Stale data warning in hours")
+                        .accessibilityIdentifier("settings-app-config-stale-data-field")
                 }
             }
 
@@ -83,6 +88,8 @@ struct AppConfigPage: View {
                         .keyboardType(.numberPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 80)
+                        .accessibilityLabel("Archive completed jobs after days")
+                        .accessibilityIdentifier("settings-app-config-archive-days-field")
                 }
                 HStack {
                     Text("Default Warranty (days)")
@@ -91,6 +98,8 @@ struct AppConfigPage: View {
                         .keyboardType(.numberPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 80)
+                        .accessibilityLabel("Default warranty length in days")
+                        .accessibilityIdentifier("settings-app-config-warranty-days-field")
                 }
             }
 
@@ -110,10 +119,7 @@ struct AppConfigPage: View {
 
             Section("Onboarding") {
                 Button {
-                    if let manager = appCore.onboardingManager {
-                        manager.resetProgress()
-                        manager.startTour()
-                    }
+                    showRestartTourConfirmation = true
                 } label: {
                     Label("Restart App Tour", systemImage: "arrow.counterclockwise")
                 }
@@ -166,6 +172,8 @@ struct AppConfigPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-app-config-help-button")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -192,7 +200,7 @@ struct AppConfigPage: View {
             updateDirtyStateIfLoaded()
         }
         .confirmationDialog(
-            "Discard changes?",
+            "Discard App Config changes?",
             isPresented: $showDiscardConfirmation,
             titleVisibility: .visible
         ) {
@@ -201,6 +209,19 @@ struct AppConfigPage: View {
                 dismiss()
             }
             Button("Keep editing", role: .cancel) {}
+        } message: {
+            Text("Your unsaved edits will be lost.")
+        }
+        .alert("Restart App Tour?", isPresented: $showRestartTourConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Restart") {
+                if let manager = appCore.onboardingManager {
+                    manager.resetProgress()
+                    manager.startTour()
+                }
+            }
+        } message: {
+            Text("Your tour progress resets and the tour starts now.")
         }
         .alert("Error", isPresented: Binding(get: { loadError != nil || actionError != nil }, set: { if !$0 { loadError = nil; actionError = nil } })) {
             Button("OK") { loadError = nil; actionError = nil }

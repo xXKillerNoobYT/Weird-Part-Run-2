@@ -107,8 +107,21 @@ struct IOSTruckToolsPage: View {
                 }
             }
             .padding(.vertical, 2)
+            .rowAccessibility(
+                label: "\(checkout.toolName), checked out by \(checkout.checkedOutByName)",
+                value: checkoutAccessibilityValue(checkout),
+                id: "fleet-truck-tool-row-\(checkout.id)"
+            )
         }
         .listStyle(.insetGrouped)
+    }
+
+    private func checkoutAccessibilityValue(_ checkout: ToolsService.CheckoutRow) -> String {
+        var value = "Checked out \(checkout.checkedOutAt.prefix(10))"
+        if let expected = checkout.expectedReturn, !expected.isEmpty {
+            value += ", due \(expected.prefix(10))"
+        }
+        return value
     }
 
     private var filteredCheckouts: [ToolsService.CheckoutRow] {

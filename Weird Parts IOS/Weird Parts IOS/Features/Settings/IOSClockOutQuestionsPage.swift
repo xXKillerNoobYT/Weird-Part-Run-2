@@ -83,12 +83,16 @@ struct IOSClockOutQuestionsPage: View {
                     Image(systemName: "plus")
                 }
                 .accessibilityLabel("Add question")
+                .accessibilityHint("Opens the new-question form.")
+                .accessibilityIdentifier("settings-clock-out-add-question-button")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-clock-out-help-button")
             }
         }
         .task { loadData() }
@@ -105,12 +109,19 @@ struct IOSClockOutQuestionsPage: View {
                 questionEditSheet(question)
             }
         }
-        .alert("Delete Question", isPresented: $showDeleteConfirm) {
-            Button("Cancel", role: .cancel) { questionToDelete = nil }
-            Button("Delete", role: .destructive) { confirmDelete() }
-        } message: {
-            Text("Are you sure you want to delete this question? This cannot be undone.")
-        }
+        .confirmDestruction(
+            ofRecordNamed: deleteConfirmationName,
+            noun: "question",
+            isPresented: $showDeleteConfirm,
+            onConfirm: { confirmDelete() }
+        )
+    }
+
+    /// Question text for the delete confirmation title, truncated so long
+    /// questions don't overflow the alert.
+    private var deleteConfirmationName: String {
+        guard let text = questionToDelete?.text else { return "question" }
+        return text.count > 40 ? "\(text.prefix(40))…" : text
     }
 
     // MARK: - Question Row
@@ -143,6 +154,26 @@ struct IOSClockOutQuestionsPage: View {
             .padding(.vertical, 2)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(question.text)
+        .accessibilityValue("\(question.type.replacingOccurrences(of: "_", with: " ").capitalized), \(question.isRequired ? "required" : "optional"), position \(question.sortOrder)")
+        .accessibilityHint("Opens the question editor. Swipe for delete.")
+        .accessibilityIdentifier("settings-clock-out-question-row-\(question.id)")
+        .contextMenu {
+            Button {
+                newQuestionText = question.text
+                newQuestionType = question.type
+                newQuestionRequired = question.isRequired
+                activeSheet = .edit(question)
+            } label: {
+                Label("Edit Question", systemImage: "pencil")
+            }
+            Button(role: .destructive) {
+                questionToDelete = question
+                showDeleteConfirm = true
+            } label: {
+                Label("Delete Question", systemImage: "trash")
+            }
+        }
         .swipeActions(edge: .trailing) {
             Button(role: .destructive) {
                 questionToDelete = question

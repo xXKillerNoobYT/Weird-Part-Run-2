@@ -286,8 +286,9 @@ struct DashboardView: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityIdentifier("gettingStartedDismissChecklistButton")
                     .accessibilityLabel("Dismiss checklist")
+                    // Single identifier: a second .accessibilityIdentifier silently
+                    // overrides the first; UI tests key on this one.
                     .accessibilityIdentifier("dismissChecklistButton")
                     .frame(minWidth: 44, minHeight: 44)
                     .contentShape(Rectangle())

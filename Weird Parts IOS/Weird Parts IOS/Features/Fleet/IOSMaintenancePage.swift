@@ -61,6 +61,8 @@ struct IOSMaintenancePage: View {
                         Image(systemName: "questionmark.circle")
                     }
                     .accessibilityLabel("Help")
+                    .accessibilityHint("Shows help for maintenance records.")
+                    .accessibilityIdentifier("fleet-maintenance-help-button")
                 }
             }
             .sheet(item: $activeSheet) { _ in
@@ -183,6 +185,25 @@ struct IOSMaintenancePage: View {
             }
         }
         .padding(.vertical, 4)
+        .rowAccessibility(
+            label: "\(record.vehicleName), \(record.maintenanceTypeName ?? "maintenance")",
+            value: maintenanceRowAccessibilityValue(record),
+            id: "fleet-maintenance-row-\(record.id)"
+        )
+    }
+
+    private func maintenanceRowAccessibilityValue(_ record: FleetService.MaintenanceRow) -> String {
+        var value = "Performed \(record.performedAt)"
+        if let performer = record.performedByName {
+            value += " by \(performer)"
+        }
+        if let cost = record.cost {
+            value += ", \(String(format: "$%.2f", cost))"
+        }
+        if let odo = record.odometerReading {
+            value += ", \(odo.formatted()) miles"
+        }
+        return value
     }
 
     // MARK: - Data Loading

@@ -160,9 +160,17 @@ final class SilentLoadFailureSurfacingRegressionTests: XCTestCase {
             source.contains("@State private var autoApprovalError: String?"),
             "Wishlist must carry an autoApprovalError state for the failed write pass."
         )
+        // The write pass moved to a detached background task (DIS-006):
+        // the raw error is captured off-main (autoApprovalFailure = error) and
+        // mapped to user copy inside MainActor.run, because userFriendlyError
+        // is main-actor-isolated. Assert both halves of that chain.
         XCTAssertTrue(
-            source.contains("autoApprovalFailure = userFriendlyError(error, context: \"run wishlist auto-approvals\")"),
-            "A processAutoApprovals failure must be captured and surfaced, not swallowed."
+            source.contains("autoApprovalFailure = error"),
+            "A processAutoApprovals failure must be captured, not swallowed."
+        )
+        XCTAssertTrue(
+            source.contains("autoApprovalError = autoApprovalFailure.map { userFriendlyError($0, context: \"run wishlist auto-approvals\") }"),
+            "The captured auto-approval failure must be surfaced as user-facing copy on the main actor."
         )
         XCTAssertTrue(
             source.contains("_ = try service.processAutoApprovals(byUserId: currentUserId)"),

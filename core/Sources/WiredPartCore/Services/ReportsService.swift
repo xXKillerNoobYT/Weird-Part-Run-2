@@ -604,6 +604,76 @@ public final class ReportsService: Sendable {
     ///
     /// - Parameter days: The lookback window in days. Defaults to 30.
     /// - Returns: A `SpendingSummary` with aggregate spending data.
+    /// Get a spending summary for an explicit date range.
+    ///
+    /// The days-based variant can only express "last N days from now", which the
+    /// report pages' StandardFilterBar (This Week / Last Week / custom) cannot map
+    /// onto — the Spending page rendered the bar but silently ignored it
+    /// (2026-07-06 panel-quality audit). This range variant is what filter-bar
+    /// driven pages should call.
+    public func getSpendingSummary(start: Date, end: Date) throws -> SpendingSummary {
+        let startStamp = Self.sqliteDate(start)
+        let endStamp = Self.sqliteDate(end)
+        do {
+            return try db.writer.read { dbConn -> SpendingSummary in
+                let summarySQL = """
+                    SELECT COALESCE(SUM(po.total_cost), 0) AS total_spend,
+                           COUNT(*) AS po_count,
+                           COALESCE(AVG(po.total_cost), 0) AS avg_po_amount
+                    FROM purchase_orders po
+                    WHERE po.deleted_at IS NULL
+                      AND po.status NOT IN ('cancelled', 'draft')
+                      AND date(po.created_at) >= date(?)
+                      AND date(po.created_at) <= date(?)
+                    """
+                let summaryRow = try Row.fetchOne(dbConn, sql: summarySQL, arguments: [startStamp, endStamp])
+                let totalSpend: Double = summaryRow?["total_spend"] ?? 0.0
+                let poCount: Int = summaryRow?["po_count"] ?? 0
+                let avgPOAmount: Double = summaryRow?["avg_po_amount"] ?? 0.0
+
+                let topSupplierSQL = """
+                    SELECT s.name AS supplier_name,
+                           COALESCE(SUM(po.total_cost), 0) AS supplier_total
+                    FROM purchase_orders po
+                    LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.deleted_at IS NULL
+                    WHERE po.deleted_at IS NULL
+                      AND po.status NOT IN ('cancelled', 'draft')
+                      AND date(po.created_at) >= date(?)
+                      AND date(po.created_at) <= date(?)
+                    GROUP BY po.supplier_id
+                    ORDER BY supplier_total DESC
+                    LIMIT 1
+                    """
+                let topRow = try Row.fetchOne(dbConn, sql: topSupplierSQL, arguments: [startStamp, endStamp])
+                let topSupplierName: String? = topRow?["supplier_name"] as String?
+                let topSupplierAmount: Double = topRow?["supplier_total"] ?? 0.0
+
+                return SpendingSummary(
+                    totalSpend: totalSpend,
+                    poCount: poCount,
+                    avgPOAmount: avgPOAmount,
+                    topSupplierName: topSupplierName,
+                    topSupplierAmount: topSupplierAmount
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) {
+                return SpendingSummary(
+                    totalSpend: 0.0, poCount: 0, avgPOAmount: 0.0,
+                    topSupplierName: nil, topSupplierAmount: 0.0
+                )
+            }
+            throw error
+        }
+    }
+
+    private static func sqliteDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone.current
+        return formatter.string(from: date)
+    }
+
     public func getSpendingSummary(days: Int = 30) throws -> SpendingSummary {
         do {
             return try db.writer.read { dbConn -> SpendingSummary in

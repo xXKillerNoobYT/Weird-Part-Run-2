@@ -72,6 +72,8 @@ struct QRScanSheet: View {
                 scanner?.stopScanning()
             }
         }
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
     }
 
     private var scanTitle: String {

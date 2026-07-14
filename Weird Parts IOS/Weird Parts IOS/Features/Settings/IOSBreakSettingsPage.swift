@@ -1,6 +1,12 @@
 import SwiftUI
 import WiredPartCore
 
+/// Save-path failures that must surface to the user instead of silently no-op'ing.
+private enum BreakSettingsSaveError: Error {
+    /// A bonus row loaded from the DB has no id, so it can't be updated.
+    case bonusMissingId
+}
+
 /// Break/lunch compliance settings page.
 ///
 /// 6-section form:
@@ -105,6 +111,8 @@ struct IOSBreakSettingsPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-break-settings-help-button")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -350,6 +358,10 @@ struct IOSBreakSettingsPage: View {
                         .keyboardType(.decimalPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 100)
+                        .dsMinTapTarget()
+                        .accessibilityLabel("Break bonus amount")
+                        .accessibilityHint("Dollar amount paid when an employee takes compliant breaks.")
+                        .accessibilityIdentifier("settings-break-bonus-amount-field")
                 }
             }
 
@@ -362,6 +374,10 @@ struct IOSBreakSettingsPage: View {
                         .keyboardType(.decimalPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 100)
+                        .dsMinTapTarget()
+                        .accessibilityLabel("Lunch bonus amount")
+                        .accessibilityHint("Dollar amount paid when an employee takes a compliant lunch.")
+                        .accessibilityIdentifier("settings-lunch-bonus-amount-field")
                 }
             }
 
@@ -440,6 +456,10 @@ struct IOSBreakSettingsPage: View {
                     .autocorrectionDisabled()
                     .frame(width: 80)
                     .font(.system(.body, design: .monospaced))
+                    .dsMinTapTarget()
+                    .accessibilityLabel("Morning break auto-fill time")
+                    .accessibilityHint("24-hour time in HH:mm format, used when auto-filling breaks at clock out.")
+                    .accessibilityIdentifier("settings-default-morning-break-field")
             }
 
             HStack {
@@ -452,6 +472,10 @@ struct IOSBreakSettingsPage: View {
                     .autocorrectionDisabled()
                     .frame(width: 80)
                     .font(.system(.body, design: .monospaced))
+                    .dsMinTapTarget()
+                    .accessibilityLabel("Lunch auto-fill time")
+                    .accessibilityHint("24-hour time in HH:mm format.")
+                    .accessibilityIdentifier("settings-default-lunch-field")
             }
 
             HStack {
@@ -464,6 +488,10 @@ struct IOSBreakSettingsPage: View {
                     .autocorrectionDisabled()
                     .frame(width: 80)
                     .font(.system(.body, design: .monospaced))
+                    .dsMinTapTarget()
+                    .accessibilityLabel("Afternoon break auto-fill time")
+                    .accessibilityHint("24-hour time in HH:mm format.")
+                    .accessibilityIdentifier("settings-default-afternoon-break-field")
             }
         } header: {
             HStack {
@@ -600,12 +628,19 @@ struct IOSBreakSettingsPage: View {
             // Save bonuses
             let statePolicy = selectedPolicy(type: "state_required_paid")
             if let policyId = statePolicy?.id {
-                // Toggle existing bonuses
+                // Update existing bonuses — amount AND enabled flag. toggleBonus
+                // alone silently dropped edited amounts (2026-07-06 audit).
                 for bonus in bonuses {
+                    // Bonuses were loaded from the DB, so a nil id means the row
+                    // can't be addressed — fail the save loudly rather than
+                    // UPDATE ... WHERE id = 0, which no-ops and reports success.
+                    guard let bonusId = bonus.id else {
+                        throw BreakSettingsSaveError.bonusMissingId
+                    }
                     if bonus.bonusType == "lunch" {
-                        try breakSvc.toggleBonus(bonusId: bonus.id ?? 0, isEnabled: lunchBonusEnabled)
+                        try breakSvc.updateBonus(bonusId: bonusId, bonusAmount: lunchBonusAmount, isEnabled: lunchBonusEnabled)
                     } else if bonus.bonusType == "break" {
-                        try breakSvc.toggleBonus(bonusId: bonus.id ?? 0, isEnabled: breakBonusEnabled)
+                        try breakSvc.updateBonus(bonusId: bonusId, bonusAmount: breakBonusAmount, isEnabled: breakBonusEnabled)
                     }
                 }
 

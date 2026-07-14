@@ -22,6 +22,10 @@ final class IOSSyncManager {
     var syncHistory: [SyncHistoryEntry] = []
     var syncProgressMessage: String?
     var syncProgressPercent: Double = 0
+    /// Host-side: name of the peer we are actively pushing a full sync to (nil when idle).
+    var activeSyncPeerName: String?
+    /// Host-side: human summary of the most recent completed peer transfer.
+    var lastHostSyncSummary: String?
     var isPaired: Bool {
         guard let service = settingsService else {
             return false
@@ -78,12 +82,19 @@ final class IOSSyncManager {
         case onboardingJoin
     }
 
+    /// Bluetooth/Multipeer sync is ON by default — offline peer-to-peer sync is
+    /// this app's primary transport (Wi-Fi is only a speed boost). The stored
+    /// flag exists so a user can explicitly turn it OFF; an unset flag means on.
+    static var bluetoothSyncEnabled: Bool {
+        if UserDefaults.standard.object(forKey: "bluetooth_sync_enabled") == nil { return true }
+        return UserDefaults.standard.bool(forKey: "bluetooth_sync_enabled")
+    }
+
     /// Whether real sync infrastructure is connected.
     /// True when a server address is configured OR Bluetooth sync is enabled.
     var isSyncAvailable: Bool {
         let hasServer = !(serverAddress ?? "").isEmpty
-        let btEnabled = UserDefaults.standard.bool(forKey: "bluetooth_sync_enabled")
-        return hasServer || btEnabled
+        return hasServer || Self.bluetoothSyncEnabled
     }
 
     /// Whether automatic launch/foreground sync is enabled by settings.
@@ -175,6 +186,30 @@ final class IOSSyncManager {
         // Load initial pending count and conflict state
         refreshPendingCount()
         refreshConflictCount()
+
+        // Bluetooth sync is ON by default: once this device belongs to a company,
+        // start peer discovery and the auto-sync timer at launch so devices find
+        // each other and exchange changes WITHOUT someone camping on the Devices
+        // page. Previously nothing auto-started peer sync post-onboarding, so a
+        // job created on one device never reached the other until a manual visit.
+        // Skipped under UI testing (network churn breaks XCTest runs).
+        // "Belongs to a company" = has an active business profile (device that
+        // CREATED the company — may not have a company_id persisted yet) OR has
+        // a company_id setting (device that JOINED via pairing). Gating only on
+        // company_id left creator devices dark until they opened Add-a-Device
+        // once (Copilot review on PR #1422). startPeerDiscovery() generates and
+        // persists a company_id when one is missing.
+        let companyId = (try? settingsService.getSettingsByCategory("company")["company_id"]) ?? nil
+        let hasProfile = (try? settingsService.hasBusinessProfile()) ?? false
+        let hasCompanyId = !(companyId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if !ProcessInfo.processInfo.arguments.contains("-UITesting"),
+           Self.bluetoothSyncEnabled,
+           hasProfile || hasCompanyId {
+            startPeerDiscovery()
+            if isAutoSyncEnabled {
+                startAutoSync()
+            }
+        }
     }
 
     // MARK: - Auto-Sync
@@ -394,34 +429,12 @@ final class IOSSyncManager {
             syncStatus = .idle
         }
 
-        // Start multipeer if BT is enabled
-        let bluetoothDiscoveryEnabled = UserDefaults.standard.bool(forKey: "bluetooth_sync_enabled")
-        if bluetoothDiscoveryEnabled && mode == .onboardingJoin {
-            if multipeerDiscoveryMode != mode {
-                multipeerManager?.stop()
-                multipeerManager = nil
-                removeMultipeerDiscoveredPeers()
-            }
-            if multipeerManager == nil {
-                let deviceId = DeviceIdentity.current
-                let deviceName = UIDevice.current.name
-                multipeerManager = MultipeerManager(
-                    deviceId: deviceId,
-                    deviceName: deviceName,
-                    companyId: companyId,
-                    allowAnyCompanyPeerDiscovery: mode == .onboardingJoin,
-                    autoInvitePeers: mode == .existingCompanySync,
-                    advertiseSelf: mode == .existingCompanySync
-                )
-                multipeerDiscoveryMode = mode
-                multipeerManager?.onPeersChanged = { [weak self] peers in
-                    Task { @MainActor [weak self] in
-                        self?.handleMultipeerPeersChanged(peers)
-                    }
-                }
-            }
-            multipeerManager?.start()
-        }
+        // Bluetooth discovery + pairing for onboarding join now runs through the
+        // PeerManager's own Multipeer manager (started just below via startMultipeer).
+        // That is the manager `pairViaMultipeer` uses, so the discovered host can
+        // actually be invited/paired. A separate MultipeerManager here would
+        // double-browse the same service and leave pairing unable to reach the host.
+        let bluetoothDiscoveryEnabled = Self.bluetoothSyncEnabled
 
         // Also start LAN peer discovery when available. Existing sync discovery
         // stays company-scoped. Join/onboarding discovery relaxes LAN browsing
@@ -430,7 +443,7 @@ final class IOSSyncManager {
         if let pm = peerManager {
             peerDiscoveryStartupTask = Task {
                 let deviceId = DeviceIdentity.current
-                let deviceName = UIDevice.current.name
+                let deviceName = Self.advertisedDeviceName
                 do {
                     guard isCurrentPeerDiscoveryStartup(startupGeneration) else { return }
                     if await pm.getState().running {
@@ -443,7 +456,7 @@ final class IOSSyncManager {
                         deviceName: deviceName,
                         companyId: companyId,
                         allowAnyCompanyPeerDiscovery: mode == .onboardingJoin,
-                        startMultipeer: bluetoothDiscoveryEnabled && mode == .existingCompanySync,
+                        startMultipeer: bluetoothDiscoveryEnabled && (mode == .existingCompanySync || mode == .onboardingJoin),
                         startSyncServer: mode == .existingCompanySync
                     )
                     if !isScanning {
@@ -496,8 +509,24 @@ final class IOSSyncManager {
         guard let settingsService else {
             throw SyncError.noCompanyIdConfigured
         }
-        return try Self.peerDiscoveryCompanyId {
-            try settingsService.getSettingsByCategory("company")
+        // Resolve the stable company id used to scope peer discovery/sync.
+        //
+        // Newly-created companies (the "Create New Business" onboarding path) never
+        // had a `company_id` setting written — nothing in the app set it — so peer
+        // discovery and "Add a Device" pairing failed with `noCompanyIdConfigured`.
+        // Generate and persist one on first use (get-or-create). It is idempotent:
+        // once written, the same id is returned forever. Devices that JOIN an
+        // existing company overwrite this with the shop's company id during pairing,
+        // so both ends share one id and cross-company peers are still rejected.
+        do {
+            return try Self.peerDiscoveryCompanyId {
+                try settingsService.getSettingsByCategory("company")
+            }
+        } catch SyncError.noCompanyIdConfigured {
+            let generated = UUID().uuidString
+            try settingsService.updateSetting(key: "company_id", value: generated, category: "company")
+            logger.info("[IOSSyncManager] No company_id was set; generated and persisted one for peer sync.")
+            return generated
         }
     }
 
@@ -528,7 +557,7 @@ final class IOSSyncManager {
         let currentState = await pm.getState()
         if !currentState.running {
             let deviceId = DeviceIdentity.current
-            let deviceName = UIDevice.current.name
+            let deviceName = Self.advertisedDeviceName
             let companyId: String
             do {
                 companyId = try peerDiscoveryCompanyId()
@@ -544,7 +573,81 @@ final class IOSSyncManager {
             isScanning = true
         }
 
+        // Allow a not-yet-in-company device to connect over Bluetooth to complete
+        // the code handshake (the code is the security gate).
+        await pm.setBluetoothPairingHostMode(true)
         return try await pm.issuePairingCode()
+    }
+
+    /// End an Add-a-Device pairing offer: invalidate any outstanding code and
+    /// close the cross-company Bluetooth connection window. Called when the
+    /// pairing sheet is dismissed (Copilot review on PR #1422 — the window must
+    /// not stay open once no code is being offered).
+    func endPairingOffer() async {
+        guard let pm = peerManager else { return }
+        await pm.clearPairingCode()
+    }
+
+    /// Joiner: pair with a Bluetooth-discovered host over Multipeer (no Wi-Fi).
+    /// Mirrors `pairWithShop` but exchanges the code over the Bluetooth session and
+    /// adopts the host's company id so both devices share one company.
+    func pairWithPeerOverBluetooth(hostDeviceId: String, hostName: String, pairingCode: String) async throws {
+        syncStatus = .syncing
+        syncProgressMessage = "Connecting over Bluetooth…"
+        syncProgressPercent = 0.1
+
+        guard let normalizedCode = SyncCrypto.normalizedPairingCode(pairingCode) else {
+            syncStatus = .error
+            syncProgressMessage = nil
+            errorMessage = "Pairing code must be eight letters or numbers."
+            throw SyncError.invalidPairingCode
+        }
+        guard let pm = peerManager, let db else {
+            syncStatus = .error
+            syncProgressMessage = nil
+            errorMessage = SyncError.noDatabaseAvailable.localizedDescription
+            throw SyncError.noDatabaseAvailable
+        }
+
+        let myDeviceId = DeviceIdentity.current
+        let myDeviceName = Self.advertisedDeviceName
+
+        let response = try await pm.pairViaMultipeer(
+            hostDeviceId: hostDeviceId,
+            myDeviceId: myDeviceId,
+            myDeviceName: myDeviceName,
+            pairingCode: normalizedCode,
+            platform: "iOS"
+        )
+
+        syncProgressMessage = "Registering verified device…"
+        syncProgressPercent = 0.3
+
+        try ChangeTracker.registerPeerDevice(
+            db: db,
+            peerId: response.serverDeviceId,
+            peerName: hostName.isEmpty ? "Paired Device" : hostName,
+            platform: "ios"
+        )
+        if let service = settingsService {
+            try service.upsertSettingsMap([
+                "paired_shop_device_id": response.serverDeviceId,
+                "paired_company_id": response.companyId,
+                "device_pairing_verified_at": response.pairedAt,
+                "auto_sync": "true",
+                "sync_interval": "60",
+            ], category: "sync")
+            // Adopt the host's company id (see the LAN pairWithShop path).
+            let joinedCompanyId = response.companyId.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !joinedCompanyId.isEmpty {
+                try service.updateSetting(key: "company_id", value: joinedCompanyId, category: "company")
+            }
+        }
+        UserDefaults.standard.set(true, forKey: "device_paired")
+        UserDefaults.standard.set(true, forKey: "bluetooth_sync_enabled")
+
+        syncProgressMessage = "Paired over Bluetooth."
+        syncProgressPercent = 0.4
     }
 
     /// Enable or disable Bluetooth/Multipeer sync.
@@ -600,6 +703,21 @@ final class IOSSyncManager {
     }
 
     private func handlePeerStateChange(_ state: PeerManagerState) {
+        // Host-side transfer feedback: who we're actively sending to, and the last
+        // completed transfer per peer (drives "Syncing…"/"Synced N records" UI).
+        if let syncingId = state.syncingWith {
+            activeSyncPeerName = state.peers.first(where: { $0.deviceId == syncingId })?.deviceName
+                ?? discoveredPeers.first(where: { $0.id == syncingId })?.name
+                ?? "device"
+        } else {
+            activeSyncPeerName = nil
+        }
+        if let latest = state.lastPeerSyncs.values.max(by: { $0.syncedAt < $1.syncedAt }) {
+            lastHostSyncSummary = latest.success
+                ? "Sent \(latest.pushed) records to \(latest.peerName)"
+                : "Sync with \(latest.peerName) failed"
+        }
+
         // Merge LAN peers into our peer list
         let lanPeers = state.peers.map { peer in
             let address = formattedPeerAddress(host: peer.host, port: Int(peer.port))
@@ -755,6 +873,35 @@ final class IOSSyncManager {
         }
     }
 
+    /// Apply the reviewer's chosen side of a conflict to the live record, then
+    /// mark it reviewed. Unlike `markConflictReviewed`, this actually writes the
+    /// chosen value when it differs from the LWW winner and change-logs it so the
+    /// decision syncs to peers.
+    @discardableResult
+    func resolveConflict(_ conflict: ConflictLogEntry, keepLocal: Bool) -> Bool {
+        guard let db else {
+            syncReviewActionFailed("Sync conflict could not be resolved because the database is unavailable.")
+            return false
+        }
+        do {
+            try ConflictResolver.applyConflictResolution(
+                db: db,
+                conflict: conflict,
+                choice: keepLocal ? .keepLocal : .keepRemote
+            )
+            refreshConflictCount()
+            refreshPendingCount()
+            return true
+        } catch {
+            syncReadFailed(
+                error,
+                context: "apply sync conflict resolution",
+                logMessage: "applyConflictResolution failed for id \(conflict.id.map(String.init) ?? "nil")"
+            )
+            return false
+        }
+    }
+
     /// Mark all unreviewed conflicts as reviewed.
     @discardableResult
     func markAllConflictsReviewed() -> Bool {
@@ -822,7 +969,7 @@ final class IOSSyncManager {
         }
 
         let deviceId = DeviceIdentity.current
-        let deviceName = UIDevice.current.name
+        let deviceName = Self.advertisedDeviceName
 
         guard let db else {
             syncStatus = .error
@@ -859,6 +1006,16 @@ final class IOSSyncManager {
                 "auto_sync": "true",
                 "sync_interval": "60",
             ], category: "sync")
+
+            // Adopt the shop's company id as this device's own peer-discovery id
+            // (the "company" category is what `peerDiscoveryCompanyId()` reads).
+            // Without this, a joined device keeps its own generated company_id and
+            // would advertise/discover under a different id than the shop, so the
+            // two would reject each other as cross-company peers after pairing.
+            let joinedCompanyId = pairResponse.companyId.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !joinedCompanyId.isEmpty {
+                try service.updateSetting(key: "company_id", value: joinedCompanyId, category: "company")
+            }
         }
         UserDefaults.standard.set(true, forKey: "device_paired")
         UserDefaults.standard.set(true, forKey: "bluetooth_sync_enabled")
@@ -925,6 +1082,29 @@ final class IOSSyncManager {
     // MARK: - Initial Full Sync
 
     /// Perform a full initial sync — downloads all data from the shop.
+    /// Human-friendly name this device advertises to peers. On Mac Catalyst
+    /// `UIDevice.current.name` returns a generic "iPad", so use the Mac's own
+    /// computer/host name instead so a Mac doesn't appear as an iPad.
+    static var advertisedDeviceName: String {
+        #if targetEnvironment(macCatalyst)
+        let host = ProcessInfo.processInfo.hostName
+            .replacingOccurrences(of: ".local", with: "")
+            .trimmingCharacters(in: .whitespaces)
+        return host.isEmpty ? "Mac" : "\(host) (Mac)"
+        #else
+        return UIDevice.current.name
+        #endif
+    }
+
+    /// The device id of a host this device paired with over Bluetooth (no Wi-Fi
+    /// server address). Used to route the initial sync over the Multipeer session.
+    private func pairedBluetoothHostDeviceId() -> String? {
+        guard serverAddress == nil, let service = settingsService else { return nil }
+        guard let sync = try? service.getSettingsByCategory("sync") else { return nil }
+        let id = (sync["paired_shop_device_id"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return id.isEmpty ? nil : id
+    }
+
     func performInitialSync() async throws {
         syncStatus = .syncing
         syncProgressMessage = "Starting initial sync..."
@@ -937,7 +1117,9 @@ final class IOSSyncManager {
 
         let deviceId = DeviceIdentity.current
 
-        // Try SyncEngine initial sync
+        // Prefer Wi-Fi/LAN when a shop server address is known (faster full download);
+        // otherwise fall back to the Bluetooth initial sync for a device that paired
+        // over Bluetooth (no server address).
         if let engine = syncEngine, let server = serverAddress {
             syncProgressMessage = "Downloading database from shop..."
             syncProgressPercent = 0.2
@@ -961,6 +1143,23 @@ final class IOSSyncManager {
                 errorMessage = state.error ?? "Initial sync failed."
                 throw SyncError.syncFailed(state.error ?? "Unknown error")
             }
+        } else if let hostDeviceId = pairedBluetoothHostDeviceId(), let pm = peerManager {
+            // Bluetooth: ask the paired host to replay the whole company over the
+            // live Multipeer session — no Wi-Fi/server needed.
+            syncProgressMessage = "Downloading data over Bluetooth…"
+            syncProgressPercent = 0.3
+            do {
+                try await pm.requestFullSyncOverMultipeer(hostDeviceId: hostDeviceId)
+            } catch {
+                syncProgressMessage = nil
+                syncStatus = .error
+                errorMessage = "Bluetooth sync failed. Keep both devices close with Bluetooth on and try again."
+                throw error
+            }
+            syncProgressMessage = "Initial sync complete."
+            syncProgressPercent = 1.0
+            syncStatus = .synced
+            lastSyncDate = Formatters.iso8601Basic.string(from: Date())
         } else {
             syncProgressMessage = nil
             throw SyncError.noServerConfigured

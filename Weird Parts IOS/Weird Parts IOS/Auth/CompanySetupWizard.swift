@@ -26,6 +26,10 @@ struct CompanySetupWizard: View {
     // Step 7: Break/Lunch Policy
     @State private var selectedState = "California"
     @State private var breakPolicySet = false
+    // Company policy: require a device GPS location to clock in. Defaults ON —
+    // matches the app's historical behavior; companies that don't want location
+    // tracking turn it off here (or later in Settings).
+    @State private var requireClockLocation = true
 
     // Errors
     @State private var saveError: String?
@@ -485,6 +489,23 @@ struct CompanySetupWizard: View {
             .background(Color.brown.opacity(0.05))
             .clipShape(RoundedRectangle(cornerRadius: 10))
 
+            // Company time-clock location policy. Saved to the synced "company"
+            // category so every device in the company enforces the same rule.
+            Toggle(isOn: $requireClockLocation) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Require location to clock in")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    Text("Workers must allow GPS so each clock in/out records where it happened. Turn off if your company doesn't want location tracking.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding()
+            .background(Color.brown.opacity(0.05))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+
             Button {
                 saveBreakPolicy()
             } label: {
@@ -673,6 +694,12 @@ struct CompanySetupWizard: View {
     private func saveBreakPolicy() {
         do {
             try appCore.settingsService?.updateSetting(key: "break_policy_state", value: selectedState, category: "compliance")
+            // "company" category syncs, so every device enforces the same rule.
+            try appCore.settingsService?.updateSetting(
+                key: "clock_location_required",
+                value: requireClockLocation ? "true" : "false",
+                category: "company"
+            )
             breakPolicySet = true
             completedSteps.insert(6)
             saveProgress()
@@ -724,15 +751,43 @@ struct CompanySetupWizard: View {
             return
         }
 
-        guard let draft else { return }
-        completedSteps = draft.completedSteps
-        skippedSteps = draft.skippedSteps
-        companyName = draft.name
-        companyAddress = draft.address
-        companyPhone = draft.phone
-        companyEmail = draft.email
-        selectedState = draft.selectedState
-        currentStep = draft.currentStep
+        if let draft {
+            completedSteps = draft.completedSteps
+            skippedSteps = draft.skippedSteps
+            companyName = draft.name
+            companyAddress = draft.address
+            companyPhone = draft.phone
+            companyEmail = draft.email
+            selectedState = draft.selectedState
+            currentStep = draft.currentStep
+        }
+
+        // No repeat questions: pre-fill the Company Profile step from data the
+        // user already entered during the welcome flow (BusinessProfileSetupView
+        // writes a BusinessProfile row; older paths wrote company_* settings).
+        // In-progress draft edits above take precedence — we only fill blanks.
+        hydrateCompanyProfileFromExistingData(settingsService)
+    }
+
+    /// Fill the Step 1 company fields from the already-saved BusinessProfile (or
+    /// legacy `company_*` settings) so the wizard reflects — rather than re-asks —
+    /// what the user typed on the welcome screens. Only empty fields are filled,
+    /// so a returning user's draft edits are never clobbered.
+    private func hydrateCompanyProfileFromExistingData(_ settingsService: SettingsService) {
+        let profile = (try? settingsService.getBusinessProfile()) ?? nil
+
+        func fillIfBlank(_ field: inout String, _ candidates: [String?]) {
+            guard field.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            let resolved = candidates
+                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .first { !$0.isEmpty }
+            if let resolved { field = resolved }
+        }
+
+        fillIfBlank(&companyName, [profile?.companyName, (try? settingsService.getSettingValue("company_name")) ?? nil])
+        fillIfBlank(&companyAddress, [profile?.address, (try? settingsService.getSettingValue("company_address")) ?? nil])
+        fillIfBlank(&companyPhone, [profile?.phone, (try? settingsService.getSettingValue("company_phone")) ?? nil])
+        fillIfBlank(&companyEmail, [profile?.email, (try? settingsService.getSettingValue("company_email")) ?? nil])
     }
 
     private func saveProgress() {

@@ -362,7 +362,7 @@ private struct AddContactSheet: View {
                         .disabled(firstName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || phone.isEmpty)
                 }
             }
-            .alert("Discard changes?", isPresented: $showDiscardAlert) {
+            .alert("Discard contact changes?", isPresented: $showDiscardAlert) {
                 Button("Discard", role: .destructive) { dismiss() }
                 Button("Keep Editing", role: .cancel) {}
             } message: {

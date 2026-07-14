@@ -95,6 +95,8 @@ struct IOSPreTripChecklistPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-pretrip-help-button")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -110,7 +112,35 @@ struct IOSPreTripChecklistPage: View {
 
     // MARK: - Editor
 
+    /// Swipe delete delivers a single offset on this Form (no edit mode), so the
+    /// named-record confirmation is the normal shape; the count-based shape is
+    /// the defensive fallback for a multi-offset delete.
+    @ViewBuilder
     private var checklistEditor: some View {
+        if (deleteItemOffsets?.count ?? 0) > 1 {
+            checklistForm
+                .confirmDestruction(
+                    of: "checklist item",
+                    count: deleteItemOffsets?.count ?? 0,
+                    isPresented: $showDeleteItemConfirm,
+                    messageSuffix: "They are removed from future inspections after you save the checklist."
+                ) {
+                    confirmPendingItemDelete()
+                }
+        } else {
+            checklistForm
+                .confirmDestruction(
+                    ofRecordNamed: pendingDeleteItemDisplayName,
+                    noun: "checklist item",
+                    isPresented: $showDeleteItemConfirm,
+                    messageSuffix: "It is removed from future inspections after you save the checklist."
+                ) {
+                    confirmPendingItemDelete()
+                }
+        }
+    }
+
+    private var checklistForm: some View {
         Form {
             if let saveError {
                 Section {
@@ -156,12 +186,60 @@ struct IOSPreTripChecklistPage: View {
                             }
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("\(section.title.capitalized) section, \(section.items.count) items")
+                        .accessibilityLabel("\(section.title.capitalized) section")
+                        .accessibilityValue("\(section.items.count) items, \(collapsedSectionIds.contains(section.id) ? "collapsed" : "expanded")")
                         .accessibilityHint(collapsedSectionIds.contains(section.id) ? "Expands the section" : "Collapses the section")
+                        .accessibilityIdentifier("settings-pretrip-section-toggle-\(section.id)")
+                        .contextMenu {
+                            Button {
+                                toggleSection(section.id)
+                            } label: {
+                                Label(
+                                    collapsedSectionIds.contains(section.id) ? "Expand Section" : "Collapse Section",
+                                    systemImage: collapsedSectionIds.contains(section.id) ? "chevron.down" : "chevron.right"
+                                )
+                            }
+                            Button {
+                                addItemSectionId = section.id
+                                newItemName = ""
+                                newItemRequired = true
+                                newItemCritical = false
+                                showAddItem = true
+                            } label: {
+                                Label("Add Item", systemImage: "plus.circle")
+                            }
+                        }
 
                         if !collapsedSectionIds.contains(section.id) {
-                            ForEach($section.items) { $item in
-                                ChecklistItemEditor(item: $item)
+                            ForEach(Array(zip(section.items.indices, section.items)), id: \.1.id) { itemIndex, _ in
+                                ChecklistItemEditor(item: $section.items[itemIndex])
+                                    .contextMenu {
+                                        Button {
+                                            if itemIndex > 0 {
+                                                moveItems(in: section.id, from: IndexSet(integer: itemIndex), to: itemIndex - 1)
+                                            }
+                                        } label: {
+                                            Label("Move Up", systemImage: "arrow.up")
+                                        }
+                                        .disabled(itemIndex <= 0)
+
+                                        Button {
+                                            if itemIndex < section.items.count - 1 {
+                                                moveItems(in: section.id, from: IndexSet(integer: itemIndex), to: itemIndex + 2)
+                                            }
+                                        } label: {
+                                            Label("Move Down", systemImage: "arrow.down")
+                                        }
+                                        .disabled(itemIndex >= section.items.count - 1)
+
+                                        Button(role: .destructive) {
+                                            deleteItemSectionId = section.id
+                                            deleteItemOffsets = IndexSet(integer: itemIndex)
+                                            showDeleteItemConfirm = true
+                                        } label: {
+                                            Label("Delete Item", systemImage: "trash")
+                                        }
+                                    }
                             }
                             .onMove { source, destination in
                                 moveItems(in: section.id, from: source, to: destination)
@@ -220,6 +298,7 @@ struct IOSPreTripChecklistPage: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(!isDirty)
                 .accessibilityHint(isDirty ? "Saves pre-trip checklist changes" : "Make a checklist change before saving")
+                .accessibilityIdentifier("settings-pretrip-save-button")
             }
         }
         // Fix #149: dismiss keyboard when scrolling checklist editor
@@ -245,21 +324,28 @@ struct IOSPreTripChecklistPage: View {
         } message: {
             Text("Enter a name for the new section.")
         }
-        .alert("Delete Item?", isPresented: $showDeleteItemConfirm) {
-            Button("Cancel", role: .cancel) {
-                deleteItemSectionId = nil
-                deleteItemOffsets = nil
-            }
-            Button("Delete", role: .destructive) {
-                if let sectionId = deleteItemSectionId, let offsets = deleteItemOffsets {
-                    deleteItems(in: sectionId, at: offsets)
-                }
-                deleteItemSectionId = nil
-                deleteItemOffsets = nil
-            }
-        } message: {
-            Text("This checklist item will be removed from future inspections.")
+    }
+
+    /// Names of the draft items the pending delete confirmation targets.
+    private var pendingDeleteItemNames: [String] {
+        guard let sectionId = deleteItemSectionId,
+              let offsets = deleteItemOffsets,
+              let section = currentSections.first(where: { $0.id == sectionId })
+        else { return [] }
+        return offsets.compactMap { section.items.indices.contains($0) ? section.items[$0].name : nil }
+    }
+
+    private var pendingDeleteItemDisplayName: String {
+        let name = pendingDeleteItemNames.first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return name.isEmpty ? "Untitled item" : name
+    }
+
+    private func confirmPendingItemDelete() {
+        if let sectionId = deleteItemSectionId, let offsets = deleteItemOffsets {
+            deleteItems(in: sectionId, at: offsets)
         }
+        deleteItemSectionId = nil
+        deleteItemOffsets = nil
     }
 
     private var sectionBindings: Binding<[ChecklistSection]> {
@@ -432,14 +518,22 @@ private struct ChecklistItemEditor: View {
         VStack(alignment: .leading, spacing: 8) {
             TextField("Item name", text: $item.name)
                 .textInputAutocapitalization(.words)
+                .accessibilityLabel("Item name")
+                .accessibilityIdentifier("settings-pretrip-item-name-\(item.id)")
 
             TextField("Description", text: $item.description, axis: .vertical)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1...3)
+                .accessibilityLabel("Item description")
+                .accessibilityIdentifier("settings-pretrip-item-description-\(item.id)")
 
             Toggle("Required", isOn: $item.isRequired)
+                .accessibilityLabel("Required — \(item.name)")
+                .accessibilityIdentifier("settings-pretrip-item-required-\(item.id)")
             Toggle("Critical failure item", isOn: $item.isCritical)
+                .accessibilityLabel("Critical failure item — \(item.name)")
+                .accessibilityIdentifier("settings-pretrip-item-critical-\(item.id)")
         }
         .padding(.vertical, 4)
     }

@@ -71,6 +71,8 @@ struct IOSAuditSettingsPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
+                .accessibilityHint("Opens help for this page.")
+                .accessibilityIdentifier("settings-audit-settings-help-button")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -137,8 +139,11 @@ struct IOSAuditSettingsPage: View {
                         .keyboardType(.decimalPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 60)
+                        .accessibilityLabel("Misplacement penalty multiplier")
+                        .accessibilityIdentifier("settings-audit-misplacement-penalty-field")
                     Text("x")
                         .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
                 }
                 Text("Multiplier applied to confidence decay when items are found misplaced.")
                     .font(.caption)
