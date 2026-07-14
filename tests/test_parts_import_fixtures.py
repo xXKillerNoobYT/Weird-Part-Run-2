@@ -9,6 +9,11 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "docs" / "testing" / "parts-import-fixtures"
 
 
+def _manifest_rows() -> dict[str, int]:
+    manifest = json.loads((FIXTURES / "manifest.json").read_text())
+    return {entry["file"]: entry["rows"] for entry in manifest["files"]}
+
+
 def test_parts_import_fixture_manifest_contract():
     manifest_path = FIXTURES / "manifest.json"
     assert manifest_path.exists(), "Run scripts/generate_parts_import_fixtures.py first"
@@ -21,6 +26,16 @@ def test_parts_import_fixture_manifest_contract():
     assert sum(1 for f in files if f["format"] == "docx") == 5
     assert all(f["rows"] >= 30 for f in files)
 
+    manifest_paths = [entry["file"] for entry in files]
+    generated_paths = {
+        str(path.relative_to(FIXTURES))
+        for path in FIXTURES.rglob("*")
+        if path.suffix.lower() in {".csv", ".xlsx", ".pdf", ".docx"}
+    }
+    assert len(manifest_paths) == 27
+    assert len(set(manifest_paths)) == len(manifest_paths), "Manifest paths must be unique"
+    assert set(manifest_paths) == generated_paths
+
     for entry in files:
         path = FIXTURES / entry["file"]
         assert path.exists(), f"Missing fixture {path}"
@@ -29,17 +44,20 @@ def test_parts_import_fixture_manifest_contract():
 
 def test_csv_fixtures_have_importable_required_columns_and_30_plus_rows():
     required = {"code", "name", "category"}
+    expected_rows = _manifest_rows()
     for path in sorted((FIXTURES / "csv").glob("*.csv")):
         with path.open(newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             rows = list(reader)
-        assert len(rows) >= 30, path
+        relative_path = str(path.relative_to(FIXTURES))
+        assert len(rows) == expected_rows[relative_path], path
         assert required.issubset(set(reader.fieldnames or [])), path
         assert all(row["code"].strip() and row["name"].strip() and row["category"].strip() for row in rows)
 
 
 def test_xlsx_fixtures_are_valid_openxml_with_30_plus_data_rows():
     ns = {"main": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+    expected_rows = _manifest_rows()
     for path in sorted((FIXTURES / "xlsx").glob("*.xlsx")):
         with zipfile.ZipFile(path) as z:
             names = set(z.namelist())
@@ -47,17 +65,25 @@ def test_xlsx_fixtures_are_valid_openxml_with_30_plus_data_rows():
             assert "xl/worksheets/sheet1.xml" in names
             sheet = ET.fromstring(z.read("xl/worksheets/sheet1.xml"))
         rows = sheet.findall(".//main:sheetData/main:row", ns)
-        assert len(rows) >= 31, path  # header + 30 data rows
+        relative_path = str(path.relative_to(FIXTURES))
+        assert len(rows) - 1 == expected_rows[relative_path], path  # Exclude the header.
 
 
 def test_docx_fixtures_are_valid_openxml_with_30_plus_rows():
     ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    expected_rows = _manifest_rows()
     for path in sorted((FIXTURES / "docx").glob("*.docx")):
         with zipfile.ZipFile(path) as z:
             assert "word/document.xml" in set(z.namelist())
             doc = ET.fromstring(z.read("word/document.xml"))
         text = "\n".join(t.text or "" for t in doc.findall(".//w:t", ns))
-        assert text.count(" | ") >= 31, path  # header + 30 data rows
+        table_rows = [
+            line
+            for line in text.splitlines()
+            if line.count(" | ") == 6 and not line.startswith("Code | ")
+        ]
+        relative_path = str(path.relative_to(FIXTURES))
+        assert len(table_rows) == expected_rows[relative_path], path
         assert "verify" in text.lower()
 
 
@@ -82,12 +108,7 @@ def _pdf_text_lines(content_object: bytes) -> list[str]:
 
 
 def test_pdf_fixtures_resolve_fonts_and_extract_every_table_row():
-    manifest = json.loads((FIXTURES / "manifest.json").read_text())
-    expected_rows = {
-        entry["file"]: entry["rows"]
-        for entry in manifest["files"]
-        if entry["format"] == "pdf"
-    }
+    expected_rows = _manifest_rows()
 
     for path in sorted((FIXTURES / "pdf").glob("*.pdf")):
         data = path.read_bytes()
