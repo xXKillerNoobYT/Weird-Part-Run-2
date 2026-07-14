@@ -320,12 +320,11 @@ struct GeofenceAlertView: View {
                     await showBreakServiceUnavailableError()
                     return
                 }
-                let settings = try breakSvc.getCompanyBreakSettings()
                 _ = try breakSvc.startBreak(
                     userId: userId,
                     breakType: "break",
                     laborEntryId: entryId,
-                    timerMinutes: settings.roundingMinutes > 0 ? 15 : nil
+                    timerMinutes: 15
                 )
 
             case .doneForDay:

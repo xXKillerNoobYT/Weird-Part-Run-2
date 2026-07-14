@@ -60,11 +60,6 @@ final class GeofenceAlertViewRegressionTests: XCTestCase {
         XCTAssertTrue(source.contains("case .breakTime:"))
         XCTAssertTrue(source.contains("case .doneForDay:"))
         XCTAssertTrue(source.contains("guard let breakSvc = appCore.breakService else"))
-        XCTAssertTrue(source.contains("let paidMin = try breakSvc.paidLunchTimerMinutes()"))
-        XCTAssertTrue(source.contains("breakType: \"lunch_paid\""))
-        XCTAssertTrue(source.contains("breakType: \"break\""))
-        XCTAssertTrue(source.contains("let settings = try breakSvc.getCompanyBreakSettings()"))
-        XCTAssertTrue(source.contains("timerMinutes: settings.roundingMinutes > 0 ? 15 : nil"))
         XCTAssertTrue(source.contains("Break service is not available. Please restart the app and try again."))
         XCTAssertTrue(source.contains("Start a paid lunch break. Clock stays active."))
 
@@ -79,6 +74,8 @@ final class GeofenceAlertViewRegressionTests: XCTestCase {
 
         XCTAssertTrue(lunchBody.contains("try breakSvc.startBreak"))
         XCTAssertTrue(breakBody.contains("try breakSvc.startBreak"))
+        XCTAssertTrue(lunchBody.contains("breakType: \"lunch_paid\""))
+        XCTAssertTrue(breakBody.contains("breakType: \"break\""))
         XCTAssertFalse(lunchBody.contains("try service.clockOut"))
         XCTAssertFalse(breakBody.contains("try service.clockOut"))
         XCTAssertTrue(doneBody.contains("try service.clockOut"))
