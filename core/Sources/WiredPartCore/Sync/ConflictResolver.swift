@@ -326,6 +326,7 @@ public enum ConflictResolver {
         case unknownField(table: String, field: String)
         case fieldNotTextResolvable(table: String, field: String)
         case missingLiveRecord(table: String, recordId: String)
+        case staleConflict(Int64)
         case deletionConflict
 
         public var errorDescription: String? {
@@ -344,6 +345,8 @@ public enum ConflictResolver {
                 return "The field \"\(field)\" on \"\(table)\" is not approved for merged-text resolution."
             case .missingLiveRecord(let table, let recordId):
                 return "The conflicted \"\(table)\" record \(recordId) no longer exists. Reload conflicts and try again."
+            case .staleConflict(let id):
+                return "Sync conflict \(id) is stale because the live value changed after it was recorded. Reload conflicts and review the newer value."
             case .deletionConflict:
                 return "One side of this conflict deleted the record. Restoring a deleted record isn't supported from review yet — recreate it manually if needed."
             }
@@ -427,6 +430,19 @@ public enum ConflictResolver {
                     table: persisted.tableName,
                     recordId: persisted.recordId
                 )
+            }
+
+            // LWW already wrote the recorded winner before review. Refuse to
+            // overwrite any subsequent edit with a decision made from stale
+            // conflict text. Optional equality deliberately distinguishes SQL
+            // NULL from every non-NULL String; legacy "(NULL)" rows normalize to
+            // the same representation as a persisted NULL.
+            let recordedWinner = persisted.winner.lowercased() == "local"
+                ? persisted.localValue
+                : persisted.remoteValue
+            let expectedLiveValue = recordedWinner == "(NULL)" ? nil : recordedWinner
+            guard oldValue == expectedLiveValue else {
+                throw ConflictReviewError.staleConflict(conflictId)
             }
 
             // Suppress generic table triggers because this transaction writes one
