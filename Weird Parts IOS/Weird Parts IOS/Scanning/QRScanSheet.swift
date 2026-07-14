@@ -34,6 +34,21 @@ struct QRScanDeliveryGate {
     }
 }
 
+enum QRScanFeedback {
+    static func isTypeMismatch(
+        isFound: Bool,
+        entityType: QREntityType?,
+        expectedType: QREntityType?
+    ) -> Bool {
+        guard isFound, let entityType, let expectedType else { return false }
+        return entityType != expectedType
+    }
+
+    static func resultMessage(isFound: Bool, title: String, code: String) -> String {
+        isFound ? "Found: \(title)" : "Not found: \(code)"
+    }
+}
+
 /// Reusable QR scan sheet. Present as a `.sheet`, get a callback with the result.
 /// Automatically dismisses after a successful scan that matches the expected type.
 ///
@@ -232,7 +247,13 @@ struct QRScanSheet: View {
                 Image(systemName: resultIsFound ? "checkmark.circle.fill" : "questionmark.circle.fill")
                     .foregroundStyle(resultIsFound ? .green : .orange)
                     .accessibilityHidden(true)
-                Text(resultIsFound ? "Found: \(title)" : "Not found: \(resultCode ?? "")")
+                Text(
+                    QRScanFeedback.resultMessage(
+                        isFound: resultIsFound,
+                        title: title,
+                        code: resultCode ?? ""
+                    )
+                )
                     .fontWeight(.medium)
                     .foregroundStyle(resultIsFound ? .green : .orange)
             } else {
@@ -262,7 +283,11 @@ struct QRScanSheet: View {
             return "Expected \(expected.rawValue), got \(got.rawValue)"
         }
         if let title = resultTitle {
-            return resultIsFound ? "Found: \(title)" : "Not found: \(resultCode ?? "")"
+            return QRScanFeedback.resultMessage(
+                isFound: resultIsFound,
+                title: title,
+                code: resultCode ?? ""
+            )
         }
         return isScannerSupported ? "Point camera at a QR code" : "Enter a QR code to look it up"
     }
@@ -358,7 +383,11 @@ struct QRScanSheet: View {
                 ?? result.fields["code"]
                 ?? result.code
 
-            let gotMismatch = expectedType != nil && result.entityType != expectedType
+            let gotMismatch = QRScanFeedback.isTypeMismatch(
+                isFound: result.isFound,
+                entityType: result.entityType,
+                expectedType: expectedType
+            )
 
             let shouldAutoComplete = result.isFound
                 && (expectedType == nil || result.entityType == expectedType)

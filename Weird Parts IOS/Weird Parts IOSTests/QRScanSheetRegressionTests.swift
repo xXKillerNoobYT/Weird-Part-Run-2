@@ -1,4 +1,5 @@
 import XCTest
+import WiredPartCore
 @testable import Weird_Parts
 
 @MainActor
@@ -131,14 +132,22 @@ final class QRScanSheetRegressionTests: XCTestCase {
         )
     }
 
-    func testNotFoundMessageIncludesCodeAndDoesNotDismiss() throws {
+    func testNotFoundWithExpectedTypeKeepsNotFoundMessageAndIsNotMismatch() throws {
         let source = try Self.qrScanSheetSource()
-        let feedback = try Self.braceBalancedBody(after: "private var feedbackStatusView", in: source)
-
-        XCTAssertTrue(
-            feedback.contains("\"Not found: \\(resultCode ?? \"\")\""),
-            "Not-found feedback must include the entered/scanned code."
+        let code = "MANUAL-404"
+        let isMismatch = QRScanFeedback.isTypeMismatch(
+            isFound: false,
+            entityType: nil,
+            expectedType: .po
         )
+        let message = QRScanFeedback.resultMessage(
+            isFound: false,
+            title: code,
+            code: code
+        )
+
+        XCTAssertFalse(isMismatch)
+        XCTAssertEqual(message, "Not found: MANUAL-404")
         XCTAssertTrue(
             source.contains("let shouldAutoComplete = result.isFound\n                && (expectedType == nil || result.entityType == expectedType)"),
             "Only found matching results may auto-complete."
