@@ -31,7 +31,8 @@ struct SyncIntegrationTests {
         url: URL,
         plainBody: Data,
         state: SyncServerState,
-        deviceId: String = "client-dev"
+        deviceId: String = "client-dev",
+        endpoint: String
     ) async throws -> (request: URLRequest, sharedKey: Data) {
         let (privateKey, publicKey) = SyncCrypto.generateKeyAgreementPair()
         try await state.registerAuthorizedPeer(
@@ -44,19 +45,46 @@ struct SyncIntegrationTests {
             ourPrivateKeyB64: privateKey,
             theirPublicKeyB64: state.kaPublicKeyB64
         )
+        let requestId = UUID().uuidString
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.httpBody = try SyncCrypto.encryptAESGCM(data: plainBody, keyData: sharedKey)
+        request.httpBody = try SyncCrypto.encryptAESGCM(
+            data: plainBody,
+            keyData: sharedKey,
+            aad: LanSyncServer.syncAAD(
+                endpoint: endpoint,
+                direction: "request",
+                deviceId: deviceId,
+                requestId: requestId
+            )
+        )
         request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
         request.setValue("1", forHTTPHeaderField: "X-Sync-Encrypted")
         request.setValue(publicKey, forHTTPHeaderField: "X-Sync-Sender-Key")
         request.setValue(deviceId, forHTTPHeaderField: "X-Sync-Device-ID")
+        request.setValue(requestId, forHTTPHeaderField: "X-Sync-Request-ID")
         request.timeoutInterval = 5
         return (request, sharedKey)
     }
 
-    private func decryptResponse(_ data: Data, sharedKey: Data) throws -> Data {
-        try SyncCrypto.decryptAESGCM(data: data, keyData: sharedKey)
+    private func decryptResponse(
+        _ data: Data,
+        sharedKey: Data,
+        request: URLRequest,
+        endpoint: String,
+        deviceId: String = "client-dev"
+    ) throws -> Data {
+        let requestId = try #require(request.value(forHTTPHeaderField: "X-Sync-Request-ID"))
+        return try SyncCrypto.decryptAESGCM(
+            data: data,
+            keyData: sharedKey,
+            aad: LanSyncServer.syncAAD(
+                endpoint: endpoint,
+                direction: "response",
+                deviceId: deviceId,
+                requestId: requestId
+            )
+        )
     }
 
     // MARK: - Test 1: Loopback Push/Pull
@@ -88,13 +116,14 @@ struct SyncIntegrationTests {
         let (pushReq, sharedKey) = try await makeEncryptedRequest(
             url: URL(string: "\(baseURL)/sync/push")!,
             plainBody: pushData,
-            state: state
+            state: state,
+            endpoint: "push"
         )
 
         let (encryptedPushResp, pushHTTP) = try await URLSession.shared.data(for: pushReq)
         #expect((pushHTTP as! HTTPURLResponse).statusCode == 200)
 
-        let pushResp = try decryptResponse(encryptedPushResp, sharedKey: sharedKey)
+        let pushResp = try decryptResponse(encryptedPushResp, sharedKey: sharedKey, request: pushReq, endpoint: "push")
         let pushResult = try JSONDecoder().decode(SyncPushResponse.self, from: pushResp)
         #expect(pushResult.accepted == 1)
 
@@ -136,13 +165,14 @@ struct SyncIntegrationTests {
         let (pullReq, sharedKey) = try await makeEncryptedRequest(
             url: URL(string: "\(baseURL)/sync/pull")!,
             plainBody: pullData,
-            state: state
+            state: state,
+            endpoint: "pull"
         )
 
         let (encryptedPullResp, pullHTTP) = try await URLSession.shared.data(for: pullReq)
         #expect((pullHTTP as! HTTPURLResponse).statusCode == 200)
 
-        let pullResp = try decryptResponse(encryptedPullResp, sharedKey: sharedKey)
+        let pullResp = try decryptResponse(encryptedPullResp, sharedKey: sharedKey, request: pullReq, endpoint: "pull")
         let pullResult = try JSONDecoder().decode(SyncPullResponse.self, from: pullResp)
         // Should only get changes 4 and 5
         #expect(pullResult.changes.count == 2)
@@ -352,7 +382,8 @@ struct SyncIntegrationTests {
         let (noCertReq, _) = try await makeEncryptedRequest(
             url: URL(string: "\(baseURL)/sync/push")!,
             plainBody: noCertData,
-            state: state
+            state: state,
+            endpoint: "push"
         )
 
         let (_, noCertHTTP) = try await URLSession.shared.data(for: noCertReq)
@@ -381,7 +412,8 @@ struct SyncIntegrationTests {
         let (withCertReq, _) = try await makeEncryptedRequest(
             url: URL(string: "\(baseURL)/sync/push")!,
             plainBody: withCertData,
-            state: state
+            state: state,
+            endpoint: "push"
         )
 
         let (_, withCertHTTP) = try await URLSession.shared.data(for: withCertReq)
@@ -428,7 +460,8 @@ struct SyncIntegrationTests {
         let (req, _) = try await makeEncryptedRequest(
             url: URL(string: "http://127.0.0.1:\(port)/sync/push")!,
             plainBody: bodyData,
-            state: state
+            state: state,
+            endpoint: "push"
         )
 
         let (_, httpResp) = try await URLSession.shared.data(for: req)
@@ -466,11 +499,12 @@ struct SyncIntegrationTests {
         let (pull1Req, sharedKey1) = try await makeEncryptedRequest(
             url: URL(string: "\(baseURL)/sync/pull")!,
             plainBody: pull1Data,
-            state: state
+            state: state,
+            endpoint: "pull"
         )
 
         let (encryptedResp1, _) = try await URLSession.shared.data(for: pull1Req)
-        let resp1 = try decryptResponse(encryptedResp1, sharedKey: sharedKey1)
+        let resp1 = try decryptResponse(encryptedResp1, sharedKey: sharedKey1, request: pull1Req, endpoint: "pull")
         let result1 = try JSONDecoder().decode(SyncPullResponse.self, from: resp1)
         #expect(result1.changes.count == 3)
 
@@ -497,11 +531,12 @@ struct SyncIntegrationTests {
         let (pull2Req, sharedKey2) = try await makeEncryptedRequest(
             url: URL(string: "\(baseURL)/sync/pull")!,
             plainBody: pull2Data,
-            state: state
+            state: state,
+            endpoint: "pull"
         )
 
         let (encryptedResp2, _) = try await URLSession.shared.data(for: pull2Req)
-        let resp2 = try decryptResponse(encryptedResp2, sharedKey: sharedKey2)
+        let resp2 = try decryptResponse(encryptedResp2, sharedKey: sharedKey2, request: pull2Req, endpoint: "pull")
         let result2 = try JSONDecoder().decode(SyncPullResponse.self, from: resp2)
         #expect(result2.changes.count == 2)  // Only items 4 and 5
     }
@@ -558,7 +593,8 @@ struct SyncIntegrationTests {
         let (pushReq, _) = try await makeEncryptedRequest(
             url: URL(string: "\(baseURL)/sync/push")!,
             plainBody: pushData,
-            state: state
+            state: state,
+            endpoint: "push"
         )
 
         let (_, pushHTTP) = try await URLSession.shared.data(for: pushReq)
@@ -573,7 +609,8 @@ struct SyncIntegrationTests {
         let (pullReq, _) = try await makeEncryptedRequest(
             url: URL(string: "\(baseURL)/sync/pull")!,
             plainBody: pullData,
-            state: state
+            state: state,
+            endpoint: "pull"
         )
 
         let (_, pullHTTP) = try await URLSession.shared.data(for: pullReq)

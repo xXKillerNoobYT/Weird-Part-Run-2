@@ -126,6 +126,7 @@ public enum MultipeerPairingError: Error {
 public actor PeerManager {
 
     private let db: AppDatabase
+    private let identityStore: any SyncDeviceIdentityStoring
     private var state = PeerManagerState()
     private let logger = Logger(subsystem: "com.wiredpart.core", category: "PeerManager")
 
@@ -173,13 +174,22 @@ public actor PeerManager {
         onStateChanged = callback
     }
 
-    public init(db: AppDatabase) {
+    public init(
+        db: AppDatabase,
+        identityStore: any SyncDeviceIdentityStoring = PlatformSyncDeviceIdentityStore.shared
+    ) {
         self.db = db
+        self.identityStore = identityStore
     }
 
     /// Get current state snapshot.
     public func getState() -> PeerManagerState {
         state
+    }
+
+    /// Return the durable X25519 identity shared by LAN pairing and sync.
+    public func localSyncIdentity(deviceId: String) throws -> SyncDeviceIdentity {
+        try identityStore.loadOrCreateIdentity(deviceId: deviceId)
     }
 
     // MARK: - Lifecycle
@@ -195,10 +205,10 @@ public actor PeerManager {
     ) async throws {
         guard !state.running else { return }
 
-        // 0. Generate X25519 KA key pair for this sync session
-        let (kaPriv, kaPub) = SyncCrypto.generateKeyAgreementPair()
-        kaPrivateKeyB64 = kaPriv
-        kaPublicKeyB64 = kaPub
+        // 0. Load or create the persistent X25519 identity for this device.
+        let identity = try identityStore.loadOrCreateIdentity(deviceId: deviceId)
+        kaPrivateKeyB64 = identity.privateKeyB64
+        kaPublicKeyB64 = identity.publicKeyB64
         self.companyId = companyId          // Fix #191: stored for key-exchange requests
         peerKAPublicKeys.removeAll()
 
@@ -209,7 +219,8 @@ public actor PeerManager {
                 deviceId: deviceId,
                 deviceName: deviceName,
                 companyId: companyId,
-                db: db
+                db: db,
+                identity: identity
             )
             self.serverState = sState
             self.kaPrivateKeyB64 = sState.kaPrivateKeyB64
@@ -638,16 +649,25 @@ public actor PeerManager {
             var urlRequest = URLRequest(url: pushURL)
             urlRequest.httpMethod = "POST"
             urlRequest.timeoutInterval = 30
+            let pushRequestId = UUID().uuidString
             try applyPayload(
                 &urlRequest,
                 plain: plainPushBody,
                 sharedKeyData: sharedKeyData,
-                localDeviceId: deviceId
+                localDeviceId: deviceId,
+                endpoint: "push",
+                requestId: pushRequestId
             )
 
             let (pushData, pushResp) = try await URLSession.shared.data(for: urlRequest)
             try Self.validateSyncHTTPResponse(pushResp, endpoint: "push")
-            let plainPushData = try decrypt(pushData, sharedKeyData: sharedKeyData)
+            let plainPushData = try decrypt(
+                pushData,
+                sharedKeyData: sharedKeyData,
+                endpoint: "push",
+                requestId: pushRequestId,
+                localDeviceId: deviceId
+            )
             let result = try JSONDecoder().decode(SyncPushResponse.self, from: plainPushData)
             pushed = result.accepted
             let syncedIds = pendingChanges.compactMap { $0.id }
@@ -668,16 +688,25 @@ public actor PeerManager {
         var pullURLRequest = URLRequest(url: pullURL)
         pullURLRequest.httpMethod = "POST"
         pullURLRequest.timeoutInterval = 30
+        let pullRequestId = UUID().uuidString
         try applyPayload(
             &pullURLRequest,
             plain: plainPullBody,
             sharedKeyData: sharedKeyData,
-            localDeviceId: deviceId
+            localDeviceId: deviceId,
+            endpoint: "pull",
+            requestId: pullRequestId
         )
 
         let (pullData, pullResp) = try await URLSession.shared.data(for: pullURLRequest)
         try Self.validateSyncHTTPResponse(pullResp, endpoint: "pull")
-        let plainPullData = try decrypt(pullData, sharedKeyData: sharedKeyData)
+        let plainPullData = try decrypt(
+            pullData,
+            sharedKeyData: sharedKeyData,
+            endpoint: "pull",
+            requestId: pullRequestId,
+            localDeviceId: deviceId
+        )
         let result = try JSONDecoder().decode(SyncPullResponse.self, from: plainPullData)
         pulled = result.changes.count
 
@@ -826,8 +855,25 @@ public actor PeerManager {
               !decoded.key.isEmpty else {
             throw PeerSyncHTTPError.malformedResponse(endpoint: "key")
         }
+        guard try trustedPeerKey(deviceId: peerDeviceId) == decoded.key else {
+            throw PeerSyncHTTPError.malformedResponse(endpoint: "key")
+        }
         peerKAPublicKeys[peerDeviceId] = decoded.key
         return decoded.key
+    }
+
+    private func trustedPeerKey(deviceId: String) throws -> String? {
+        let encoded = try db.writer.read { dbConn in
+            try String.fetchOne(
+                dbConn,
+                sql: "SELECT certificate FROM _device_registry WHERE device_id = ? AND is_trusted = 1 AND is_deactivated = 0",
+                arguments: [deviceId]
+            )
+        }
+        guard let encoded, encoded.hasPrefix("x25519:") else { return nil }
+        let key = String(encoded.dropFirst("x25519:".count))
+        guard Data(base64Encoded: key)?.count == 32 else { return nil }
+        return key
     }
 
     /// Attach an encrypted body + key-agreement headers to a URLRequest.
@@ -835,19 +881,46 @@ public actor PeerManager {
         _ request: inout URLRequest,
         plain: Data,
         sharedKeyData: Data,
-        localDeviceId: String
+        localDeviceId: String,
+        endpoint: String,
+        requestId: String
     ) throws {
-        let encrypted = try SyncCrypto.encryptAESGCM(data: plain, keyData: sharedKeyData)
+        let encrypted = try SyncCrypto.encryptAESGCM(
+            data: plain,
+            keyData: sharedKeyData,
+            aad: LanSyncServer.syncAAD(
+                endpoint: endpoint,
+                direction: "request",
+                deviceId: localDeviceId,
+                requestId: requestId
+            )
+        )
         request.httpBody = encrypted
         request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
         request.setValue("1", forHTTPHeaderField: "X-Sync-Encrypted")
         request.setValue(kaPublicKeyB64, forHTTPHeaderField: "X-Sync-Sender-Key")
         request.setValue(localDeviceId, forHTTPHeaderField: "X-Sync-Device-ID")
+        request.setValue(requestId, forHTTPHeaderField: "X-Sync-Request-ID")
     }
 
     /// Decrypt a response body if a shared key was used for this request.
-    private func decrypt(_ data: Data, sharedKeyData: Data) throws -> Data {
-        try SyncCrypto.decryptAESGCM(data: data, keyData: sharedKeyData)
+    private func decrypt(
+        _ data: Data,
+        sharedKeyData: Data,
+        endpoint: String,
+        requestId: String,
+        localDeviceId: String
+    ) throws -> Data {
+        try SyncCrypto.decryptAESGCM(
+            data: data,
+            keyData: sharedKeyData,
+            aad: LanSyncServer.syncAAD(
+                endpoint: endpoint,
+                direction: "response",
+                deviceId: localDeviceId,
+                requestId: requestId
+            )
+        )
     }
 
     // MARK: - Private: Inbox Processing
@@ -1365,6 +1438,10 @@ public actor PeerManager {
         failPendingMultipeerOperations(with: MultipeerPairingError.transportStopped)
     }
 
+    func testCurrentKeyAgreementPublicKey() -> String {
+        kaPublicKeyB64
+    }
+
     /// Joiner side: the host finished replaying its data.
     private func handleFullSyncComplete(from peerDeviceId: String) {
         if let cont = pendingFullSyncContinuations.removeValue(forKey: peerDeviceId) {
@@ -1464,8 +1541,8 @@ public actor PeerManager {
         return result.applied
     }
 
-    /// Host side: a joiner sent a pairing code over Bluetooth. Validate it against
-    /// the active pairing code (same one-time check as the Wi-Fi /sync/pair path),
+    /// Host side: a joiner sent a code-authenticated proof over Bluetooth. Validate
+    /// it against the active pairing offer (same check as the Wi-Fi /sync/pair path),
     /// register the joiner as a trusted peer, and reply with our company id.
     private func handlePairRequest(from peerDeviceId: String, payload: Data) async {
         guard let mpManager = multipeerManager else { return }
@@ -1483,10 +1560,11 @@ public actor PeerManager {
               let request = try? JSONDecoder().decode(SyncPairRequest.self, from: payload) else { return }
 
         // Bind the code proof to the same advertised identity that owns this MCSession.
-        let protocolIsSupported = (request.bluetoothProtocolVersion ?? 0) >= 2
+        let protocolIsSupported = (request.bluetoothProtocolVersion ?? 0) >= 3
         guard request.deviceId == peerDeviceId,
               protocolIsSupported,
-              request.keyAgreementPublicKey != nil else {
+              request.keyAgreementPublicKey != nil,
+              request.pairingProof != nil else {
             _ = deliverResponse(
                 SyncPairResponse(
                     accepted: false,
@@ -1516,7 +1594,7 @@ public actor PeerManager {
         }
         let previousSnapshotToken = hostedSnapshotTokens[request.deviceId]
 
-        guard await sState.consumePairingCode(request.pairingCode) else {
+        guard let pairingCode = await sState.consumePairingProof(request) else {
             _ = deliverResponse(
                 SyncPairResponse(
                     accepted: false,
@@ -1541,7 +1619,7 @@ public actor PeerManager {
         } catch {
             try? ChangeTracker.restorePeerDeviceTrust(db: db, peerId: request.deviceId, snapshot: previousTrust)
             restoreHostedSnapshotToken(previousSnapshotToken, for: request.deviceId)
-            try? await sState.setActivePairingCode(request.pairingCode)
+            try? await sState.setActivePairingCode(pairingCode)
             _ = deliverResponse(
                 SyncPairResponse(
                     accepted: false,
@@ -1582,7 +1660,7 @@ public actor PeerManager {
             } catch {
                 logger.fault("[PeerManager] Failed to roll back undelivered Bluetooth pairing trust: \(error.localizedDescription, privacy: .public)")
             }
-            try? await sState.setActivePairingCode(request.pairingCode)
+            try? await sState.setActivePairingCode(pairingCode)
             logger.error("[PeerManager] Bluetooth pairing valid but reply undelivered — prepared trust rolled back and code restored")
         }
     }
@@ -1611,9 +1689,6 @@ public actor PeerManager {
     /// Joiner side: a pairResponse arrived; resume the waiting continuation.
     private func handlePairResponse(from peerDeviceId: String, payload: Data) {
         guard let response = try? JSONDecoder().decode(SyncPairResponse.self, from: payload) else { return }
-        if response.accepted, let token = response.bluetoothSnapshotToken, !token.isEmpty {
-            receivedSnapshotTokens[peerDeviceId] = token
-        }
         if let cont = pendingPairContinuations.removeValue(forKey: peerDeviceId) {
             cont.resume(returning: response)
         }
@@ -1627,7 +1702,7 @@ public actor PeerManager {
     }
 
     /// Joiner side: pair with a Bluetooth-discovered host by connecting the
-    /// Multipeer session and exchanging the pairing code over it — no Wi-Fi needed.
+    /// Multipeer session and exchanging a code-authenticated proof — no Wi-Fi needed.
     public func pairViaMultipeer(
         hostDeviceId: String,
         myDeviceId: String,
@@ -1652,13 +1727,17 @@ public actor PeerManager {
             try? await Task.sleep(nanoseconds: 300_000_000)
         }
 
-        // 2. Send the pairing request.
+        // 2. Send a proof bound to this durable device key; never put the code on wire.
         let request = SyncPairRequest(
             deviceId: myDeviceId,
             deviceName: myDeviceName,
-            pairingCode: pairingCode,
+            pairingProof: SyncCrypto.pairingProof(
+                normalizedCode: pairingCode,
+                deviceId: myDeviceId,
+                clientPublicKeyB64: kaPublicKeyB64
+            ),
             platform: platform,
-            bluetoothProtocolVersion: 2,
+            bluetoothProtocolVersion: 3,
             keyAgreementPublicKey: kaPublicKeyB64
         )
         let payload = try JSONEncoder().encode(request)
@@ -1679,6 +1758,9 @@ public actor PeerManager {
             }
         }
         guard response.accepted else { throw MultipeerPairingError.rejected }
+        guard response.serverDeviceId == hostDeviceId else {
+            throw MultipeerPairingError.protocolUpgradeRequired
+        }
         guard let token = response.bluetoothSnapshotToken, !token.isEmpty else {
             throw MultipeerPairingError.protocolUpgradeRequired
         }
@@ -1693,6 +1775,9 @@ public actor PeerManager {
             platform: "ios",
             keyAgreementPublicKey: hostKey
         )
+        // Expose the one-time snapshot capability only after the connected host's
+        // identity and X25519 key are validated and durably pinned.
+        receivedSnapshotTokens[hostDeviceId] = token
         return response
     }
     #endif

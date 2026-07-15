@@ -48,6 +48,42 @@ struct PeerManagerTests {
         #expect(state.syncingWith == nil)
     }
 
+    @Test("PeerManager reuses injected X25519 identity across restarts")
+    func testInjectedIdentityPersistsAcrossPeerManagerRestarts() async throws {
+        let db = try freshDB()
+        let keys = SyncCrypto.generateKeyAgreementPair()
+        let identity = SyncDeviceIdentity(
+            privateKeyB64: keys.privateKey,
+            publicKeyB64: keys.publicKey
+        )
+        let store = InMemorySyncDeviceIdentityStore(identity: identity)
+
+        let first = PeerManager(db: db, identityStore: store)
+        try await first.startPeerSync(
+            deviceId: "device-a",
+            deviceName: "Device A",
+            companyId: "co-1",
+            startMultipeer: false,
+            startSyncServer: false
+        )
+        let firstPublicKey = await first.testCurrentKeyAgreementPublicKey()
+        await first.stopPeerSync()
+
+        let second = PeerManager(db: db, identityStore: store)
+        try await second.startPeerSync(
+            deviceId: "device-a",
+            deviceName: "Device A",
+            companyId: "co-1",
+            startMultipeer: false,
+            startSyncServer: false
+        )
+        let secondPublicKey = await second.testCurrentKeyAgreementPublicKey()
+        await second.stopPeerSync()
+
+        #expect(firstPublicKey == keys.publicKey)
+        #expect(secondPublicKey == keys.publicKey)
+    }
+
     @Test("Discovery-only peer sync starts browsing without a sync server")
     func testDiscoveryOnlyPeerSyncState() async throws {
         let db = try freshDB()
@@ -293,6 +329,46 @@ struct PeerManagerTests {
         await pm.stopPeerSync()
     }
 
+    @Test("LAN sync rejects a server key that differs from the pairing-pinned identity")
+    func testLANSyncRejectsSpoofedServerKey() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+        let pinned = SyncCrypto.generateKeyAgreementPair()
+        let attacker = SyncCrypto.generateKeyAgreementPair()
+        try ChangeTracker.registerPeerDevice(
+            db: db,
+            peerId: "shop-dev",
+            peerName: "Shop",
+            platform: "shop",
+            keyAgreementPublicKey: pinned.publicKey
+        )
+        try await pm.startPeerSync(
+            deviceId: "local-dev",
+            deviceName: "Local Device",
+            companyId: "local-company"
+        )
+        let keyBody = String(
+            data: try JSONEncoder().encode(SyncKeyResponse(key: attacker.publicKey)),
+            encoding: .utf8
+        )!
+        let spoofServer = try HTTPStubServer(statusCode: 200, body: keyBody)
+        let port = try await spoofServer.start()
+
+        let result = await pm.syncWithPeer(DiscoveredPeer(
+            deviceId: "shop-dev",
+            deviceName: "Shop",
+            companyId: "local-company",
+            host: "127.0.0.1",
+            port: port,
+            transport: "lan"
+        ))
+
+        #expect(result.success == false)
+        #expect(result.error?.contains("key") == true)
+        spoofServer.stop()
+        await pm.stopPeerSync()
+    }
+
     @Test("Sync with a down peer reports failure rather than false success")
     func testSyncWithDownPeerReportsFailure() async throws {
         let db = try freshDB()
@@ -351,6 +427,13 @@ struct PeerManagerTests {
         try await clearChangeLog(db)
 
         let (_, stubPublicKey) = SyncCrypto.generateKeyAgreementPair()
+        try ChangeTracker.registerPeerDevice(
+            db: db,
+            peerId: "foreign-dev",
+            peerName: "Foreign Device",
+            platform: "test",
+            keyAgreementPublicKey: stubPublicKey
+        )
         let keyBody = String(
             data: try JSONEncoder().encode(SyncKeyResponse(key: stubPublicKey)),
             encoding: .utf8
@@ -579,15 +662,16 @@ struct PeerManagerTests {
         let current = SyncPairRequest(
             deviceId: "joiner",
             deviceName: "Joiner",
-            pairingCode: "ABCD-1234",
+            pairingProof: "proof",
             platform: "ios",
-            bluetoothProtocolVersion: 2
+            bluetoothProtocolVersion: 3
         )
         let currentRoundTrip = try JSONDecoder().decode(
             SyncPairRequest.self,
             from: JSONEncoder().encode(current)
         )
-        #expect(currentRoundTrip.bluetoothProtocolVersion == 2)
+        #expect(currentRoundTrip.bluetoothProtocolVersion == 3)
+        #expect(currentRoundTrip.pairingCode == nil)
 
         let legacy = try JSONDecoder().decode(
             SyncPairRequest.self,
@@ -636,9 +720,13 @@ struct PeerManagerTests {
         let payload = try JSONEncoder().encode(SyncPairRequest(
             deviceId: "joiner",
             deviceName: "Joiner",
-            pairingCode: pairingCode,
+            pairingProof: SyncCrypto.pairingProof(
+                normalizedCode: try #require(SyncCrypto.normalizedPairingCode(pairingCode)),
+                deviceId: "joiner",
+                clientPublicKeyB64: peerKey
+            ),
             platform: "ios",
-            bluetoothProtocolVersion: 2,
+            bluetoothProtocolVersion: 3,
             keyAgreementPublicKey: peerKey
         ))
         let responses = PairResponseCollector()
@@ -676,9 +764,13 @@ struct PeerManagerTests {
         let payload = try JSONEncoder().encode(SyncPairRequest(
             deviceId: "joiner",
             deviceName: "Joiner",
-            pairingCode: pairingCode,
+            pairingProof: SyncCrypto.pairingProof(
+                normalizedCode: try #require(SyncCrypto.normalizedPairingCode(pairingCode)),
+                deviceId: "joiner",
+                clientPublicKeyB64: peerKey
+            ),
             platform: "ios",
-            bluetoothProtocolVersion: 2,
+            bluetoothProtocolVersion: 3,
             keyAgreementPublicKey: peerKey
         ))
         let responses = PairResponseCollector()
@@ -927,10 +1019,15 @@ struct PeerManagerTests {
 
         let state = await pm.getState()
         let peerKeys = SyncCrypto.generateKeyAgreementPair()
+        let normalizedCode = try #require(SyncCrypto.normalizedPairingCode(issuedCode))
         let body = try JSONEncoder().encode(SyncPairRequest(
             deviceId: "phone-dev",
             deviceName: "Phone",
-            pairingCode: issuedCode,
+            pairingProof: SyncCrypto.pairingProof(
+                normalizedCode: normalizedCode,
+                deviceId: "phone-dev",
+                clientPublicKeyB64: peerKeys.publicKey
+            ),
             platform: "iOS",
             keyAgreementPublicKey: peerKeys.publicKey
         ))
@@ -943,11 +1040,26 @@ struct PeerManagerTests {
         #expect((response as! HTTPURLResponse).statusCode == 200)
         let wrapper = try JSONDecoder().decode(SyncPairEncryptedResponse.self, from: data)
         let encryptedPayload = try #require(Data(base64Encoded: wrapper.encryptedPayload))
-        let sharedKey = try SyncCrypto.deriveSharedKeyData(
+        let sharedKey = try SyncCrypto.derivePairingSharedKeyData(
             ourPrivateKeyB64: peerKeys.privateKey,
-            theirPublicKeyB64: wrapper.serverKeyAgreementPublicKey
+            theirPublicKeyB64: wrapper.serverKeyAgreementPublicKey,
+            normalizedCode: normalizedCode,
+            clientPublicKeyB64: peerKeys.publicKey,
+            serverPublicKeyB64: wrapper.serverKeyAgreementPublicKey
         )
-        let plainData = try SyncCrypto.decryptAESGCM(data: encryptedPayload, keyData: sharedKey)
+        let aad = Data(
+            [
+                "wiredpart-sync-pairing-response-aad-v1",
+                "phone-dev",
+                peerKeys.publicKey,
+                wrapper.serverKeyAgreementPublicKey,
+            ].joined(separator: "\n").utf8
+        )
+        let plainData = try SyncCrypto.decryptAESGCM(
+            data: encryptedPayload,
+            keyData: sharedKey,
+            aad: aad
+        )
         let pairResponse = try JSONDecoder().decode(SyncPairResponse.self, from: plainData)
         #expect(pairResponse.accepted)
         #expect(pairResponse.serverDeviceId == "shop-dev")

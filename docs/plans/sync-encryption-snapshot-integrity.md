@@ -37,9 +37,15 @@ Bluetooth pairing consumes the one-time code atomically before trust preparation
 
 ### LAN authenticated pairing and traffic
 
-Pairing is the only bootstrap exception to prior trust. The joiner sends an ephemeral X25519 public key with the one-time code. The host derives the pairing key, atomically consumes the code, persists the joiner's key as trusted, and AES-GCM encrypts the accepted `SyncPairResponse`; the outer JSON wrapper contains only the host public key and ciphertext. The joiner rejects plaintext accepted responses, decrypts the wrapper, and persists the host key.
+Pairing is the only bootstrap exception to prior trust. The joiner keeps the manual 8-character UX but no longer transmits the one-time code in LAN plaintext. Instead, it sends a domain-separated pairing proof over `device_id` and its X25519 public key. The host verifies that proof against the active normalized code, atomically consumes the code, persists the joiner's key as trusted, and AES-GCM encrypts the accepted `SyncPairResponse`.
+
+The accepted response key is derived from the X25519 shared secret with the pairing-code digest as HKDF salt and a domain-separated transcript containing both client and server X25519 public keys. The response also authenticates those identities as AES-GCM AAD. A spoof server that does not know the one-time code cannot produce a decryptable accepted response, and a captured proof cannot be replayed after the host consumes the pairing code once.
+
+Each device's own X25519 identity is persistent across `PeerManager` and LAN server restarts. Production uses platform secure storage (Keychain where available) with a SwiftPM-compatible fallback for test hosts; tests can inject deterministic in-memory identities. Private X25519 keys are never stored in normal SQLite sync settings.
 
 After pairing, `/sync/key`, `/sync/push`, and `/sync/pull` bind `X-Device-ID` and the advertised sender key to the active trusted registry record. Missing or partial encryption headers, arbitrary keys, deactivated peers, request-body device mismatches, and wrong-company requests fail before JSON decoding, sync reads, or mutations. Discovery without a pairing-bound key may refresh metadata but never creates trust or reactivates a revoked peer.
+
+Encrypted `/sync/push` and `/sync/pull` requests include a unique request id. AES-GCM AAD binds endpoint, direction, sender device id, and request id; responses use the same request id with `direction=response`, so request/response reflection and cross-endpoint substitution fail authentication. The server reserves request ids in `_sync_replay_guard` inside a SQLite transaction after decryption but before JSON decode, inbox mutation, or outbox reads. Exact replay returns `replay_detected`, and the unique primary key makes concurrent reservation durable and single-winner.
 
 ### Joiner ordering
 
@@ -60,6 +66,9 @@ The existing `requestFullSyncOverMultipeer` API remains throwing. Send, decode, 
 ## Acceptance criteria and evidence
 
 - Missing/malformed/unauthorized key exchange, invalid keys, and AES-GCM failures throw; no plaintext downgrade or ciphertext-as-JSON fallback.
+- LAN pairing never sends the one-time code in plaintext; accepted responses require the pairing-code-authenticated client/server X25519 transcript.
+- Device X25519 identity survives `PeerManager`/server restart through secure platform storage or deterministic injected test storage, never through normal sync settings.
+- Encrypted LAN push/pull rejects exact replay before a second read or mutation, rejects cross-endpoint/direction substitution through AAD, and binds encrypted responses to the originating request id.
 - Host table enumeration, page read, row conversion, batch encoding, batch send, and completion-send failures cannot produce a successful transfer result.
 - Joiner processes FIFO batches serially and only completes after prior database application; apply failure throws and is retryable.
 - Focused `PeerManager`/sync/crypto tests pass, including encrypted LAN pairing, plaintext/partial-header rejection, arbitrary/deactivated peer rejection, successful trusted encrypted push/pull, undelivered Bluetooth pairing rollback, atomic code reservation, and capability replay/restoration boundaries.

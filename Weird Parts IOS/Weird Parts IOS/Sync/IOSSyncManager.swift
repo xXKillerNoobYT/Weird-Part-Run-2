@@ -978,12 +978,17 @@ final class IOSSyncManager {
             errorMessage = SyncError.noDatabaseAvailable.localizedDescription
             throw SyncError.noDatabaseAvailable
         }
+        guard let pm = peerManager else {
+            throw SyncError.noDatabaseAvailable
+        }
+        let pairingIdentity = try await pm.localSyncIdentity(deviceId: deviceId)
 
         let pairResponse = try await verifyPairingCodeWithShop(
             shopAddress: normalizedShopAddress,
             pairingCode: normalizedPairingCode,
             deviceId: deviceId,
-            deviceName: deviceName
+            deviceName: deviceName,
+            pairingIdentity: pairingIdentity
         )
 
         syncProgressMessage = "Registering verified device..."
@@ -1034,11 +1039,18 @@ final class IOSSyncManager {
         shopAddress: String,
         pairingCode: String,
         deviceId: String,
-        deviceName: String
+        deviceName: String,
+        pairingIdentity: SyncDeviceIdentity
     ) async throws -> SyncPairResponse {
         let baseURL = try normalizedShopBaseURL(shopAddress)
         let url = baseURL.appendingPathComponent("sync/pair")
-        let (pairingPrivateKey, pairingPublicKey) = SyncCrypto.generateKeyAgreementPair()
+        let pairingPrivateKey = pairingIdentity.privateKeyB64
+        let pairingPublicKey = pairingIdentity.publicKeyB64
+        let pairingProof = SyncCrypto.pairingProof(
+            normalizedCode: pairingCode,
+            deviceId: deviceId,
+            clientPublicKeyB64: pairingPublicKey
+        )
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -1047,7 +1059,7 @@ final class IOSSyncManager {
         request.httpBody = try JSONEncoder().encode(SyncPairRequest(
             deviceId: deviceId,
             deviceName: deviceName,
-            pairingCode: pairingCode,
+            pairingProof: pairingProof,
             platform: "iOS",
             keyAgreementPublicKey: pairingPublicKey
         ))
@@ -1070,11 +1082,26 @@ final class IOSSyncManager {
               let encryptedPayload = Data(base64Encoded: wrappedResponse.encryptedPayload) else {
             throw SyncError.pairingVerificationFailed("Pairing response encryption was invalid.")
         }
-        let sharedKey = try SyncCrypto.deriveSharedKeyData(
+        let sharedKey = try SyncCrypto.derivePairingSharedKeyData(
             ourPrivateKeyB64: pairingPrivateKey,
-            theirPublicKeyB64: wrappedResponse.serverKeyAgreementPublicKey
+            theirPublicKeyB64: wrappedResponse.serverKeyAgreementPublicKey,
+            normalizedCode: pairingCode,
+            clientPublicKeyB64: pairingPublicKey,
+            serverPublicKeyB64: wrappedResponse.serverKeyAgreementPublicKey
         )
-        let plainResponse = try SyncCrypto.decryptAESGCM(data: encryptedPayload, keyData: sharedKey)
+        let aad = Data(
+            [
+                "wiredpart-sync-pairing-response-aad-v1",
+                deviceId,
+                pairingPublicKey,
+                wrappedResponse.serverKeyAgreementPublicKey,
+            ].joined(separator: "\n").utf8
+        )
+        let plainResponse = try SyncCrypto.decryptAESGCM(
+            data: encryptedPayload,
+            keyData: sharedKey,
+            aad: aad
+        )
         let pairResponse = try JSONDecoder().decode(SyncPairResponse.self, from: plainResponse)
         guard pairResponse.accepted else {
             throw SyncError.pairingVerificationFailed("Pairing was not accepted by the shop.")
