@@ -6,6 +6,10 @@ import os
 @Suite("LAN Sync Server Tests")
 struct SyncServerTests {
 
+    private var validPeerKey: String {
+        SyncCrypto.generateKeyAgreementPair().publicKey
+    }
+
     private func makeState(
         deviceId: String = "test-device",
         deviceName: String = "Test Device",
@@ -16,6 +20,37 @@ struct SyncServerTests {
             deviceName: deviceName,
             companyId: companyId
         )
+    }
+
+    private func makeEncryptedRequest(
+        url: URL,
+        plainBody: Data,
+        state: SyncServerState,
+        deviceId: String = "remote-dev"
+    ) async throws -> (request: URLRequest, sharedKey: Data) {
+        let (privateKey, publicKey) = SyncCrypto.generateKeyAgreementPair()
+        try await state.registerAuthorizedPeer(
+            deviceId: deviceId,
+            deviceName: "Test peer",
+            platform: "test",
+            keyAgreementPublicKey: publicKey
+        )
+        let sharedKey = try SyncCrypto.deriveSharedKeyData(
+            ourPrivateKeyB64: privateKey,
+            theirPublicKeyB64: state.kaPublicKeyB64
+        )
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = try SyncCrypto.encryptAESGCM(data: plainBody, keyData: sharedKey)
+        request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        request.setValue("1", forHTTPHeaderField: "X-Sync-Encrypted")
+        request.setValue(publicKey, forHTTPHeaderField: "X-Sync-Sender-Key")
+        request.setValue(deviceId, forHTTPHeaderField: "X-Sync-Device-ID")
+        return (request, sharedKey)
+    }
+
+    private func decryptResponse(_ data: Data, sharedKey: Data) throws -> Data {
+        try SyncCrypto.decryptAESGCM(data: data, keyData: sharedKey)
     }
 
     // MARK: - HTTP Framing
@@ -151,7 +186,8 @@ struct SyncServerTests {
             deviceId: "phone-dev",
             deviceName: "Phone",
             pairingCode: "ABCD-1234",
-            platform: "iOS"
+            platform: "iOS",
+            keyAgreementPublicKey: validPeerKey
         ))
         var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/pair")!)
         request.httpMethod = "POST"
@@ -175,7 +211,8 @@ struct SyncServerTests {
             deviceId: "phone-dev",
             deviceName: "Phone",
             pairingCode: "WXYZ-1234",
-            platform: "iOS"
+            platform: "iOS",
+            keyAgreementPublicKey: validPeerKey
         ))
         var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/pair")!)
         request.httpMethod = "POST"
@@ -199,7 +236,8 @@ struct SyncServerTests {
             deviceId: "phone-dev",
             deviceName: "Phone",
             pairingCode: "abcd1234",
-            platform: "iOS"
+            platform: "iOS",
+            keyAgreementPublicKey: validPeerKey
         ))
         var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/pair")!)
         request.httpMethod = "POST"
@@ -232,7 +270,8 @@ struct SyncServerTests {
                 deviceId: deviceId,
                 deviceName: "Phone",
                 pairingCode: "abcd1234",
-                platform: "iOS"
+                platform: "iOS",
+                keyAgreementPublicKey: validPeerKey
             ))
             var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/pair")!)
             request.httpMethod = "POST"
@@ -278,20 +317,72 @@ struct SyncServerTests {
         encoder.outputFormatting = [.sortedKeys]
         let body = try encoder.encode(pushRequest)
 
-        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/push")!)
-        request.httpMethod = "POST"
-        request.httpBody = body
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let (request, sharedKey) = try await makeEncryptedRequest(
+            url: URL(string: "http://127.0.0.1:\(port)/sync/push")!,
+            plainBody: body,
+            state: state
+        )
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (encryptedData, response) = try await URLSession.shared.data(for: request)
         let httpResponse = response as! HTTPURLResponse
         #expect(httpResponse.statusCode == 200)
 
+        let data = try decryptResponse(encryptedData, sharedKey: sharedKey)
         let pushResponse = try JSONDecoder().decode(SyncPushResponse.self, from: data)
         #expect(pushResponse.accepted == 1)
         #expect(!pushResponse.syncBatchId.isEmpty)
 
         await server.stop()
+    }
+
+    @Test("POST /sync/push rejects plaintext payloads")
+    func testPushRejectsPlaintextPayload() async throws {
+        let state = makeState(companyId: "co-1")
+        let server = LanSyncServer(state: state)
+        let port = try await server.start()
+        defer { Task { await server.stop() } }
+
+        let body = try JSONEncoder().encode(SyncPushRequest(
+            deviceId: "remote-dev",
+            companyId: "co-1",
+            changes: []
+        ))
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/push")!)
+        request.httpMethod = "POST"
+        request.httpBody = body
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        #expect((response as! HTTPURLResponse).statusCode == 400)
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: String]
+        #expect(json?["error"] == "decryption_failed")
+    }
+
+    @Test("POST /sync/push rejects an encrypted payload from an unpaired sender key")
+    func testPushRejectsUnpairedSenderKey() async throws {
+        let state = makeState(companyId: "co-1")
+        let server = LanSyncServer(state: state)
+        let port = try await server.start()
+        defer { Task { await server.stop() } }
+
+        let (privateKey, publicKey) = SyncCrypto.generateKeyAgreementPair()
+        let sharedKey = try SyncCrypto.deriveSharedKeyData(
+            ourPrivateKeyB64: privateKey,
+            theirPublicKeyB64: state.kaPublicKeyB64
+        )
+        let plain = try JSONEncoder().encode(SyncPushRequest(
+            deviceId: "attacker",
+            companyId: "co-1",
+            changes: []
+        ))
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/push")!)
+        request.httpMethod = "POST"
+        request.httpBody = try SyncCrypto.encryptAESGCM(data: plain, keyData: sharedKey)
+        request.setValue("1", forHTTPHeaderField: "X-Sync-Encrypted")
+        request.setValue(publicKey, forHTTPHeaderField: "X-Sync-Sender-Key")
+        request.setValue("attacker", forHTTPHeaderField: "X-Sync-Device-ID")
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        #expect((response as! HTTPURLResponse).statusCode == 400)
     }
 
     @Test("POST /sync/push adds to inbox")
@@ -323,18 +414,17 @@ struct SyncServerTests {
 
         let encoder = JSONEncoder()
         let body = try encoder.encode(pushRequest)
-        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/push")!)
-        request.httpMethod = "POST"
-        request.httpBody = body
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let (request, _) = try await makeEncryptedRequest(
+            url: URL(string: "http://127.0.0.1:\(port)/sync/push")!,
+            plainBody: body,
+            state: state
+        )
 
         let (_, _) = try await URLSession.shared.data(for: request)
 
         // Verify inbox
         let inbox = await state.drainInbox()
-        #expect(inbox.count == 2)
-        #expect(inbox[0].recordId == "1")
-        #expect(inbox[1].recordId == "2")
+        #expect(inbox.map(\.recordId) == ["1", "2"])
 
         await server.stop()
     }
@@ -374,15 +464,17 @@ struct SyncServerTests {
 
         let encoder = JSONEncoder()
         let body = try encoder.encode(pullRequest)
-        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/pull")!)
-        request.httpMethod = "POST"
-        request.httpBody = body
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let (request, sharedKey) = try await makeEncryptedRequest(
+            url: URL(string: "http://127.0.0.1:\(port)/sync/pull")!,
+            plainBody: body,
+            state: state
+        )
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (encryptedData, response) = try await URLSession.shared.data(for: request)
         let httpResponse = response as! HTTPURLResponse
         #expect(httpResponse.statusCode == 200)
 
+        let data = try decryptResponse(encryptedData, sharedKey: sharedKey)
         let pullResponse = try JSONDecoder().decode(SyncPullResponse.self, from: data)
         #expect(pullResponse.changes.count == 2)
         #expect(pullResponse.serverDeviceId == "server-dev")
@@ -412,12 +504,14 @@ struct SyncServerTests {
 
         let encoder = JSONEncoder()
         let body = try encoder.encode(pullRequest)
-        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/pull")!)
-        request.httpMethod = "POST"
-        request.httpBody = body
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let (request, sharedKey) = try await makeEncryptedRequest(
+            url: URL(string: "http://127.0.0.1:\(port)/sync/pull")!,
+            plainBody: body,
+            state: state
+        )
 
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (encryptedData, _) = try await URLSession.shared.data(for: request)
+        let data = try decryptResponse(encryptedData, sharedKey: sharedKey)
         let pullResponse = try JSONDecoder().decode(SyncPullResponse.self, from: data)
 
         // Should only get IDs 2 and 3 (not 1)
@@ -428,7 +522,7 @@ struct SyncServerTests {
 
     // MARK: - Auth
 
-    // MARK: - GET /sync/key (#191 — unauthenticated key exchange)
+    // MARK: - GET /sync/key (paired-device authorization)
 
     @Test("GET /sync/key without X-Company-ID returns 403")
     func testKeyExchangeWithoutCompanyIdReturns403() async throws {
@@ -455,6 +549,20 @@ struct SyncServerTests {
         #expect((response as! HTTPURLResponse).statusCode == 403)
     }
 
+    @Test("GET /sync/key rejects an unpaired device identity")
+    func testKeyExchangeRejectsUnpairedDevice() async throws {
+        let state = makeState(companyId: "co-1")
+        let server = LanSyncServer(state: state)
+        let port = try await server.start()
+        defer { Task { await server.stop() } }
+
+        var req = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/key")!)
+        req.setValue("co-1", forHTTPHeaderField: "X-Company-ID")
+        req.setValue("unpaired-device", forHTTPHeaderField: "X-Sync-Device-ID")
+        let (_, response) = try await URLSession.shared.data(for: req)
+        #expect((response as! HTTPURLResponse).statusCode == 403)
+    }
+
     @Test("GET /sync/key with correct X-Company-ID returns server public key")
     func testKeyExchangeWithCorrectCompanyIdReturns200() async throws {
         let state = makeState(companyId: "co-1")
@@ -463,7 +571,15 @@ struct SyncServerTests {
         defer { Task { await server.stop() } }
 
         var req = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/key")!)
+        let (_, peerPublicKey) = SyncCrypto.generateKeyAgreementPair()
+        try await state.registerAuthorizedPeer(
+            deviceId: "remote-dev",
+            deviceName: "Remote",
+            platform: "test",
+            keyAgreementPublicKey: peerPublicKey
+        )
         req.setValue("co-1", forHTTPHeaderField: "X-Company-ID")
+        req.setValue("remote-dev", forHTTPHeaderField: "X-Sync-Device-ID")
         let (data, response) = try await URLSession.shared.data(for: req)
         #expect((response as! HTTPURLResponse).statusCode == 200)
 
@@ -502,10 +618,12 @@ struct SyncServerTests {
             ]
         ]
         let bodyData = try JSONSerialization.data(withJSONObject: body)
-        var req = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/push")!)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = bodyData
+        var (req, _) = try await makeEncryptedRequest(
+            url: URL(string: "http://127.0.0.1:\(port)/sync/push")!,
+            plainBody: bodyData,
+            state: state,
+            deviceId: "client-dev"
+        )
         req.timeoutInterval = 5
 
         let (data, response) = try await URLSession.shared.data(for: req)
@@ -532,10 +650,11 @@ struct SyncServerTests {
 
         let encoder = JSONEncoder()
         let body = try encoder.encode(pushRequest)
-        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/push")!)
-        request.httpMethod = "POST"
-        request.httpBody = body
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let (request, _) = try await makeEncryptedRequest(
+            url: URL(string: "http://127.0.0.1:\(port)/sync/push")!,
+            plainBody: body,
+            state: state
+        )
 
         let (_, response) = try await URLSession.shared.data(for: request)
         let httpResponse = response as! HTTPURLResponse

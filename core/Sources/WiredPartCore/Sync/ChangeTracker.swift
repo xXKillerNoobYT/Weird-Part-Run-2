@@ -234,17 +234,27 @@ public enum ChangeTracker {
         db: AppDatabase,
         peerId: String,
         peerName: String,
-        platform: String? = nil
+        platform: String? = nil,
+        keyAgreementPublicKey: String? = nil
     ) throws {
+        let encodedKey = keyAgreementPublicKey.map { "x25519:\($0)" }
         try db.writer.write { dbConnection in
             try dbConnection.execute(
                 sql: """
-                    INSERT INTO _device_registry (device_id, device_name, platform, last_seen_at, is_trusted)
-                    VALUES (?, ?, ?, datetime('now'), 1)
+                    INSERT INTO _device_registry (device_id, device_name, platform, certificate, last_seen_at, is_trusted)
+                    VALUES (?, ?, ?, ?, datetime('now'), 1)
                     ON CONFLICT(device_id)
-                    DO UPDATE SET device_name = ?, last_seen_at = datetime('now')
+                    DO UPDATE SET device_name = ?,
+                                  platform = COALESCE(?, platform),
+                                  certificate = COALESCE(?, certificate),
+                                  is_trusted = CASE WHEN ? IS NOT NULL THEN 1 ELSE is_trusted END,
+                                  is_deactivated = CASE WHEN ? IS NOT NULL THEN 0 ELSE is_deactivated END,
+                                  last_seen_at = datetime('now')
                     """,
-                arguments: [peerId, peerName, platform, peerName]
+                arguments: [
+                    peerId, peerName, platform, encodedKey,
+                    peerName, platform, encodedKey, encodedKey, encodedKey,
+                ]
             )
         }
     }

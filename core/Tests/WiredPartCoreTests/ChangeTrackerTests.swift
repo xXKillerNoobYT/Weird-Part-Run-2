@@ -178,6 +178,52 @@ struct ChangeTrackerTests {
         #expect(updated?.deviceName == "iPad Pro (updated)")
     }
 
+    @Test("Pairing-bound LAN key persists and deactivation remains fail-closed")
+    func testPairingBoundKeyPersistenceAndDeactivation() async throws {
+        let db = try freshDB()
+        let (_, publicKey) = SyncCrypto.generateKeyAgreementPair()
+        try ChangeTracker.registerPeerDevice(
+            db: db,
+            peerId: "peer-1",
+            peerName: "iPad",
+            platform: "iOS",
+            keyAgreementPublicKey: publicKey
+        )
+
+        let state = SyncServerState(
+            deviceId: "server",
+            deviceName: "Server",
+            companyId: "company",
+            db: db
+        )
+        #expect(try await state.authorizedPeerKey(deviceId: "peer-1") == publicKey)
+
+        try await db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE _device_registry SET is_deactivated = 1 WHERE device_id = ?",
+                arguments: ["peer-1"]
+            )
+        }
+        #expect(try await state.authorizedPeerKey(deviceId: "peer-1") == nil)
+
+        // Normal discovery/sync bookkeeping must not silently reactivate a revoked peer.
+        try ChangeTracker.registerPeerDevice(
+            db: db,
+            peerId: "peer-1",
+            peerName: "iPad seen again"
+        )
+        #expect(try await state.authorizedPeerKey(deviceId: "peer-1") == nil)
+
+        // A fresh pairing proof with a bound key intentionally reauthorizes it.
+        try ChangeTracker.registerPeerDevice(
+            db: db,
+            peerId: "peer-1",
+            peerName: "iPad re-paired",
+            keyAgreementPublicKey: publicKey
+        )
+        #expect(try await state.authorizedPeerKey(deviceId: "peer-1") == publicKey)
+    }
+
     @Test("updatePeerSyncTime updates timestamps")
     func testUpdatePeerSyncTime() throws {
         let db = try freshDB()

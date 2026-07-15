@@ -627,7 +627,8 @@ final class IOSSyncManager {
             db: db,
             peerId: response.serverDeviceId,
             peerName: hostName.isEmpty ? "Paired Device" : hostName,
-            platform: "ios"
+            platform: "ios",
+            keyAgreementPublicKey: response.serverKeyAgreementPublicKey
         )
         if let service = settingsService {
             try service.upsertSettingsMap([

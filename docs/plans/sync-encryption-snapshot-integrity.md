@@ -19,9 +19,9 @@ Current `main` silently downgrades negotiated LAN encryption when key derivation
    - batch encoding throws;
    - every batch send and the final completion send must succeed;
    - any failure records a failed host result and, where transport remains available, sends a failure completion to the joiner.
-3. Drain Multipeer's existing FIFO queue through one guarded `PeerManager` actor consumer and await each change-batch database application before processing the next envelope. Each batch applies atomically, so a failed row rolls back its successful prefix. A completion envelope may resume onboarding only after all earlier batches committed. Decode/apply/remote-completion failure resumes the pending request with a visible retryable error.
-4. Fail closed on the current client path: outbound LAN sync requires successful key negotiation and AES-GCM; key-fetch, derive, encrypt, and decrypt failures cannot select plaintext. The server temporarily retains authenticated plaintext request compatibility for older installed clients. An empty legacy `fullSyncComplete` payload remains a success signal for already-started older Bluetooth hosts.
-5. Bind Bluetooth snapshot authorization to the successful pairing session with a random capability token, in addition to requiring a trusted and non-deactivated device registry entry. Reserve the token before transfer to prevent replay/concurrent snapshot duplication, restoring it only after a failed transfer so the joiner can retry.
+3. Drain Multipeer's existing FIFO queue through one guarded `PeerManager` actor consumer. Decode and validate each snapshot page in order, buffer it until completion, then apply the entire snapshot in one GRDB transaction so a failed later page rolls back all earlier pages. Quarantine any queued remainder after failure until an explicit retry. A completion envelope may resume onboarding only after the one snapshot transaction commits. Decode/apply/remote-completion failure resumes the pending request with a visible retryable error.
+4. Fail closed in both LAN directions: outbound sync requires successful key negotiation and AES-GCM, while the server rejects plaintext, unpaired device identities, arbitrary sender keys, and payload/header device-id mismatches. Pairing persists the peer's X25519 public key in the device registry; current trust and deactivation state are checked on every request.
+5. Bind Bluetooth snapshot authorization to the successful pairing session with a random capability token, in addition to requiring a trusted and non-deactivated device registry entry. Reserve the token before transfer to prevent replay/concurrent snapshot duplication. Consume it only after the joiner acknowledges durable apply; restore it after transfer/apply failure or acknowledgement timeout so the joiner can retry.
 
 ## Design
 
@@ -29,24 +29,25 @@ Current `main` silently downgrades negotiated LAN encryption when key derivation
 
 Add a small deterministic `BluetoothSnapshotTransfer` execution component outside the already-large `PeerManager.swift`. It accepts injected table/page/encode/send operations, returns the sent record count, and throws typed errors. Production adapters remain in `PeerManager` and use GRDB, the existing row-to-JSON conversion, `JSONEncoder`, and `MultipeerManager.send`.
 
-The host sends `fullSyncComplete` only after all snapshot batches succeed. Its payload is a codable completion result (`success`, optional `error`). If snapshot production fails, the host attempts to send a failure result, records `PeerSyncResult(success: false)`, and never logs or records success. If the success-completion send itself fails, the host records failure.
+The host sends `fullSyncComplete` only after all snapshot batches succeed. Its payload is a codable completion result (`success`, optional `error`). A success completion is a proposal, not final success: the joiner must return `fullSyncApplied` after durable database application. The host records success and consumes the capability only after that acknowledgement. Apply failure or a missing acknowledgement restores the capability and records a retryable failure. Snapshot production or completion-send failures likewise record failure and never log or record success.
 
-The Bluetooth pairing response carries a random snapshot capability. The joiner returns it in `fullSyncRequest`; the host requires an exact capability match plus a trusted/non-deactivated registry row and binds the pairing request identity to the Multipeer session's advertised device id. This prevents a nearby peer from obtaining a snapshot by merely spoofing a known device id.
+The Bluetooth pairing request advertises protocol version 2 and the joiner's X25519 key. The response carries the host key and a random snapshot capability. Each side persists the other's key for later LAN sync. The joiner returns the capability in `fullSyncRequest`; the host requires an exact capability match plus a trusted/non-deactivated registry row and binds the pairing request identity to the Multipeer session's advertised device id. This prevents a nearby peer from obtaining a snapshot by merely spoofing a known device id.
 
 ### Joiner ordering
 
-`MultipeerManager` already stores received messages in a serial FIFO queue. Its callback schedules an actor-isolated drain rather than independently processing the callback argument; an explicit in-progress guard prevents actor reentrancy from starting a second consumer while the first is suspended. The drain pops messages until empty and awaits each message. `changes` decoding and atomic `ConflictResolver` application throw. `fullSyncComplete` then resolves the pending continuation with success or failure. Because both steps execute serially in one actor drain, completion cannot overtake durable database application.
+`MultipeerManager` already stores received messages in a serial FIFO queue. Its callback schedules an actor-isolated drain rather than independently processing the callback argument; an explicit in-progress guard prevents actor reentrancy from starting a second consumer while the first is suspended. The drain pops messages until empty and awaits each message. Snapshot `changes` pages decode and validate into a per-peer buffer; `fullSyncComplete` applies that complete buffer through one atomic `ConflictResolver` transaction before resolving the continuation. If any page or final apply fails, the buffer is discarded and remaining queued pages/completion are ignored until retry. Completion therefore cannot overtake durable database application or leave a partially committed snapshot.
 
 ### Error and retry behavior
 
-The existing `requestFullSyncOverMultipeer` API remains throwing. Send, decode, apply, remote-host, and timeout failures are surfaced to onboarding; a caller can retry the same operation. Continuations are removed before resume so late completion/timeout messages cannot double-resume.
+The existing `requestFullSyncOverMultipeer` API remains throwing. Send, decode, apply, remote-host, transport-shutdown, and timeout failures are surfaced to onboarding; a caller can retry the same operation. Continuations are removed before resume so late completion/timeout messages cannot double-resume. Stopping either Multipeer path explicitly fails every pending pairing and full-sync continuation.
 
 ## Dependency map
 
 - `PeerManager.syncViaHTTP` -> `resolveSharedKey` -> `SyncCrypto` (LAN confidentiality/correctness)
 - `PeerManager.handleFullSyncRequest` -> `BluetoothSnapshotTransfer` -> GRDB reads/row encoding -> `MultipeerManager.send`
 - `MultipeerManager.receiveQueue` -> `PeerManager.drainMultipeerMessages` -> `ConflictResolver` -> GRDB commit -> full-sync continuation
-- `PeerManagerTests` validates crypto propagation, host fault classes, ordered durable apply, and apply-failure visibility
+- `PeerManagerTests` validates crypto propagation, host fault classes, capability reservation/acknowledgement, ordered durable apply, transport shutdown, and apply-failure visibility
+- `SyncServerTests`/`SyncIntegrationTests` validate encrypted paired traffic plus plaintext, unpaired-key, identity, certificate, and company rejection
 
 ## Acceptance criteria and evidence
 
@@ -61,4 +62,4 @@ The existing `requestFullSyncOverMultipeer` API remains throwing. Send, decode, 
 
 Physical two-device Bluetooth checks remain valuable for transport behavior, but deterministic core tests are the release gate for the failure and ordering invariants in this change. Hardware evidence tracked by #1417/#1423 is not replaced by this work.
 
-Mixed-version behavior intentionally fails safe. A new joiner can consume an older host's empty completion payload, but an older joiner cannot present the pairing-bound snapshot capability required by a new host and will time out rather than receive company data without that authorization proof. The LAN server's authenticated plaintext compatibility path remains for older clients; current clients never choose it after key negotiation fails.
+Mixed-version behavior intentionally fails safe and is explicit at pairing. New Bluetooth requests advertise protocol version 2; a new host rejects requests with no supported version, and a new joiner rejects responses missing either the capability or host X25519 key with an update-both-devices diagnostic. The LAN server no longer accepts plaintext sync payloads, so devices must be updated and re-paired once to bind their persisted X25519 identity before LAN push/pull resumes.
