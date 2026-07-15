@@ -674,6 +674,37 @@ struct PeerManagerTests {
         ))
     }
 
+    @Test("Transport shutdown restores a pre-completion snapshot capability")
+    func testTransportShutdownRestoresPreCompletionSnapshotCapability() async throws {
+        let pm = PeerManager(db: try freshDB())
+        let peer = "joiner"
+        let token = "retryable-capability"
+        await pm.testIssueHostedSnapshotToken(token, for: peer)
+        #expect(await pm.testReserveHostedSnapshot(token: token, for: peer))
+
+        await pm.stopMultipeerDiscovery()
+
+        #expect(await pm.testHostedSnapshotTokenAvailable(token, for: peer))
+        #expect(!(await pm.testHostedSnapshotIsReserved(for: peer)))
+        #expect(await pm.testReserveHostedSnapshot(token: token, for: peer))
+    }
+
+    @Test("Transport shutdown keeps a post-completion snapshot capability consumed")
+    func testTransportShutdownKeepsPostCompletionSnapshotCapabilityConsumed() async throws {
+        let pm = PeerManager(db: try freshDB())
+        let peer = "joiner"
+        let token = "consumed-capability"
+        await pm.testIssueHostedSnapshotToken(token, for: peer)
+        #expect(await pm.testReserveHostedSnapshot(token: token, for: peer))
+        await pm.testSetHostedSnapshotRowsSent(42, for: peer)
+
+        await pm.stopMultipeerDiscovery()
+
+        #expect(!(await pm.testHostedSnapshotTokenAvailable(token, for: peer)))
+        #expect(!(await pm.testHostedSnapshotIsReserved(for: peer)))
+        #expect(!(await pm.testReserveHostedSnapshot(token: token, for: peer)))
+    }
+
     @Test("Bluetooth pairing wire format distinguishes capability protocol clients from legacy clients")
     func testBluetoothPairingProtocolVersionWireFormat() throws {
         let current = SyncPairRequest(
@@ -710,7 +741,7 @@ struct PeerManagerTests {
         while await pm.testPendingTransportOperationCount() < 2 {
             await Task.yield()
         }
-        await pm.testFailPendingTransportOperations()
+        await pm.stopMultipeerDiscovery()
 
         for task in [pairingTask, fullSyncTask] {
             do {

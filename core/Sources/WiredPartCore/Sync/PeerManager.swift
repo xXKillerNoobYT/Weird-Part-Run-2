@@ -359,7 +359,10 @@ public actor PeerManager {
             continuation.resume(throwing: error)
         }
 
-        for (peerDeviceId, reservation) in hostedSnapshotReservations {
+        // A reservation is retryable only until completion has been sent. Once
+        // rowsSent is set, the snapshot capability has crossed the no-replay
+        // boundary and transport shutdown must discard it rather than reissue it.
+        for (peerDeviceId, reservation) in hostedSnapshotReservations where reservation.rowsSent == nil {
             hostedSnapshotTokens[peerDeviceId] = reservation.authorizationToken
         }
         hostedSnapshotReservations.removeAll()

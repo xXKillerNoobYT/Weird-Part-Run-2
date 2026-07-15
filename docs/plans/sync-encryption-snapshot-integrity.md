@@ -1,6 +1,6 @@
 # Sync Encryption and Bluetooth Snapshot Completion Integrity
 
-Status: Implemented; pending PR review/CI (WEI-4840 and WEI-4847; PR #1448; GitHub #385 and #1417)
+Status: Implemented, including transport-stop capability boundary review fix (WEI-4840, WEI-4847, and WEI-4855; PR #1448; GitHub #385 and #1417); pending exact-head review/CI
 Date: 2026-07-15
 Owner: CTO / Sync core
 Review lanes: SecurityAgent, non-author engineering review, GitHub Copilot PR reviewer
