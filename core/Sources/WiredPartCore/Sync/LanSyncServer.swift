@@ -369,9 +369,10 @@ public actor SyncServerState {
     ) throws -> Bool {
         guard let db else { return true }
         return try db.writer.write { dbConn in
-            try dbConn.execute(
-                sql: "DELETE FROM _sync_replay_guard WHERE created_at < datetime('now', '-7 days')"
-            )
+            // Request ids are durable security state, not a time-limited cache.
+            // Deleting an accepted id would make captured ciphertext valid again.
+            // Keep the reservation for the lifetime of this database; any future
+            // compaction must first introduce authenticated monotonic freshness.
             try dbConn.execute(
                 sql: """
                     INSERT OR IGNORE INTO _sync_replay_guard (

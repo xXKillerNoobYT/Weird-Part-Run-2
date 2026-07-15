@@ -544,6 +544,62 @@ struct SyncServerTests {
         #expect(await state.inbox.count == 1)
     }
 
+    @Test("POST /sync/push rejects exact replay after the former retention horizon")
+    func testPushReplayRemainsRejectedAfterFormerRetentionHorizon() async throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+        let state = SyncServerState(deviceId: "shop-dev", deviceName: "Shop", companyId: "co-1", db: db)
+        let body = try JSONEncoder().encode(SyncPushRequest(
+            deviceId: "remote-dev",
+            companyId: "co-1",
+            changes: [IncomingChange(
+                deviceId: "remote-dev",
+                tableName: "users",
+                recordId: "1",
+                operation: "DELETE",
+                timestamp: "2026-03-14T10:00:00Z"
+            )]
+        ))
+        let request = try await makeEncryptedRawHTTPRequest(
+            path: "/sync/push",
+            endpoint: "push",
+            plainBody: body,
+            state: state,
+            requestId: "expired-replay-push-1"
+        )
+
+        let (firstStatus, _) = await LanSyncServer.routeHTTPRequest(
+            data: request.raw,
+            state: state,
+            logger: Logger(subsystem: "com.wiredpart.core.tests", category: "SyncServerTests")
+        )
+        #expect(firstStatus == 200)
+        try await db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE _sync_replay_guard SET created_at = datetime('now', '-8 days')"
+            )
+        }
+
+        let identity = SyncDeviceIdentity(
+            privateKeyB64: state.kaPrivateKeyB64,
+            publicKeyB64: state.kaPublicKeyB64
+        )
+        let restartedState = SyncServerState(
+            deviceId: "shop-dev",
+            deviceName: "Shop",
+            companyId: "co-1",
+            db: db,
+            identity: identity
+        )
+        let (replayStatus, _) = await LanSyncServer.routeHTTPRequest(
+            data: request.raw,
+            state: restartedState,
+            logger: Logger(subsystem: "com.wiredpart.core.tests", category: "SyncServerTests")
+        )
+
+        #expect(replayStatus == 409)
+        #expect(await restartedState.inbox.isEmpty)
+    }
+
     @Test("Encrypted push body cannot be substituted onto pull endpoint")
     func testCrossEndpointSubstitutionRejected() async throws {
         let db = try AppDatabase.openInMemoryDatabase()
@@ -912,6 +968,61 @@ struct SyncServerTests {
 
         #expect(firstStatus == 200)
         #expect(secondStatus == 409)
+        let replayJSON = try JSONSerialization.jsonObject(with: replayBody) as? [String: String]
+        #expect(replayJSON?["error"] == "replay_detected")
+    }
+
+    @Test("POST /sync/pull rejects exact replay after the former retention horizon")
+    func testPullReplayRemainsRejectedAfterFormerRetentionHorizon() async throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+        let state = SyncServerState(
+            deviceId: "shop-dev",
+            deviceName: "Shop",
+            companyId: "co-1",
+            db: db
+        )
+        await state.setOutbox([])
+        let request = try await makeEncryptedRawHTTPRequest(
+            path: "/sync/pull",
+            endpoint: "pull",
+            plainBody: JSONEncoder().encode(SyncPullRequest(
+                deviceId: "remote-dev",
+                companyId: "co-1"
+            )),
+            state: state,
+            requestId: "expired-replay-pull-1"
+        )
+
+        let (firstStatus, _) = await LanSyncServer.routeHTTPRequest(
+            data: request.raw,
+            state: state,
+            logger: Logger(subsystem: "com.wiredpart.core.tests", category: "SyncServerTests")
+        )
+        #expect(firstStatus == 200)
+        try await db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE _sync_replay_guard SET created_at = datetime('now', '-8 days')"
+            )
+        }
+
+        let identity = SyncDeviceIdentity(
+            privateKeyB64: state.kaPrivateKeyB64,
+            publicKeyB64: state.kaPublicKeyB64
+        )
+        let restartedState = SyncServerState(
+            deviceId: "shop-dev",
+            deviceName: "Shop",
+            companyId: "co-1",
+            db: db,
+            identity: identity
+        )
+        let (replayStatus, replayBody) = await LanSyncServer.routeHTTPRequest(
+            data: request.raw,
+            state: restartedState,
+            logger: Logger(subsystem: "com.wiredpart.core.tests", category: "SyncServerTests")
+        )
+
+        #expect(replayStatus == 409)
         let replayJSON = try JSONSerialization.jsonObject(with: replayBody) as? [String: String]
         #expect(replayJSON?["error"] == "replay_detected")
     }
