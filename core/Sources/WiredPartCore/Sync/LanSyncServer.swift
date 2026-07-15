@@ -179,6 +179,25 @@ public struct SyncPairResponse: Codable, Sendable {
     }
 }
 
+/// Encrypted response body for accepted POST /sync/pair.
+///
+/// The server public key is left in cleartext so the client can derive the
+/// ephemeral ECDH key; the accepted pairing payload itself is AES-GCM encrypted.
+public struct SyncPairEncryptedResponse: Codable, Sendable {
+    public let serverKeyAgreementPublicKey: String
+    public let encryptedPayload: String
+
+    public init(serverKeyAgreementPublicKey: String, encryptedPayload: String) {
+        self.serverKeyAgreementPublicKey = serverKeyAgreementPublicKey
+        self.encryptedPayload = encryptedPayload
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case serverKeyAgreementPublicKey = "server_key_agreement_public_key"
+        case encryptedPayload = "encrypted_payload"
+    }
+}
+
 // MARK: - Server State (Actor)
 
 /// Thread-safe shared state for the sync server.
@@ -713,7 +732,13 @@ public final class LanSyncServer: Sendable {
     private static func handlePair(body: Data, state: SyncServerState) async -> (Int, Data) {
         guard let request = try? JSONDecoder().decode(SyncPairRequest.self, from: body),
               !request.deviceId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              !request.deviceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+              !request.deviceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let senderKey = request.keyAgreementPublicKey,
+              !senderKey.isEmpty,
+              let keyData = try? SyncCrypto.deriveSharedKeyData(
+                ourPrivateKeyB64: state.kaPrivateKeyB64,
+                theirPublicKeyB64: senderKey
+              ) else {
             let json = #"{"error":"invalid_json"}"#
             return (400, Data(json.utf8))
         }
@@ -732,7 +757,17 @@ public final class LanSyncServer: Sendable {
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        let data = (try? encoder.encode(response)) ?? Data()
+        guard let plainData = try? encoder.encode(response),
+              let encrypted = try? SyncCrypto.encryptAESGCM(data: plainData, keyData: keyData) else {
+            return (500, Data(#"{"error":"pairing_encryption_failed"}"#.utf8))
+        }
+        let wrapper = SyncPairEncryptedResponse(
+            serverKeyAgreementPublicKey: state.kaPublicKeyB64,
+            encryptedPayload: encrypted.base64EncodedString()
+        )
+        guard let data = try? encoder.encode(wrapper) else {
+            return (500, Data(#"{"error":"pairing_encryption_failed"}"#.utf8))
+        }
         return (200, data)
     }
 

@@ -1,6 +1,6 @@
 # Sync Encryption and Bluetooth Snapshot Completion Integrity
 
-Status: Implemented; pending PR review/CI (WEI-4840; GitHub #385 and #1417)
+Status: Implemented; pending PR review/CI (WEI-4840 and WEI-4847; PR #1448; GitHub #385 and #1417)
 Date: 2026-07-15
 Owner: CTO / Sync core
 Review lanes: SecurityAgent, non-author engineering review, GitHub Copilot PR reviewer
@@ -20,8 +20,8 @@ Current `main` silently downgrades negotiated LAN encryption when key derivation
    - every batch send and the final completion send must succeed;
    - any failure records a failed host result and, where transport remains available, sends a failure completion to the joiner.
 3. Drain Multipeer's existing FIFO queue through one guarded `PeerManager` actor consumer. Decode and validate each snapshot page in order, buffer it until completion, then apply the entire snapshot in one GRDB transaction so a failed later page rolls back all earlier pages. Quarantine any queued remainder after failure until an explicit retry. A completion envelope may resume onboarding only after the one snapshot transaction commits. Decode/apply/remote-completion failure resumes the pending request with a visible retryable error.
-4. Fail closed in both LAN directions: outbound sync requires successful key negotiation and AES-GCM, while the server rejects plaintext, unpaired device identities, arbitrary sender keys, and payload/header device-id mismatches. Pairing persists the peer's X25519 public key in the device registry; current trust and deactivation state are checked on every request.
-5. Bind Bluetooth snapshot authorization to the successful pairing session with a random capability token, in addition to requiring a trusted and non-deactivated device registry entry. Reserve the token before transfer to prevent replay/concurrent snapshot duplication. Consume it only after the joiner acknowledges durable apply; restore it after transfer/apply failure or acknowledgement timeout so the joiner can retry.
+4. Fail closed in both LAN directions: outbound sync requires successful key negotiation and AES-GCM, while the server rejects plaintext, unpaired device identities, arbitrary sender keys, and payload/header device-id mismatches. Pairing persists the peer's X25519 public key in the device registry; current trust and deactivation state are checked on every request. LAN pairing itself uses an ephemeral X25519 key and returns the accepted pairing payload only inside an AES-GCM encrypted wrapper; plaintext accepted responses are invalid.
+5. Bind Bluetooth snapshot authorization to the successful pairing session with a random capability token, in addition to requiring a trusted and non-deactivated device registry entry. Reserve the token before transfer to prevent replay/concurrent snapshot duplication. A token is restored only when snapshot batch transfer fails before completion is sent. Once completion is attempted, the token remains consumed even when completion delivery or the later durable-apply acknowledgement fails or times out, preventing replay after rows may have reached the joiner.
 
 ## Design
 
@@ -29,9 +29,17 @@ Current `main` silently downgrades negotiated LAN encryption when key derivation
 
 Add a small deterministic `BluetoothSnapshotTransfer` execution component outside the already-large `PeerManager.swift`. It accepts injected table/page/encode/send operations, returns the sent record count, and throws typed errors. Production adapters remain in `PeerManager` and use GRDB, the existing row-to-JSON conversion, `JSONEncoder`, and `MultipeerManager.send`.
 
-The host sends `fullSyncComplete` only after all snapshot batches succeed. Its payload is a codable completion result (`success`, optional `error`). A success completion is a proposal, not final success: the joiner must return `fullSyncApplied` after durable database application. The host records success and consumes the capability only after that acknowledgement. Apply failure or a missing acknowledgement restores the capability and records a retryable failure. Snapshot production or completion-send failures likewise record failure and never log or record success.
+The host sends `fullSyncComplete` only after all snapshot batches succeed. Its payload is a codable completion result (`success`, optional `error`). A success completion is a proposal, not final success: the joiner must return `fullSyncApplied` after durable database application. The host records success only after that acknowledgement. The capability is reserved before the first page and remains consumed once completion delivery is attempted; apply rejection, acknowledgement timeout, and completion-send failure record visible failure without restoring a replayable token. Only pre-completion batch-transfer failure restores the token.
 
 The Bluetooth pairing request advertises protocol version 2 and the joiner's X25519 key. The response carries the host key and a random snapshot capability. Each side persists the other's key for later LAN sync. The joiner returns the capability in `fullSyncRequest`; the host requires an exact capability match plus a trusted/non-deactivated registry row and binds the pairing request identity to the Multipeer session's advertised device id. This prevents a nearby peer from obtaining a snapshot by merely spoofing a known device id.
+
+Bluetooth pairing consumes the one-time code atomically before trust preparation. The host snapshots the exact previous device-registry row and hosted capability, prepares the new trust and token, and only then sends an accepted response. If delivery fails, it restores the exact prior trust/token state and pairing code. Concurrent pairing attempts can therefore produce at most one accepted response, and an undelivered response leaves no new authorization behind.
+
+### LAN authenticated pairing and traffic
+
+Pairing is the only bootstrap exception to prior trust. The joiner sends an ephemeral X25519 public key with the one-time code. The host derives the pairing key, atomically consumes the code, persists the joiner's key as trusted, and AES-GCM encrypts the accepted `SyncPairResponse`; the outer JSON wrapper contains only the host public key and ciphertext. The joiner rejects plaintext accepted responses, decrypts the wrapper, and persists the host key.
+
+After pairing, `/sync/key`, `/sync/push`, and `/sync/pull` bind `X-Device-ID` and the advertised sender key to the active trusted registry record. Missing or partial encryption headers, arbitrary keys, deactivated peers, request-body device mismatches, and wrong-company requests fail before JSON decoding, sync reads, or mutations. Discovery without a pairing-bound key may refresh metadata but never creates trust or reactivates a revoked peer.
 
 ### Joiner ordering
 
@@ -54,9 +62,10 @@ The existing `requestFullSyncOverMultipeer` API remains throwing. Send, decode, 
 - Missing/malformed/unauthorized key exchange, invalid keys, and AES-GCM failures throw; no plaintext downgrade or ciphertext-as-JSON fallback.
 - Host table enumeration, page read, row conversion, batch encoding, batch send, and completion-send failures cannot produce a successful transfer result.
 - Joiner processes FIFO batches serially and only completes after prior database application; apply failure throws and is retryable.
-- Focused `PeerManager`/sync/crypto tests pass.
-- Full `core` suite passes.
-- Current-main PR includes `Closes #385`, references #1417, WEI-4839, and WEI-4840; required CI, SecurityAgent/non-author review, and GitHub Copilot reviewer gate are required before merge.
+- Focused `PeerManager`/sync/crypto tests pass, including encrypted LAN pairing, plaintext/partial-header rejection, arbitrary/deactivated peer rejection, successful trusted encrypted push/pull, undelivered Bluetooth pairing rollback, atomic code reservation, and capability replay/restoration boundaries.
+- Full `core` suite passes (2,405 Swift Testing tests plus 21 XCTest tests on 2026-07-15).
+- `WiredPart-iOS` builds for iPhone 17 / iOS 26.5 Simulator.
+- Current-main PR includes `Closes #385`, references #1417, WEI-4839, WEI-4840, and WEI-4847; required CI, SecurityAgent/non-author review, and GitHub Copilot reviewer gate are required before merge.
 
 ## Residual verification
 

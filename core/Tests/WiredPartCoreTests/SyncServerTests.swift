@@ -53,6 +53,20 @@ struct SyncServerTests {
         try SyncCrypto.decryptAESGCM(data: data, keyData: sharedKey)
     }
 
+    private func decryptPairResponse(
+        _ data: Data,
+        peerPrivateKey: String
+    ) throws -> SyncPairResponse {
+        let wrapper = try JSONDecoder().decode(SyncPairEncryptedResponse.self, from: data)
+        let encryptedPayload = try #require(Data(base64Encoded: wrapper.encryptedPayload))
+        let sharedKey = try SyncCrypto.deriveSharedKeyData(
+            ourPrivateKeyB64: peerPrivateKey,
+            theirPublicKeyB64: wrapper.serverKeyAgreementPublicKey
+        )
+        let plainData = try SyncCrypto.decryptAESGCM(data: encryptedPayload, keyData: sharedKey)
+        return try JSONDecoder().decode(SyncPairResponse.self, from: plainData)
+    }
+
     // MARK: - HTTP Framing
 
     @Test("Content-Length parser distinguishes missing, valid, and invalid headers")
@@ -232,12 +246,13 @@ struct SyncServerTests {
         let server = LanSyncServer(state: state)
         let port = try await server.start()
 
+        let peerKeys = SyncCrypto.generateKeyAgreementPair()
         let body = try JSONEncoder().encode(SyncPairRequest(
             deviceId: "phone-dev",
             deviceName: "Phone",
             pairingCode: "abcd1234",
             platform: "iOS",
-            keyAgreementPublicKey: validPeerKey
+            keyAgreementPublicKey: peerKeys.publicKey
         ))
         var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/pair")!)
         request.httpMethod = "POST"
@@ -246,7 +261,10 @@ struct SyncServerTests {
 
         let (data, firstResponse) = try await URLSession.shared.data(for: request)
         #expect((firstResponse as! HTTPURLResponse).statusCode == 200)
-        let pairResponse = try JSONDecoder().decode(SyncPairResponse.self, from: data)
+        #expect(throws: (any Error).self) {
+            _ = try JSONDecoder().decode(SyncPairResponse.self, from: data)
+        }
+        let pairResponse = try decryptPairResponse(data, peerPrivateKey: peerKeys.privateKey)
         #expect(pairResponse.accepted)
         #expect(pairResponse.serverDeviceId == "shop-dev")
         #expect(pairResponse.companyId == "co-1")

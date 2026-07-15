@@ -427,13 +427,6 @@ public actor PeerManager {
         let companyId = sState.companyId
 
         do {
-            // Register peer in device registry
-            try ChangeTracker.registerPeerDevice(
-                db: db,
-                peerId: peer.deviceId,
-                peerName: peer.deviceName
-            )
-
             // Get pending changes
             let pendingChanges = try ChangeTracker.getPendingChanges(db: db)
             let enrichedChanges = try enrichChangesWithData(pendingChanges)
@@ -1135,6 +1128,7 @@ public actor PeerManager {
             )
 
             guard try sendFullSyncCompletion(.success, to: peerDeviceId, using: mpManager) else {
+                hostedSnapshotReservations.removeValue(forKey: peerDeviceId)
                 throw BluetoothSnapshotTransferError.completionSendFailed
             }
             hostedSnapshotReservations[peerDeviceId]?.rowsSent = totalSent
@@ -1144,10 +1138,12 @@ public actor PeerManager {
             )
             logger.info("[PeerManager] Sent full Bluetooth snapshot (\(totalSent) records); awaiting durable apply acknowledgement from \(String(peerDeviceId.prefix(8)), privacy: .public)")
         } catch {
-            restoreHostedSnapshot(
-                peerDeviceId: peerDeviceId,
-                authorizationToken: authorizationToken
-            )
+            if Self.shouldRestoreHostedSnapshot(after: error) {
+                restoreHostedSnapshot(
+                    peerDeviceId: peerDeviceId,
+                    authorizationToken: authorizationToken
+                )
+            }
             _ = try? sendFullSyncCompletion(.failure(error), to: peerDeviceId, using: mpManager)
             state.lastPeerSyncs[peerDeviceId] = PeerSyncResult(
                 peerDeviceId: peerDeviceId,
@@ -1167,6 +1163,16 @@ public actor PeerManager {
         let payload = try JSONEncoder().encode(completion)
         let envelope = try JSONEncoder().encode(MPEnvelope(type: "fullSyncComplete", payload: payload))
         return manager.send(data: envelope, toPeer: peerDeviceId)
+    }
+
+    internal static func shouldRestoreHostedSnapshot(after error: Error) -> Bool {
+        guard let transferError = error as? BluetoothSnapshotTransferError else {
+            return true
+        }
+        if case .completionSendFailed = transferError {
+            return false
+        }
+        return true
     }
 
     @discardableResult
@@ -1214,14 +1220,13 @@ public actor PeerManager {
             )
             logger.info("[PeerManager] Joiner durably applied full Bluetooth snapshot for \(String(peerDeviceId.prefix(8)), privacy: .public)")
         } else {
-            hostedSnapshotTokens[peerDeviceId] = reservation.authorizationToken
             state.lastPeerSyncs[peerDeviceId] = PeerSyncResult(
                 peerDeviceId: peerDeviceId,
                 peerName: reservation.peerName,
                 success: false,
                 error: acknowledgement.error ?? "The joiner did not apply the snapshot. Retry the sync."
             )
-            logger.error("[PeerManager] Joiner rejected full Bluetooth snapshot; capability restored for retry")
+            logger.error("[PeerManager] Joiner rejected full Bluetooth snapshot; capability consumed after completion")
         }
         notifyStateChanged()
     }
@@ -1275,7 +1280,6 @@ public actor PeerManager {
         guard let reservation = hostedSnapshotReservations[peerDeviceId],
               reservation.authorizationToken == authorizationToken else { return }
         hostedSnapshotReservations.removeValue(forKey: peerDeviceId)
-        hostedSnapshotTokens[peerDeviceId] = authorizationToken
         state.lastPeerSyncs[peerDeviceId] = PeerSyncResult(
             peerDeviceId: peerDeviceId,
             peerName: reservation.peerName,
@@ -1464,71 +1468,143 @@ public actor PeerManager {
     /// the active pairing code (same one-time check as the Wi-Fi /sync/pair path),
     /// register the joiner as a trusted peer, and reply with our company id.
     private func handlePairRequest(from peerDeviceId: String, payload: Data) async {
+        guard let mpManager = multipeerManager else { return }
+        await processBluetoothPairRequest(from: peerDeviceId, payload: payload) { response in
+            self.sendPairResponse(response, to: peerDeviceId, using: mpManager)
+        }
+    }
+
+    internal func processBluetoothPairRequest(
+        from peerDeviceId: String,
+        payload: Data,
+        deliverResponse: (_ response: SyncPairResponse) -> Bool
+    ) async {
         guard let sState = serverState,
-              let mpManager = multipeerManager,
               let request = try? JSONDecoder().decode(SyncPairRequest.self, from: payload) else { return }
 
-        // Validate WITHOUT consuming, so a transport failure doesn't burn a valid
-        // one-time code (the joiner can then retry with the same code).
         // Bind the code proof to the same advertised identity that owns this MCSession.
-        let codeIsValid = await sState.verifyPairingCode(request.pairingCode)
         let protocolIsSupported = (request.bluetoothProtocolVersion ?? 0) >= 2
-        var valid = false
-        if request.deviceId == peerDeviceId,
-           codeIsValid,
-           protocolIsSupported,
-           let peerKey = request.keyAgreementPublicKey {
-            do {
-                try await sState.registerAuthorizedPeer(
-                    deviceId: request.deviceId,
-                    deviceName: request.deviceName,
-                    platform: request.platform,
-                    keyAgreementPublicKey: peerKey
+        guard request.deviceId == peerDeviceId,
+              protocolIsSupported,
+              request.keyAgreementPublicKey != nil else {
+            _ = deliverResponse(
+                SyncPairResponse(
+                    accepted: false,
+                    serverDeviceId: sState.deviceId,
+                    companyId: "",
+                    pairedAt: CoreFormatters.nowISO()
                 )
-                valid = true
-            } catch {
-                logger.error("[PeerManager] Bluetooth pairing rejected — invalid peer key")
-            }
-        }
-        let snapshotToken = valid ? UUID().uuidString : nil
-        let response: SyncPairResponse
-        if valid {
-            response = SyncPairResponse(
-                accepted: true,
-                serverDeviceId: sState.deviceId,
-                companyId: sState.companyId,
-                pairedAt: CoreFormatters.nowISO(),
-                bluetoothSnapshotToken: snapshotToken,
-                serverKeyAgreementPublicKey: kaPublicKeyB64
             )
-        } else {
-            response = SyncPairResponse(
-                accepted: false,
-                serverDeviceId: sState.deviceId,
-                companyId: "",
-                pairedAt: CoreFormatters.nowISO()
-            )
+            logger.error("[PeerManager] Bluetooth pairing rejected — invalid identity, key, or protocol version")
+            return
         }
 
-        var delivered = false
-        if let respData = try? JSONEncoder().encode(response),
-           let env = try? JSONEncoder().encode(MPEnvelope(type: "pairResponse", payload: respData)) {
-            delivered = mpManager.send(data: env, toPeer: peerDeviceId)
+        let previousTrust: PeerDeviceTrustSnapshot?
+        do {
+            previousTrust = try ChangeTracker.capturePeerDeviceTrust(db: db, peerId: request.deviceId)
+        } catch {
+            _ = deliverResponse(
+                SyncPairResponse(
+                    accepted: false,
+                    serverDeviceId: sState.deviceId,
+                    companyId: "",
+                    pairedAt: CoreFormatters.nowISO()
+                )
+            )
+            logger.error("[PeerManager] Bluetooth pairing rejected — could not snapshot existing trust")
+            return
+        }
+        let previousSnapshotToken = hostedSnapshotTokens[request.deviceId]
+
+        guard await sState.consumePairingCode(request.pairingCode) else {
+            _ = deliverResponse(
+                SyncPairResponse(
+                    accepted: false,
+                    serverDeviceId: sState.deviceId,
+                    companyId: "",
+                    pairedAt: CoreFormatters.nowISO()
+                )
+            )
+            logger.error("[PeerManager] Bluetooth pairing rejected — invalid or already consumed code")
+            return
         }
 
-        // Consume the code only once the acceptance was actually sent.
-        if valid && delivered, let snapshotToken {
+        let snapshotToken = UUID().uuidString
+        do {
+            try await sState.registerAuthorizedPeer(
+                deviceId: request.deviceId,
+                deviceName: request.deviceName,
+                platform: request.platform,
+                keyAgreementPublicKey: request.keyAgreementPublicKey ?? ""
+            )
             hostedSnapshotTokens[request.deviceId] = snapshotToken
-            await sState.clearActivePairingCode()
+        } catch {
+            try? ChangeTracker.restorePeerDeviceTrust(db: db, peerId: request.deviceId, snapshot: previousTrust)
+            restoreHostedSnapshotToken(previousSnapshotToken, for: request.deviceId)
+            try? await sState.setActivePairingCode(request.pairingCode)
+            _ = deliverResponse(
+                SyncPairResponse(
+                    accepted: false,
+                    serverDeviceId: sState.deviceId,
+                    companyId: "",
+                    pairedAt: CoreFormatters.nowISO()
+                )
+            )
+            logger.error("[PeerManager] Bluetooth pairing rejected — preparation failed")
+            return
+        }
+
+        let response = SyncPairResponse(
+            accepted: true,
+            serverDeviceId: sState.deviceId,
+            companyId: sState.companyId,
+            pairedAt: CoreFormatters.nowISO(),
+            bluetoothSnapshotToken: snapshotToken,
+            serverKeyAgreementPublicKey: kaPublicKeyB64
+        )
+
+        let delivered = deliverResponse(response)
+
+        if delivered {
             // The one-time code is consumed — close the cross-company connection
             // window immediately (Copilot review on PR #1422: leaving it open
             // weakened company isolation after a successful pairing).
             setBluetoothPairingHostMode(false)
             logger.info("[PeerManager] Bluetooth pairing accepted + delivered for peer \(String(request.deviceId.prefix(8)), privacy: .public)")
-        } else if valid {
-            logger.error("[PeerManager] Bluetooth pairing valid but reply undelivered — code kept for retry")
         } else {
-            logger.error("[PeerManager] Bluetooth pairing rejected — invalid code, identity, or protocol version")
+            restoreHostedSnapshotToken(previousSnapshotToken, for: request.deviceId)
+            do {
+                try ChangeTracker.restorePeerDeviceTrust(
+                    db: db,
+                    peerId: request.deviceId,
+                    snapshot: previousTrust
+                )
+            } catch {
+                logger.fault("[PeerManager] Failed to roll back undelivered Bluetooth pairing trust: \(error.localizedDescription, privacy: .public)")
+            }
+            try? await sState.setActivePairingCode(request.pairingCode)
+            logger.error("[PeerManager] Bluetooth pairing valid but reply undelivered — prepared trust rolled back and code restored")
+        }
+    }
+
+    @discardableResult
+    private func sendPairResponse(
+        _ response: SyncPairResponse,
+        to peerDeviceId: String,
+        using manager: MultipeerManager
+    ) -> Bool {
+        guard let respData = try? JSONEncoder().encode(response),
+              let env = try? JSONEncoder().encode(MPEnvelope(type: "pairResponse", payload: respData)) else {
+            return false
+        }
+        return manager.send(data: env, toPeer: peerDeviceId)
+    }
+
+    private func restoreHostedSnapshotToken(_ token: String?, for peerDeviceId: String) {
+        if let token {
+            hostedSnapshotTokens[peerDeviceId] = token
+        } else {
+            hostedSnapshotTokens.removeValue(forKey: peerDeviceId)
         }
     }
 

@@ -989,11 +989,16 @@ final class IOSSyncManager {
         syncProgressMessage = "Registering verified device..."
         syncProgressPercent = 0.2
 
+        guard let serverKey = pairResponse.serverKeyAgreementPublicKey,
+              Data(base64Encoded: serverKey)?.count == 32 else {
+            throw SyncError.pairingVerificationFailed("The shop did not provide a trusted LAN key.")
+        }
         try ChangeTracker.registerPeerDevice(
             db: db,
             peerId: pairResponse.serverDeviceId,
             peerName: "Shop Computer",
-            platform: "shop"
+            platform: "shop",
+            keyAgreementPublicKey: serverKey
         )
 
         // Store verified pairing state only after the shop accepts the code and
@@ -1033,6 +1038,7 @@ final class IOSSyncManager {
     ) async throws -> SyncPairResponse {
         let baseURL = try normalizedShopBaseURL(shopAddress)
         let url = baseURL.appendingPathComponent("sync/pair")
+        let (pairingPrivateKey, pairingPublicKey) = SyncCrypto.generateKeyAgreementPair()
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -1042,7 +1048,8 @@ final class IOSSyncManager {
             deviceId: deviceId,
             deviceName: deviceName,
             pairingCode: pairingCode,
-            platform: "iOS"
+            platform: "iOS",
+            keyAgreementPublicKey: pairingPublicKey
         ))
 
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -1059,7 +1066,16 @@ final class IOSSyncManager {
             throw SyncError.pairingVerificationFailed(errorMessage ?? "Pairing verification failed")
         }
 
-        let pairResponse = try JSONDecoder().decode(SyncPairResponse.self, from: data)
+        guard let wrappedResponse = try? JSONDecoder().decode(SyncPairEncryptedResponse.self, from: data),
+              let encryptedPayload = Data(base64Encoded: wrappedResponse.encryptedPayload) else {
+            throw SyncError.pairingVerificationFailed("Pairing response encryption was invalid.")
+        }
+        let sharedKey = try SyncCrypto.deriveSharedKeyData(
+            ourPrivateKeyB64: pairingPrivateKey,
+            theirPublicKeyB64: wrappedResponse.serverKeyAgreementPublicKey
+        )
+        let plainResponse = try SyncCrypto.decryptAESGCM(data: encryptedPayload, keyData: sharedKey)
+        let pairResponse = try JSONDecoder().decode(SyncPairResponse.self, from: plainResponse)
         guard pairResponse.accepted else {
             throw SyncError.pairingVerificationFailed("Pairing was not accepted by the shop.")
         }

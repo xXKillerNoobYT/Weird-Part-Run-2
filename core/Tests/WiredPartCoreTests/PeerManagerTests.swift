@@ -3,6 +3,23 @@ import Foundation
 import GRDB
 @testable import WiredPartCore
 
+private final class PairResponseCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [SyncPairResponse] = []
+
+    func append(_ response: SyncPairResponse) {
+        lock.lock()
+        storage.append(response)
+        lock.unlock()
+    }
+
+    var values: [SyncPairResponse] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+}
+
 @Suite("PeerManager Tests")
 struct PeerManagerTests {
 
@@ -493,11 +510,13 @@ struct PeerManagerTests {
         let pm = PeerManager(db: db)
 
         #expect(try await pm.isTrustedBluetoothPeer("joiner") == false)
+        let (_, publicKey) = SyncCrypto.generateKeyAgreementPair()
         try ChangeTracker.registerPeerDevice(
             db: db,
             peerId: "joiner",
             peerName: "Joiner",
-            platform: "ios"
+            platform: "ios",
+            keyAgreementPublicKey: publicKey
         )
         #expect(try await pm.isTrustedBluetoothPeer("joiner") == true)
         try await db.writer.write { dbConn in
@@ -509,7 +528,7 @@ struct PeerManagerTests {
         #expect(try await pm.isTrustedBluetoothPeer("joiner") == false)
     }
 
-    @Test("Snapshot capability is reserved once, restored only after failed apply, and consumed after durable success")
+    @Test("Snapshot capability is reserved once and never restored after completion acknowledgement")
     func testFullSnapshotCapabilityLifecycle() async throws {
         let pm = PeerManager(db: try freshDB())
         let peer = "joiner"
@@ -528,9 +547,11 @@ struct PeerManagerTests {
             succeeded: false,
             error: "database apply failed"
         )
-        #expect(await pm.testHostedSnapshotTokenAvailable(token, for: peer))
+        #expect(!(await pm.testHostedSnapshotTokenAvailable(token, for: peer)))
         #expect(!(await pm.testHostedSnapshotIsReserved(for: peer)))
+        #expect(!(await pm.testReserveHostedSnapshot(token: token, for: peer)))
 
+        await pm.testIssueHostedSnapshotToken(token, for: peer)
         #expect(await pm.testReserveHostedSnapshot(token: token, for: peer))
         await pm.testSetHostedSnapshotRowsSent(42, for: peer)
         await pm.testAcknowledgeHostedSnapshot(token: token, for: peer, succeeded: true)
@@ -541,6 +562,16 @@ struct PeerManagerTests {
         let state = await pm.getState()
         #expect(state.lastPeerSyncs[peer]?.success == true)
         #expect(state.lastPeerSyncs[peer]?.pushed == 42)
+    }
+
+    @Test("Snapshot capability restores only before completion send")
+    func testSnapshotCapabilityRestorationBoundary() {
+        #expect(PeerManager.shouldRestoreHostedSnapshot(
+            after: BluetoothSnapshotTransferError.batchSendFailed(table: "users", offset: 0)
+        ))
+        #expect(!PeerManager.shouldRestoreHostedSnapshot(
+            after: BluetoothSnapshotTransferError.completionSendFailed
+        ))
     }
 
     @Test("Bluetooth pairing wire format distinguishes capability protocol clients from legacy clients")
@@ -591,6 +622,80 @@ struct PeerManagerTests {
             }
         }
         #expect(await pm.testPendingTransportOperationCount() == 0)
+    }
+
+    @Test("Undelivered Bluetooth pairing restores prior trust, token, and pairing code")
+    func testUndeliveredBluetoothPairingRollsBack() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+        try await pm.startPeerSync(deviceId: "host", deviceName: "Host", companyId: "company")
+        let pairingCode = try await pm.issuePairingCode()
+        let oldToken = "existing-token"
+        await pm.testIssueHostedSnapshotToken(oldToken, for: "joiner")
+        let (_, peerKey) = SyncCrypto.generateKeyAgreementPair()
+        let payload = try JSONEncoder().encode(SyncPairRequest(
+            deviceId: "joiner",
+            deviceName: "Joiner",
+            pairingCode: pairingCode,
+            platform: "ios",
+            bluetoothProtocolVersion: 2,
+            keyAgreementPublicKey: peerKey
+        ))
+        let responses = PairResponseCollector()
+
+        await pm.processBluetoothPairRequest(from: "joiner", payload: payload) { response in
+            responses.append(response)
+            return false
+        }
+
+        #expect(responses.values.last?.accepted == true)
+        #expect(try await pm.isTrustedBluetoothPeer("joiner") == false)
+        #expect(await pm.testHostedSnapshotTokenAvailable(oldToken, for: "joiner"))
+
+        await pm.processBluetoothPairRequest(from: "joiner", payload: payload) { response in
+            responses.append(response)
+            return true
+        }
+
+        let delivered = try #require(responses.values.last)
+        #expect(delivered.accepted == true)
+        #expect(try await pm.isTrustedBluetoothPeer("joiner") == true)
+        #expect(await pm.testHostedSnapshotTokenAvailable(
+            try #require(delivered.bluetoothSnapshotToken),
+            for: "joiner"
+        ))
+        await pm.stopPeerSync()
+    }
+
+    @Test("Bluetooth pairing code reservation accepts only one concurrent request")
+    func testBluetoothPairingCodeReservationIsAtomic() async throws {
+        let pm = PeerManager(db: try freshDB())
+        try await pm.startPeerSync(deviceId: "host", deviceName: "Host", companyId: "company")
+        let pairingCode = try await pm.issuePairingCode()
+        let (_, peerKey) = SyncCrypto.generateKeyAgreementPair()
+        let payload = try JSONEncoder().encode(SyncPairRequest(
+            deviceId: "joiner",
+            deviceName: "Joiner",
+            pairingCode: pairingCode,
+            platform: "ios",
+            bluetoothProtocolVersion: 2,
+            keyAgreementPublicKey: peerKey
+        ))
+        let responses = PairResponseCollector()
+
+        async let first: Void = pm.processBluetoothPairRequest(from: "joiner", payload: payload) { response in
+            responses.append(response)
+            return true
+        }
+        async let second: Void = pm.processBluetoothPairRequest(from: "joiner", payload: payload) { response in
+            responses.append(response)
+            return true
+        }
+        _ = await (first, second)
+
+        #expect(responses.values.filter(\.accepted).count == 1)
+        #expect(responses.values.filter { !$0.accepted }.count == 1)
+        await pm.stopPeerSync()
     }
     #endif
 
@@ -821,13 +926,13 @@ struct PeerManagerTests {
         #expect(SyncCrypto.normalizedPairingCode(issuedCode) != nil)
 
         let state = await pm.getState()
-        let (_, peerPublicKey) = SyncCrypto.generateKeyAgreementPair()
+        let peerKeys = SyncCrypto.generateKeyAgreementPair()
         let body = try JSONEncoder().encode(SyncPairRequest(
             deviceId: "phone-dev",
             deviceName: "Phone",
             pairingCode: issuedCode,
             platform: "iOS",
-            keyAgreementPublicKey: peerPublicKey
+            keyAgreementPublicKey: peerKeys.publicKey
         ))
         var request = URLRequest(url: URL(string: "http://127.0.0.1:\(state.syncPort)/sync/pair")!)
         request.httpMethod = "POST"
@@ -836,7 +941,14 @@ struct PeerManagerTests {
 
         let (data, response) = try await URLSession.shared.data(for: request)
         #expect((response as! HTTPURLResponse).statusCode == 200)
-        let pairResponse = try JSONDecoder().decode(SyncPairResponse.self, from: data)
+        let wrapper = try JSONDecoder().decode(SyncPairEncryptedResponse.self, from: data)
+        let encryptedPayload = try #require(Data(base64Encoded: wrapper.encryptedPayload))
+        let sharedKey = try SyncCrypto.deriveSharedKeyData(
+            ourPrivateKeyB64: peerKeys.privateKey,
+            theirPublicKeyB64: wrapper.serverKeyAgreementPublicKey
+        )
+        let plainData = try SyncCrypto.decryptAESGCM(data: encryptedPayload, keyData: sharedKey)
+        let pairResponse = try JSONDecoder().decode(SyncPairResponse.self, from: plainData)
         #expect(pairResponse.accepted)
         #expect(pairResponse.serverDeviceId == "shop-dev")
         #expect(pairResponse.companyId == "co-1")

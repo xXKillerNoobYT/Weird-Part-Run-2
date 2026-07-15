@@ -147,7 +147,7 @@ struct ChangeTrackerTests {
         #expect(vc[peerId] == 42)
     }
 
-    @Test("registerPeerDevice creates and updates device")
+    @Test("registerPeerDevice without key records metadata but does not trust")
     func testRegisterPeerDevice() throws {
         let db = try freshDB()
 
@@ -163,9 +163,10 @@ struct ChangeTrackerTests {
         #expect(device != nil)
         #expect(device?.deviceName == "iPad Pro")
         #expect(device?.platform == "iOS")
-        #expect(device?.isTrusted == 1)
+        #expect(device?.isTrusted == 0)
 
-        // Update the same device
+        // Update the same device without a pairing key: metadata can refresh, but
+        // discovery must not silently create trust.
         try ChangeTracker.registerPeerDevice(db: db, peerId: "peer-1", peerName: "iPad Pro (updated)")
 
         let updated = try db.writer.read { dbConn in
@@ -176,6 +177,7 @@ struct ChangeTrackerTests {
             )
         }
         #expect(updated?.deviceName == "iPad Pro (updated)")
+        #expect(updated?.isTrusted == 0)
     }
 
     @Test("Pairing-bound LAN key persists and deactivation remains fail-closed")
