@@ -206,6 +206,102 @@ struct PeerManagerTests {
         await pm.stopPeerSync()
     }
 
+    // MARK: - Fix #385: Encryption/Decode Failure Propagation
+
+    @Test("AES-GCM encryption throws with invalid key size")
+    func testEncryptionThrowsWithBadKey() {
+        #expect(throws: (any Error).self) {
+            _ = try SyncCrypto.encryptAESGCM(
+                data: Data("{\"test\":true}".utf8),
+                keyData: Data([0x42])
+            )
+        }
+    }
+
+    @Test("AES-GCM decryption throws on garbage ciphertext")
+    func testDecryptionThrowsOnGarbage() throws {
+        let (privA, _) = SyncCrypto.generateKeyAgreementPair()
+        let (_, pubB) = SyncCrypto.generateKeyAgreementPair()
+        let keyData = try SyncCrypto.deriveSharedKeyData(
+            ourPrivateKeyB64: privA,
+            theirPublicKeyB64: pubB
+        )
+
+        #expect(throws: (any Error).self) {
+            _ = try SyncCrypto.decryptAESGCM(
+                data: Data("this is not encrypted at all".utf8),
+                keyData: keyData
+            )
+        }
+    }
+
+    @Test("Key derivation throws on invalid base64 peer key")
+    func testKeyDerivationThrowsOnBadPeerKey() {
+        let (priv, _) = SyncCrypto.generateKeyAgreementPair()
+
+        #expect(throws: (any Error).self) {
+            _ = try SyncCrypto.deriveSharedKeyData(
+                ourPrivateKeyB64: priv,
+                theirPublicKeyB64: "not-valid-base64!!!"
+            )
+        }
+    }
+
+    @Test("Malformed key exchange fails closed instead of downgrading to plaintext")
+    func testMalformedKeyExchangeFailsClosed() async throws {
+        let pm = PeerManager(db: try freshDB())
+        try await pm.startPeerSync(
+            deviceId: "local-dev",
+            deviceName: "Local Device",
+            companyId: "local-company"
+        )
+        let malformedKeyServer = try HTTPStubServer(
+            statusCode: 200,
+            body: #"{"not":"a-sync-key-response"}"#
+        )
+        let port = try await malformedKeyServer.start()
+
+        let result = await pm.syncWithPeer(DiscoveredPeer(
+            deviceId: "malformed-key-peer",
+            deviceName: "Malformed Key Peer",
+            companyId: "local-company",
+            host: "127.0.0.1",
+            port: port,
+            transport: "lan"
+        ))
+
+        #expect(result.success == false)
+        #expect(result.error?.contains("key") == true)
+        malformedKeyServer.stop()
+        await pm.stopPeerSync()
+    }
+
+    @Test("Sync with a down peer reports failure rather than false success")
+    func testSyncWithDownPeerReportsFailure() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+        try await pm.startPeerSync(
+            deviceId: "dev-385",
+            deviceName: "Test Device",
+            companyId: "test-company"
+        )
+
+        let result = await pm.syncWithPeer(DiscoveredPeer(
+            deviceId: "down-peer",
+            deviceName: "Down Peer",
+            companyId: "test-company",
+            host: "127.0.0.1",
+            port: 1,
+            transport: "lan"
+        ))
+
+        #expect(result.success == false)
+        #expect(result.error != nil)
+        #expect(result.pushed == 0)
+        #expect(result.pulled == 0)
+        await pm.stopPeerSync()
+    }
+
     @Test("Sync by peer device ID does not fall back to all peers")
     func testSyncByPeerDeviceIdRequiresSelectedPeer() async throws {
         let db = try freshDB()
@@ -237,12 +333,16 @@ struct PeerManagerTests {
         // is what this test exercises (clears the migration-112 backfill).
         try await clearChangeLog(db)
 
-        let foreignState = SyncServerState(
-            deviceId: "foreign-dev",
-            deviceName: "Foreign Device",
-            companyId: "foreign-company"
-        )
-        let foreignServer = LanSyncServer(state: foreignState)
+        let (_, stubPublicKey) = SyncCrypto.generateKeyAgreementPair()
+        let keyBody = String(
+            data: try JSONEncoder().encode(SyncKeyResponse(key: stubPublicKey)),
+            encoding: .utf8
+        )!
+        let foreignServer = try HTTPStubServer { request in
+            request.path == "/sync/key"
+                ? HTTPStubResponse(statusCode: 200, body: keyBody)
+                : HTTPStubResponse(statusCode: 403, body: #"{"error":"foreign company"}"#)
+        }
         let foreignPort = try await foreignServer.start()
 
         let peer = DiscoveredPeer(
@@ -263,7 +363,7 @@ struct PeerManagerTests {
         let state = await pm.getState()
         #expect(state.lastPeerSyncs["foreign-dev"]?.success == false)
 
-        await foreignServer.stop()
+        foreignServer.stop()
         await pm.stopPeerSync()
     }
 
@@ -278,10 +378,16 @@ struct PeerManagerTests {
             companyId: "local-company"
         )
 
-        let malformedServer = try HTTPStubServer(
-            statusCode: 200,
-            body: #"{"not":"a-sync-pull-response"}"#
-        )
+        let (_, stubPublicKey) = SyncCrypto.generateKeyAgreementPair()
+        let keyBody = String(
+            data: try JSONEncoder().encode(SyncKeyResponse(key: stubPublicKey)),
+            encoding: .utf8
+        )!
+        let malformedServer = try HTTPStubServer { request in
+            request.path == "/sync/key"
+                ? HTTPStubResponse(statusCode: 200, body: keyBody)
+                : HTTPStubResponse(statusCode: 200, body: #"{"not":"a-sync-pull-response"}"#)
+        }
         let port = try await malformedServer.start()
 
         let peer = DiscoveredPeer(
@@ -306,8 +412,8 @@ struct PeerManagerTests {
         await pm.stopPeerSync()
     }
 
-    @Test("LAN sync reports HTTP push errors as failed peer sync")
-    func testLANSyncHTTPPushErrorReturnsFailure() async throws {
+    @Test("LAN sync reports key authorization errors as failed peer sync")
+    func testLANSyncKeyAuthorizationErrorReturnsFailure() async throws {
         let db = try freshDB()
         let pm = PeerManager(db: db)
 
@@ -346,13 +452,180 @@ struct PeerManagerTests {
         let result = await pm.syncWithPeer(peer)
 
         #expect(result.success == false)
-        #expect(result.error == "LAN sync push failed: HTTP 403")
+        #expect(result.error == "LAN sync key failed: HTTP 403")
         #expect(result.peerDeviceId == "foreign-dev")
         #expect(try ChangeTracker.getPendingChangeCount(db: db) == 1)
 
         await foreignServer.stop()
         await pm.stopPeerSync()
     }
+
+    // MARK: - Bluetooth full-snapshot completion integrity
+
+    #if canImport(MultipeerConnectivity)
+    @Test("Full snapshot capability must match the trusted pairing session")
+    func testFullSnapshotCapabilityBinding() {
+        #expect(BluetoothSnapshotAuthorization.isAuthorized(
+            trustedDevice: true,
+            providedToken: "pairing-capability",
+            expectedToken: "pairing-capability"
+        ))
+        #expect(!BluetoothSnapshotAuthorization.isAuthorized(
+            trustedDevice: true,
+            providedToken: "spoofed-capability",
+            expectedToken: "pairing-capability"
+        ))
+        #expect(!BluetoothSnapshotAuthorization.isAuthorized(
+            trustedDevice: false,
+            providedToken: "pairing-capability",
+            expectedToken: "pairing-capability"
+        ))
+        #expect(!BluetoothSnapshotAuthorization.isAuthorized(
+            trustedDevice: true,
+            providedToken: "",
+            expectedToken: ""
+        ))
+    }
+
+    @Test("Full snapshot authorization requires a trusted active device")
+    func testFullSnapshotRequiresTrustedActiveDevice() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+
+        #expect(try await pm.isTrustedBluetoothPeer("joiner") == false)
+        try ChangeTracker.registerPeerDevice(
+            db: db,
+            peerId: "joiner",
+            peerName: "Joiner",
+            platform: "ios"
+        )
+        #expect(try await pm.isTrustedBluetoothPeer("joiner") == true)
+        try await db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE _device_registry SET is_deactivated = 1 WHERE device_id = ?",
+                arguments: ["joiner"]
+            )
+        }
+        #expect(try await pm.isTrustedBluetoothPeer("joiner") == false)
+    }
+    #endif
+
+    @Test("Snapshot transfer fails when table enumeration fails")
+    func testSnapshotTableEnumerationFailurePropagates() async {
+        await #expect(throws: SnapshotProbeError.self) {
+            _ = try await BluetoothSnapshotTransfer.run(
+                listTables: { throw SnapshotProbeError.injected },
+                readPage: { _, _, _ in BluetoothSnapshotPage(changes: [], sourceRowCount: 0) },
+                encode: { _ in Data() },
+                send: { _ in true }
+            )
+        }
+    }
+
+    @Test("Snapshot transfer fails when a page read fails")
+    func testSnapshotPageReadFailurePropagates() async {
+        await #expect(throws: SnapshotProbeError.self) {
+            _ = try await BluetoothSnapshotTransfer.run(
+                listTables: { ["users"] },
+                readPage: { _, _, _ in throw SnapshotProbeError.injected },
+                encode: { _ in Data() },
+                send: { _ in true }
+            )
+        }
+    }
+
+    @Test("Snapshot transfer fails when a batch cannot encode")
+    func testSnapshotBatchEncodingFailurePropagates() async {
+        let change = snapshotUserChange(recordId: "1")
+        await #expect(throws: SnapshotProbeError.self) {
+            _ = try await BluetoothSnapshotTransfer.run(
+                listTables: { ["users"] },
+                readPage: { _, _, _ in BluetoothSnapshotPage(changes: [change], sourceRowCount: 1) },
+                encode: { _ in throw SnapshotProbeError.injected },
+                send: { _ in true }
+            )
+        }
+    }
+
+    @Test("Snapshot transfer fails when a batch send fails")
+    func testSnapshotBatchSendFailurePropagates() async {
+        let change = snapshotUserChange(recordId: "1")
+        await #expect(throws: BluetoothSnapshotTransferError.self) {
+            _ = try await BluetoothSnapshotTransfer.run(
+                listTables: { ["users"] },
+                readPage: { _, _, _ in BluetoothSnapshotPage(changes: [change], sourceRowCount: 1) },
+                encode: { _ in Data("batch".utf8) },
+                send: { _ in false }
+            )
+        }
+    }
+
+    @Test("Snapshot transfer counts only successfully sent batches")
+    func testSnapshotTransferCountsSuccessfulBatches() async throws {
+        let changes = [snapshotUserChange(recordId: "1"), snapshotUserChange(recordId: "2")]
+        let sent = try await BluetoothSnapshotTransfer.run(
+            listTables: { ["users"] },
+            readPage: { _, _, _ in BluetoothSnapshotPage(changes: changes, sourceRowCount: changes.count) },
+            encode: { try JSONEncoder().encode($0) },
+            send: { _ in true }
+        )
+        #expect(sent == 2)
+    }
+
+    #if canImport(MultipeerConnectivity)
+    @Test("Full-sync completion is processed only after the preceding batch is durable")
+    func testFullSyncBatchAppliesBeforeCompletion() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+        let changesData = try JSONEncoder().encode([snapshotUserChange(recordId: "7001")])
+        let changesEnvelope = try JSONEncoder().encode(MPEnvelope(type: "changes", payload: changesData))
+        let completionEnvelope = try JSONEncoder().encode(
+            MPEnvelope(type: "fullSyncComplete", payload: try JSONEncoder().encode(FullSyncCompletion.success))
+        )
+
+        let applied = try await pm.testProcessMultipeerMessage(
+            ReceivedMultipeerMessage(fromDeviceId: "host", data: changesEnvelope)
+        )
+        #expect(applied == .changesApplied(1))
+        let persisted = try await db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: "SELECT display_name FROM users WHERE id = 7001")
+        }
+        #expect(persisted == "Snapshot User")
+
+        let completed = try await pm.testProcessMultipeerMessage(
+            ReceivedMultipeerMessage(fromDeviceId: "host", data: completionEnvelope)
+        )
+        #expect(completed == .fullSyncCompleted)
+    }
+
+    @Test("A failed full-sync batch is visible and cannot advance completion")
+    func testFullSyncApplyFailurePropagates() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+        let valid = snapshotUserChange(recordId: "7002")
+        let databaseFailure = IncomingChange(
+            deviceId: "host",
+            tableName: "users",
+            recordId: "7003",
+            operation: "INSERT",
+            recordData: #"{"id":7003,"display_name":"Invalid","pin_hash":"hash","is_active":1,"not_a_real_column":"boom"}"#,
+            timestamp: "2026-07-15T00:00:00Z"
+        )
+        let payload = try JSONEncoder().encode([valid, databaseFailure])
+        let envelope = try JSONEncoder().encode(MPEnvelope(type: "changes", payload: payload))
+
+        await #expect(throws: (any Error).self) {
+            _ = try await pm.testProcessMultipeerMessage(
+                ReceivedMultipeerMessage(fromDeviceId: "host", data: envelope)
+            )
+        }
+
+        let committedPrefix = try await db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM users WHERE id IN (7002, 7003)") ?? 0
+        }
+        #expect(committedPrefix == 0, "a failed snapshot batch must roll back its successful prefix")
+    }
+    #endif
 
     @Test("LAN sync base URL is built from host and discovered port")
     func testLANSyncBaseURLUsesPeerHostAndPort() throws {
@@ -573,6 +846,21 @@ struct PeerManagerTests {
             "sync-applied writes must not re-enter the change log"
         )
     }
+
+    private func snapshotUserChange(recordId: String) -> IncomingChange {
+        IncomingChange(
+            deviceId: "host-device",
+            tableName: "users",
+            recordId: recordId,
+            operation: "INSERT",
+            recordData: "{\"id\":\(recordId),\"display_name\":\"Snapshot User\",\"pin_hash\":\"hash\",\"is_active\":1}",
+            timestamp: "2026-07-15T00:00:00Z"
+        )
+    }
+}
+
+private enum SnapshotProbeError: Error {
+    case injected
 }
 
 // Test helper to expose private enrich method
@@ -580,4 +868,10 @@ extension PeerManager {
     func testEnrichChanges(_ entries: [ChangeLogEntry]) throws -> [IncomingChange] {
         try enrichChangesWithData(entries)
     }
+
+    #if canImport(MultipeerConnectivity)
+    func testProcessMultipeerMessage(_ message: ReceivedMultipeerMessage) async throws -> MultipeerMessageOutcome {
+        try await processMultipeerMessage(message)
+    }
+    #endif
 }

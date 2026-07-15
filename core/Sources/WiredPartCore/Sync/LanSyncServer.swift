@@ -153,12 +153,16 @@ public struct SyncPairResponse: Codable, Sendable {
     public var serverDeviceId: String
     public var companyId: String
     public var pairedAt: String
+    /// One-time-session capability used only by Bluetooth onboarding snapshots.
+    /// LAN pairing leaves this nil.
+    public var bluetoothSnapshotToken: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case accepted
         case serverDeviceId = "server_device_id"
         case companyId = "company_id"
         case pairedAt = "paired_at"
+        case bluetoothSnapshotToken = "bluetooth_snapshot_token"
     }
 }
 
