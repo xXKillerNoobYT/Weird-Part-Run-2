@@ -100,7 +100,7 @@ struct MPEnvelope: Codable {
     let payload: Data
 }
 
-private struct FullSyncApplyAcknowledgement: Codable {
+struct FullSyncApplyAcknowledgement: Codable {
     let authorizationToken: String
     let succeeded: Bool
     let error: String?
@@ -981,7 +981,10 @@ public actor PeerManager {
 
     /// Process one FIFO message and do not return until any database application is durable.
     /// Internal visibility supports deterministic ordering/failure regression tests.
-    func processMultipeerMessage(_ message: ReceivedMultipeerMessage) async throws -> MultipeerMessageOutcome {
+    func processMultipeerMessage(
+        _ message: ReceivedMultipeerMessage,
+        sendApplyAcknowledgement: ((FullSyncApplyAcknowledgement, String) -> Bool)? = nil
+    ) async throws -> MultipeerMessageOutcome {
         if let env = try? JSONDecoder().decode(MPEnvelope.self, from: message.data) {
             if failedSnapshotPeers.contains(message.fromDeviceId),
                env.type == "changes" || env.type == "fullSyncComplete" {
@@ -1032,15 +1035,29 @@ public actor PeerManager {
                     throw MultipeerSnapshotError.remoteFailure(completion.error ?? "")
                 }
                 if pendingSnapshotChanges[message.fromDeviceId] != nil {
-                    _ = try applyIncomingChanges(
-                        pendingSnapshotChanges[message.fromDeviceId, default: []]
-                    )
+                    do {
+                        _ = try applyIncomingChanges(
+                            pendingSnapshotChanges[message.fromDeviceId, default: []]
+                        )
+                    } catch {
+                        // Tell the host before the FIFO drain propagates the local
+                        // failure. The host can then consume the old capability and
+                        // release its reservation immediately instead of timing out.
+                        sendFullSyncApplyAcknowledgement(
+                            succeeded: false,
+                            error: error.localizedDescription,
+                            to: message.fromDeviceId,
+                            using: sendApplyAcknowledgement
+                        )
+                        throw error
+                    }
                 }
                 if pendingFullSyncContinuations[message.fromDeviceId] != nil {
                     guard sendFullSyncApplyAcknowledgement(
                         succeeded: true,
                         error: nil,
-                        to: message.fromDeviceId
+                        to: message.fromDeviceId,
+                        using: sendApplyAcknowledgement
                     ) else {
                         throw MultipeerPairingError.sendFailed
                     }
@@ -1252,11 +1269,11 @@ public actor PeerManager {
     private func sendFullSyncApplyAcknowledgement(
         succeeded: Bool,
         error: String?,
-        to peerDeviceId: String
+        to peerDeviceId: String,
+        using sendOverride: ((FullSyncApplyAcknowledgement, String) -> Bool)? = nil
     ) -> Bool {
         guard pendingFullSyncContinuations[peerDeviceId] != nil,
-              let authorizationToken = receivedSnapshotTokens[peerDeviceId],
-              let manager = multipeerManager else {
+              let authorizationToken = receivedSnapshotTokens[peerDeviceId] else {
             return false
         }
         let acknowledgement = FullSyncApplyAcknowledgement(
@@ -1264,6 +1281,10 @@ public actor PeerManager {
             succeeded: succeeded,
             error: error
         )
+        if let sendOverride {
+            return sendOverride(acknowledgement, peerDeviceId)
+        }
+        guard let manager = multipeerManager else { return false }
         guard let payload = try? JSONEncoder().encode(acknowledgement),
               let envelope = try? JSONEncoder().encode(
                 MPEnvelope(type: "fullSyncApplied", payload: payload)
@@ -1411,6 +1432,29 @@ public actor PeerManager {
     func testBeginSnapshotBuffer(from peerDeviceId: String) {
         failedSnapshotPeers.remove(peerDeviceId)
         pendingSnapshotChanges[peerDeviceId] = []
+    }
+
+    func testAuthorizeReceivedSnapshot(_ token: String, from peerDeviceId: String) {
+        receivedSnapshotTokens[peerDeviceId] = token
+    }
+
+    func testProcessMultipeerMessagesInFIFO(
+        _ messages: [ReceivedMultipeerMessage],
+        sendApplyAcknowledgement: @escaping (FullSyncApplyAcknowledgement, String) -> Bool
+    ) async throws -> [MultipeerMessageOutcome] {
+        var outcomes: [MultipeerMessageOutcome] = []
+        for message in messages {
+            do {
+                outcomes.append(try await processMultipeerMessage(
+                    message,
+                    sendApplyAcknowledgement: sendApplyAcknowledgement
+                ))
+            } catch {
+                failPendingFullSync(from: message.fromDeviceId, with: error)
+                throw error
+            }
+        }
+        return outcomes
     }
 
     func testAbandonSnapshotBuffer(from peerDeviceId: String) {

@@ -20,6 +20,23 @@ private final class PairResponseCollector: @unchecked Sendable {
     }
 }
 
+private final class SnapshotAcknowledgementCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [FullSyncApplyAcknowledgement] = []
+
+    func append(_ acknowledgement: FullSyncApplyAcknowledgement) {
+        lock.lock()
+        storage.append(acknowledgement)
+        lock.unlock()
+    }
+
+    var values: [FullSyncApplyAcknowledgement] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+}
+
 @Suite("PeerManager Tests")
 struct PeerManagerTests {
 
@@ -940,6 +957,116 @@ struct PeerManagerTests {
             committedPrefix == 0,
             "a failed later snapshot page must roll back earlier pages and quarantine queued remainder"
         )
+    }
+
+    @Test("Atomic apply failure negatively acknowledges, releases reservation, and requires fresh authorization")
+    func testAtomicApplyFailureReleasesHostReservationAndRequiresFreshAuthorization() async throws {
+        let host = PeerManager(db: try freshDB())
+        let joiner = PeerManager(db: try freshDB())
+        let peer = "joiner"
+        let hostDeviceId = "host"
+        let consumedToken = "consumed-capability"
+
+        try await host.startPeerSync(deviceId: hostDeviceId, deviceName: "Host", companyId: "company")
+        await host.testIssueHostedSnapshotToken(consumedToken, for: peer)
+        #expect(await host.testReserveHostedSnapshot(token: consumedToken, for: peer))
+        await host.testSetHostedSnapshotRowsSent(1, for: peer)
+
+        await joiner.testAuthorizeReceivedSnapshot(consumedToken, from: hostDeviceId)
+        await joiner.testBeginSnapshotBuffer(from: hostDeviceId)
+        let fullSyncWaiter = Task {
+            try await joiner.testAwaitFullSyncTransport(peerDeviceId: hostDeviceId)
+        }
+        while await joiner.testPendingTransportOperationCount() == 0 {
+            await Task.yield()
+        }
+
+        let validEnvelope = try JSONEncoder().encode(MPEnvelope(
+            type: "changes",
+            payload: try JSONEncoder().encode([snapshotUserChange(recordId: "7101")])
+        ))
+        let invalidChange = IncomingChange(
+            deviceId: hostDeviceId,
+            tableName: "users",
+            recordId: "7102",
+            operation: "INSERT",
+            recordData: #"{"id":7102,"display_name":"Invalid","pin_hash":"hash","is_active":1,"not_a_real_column":"boom"}"#,
+            timestamp: "2026-07-15T00:00:00Z"
+        )
+        let invalidEnvelope = try JSONEncoder().encode(MPEnvelope(
+            type: "changes",
+            payload: try JSONEncoder().encode([invalidChange])
+        ))
+        let completionEnvelope = try JSONEncoder().encode(MPEnvelope(
+            type: "fullSyncComplete",
+            payload: try JSONEncoder().encode(FullSyncCompletion.success)
+        ))
+        let acknowledgements = SnapshotAcknowledgementCollector()
+
+        await #expect(throws: (any Error).self) {
+            _ = try await joiner.testProcessMultipeerMessagesInFIFO(
+                [
+                    ReceivedMultipeerMessage(fromDeviceId: hostDeviceId, data: validEnvelope),
+                    ReceivedMultipeerMessage(fromDeviceId: hostDeviceId, data: invalidEnvelope),
+                    ReceivedMultipeerMessage(fromDeviceId: hostDeviceId, data: completionEnvelope),
+                ],
+                sendApplyAcknowledgement: { acknowledgement, destination in
+                    #expect(destination == hostDeviceId)
+                    acknowledgements.append(acknowledgement)
+                    return true
+                }
+            )
+        }
+        await #expect(throws: (any Error).self) {
+            try await fullSyncWaiter.value
+        }
+
+        let negativeAcknowledgement = try #require(acknowledgements.values.first)
+        #expect(acknowledgements.values.count == 1)
+        #expect(negativeAcknowledgement.authorizationToken == consumedToken)
+        #expect(negativeAcknowledgement.succeeded == false)
+        #expect(negativeAcknowledgement.error?.isEmpty == false)
+
+        let acknowledgementEnvelope = try JSONEncoder().encode(MPEnvelope(
+            type: "fullSyncApplied",
+            payload: try JSONEncoder().encode(negativeAcknowledgement)
+        ))
+        _ = try await host.testProcessMultipeerMessage(
+            ReceivedMultipeerMessage(fromDeviceId: peer, data: acknowledgementEnvelope)
+        )
+        #expect(!(await host.testHostedSnapshotIsReserved(for: peer)))
+        #expect(!(await host.testHostedSnapshotTokenAvailable(consumedToken, for: peer)))
+        #expect(!(await host.testReserveHostedSnapshot(token: consumedToken, for: peer)))
+        #expect(await host.getState().lastPeerSyncs[peer]?.success == false)
+
+        let pairingCode = try await host.issuePairingCode()
+        let (_, peerKey) = SyncCrypto.generateKeyAgreementPair()
+        let pairRequest = try JSONEncoder().encode(SyncPairRequest(
+            deviceId: peer,
+            deviceName: "Joiner",
+            pairingProof: SyncCrypto.pairingProof(
+                normalizedCode: try #require(SyncCrypto.normalizedPairingCode(pairingCode)),
+                deviceId: peer,
+                clientPublicKeyB64: peerKey
+            ),
+            platform: "ios",
+            bluetoothProtocolVersion: 3,
+            keyAgreementPublicKey: peerKey
+        ))
+        let responses = PairResponseCollector()
+        await host.processBluetoothPairRequest(from: peer, payload: pairRequest) { response in
+            responses.append(response)
+            return true
+        }
+        let freshToken = try #require(responses.values.first?.bluetoothSnapshotToken)
+        #expect(responses.values.count == 1)
+        #expect(freshToken != consumedToken)
+
+        async let firstFreshReservation = host.testReserveHostedSnapshot(token: freshToken, for: peer)
+        async let duplicateFreshReservation = host.testReserveHostedSnapshot(token: freshToken, for: peer)
+        let freshReservationResults = await [firstFreshReservation, duplicateFreshReservation]
+        #expect(freshReservationResults.filter { $0 }.count == 1)
+        await host.stopPeerSync()
     }
     #endif
 
