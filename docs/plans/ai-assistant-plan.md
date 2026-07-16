@@ -19,6 +19,16 @@ The active app uses Apple Foundation Models and the local `AppDatabase`; the old
 4. On first presentation, the assistant adopts `FoundationModelsService.latestConversationId` when local history exists. A labeled Resume control presents `FoundationModelsService.listConversations`, with loading and empty states; a nil database or read failure safely produces an empty list.
 5. Existing New, Clear, and Report a Bug controls remain intact in both sheet and overlay modes. Help-seeded turns are persisted best-effort so normal resume behavior can restore them.
 
+### PR #1460 revision gate
+
+Review and user-like QA found five requirements that must be satisfied before this slice can merge:
+
+1. Help delivery is readiness-driven, not timer-driven: the shell owns a pending payload and the assistant consumes it only after initial history loading completes.
+2. Help persistence and Clear are serialized so Clear cannot report success before an in-flight local Help turn finishes writing.
+3. Assistant messages and saved-conversation previews render supported Markdown rather than exposing formatting markers.
+4. Resume controls provide a minimum 44×44-point hit target in sheet and overlay modes.
+5. Persisted conversations are scoped to the authenticated user and a resumed transcript hydrates the next Foundation Models request. The durable persistence/session contract is owned by BackendCoder in WEI-5008; the frontend must fail closed until that contract is integrated.
+
 Verification requires focused source-regression tests for notification wiring, help/title lookup, accessible controls, resume hooks, local-only seeding, and preservation of assistant bug-report context, followed by an iOS build and user-like iPhone/iPad verification.
 
 The AI Assistant is a locally-hosted intelligence layer that augments the WiredPart ERP with natural language understanding and data-driven insights. It runs entirely on-premise via **LM Studio** — no cloud dependency, no data leaving the shop network.
