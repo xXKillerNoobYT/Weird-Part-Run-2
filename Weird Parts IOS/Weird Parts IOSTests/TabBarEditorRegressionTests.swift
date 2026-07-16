@@ -42,6 +42,30 @@ final class TabBarEditorRegressionTests: XCTestCase {
     }
 
     @MainActor
+    func testFastRowDropsBeyondDividerPreserveRenderedModuleSlot() {
+        let original = ["dashboard", "jobs", "chat", "scheduling", "warehouse", "orders"]
+        let layout = TabBarEditorLayout(orderedIds: original)
+        let cases: [(destination: Int, expected: [String])] = [
+            (5, ["dashboard", "jobs", "chat", "warehouse", "scheduling", "orders"]),
+            (6, ["dashboard", "jobs", "chat", "warehouse", "scheduling", "orders"]),
+            (7, ["dashboard", "jobs", "chat", "warehouse", "orders", "scheduling"]),
+        ]
+
+        for testCase in cases {
+            let moved = layout.movingModules(
+                fromRenderedOffsets: IndexSet(integer: 3),
+                toRenderedOffset: testCase.destination
+            )
+
+            XCTAssertEqual(
+                moved,
+                testCase.expected,
+                "Rendered destination \(testCase.destination) must account for the divider exactly once."
+            )
+        }
+    }
+
+    @MainActor
     func testFirstMoreRowDroppedImmediatelyAboveDividerChangesModuleOrder() {
         let original = ["dashboard", "jobs", "chat", "scheduling", "warehouse", "orders"]
         let layout = TabBarEditorLayout(orderedIds: original)

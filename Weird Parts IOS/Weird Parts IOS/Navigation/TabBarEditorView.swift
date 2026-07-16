@@ -37,7 +37,9 @@ struct TabBarEditorLayout: Equatable, Sendable {
             let allSourcesAreMore = source.allSatisfy { $0 > dividerRenderedIndex }
 
             if destination > dividerRenderedIndex {
-                moduleDestination = allSourcesAreFast ? destination : destination - 1
+                let isAdjacentFastToMoreDrop = allSourcesAreFast
+                    && destination == dividerRenderedIndex + 1
+                moduleDestination = isAdjacentFastToMoreDrop ? destination : destination - 1
             } else if destination == dividerRenderedIndex, allSourcesAreMore {
                 moduleDestination = destination - 1
             }
