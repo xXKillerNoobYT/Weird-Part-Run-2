@@ -23,6 +23,8 @@ extension PartsService {
         public let id: String
         public let sourceKind: PartsImportSourceKind
         public let pageNumber: Int
+        /// One-based normalized source row represented by the chunk's first line.
+        public let sourceRowStart: Int?
         public let text: String
         public let snippet: String
 
@@ -30,12 +32,14 @@ extension PartsService {
             id: String,
             sourceKind: PartsImportSourceKind = .ocr,
             pageNumber: Int,
+            sourceRowStart: Int? = nil,
             text: String,
             snippet: String
         ) {
             self.id = id
             self.sourceKind = sourceKind
             self.pageNumber = pageNumber
+            self.sourceRowStart = sourceRowStart
             self.text = text
             self.snippet = snippet
         }
@@ -210,6 +214,24 @@ extension PartsService {
         guard !chunks.isEmpty || !candidates.isEmpty else {
             throw PartsError.invalidInput("OCR import preview requires at least one chunk or candidate.")
         }
+        guard quarantineThreshold.isFinite, (0...1).contains(quarantineThreshold) else {
+            throw PartsError.invalidInput("OCR quarantine threshold must be a finite value between 0 and 1.")
+        }
+        guard chunks.allSatisfy({ $0.sourceKind == .ocr }),
+              candidates.allSatisfy({ $0.sourceKind == .ocr }) else {
+            throw PartsError.invalidInput("OCR import preview only accepts OCR chunks and candidates.")
+        }
+        guard candidates.allSatisfy({
+            $0.confidence.isFinite && (0...1).contains($0.confidence)
+        }) else {
+            throw PartsError.invalidInput("OCR candidate confidence must be a finite value between 0 and 1.")
+        }
+        guard candidates.allSatisfy({ candidate in
+            guard let evidenceConfidence = candidate.sourceEvidence.confidence else { return true }
+            return evidenceConfidence.isFinite && (0...1).contains(evidenceConfidence)
+        }) else {
+            throw PartsError.invalidInput("OCR candidate evidence confidence must be a finite value between 0 and 1.")
+        }
         let normalizedCandidates = candidates.map {
             quarantineOCRCandidateIfNeeded($0, threshold: quarantineThreshold)
         }
@@ -243,6 +265,7 @@ extension PartsService {
                     id: id,
                     sourceKind: sourceKind,
                     pageNumber: page.pageNumber,
+                    sourceRowStart: startIndex + 1,
                     text: text,
                     snippet: makeOCRSnippet(from: text)
                 ))
@@ -267,7 +290,7 @@ extension PartsService {
                 activePageNumber = chunk.pageNumber
                 activeHeader = nil
             }
-            for line in normalizedOCRLines(chunk.text) {
+            for (lineOffset, line) in normalizedOCRLines(chunk.text).enumerated() {
                 let cells = splitOCRTableLine(line)
                 guard cells.count >= 2 else { continue }
 
@@ -317,10 +340,11 @@ extension PartsService {
                     + normalized.fields.count
                 let confidence = min(0.98, 0.70 + (Double(recognizedFieldCount) * 0.04))
                 let sourceKind = chunk.sourceKind
+                let sourceRowNumber = chunk.sourceRowStart.map { $0 + lineOffset }
                 let evidence = PartsImportSourceEvidence(
                     kind: .textBlock,
                     pageNumber: chunk.pageNumber,
-                    rowNumber: rowNumber,
+                    rowNumber: sourceRowNumber ?? rowNumber,
                     text: sourceSnippet,
                     confidence: confidence
                 )

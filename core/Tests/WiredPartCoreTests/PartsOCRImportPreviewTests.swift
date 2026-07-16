@@ -30,8 +30,39 @@ struct PartsOCRImportPreviewTests {
         #expect(breaker.sourceKind == .digitalPDFText)
         #expect(breaker.sourceEvidence.kind == .textBlock)
         #expect(breaker.sourceEvidence.pageNumber == 7)
+        #expect(breaker.rowNumber == 1)
+        #expect(breaker.sourceEvidence.rowNumber == 3)
+        #expect(table.rows.first { $0.columns.first == "PDF-1" }?.rowNumber == breaker.sourceEvidence.rowNumber)
         #expect(breaker.sourceEvidence.text?.contains("Digital PDF Breaker") == true)
         #expect(breaker.sourceSnippet.contains("Digital PDF Breaker"))
+    }
+
+    @Test("previewPartsImportDigitalPDF preserves source rows across chunks")
+    func previewPartsImportDigitalPDFPreservesSourceRowsAcrossChunks() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let preview = try env.parts.previewPartsImportDigitalPDF(pages: [
+            .init(pageNumber: 9, text: """
+            Supplier Quote
+            Prepared for WiredPart
+            Code | Name | Category
+            PDF-10 | First Chunk Row | Electrical
+            PDF-11 | Second Chunk Row | Wire
+            PDF-12 | Third Chunk Row | Conduit
+            """)
+        ], chunkLineLimit: 2)
+
+        let table = try #require(preview.tables.first)
+        #expect(preview.chunks.count == 3)
+        #expect(preview.candidates.map(\.rowNumber) == [1, 2, 3])
+
+        for code in ["PDF-10", "PDF-11", "PDF-12"] {
+            let candidate = try #require(preview.candidates.first { $0.code == code })
+            let tableRow = try #require(table.rows.first { $0.columns.first == code })
+            #expect(candidate.pageNumber == table.pageNumber)
+            #expect(candidate.sourceEvidence.rowNumber == tableRow.rowNumber)
+            #expect(candidate.sourceEvidence.rowNumber == tableRow.evidence.first?.rowNumber)
+        }
     }
 
     @Test("previewPartsImportOCR bridges existing OCR chunks and candidates into shared preview")
@@ -66,6 +97,57 @@ struct PartsOCRImportPreviewTests {
         #expect(preview.reviewReadyCandidates.count == 1)
         #expect(preview.quarantinedCandidates.isEmpty)
         #expect(preview.isCommitAllowed == false)
+    }
+
+    @Test("previewPartsImportOCR rejects malformed confidence and threshold values")
+    func previewPartsImportOCRRejectsMalformedConfidenceAndThresholdValues() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        for confidence in [Double.nan, .infinity, -.infinity, -0.01, 1.01] {
+            let candidate = bridgeCandidate(confidence: confidence)
+            #expect(throws: (any Error).self) {
+                _ = try env.parts.previewPartsImportOCR(chunks: [], candidates: [candidate])
+            }
+        }
+
+        for threshold in [Double.nan, .infinity, -.infinity, -0.01, 1.01] {
+            let candidate = bridgeCandidate(confidence: 0.92)
+            #expect(throws: (any Error).self) {
+                _ = try env.parts.previewPartsImportOCR(
+                    chunks: [],
+                    candidates: [candidate],
+                    quarantineThreshold: threshold
+                )
+            }
+        }
+
+        let malformedEvidence = bridgeCandidate(confidence: 0.92, evidenceConfidence: .nan)
+        #expect(throws: (any Error).self) {
+            _ = try env.parts.previewPartsImportOCR(chunks: [], candidates: [malformedEvidence])
+        }
+    }
+
+    @Test("previewPartsImportOCR rejects non-OCR bridge inputs")
+    func previewPartsImportOCRRejectsNonOCRBridgeInputs() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        for sourceKind in [PartsService.PartsImportSourceKind.digitalPDFText, .vision] {
+            let candidate = bridgeCandidate(confidence: 0.92, sourceKind: sourceKind)
+            #expect(throws: (any Error).self) {
+                _ = try env.parts.previewPartsImportOCR(chunks: [], candidates: [candidate])
+            }
+        }
+
+        let nonOCRChunk = PartsService.PartsOCRImportChunk(
+            id: "pdf-p1-c1",
+            sourceKind: .digitalPDFText,
+            pageNumber: 1,
+            text: "PDF-1 | Not OCR | Wire",
+            snippet: "PDF-1 | Not OCR | Wire"
+        )
+        #expect(throws: (any Error).self) {
+            _ = try env.parts.previewPartsImportOCR(chunks: [nonOCRChunk], candidates: [])
+        }
     }
 
     @Test("previewPartsImportOCR retains Description when an explicit Name header exists")
@@ -252,5 +334,36 @@ struct PartsOCRImportPreviewTests {
         #expect(preview.candidates.isEmpty)
         #expect(preview.errors.contains { $0.message == "cost_price cannot be negative" })
         #expect(preview.errors.contains { $0.message == "markup_percent cannot be negative" })
+    }
+
+    private func bridgeCandidate(
+        confidence: Double,
+        sourceKind: PartsService.PartsImportSourceKind = .ocr,
+        evidenceConfidence: Double? = nil
+    ) -> PartsService.PartsOCRImportCandidate {
+        let snippet = "OCR-1 | Bridge Candidate | Wire"
+        let evidence = evidenceConfidence.map {
+            PartsService.PartsImportSourceEvidence(
+                kind: .textBlock,
+                pageNumber: 1,
+                rowNumber: 1,
+                text: snippet,
+                confidence: $0
+            )
+        }
+        return PartsService.PartsOCRImportCandidate(
+            rowNumber: 1,
+            chunkId: "ocr-p1-c1",
+            pageNumber: 1,
+            sourceSnippet: snippet,
+            sourceKind: sourceKind,
+            sourceEvidence: evidence,
+            confidence: confidence,
+            name: "Bridge Candidate",
+            code: "OCR-1",
+            category: "Wire",
+            brand: nil,
+            fields: [:]
+        )
     }
 }
