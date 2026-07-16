@@ -127,14 +127,18 @@ struct PartsOCRImportPreviewTests {
 
         for confidence in [Double.nan, .infinity, -.infinity, -0.01, 1.01] {
             let candidate = bridgeCandidate(confidence: confidence)
-            #expect(throws: (any Error).self) {
+            #expect(throws: PartsService.PartsError.invalidInput(
+                "OCR candidate confidence must be a finite value between 0 and 1."
+            )) {
                 _ = try env.parts.previewPartsImportOCR(chunks: [], candidates: [candidate])
             }
         }
 
         for threshold in [Double.nan, .infinity, -.infinity, -0.01, 1.01] {
             let candidate = bridgeCandidate(confidence: 0.92)
-            #expect(throws: (any Error).self) {
+            #expect(throws: PartsService.PartsError.invalidInput(
+                "OCR quarantine threshold must be a finite value between 0 and 1."
+            )) {
                 _ = try env.parts.previewPartsImportOCR(
                     chunks: [],
                     candidates: [candidate],
@@ -144,7 +148,9 @@ struct PartsOCRImportPreviewTests {
         }
 
         let malformedEvidence = bridgeCandidate(confidence: 0.92, evidenceConfidence: .nan)
-        #expect(throws: (any Error).self) {
+        #expect(throws: PartsService.PartsError.invalidInput(
+            "OCR candidate evidence confidence must be a finite value between 0 and 1."
+        )) {
             _ = try env.parts.previewPartsImportOCR(chunks: [], candidates: [malformedEvidence])
         }
     }
@@ -155,7 +161,9 @@ struct PartsOCRImportPreviewTests {
 
         for sourceKind in [PartsService.PartsImportSourceKind.digitalPDFText, .vision] {
             let candidate = bridgeCandidate(confidence: 0.92, sourceKind: sourceKind)
-            #expect(throws: (any Error).self) {
+            #expect(throws: PartsService.PartsError.invalidInput(
+                "OCR import preview only accepts OCR chunks and candidates."
+            )) {
                 _ = try env.parts.previewPartsImportOCR(chunks: [], candidates: [candidate])
             }
         }
@@ -167,7 +175,9 @@ struct PartsOCRImportPreviewTests {
             text: "PDF-1 | Not OCR | Wire",
             snippet: "PDF-1 | Not OCR | Wire"
         )
-        #expect(throws: (any Error).self) {
+        #expect(throws: PartsService.PartsError.invalidInput(
+            "OCR import preview only accepts OCR chunks and candidates."
+        )) {
             _ = try env.parts.previewPartsImportOCR(chunks: [nonOCRChunk], candidates: [])
         }
     }
