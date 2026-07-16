@@ -748,7 +748,29 @@ struct IOSAIAssistantPanel: View {
         query = ""
         isProcessing = true
 
+        let pendingHelpPersistence = helpPersistenceTask
+        let sendConversationId = conversationId
+        let sendOwnerUserId = appCore.currentUser?.id
+
         Task {
+            await pendingHelpPersistence?.value
+
+            guard conversationId == sendConversationId,
+                  appCore.currentUser?.id == sendOwnerUserId else {
+                messages.append(AssistantMessage(
+                    role: .assistant,
+                    content: "This conversation changed before the Help context finished staging. Ask your follow-up again in the current conversation."
+                ))
+                isProcessing = false
+                return
+            }
+
+            if let conversationPersistenceError {
+                messages.append(AssistantMessage(role: .assistant, content: conversationPersistenceError))
+                isProcessing = false
+                return
+            }
+
             let response = await generateResponse(for: trimmed)
             messages.append(AssistantMessage(role: .assistant, content: response))
             isProcessing = false

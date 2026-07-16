@@ -84,6 +84,28 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertFalse(assistant.contains("Task.detached { [db, currentConversationId, userPrompt, assistantResponse]"))
     }
 
+    func testImmediateFollowUpWaitsForCompletedHelpStaging() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let sendQuery = try TestSourceSlicer.braceBalancedBody(
+            after: "private func sendQuery()",
+            in: assistant
+        )
+
+        XCTAssertTrue(sendQuery.contains("let pendingHelpPersistence = helpPersistenceTask"))
+        XCTAssertTrue(sendQuery.contains("let sendConversationId = conversationId"))
+        XCTAssertTrue(sendQuery.contains("let sendOwnerUserId = appCore.currentUser?.id"))
+        XCTAssertTrue(sendQuery.contains("await pendingHelpPersistence?.value"))
+        XCTAssertTrue(sendQuery.contains("conversationId == sendConversationId"))
+        XCTAssertTrue(sendQuery.contains("appCore.currentUser?.id == sendOwnerUserId"))
+        XCTAssertTrue(sendQuery.contains("if let conversationPersistenceError"))
+        guard let waitIndex = sendQuery.range(of: "await pendingHelpPersistence?.value")?.lowerBound,
+              let generationIndex = sendQuery.range(of: "let response = await generateResponse")?.lowerBound else {
+            XCTFail("sendQuery must contain both the Help-staging wait and response generation.")
+            return
+        }
+        XCTAssertLessThan(waitIndex, generationIndex, "Follow-up generation must be ordered after completed Help staging.")
+    }
+
     func testAssistantMessagesAndHistoryPreviewsRenderMarkdown() throws {
         let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
 

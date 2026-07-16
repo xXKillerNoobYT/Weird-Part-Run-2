@@ -488,6 +488,37 @@ struct FoundationModelsServiceTests {
         #endif
     }
 
+    @Test("delayed Help staging does not hydrate the model transcript until staging completes")
+    func testStageHelpConversation_delayedStagingCompletesBeforeHydration() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = FoundationModelsService()
+        let gate = AsyncGate()
+
+        let stagingTask = Task {
+            try await service.stageHelpConversation(
+                "delayed-help-follow-up",
+                ownerUserId: 77,
+                userPrompt: "Explain the Dashboard",
+                assistantResponse: "Dashboard help content",
+                in: env.db,
+                beforePersisting: {
+                    await gate.enterAndWaitForRelease()
+                }
+            )
+        }
+
+        await gate.waitUntilEntered()
+        #expect(await service.currentMessageHistory().isEmpty)
+        await gate.release()
+
+        let staged = try await stagingTask.value
+        #expect(staged)
+        #expect(await service.currentMessageHistory().map(\.content) == [
+            "Explain the Dashboard",
+            "Dashboard help content",
+        ])
+    }
+
     @Test("a delayed response cannot recreate history after clear completes")
     func testDelayedWriteAfterClear_isDiscarded() async throws {
         let env = try E2ETestHelpers.setUp()
@@ -544,5 +575,32 @@ struct FoundationModelsServiceTests {
     @Test("EnhanceMode allCases has 5 modes")
     func testEnhanceMode_allCases() {
         #expect(EnhanceMode.allCases.count == 5)
+    }
+}
+
+private actor AsyncGate {
+    private var didEnter = false
+    private var enteredContinuation: CheckedContinuation<Void, Never>?
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+    func waitUntilEntered() async {
+        if didEnter { return }
+        await withCheckedContinuation { continuation in
+            enteredContinuation = continuation
+        }
+    }
+
+    func enterAndWaitForRelease() async {
+        didEnter = true
+        enteredContinuation?.resume()
+        enteredContinuation = nil
+        await withCheckedContinuation { continuation in
+            releaseContinuation = continuation
+        }
+    }
+
+    func release() {
+        releaseContinuation?.resume()
+        releaseContinuation = nil
     }
 }

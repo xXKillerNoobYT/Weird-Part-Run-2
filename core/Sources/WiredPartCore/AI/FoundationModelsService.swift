@@ -628,7 +628,8 @@ public actor FoundationModelsService {
         ownerUserId: Int64,
         userPrompt: String,
         assistantResponse: String,
-        in db: AppDatabase
+        in db: AppDatabase,
+        beforePersisting: (@Sendable () async -> Void)? = nil
     ) async throws -> Bool {
         let scope = try Self.validatedScope(
             conversationId: conversationId,
@@ -639,6 +640,10 @@ public actor FoundationModelsService {
             AIConversationMessage(conversationId: conversationId, role: "user", content: userPrompt),
             AIConversationMessage(conversationId: conversationId, role: "assistant", content: assistantResponse),
         ]
+
+        if let beforePersisting {
+            await beforePersisting()
+        }
 
         guard try await persistMessagesIfCurrent(
             helpTurns,
