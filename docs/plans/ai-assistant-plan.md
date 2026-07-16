@@ -1,13 +1,25 @@
 # AI Assistant Plan
 
 > **Created:** 2026-03-08
-> **Status:** 📋 Planned (v2.0+)
+> **Status:** Native iOS implementation active; legacy LM Studio sections below are retained as historical context
 > **Depends on:** Phase 14 — AI Integration (`docs/plans/phase-14-ai-integration.md`)
 > **Scope:** Local LLM-powered assistant for natural language queries, anomaly detection, and predictive ordering.
 
 ---
 
 ## Overview
+
+### Native iOS help handoff and conversation resume (WEI-4986 / GitHub #1459)
+
+The active app uses Apple Foundation Models and the local `AppDatabase`; the older LM Studio architecture below is retired. The approved native interaction contract is:
+
+1. Every `PageHelpSheet` exposes a 44-point “Ask AI about this page” action with an explicit accessibility label.
+2. Tapping it dismisses Help and posts a read-only payload containing the visible title, visible help body, suggested prompt, and canonical registry page ID when the title is known. The shell presents the assistant and forwards that payload only after the assistant is mounted.
+3. The assistant immediately seeds a local user/assistant turn from that payload. This must not call a model or require network availability; canonical registry content is preferred, with the visible help body as the fallback.
+4. On first presentation, the assistant adopts `FoundationModelsService.latestConversationId` when local history exists. A labeled Resume control presents `FoundationModelsService.listConversations`, with loading and empty states; a nil database or read failure safely produces an empty list.
+5. Existing New, Clear, and Report a Bug controls remain intact in both sheet and overlay modes. Help-seeded turns are persisted best-effort so normal resume behavior can restore them.
+
+Verification requires focused source-regression tests for notification wiring, help/title lookup, accessible controls, resume hooks, local-only seeding, and preservation of assistant bug-report context, followed by an iOS build and user-like iPhone/iPad verification.
 
 The AI Assistant is a locally-hosted intelligence layer that augments the WiredPart ERP with natural language understanding and data-driven insights. It runs entirely on-premise via **LM Studio** — no cloud dependency, no data leaving the shop network.
 

@@ -20,6 +20,7 @@ struct IOSMainView: View {
     @State private var activeRootSheet: RootSheet?
     @State private var moduleNavigationRequests: [String: ModuleNavigationRequest] = [:]
     @State private var moreNavigationPath: [String] = []
+    @State private var pendingAIHelpRequest: [AnyHashable: Any]?
 
     enum RootSheet: Identifiable {
         case conflictReview
@@ -241,6 +242,32 @@ struct IOSMainView: View {
                     }
                     routeToModuleInTabLayout(moduleId)
                 }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .askAIAboutHelp)) { notification in
+            pendingAIHelpRequest = notification.userInfo
+            presentAssistantForHelpRequest()
+        }
+    }
+
+    /// Presents the assistant after Help dismisses, then forwards the pending payload
+    /// after the assistant's notification observer is mounted.
+    private func presentAssistantForHelpRequest() {
+        aiDisplayMode = .sheet
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(350))
+            if tabPrefs.navigationStyle == .fullSidebar {
+                activeSidebarSheet = .aiAssistant
+            } else {
+                activeRootSheet = .aiAssistant
+            }
+            showAIAssistant = true
+
+            try? await Task.sleep(for: .milliseconds(500))
+            if let request = pendingAIHelpRequest {
+                NotificationCenter.default.post(name: .seedAIHelpRequest, object: nil, userInfo: request)
+                pendingAIHelpRequest = nil
             }
         }
     }
