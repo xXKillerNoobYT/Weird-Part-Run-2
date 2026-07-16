@@ -34,18 +34,24 @@ struct QRScanDeliveryGate {
     }
 }
 
-enum QRScanFeedback {
-    static func isTypeMismatch(
+struct QRScanFeedback {
+    let typeMismatch: Bool
+    let message: String
+
+    init(
         isFound: Bool,
         entityType: QREntityType?,
-        expectedType: QREntityType?
-    ) -> Bool {
-        guard isFound, let entityType, let expectedType else { return false }
-        return entityType != expectedType
-    }
-
-    static func resultMessage(isFound: Bool, title: String, code: String) -> String {
-        isFound ? "Found: \(title)" : "Not found: \(code)"
+        expectedType: QREntityType?,
+        title: String,
+        code: String
+    ) {
+        if isFound, let entityType, let expectedType, entityType != expectedType {
+            typeMismatch = true
+            message = "Expected \(expectedType.rawValue), got \(entityType.rawValue)"
+        } else {
+            typeMismatch = false
+            message = isFound ? "Found: \(title)" : "Not found: \(code)"
+        }
     }
 }
 
@@ -72,7 +78,6 @@ struct QRScanSheet: View {
     @State private var resultIsFound = false
     @State private var resultEntityType: QREntityType?
     @State private var resultCode: String?
-    @State private var typeMismatch = false
     @State private var deliveryGate = QRScanDeliveryGate()
 
     // Manual entry
@@ -81,6 +86,17 @@ struct QRScanSheet: View {
     @State private var scanner: IOSQRScanner?
 
     private var isProcessing: Bool { deliveryGate.isProcessing }
+
+    private var resultFeedback: QRScanFeedback? {
+        guard let resultTitle else { return nil }
+        return QRScanFeedback(
+            isFound: resultIsFound,
+            entityType: resultEntityType,
+            expectedType: expectedType,
+            title: resultTitle,
+            code: resultCode ?? ""
+        )
+    }
 
     private var isScannerSupported: Bool {
         #if targetEnvironment(macCatalyst)
@@ -236,24 +252,18 @@ struct QRScanSheet: View {
                 Text(error)
                     .fontWeight(.medium)
                     .foregroundStyle(.red)
-            } else if typeMismatch, let got = resultEntityType, let expected = expectedType {
+            } else if let feedback = resultFeedback, feedback.typeMismatch {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
                     .accessibilityHidden(true)
-                Text("Expected \(expected.rawValue), got \(got.rawValue)")
+                Text(feedback.message)
                     .fontWeight(.medium)
                     .foregroundStyle(.orange)
-            } else if let title = resultTitle {
+            } else if let feedback = resultFeedback {
                 Image(systemName: resultIsFound ? "checkmark.circle.fill" : "questionmark.circle.fill")
                     .foregroundStyle(resultIsFound ? .green : .orange)
                     .accessibilityHidden(true)
-                Text(
-                    QRScanFeedback.resultMessage(
-                        isFound: resultIsFound,
-                        title: title,
-                        code: resultCode ?? ""
-                    )
-                )
+                Text(feedback.message)
                     .fontWeight(.medium)
                     .foregroundStyle(resultIsFound ? .green : .orange)
             } else {
@@ -279,15 +289,8 @@ struct QRScanSheet: View {
         if let error = scanError {
             return error
         }
-        if typeMismatch, let got = resultEntityType, let expected = expectedType {
-            return "Expected \(expected.rawValue), got \(got.rawValue)"
-        }
-        if let title = resultTitle {
-            return QRScanFeedback.resultMessage(
-                isFound: resultIsFound,
-                title: title,
-                code: resultCode ?? ""
-            )
+        if let resultFeedback {
+            return resultFeedback.message
         }
         return isScannerSupported ? "Point camera at a QR code" : "Enter a QR code to look it up"
     }
@@ -361,7 +364,6 @@ struct QRScanSheet: View {
             resultIsFound = false
             resultEntityType = nil
             resultCode = nil
-            typeMismatch = false
             return false
         }
         if shouldSkip { return }
@@ -383,12 +385,6 @@ struct QRScanSheet: View {
                 ?? result.fields["code"]
                 ?? result.code
 
-            let gotMismatch = QRScanFeedback.isTypeMismatch(
-                isFound: result.isFound,
-                entityType: result.entityType,
-                expectedType: expectedType
-            )
-
             let shouldAutoComplete = result.isFound
                 && (expectedType == nil || result.entityType == expectedType)
 
@@ -401,7 +397,6 @@ struct QRScanSheet: View {
                 resultIsFound = result.isFound
                 resultEntityType = result.entityType
                 resultCode = result.code
-                typeMismatch = gotMismatch
 
                 // Every result callback mutates parent SwiftUI state. Keep the
                 // callback and dismissal in one MainActor transaction.
