@@ -127,6 +127,8 @@ struct IOSAIAssistantPanel: View {
     @State private var savedConversations: [SavedConversation] = []
     @State private var showConversationPicker = false
     @State private var isLoadingConversations = false
+    /// Prevents a prompt from racing ahead of persisted transcript hydration.
+    @State private var isLoadingConversationHistory = false
     @State private var isReadyForHelpHandoff = false
     @State private var queuedHelpRequest: [AnyHashable: Any]?
     @State private var helpPersistenceTask: Task<Void, Never>?
@@ -422,6 +424,7 @@ struct IOSAIAssistantPanel: View {
             inputBar
         }
         .task {
+            isLoadingConversationHistory = true
             aiAvailability = aiService.checkAvailability()
             await resumeLastConversationIfNeeded()
             await loadCurrentConversation()
@@ -699,7 +702,12 @@ struct IOSAIAssistantPanel: View {
                     .foregroundStyle(Color.accentColor)
             }
             .accessibilityLabel("Send message")
-            .disabled(query.isBlankRequiredText || isProcessing || isClearingConversation)
+            .disabled(
+                query.isBlankRequiredText
+                    || isProcessing
+                    || isClearingConversation
+                    || isLoadingConversationHistory
+            )
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
@@ -726,7 +734,7 @@ struct IOSAIAssistantPanel: View {
                             .fill(Color(.secondarySystemGroupedBackground))
                     )
             )
-            .disabled(isProcessing || isClearingConversation)
+            .disabled(isProcessing || isClearingConversation || isLoadingConversationHistory)
             .onKeyPress(.return, phases: .down) { keyPress in
                 if keyPress.modifiers.contains(.shift) {
                     // Shift+Enter: allow default (insert newline)
@@ -743,7 +751,9 @@ struct IOSAIAssistantPanel: View {
 
     private func sendQuery() {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !isClearingConversation else { return }
+        guard !trimmed.isEmpty,
+              !isClearingConversation,
+              !isLoadingConversationHistory else { return }
 
         clearConversationError = nil
         clearConversationRetryId = nil
@@ -867,6 +877,7 @@ struct IOSAIAssistantPanel: View {
     private func startNewConversation() {
         conversationLoadTask?.cancel()
         conversationLoadTask = nil
+        isLoadingConversationHistory = false
         conversationRevision &+= 1
         isProcessing = false
         clearConversationError = nil
@@ -881,6 +892,7 @@ struct IOSAIAssistantPanel: View {
     private func resetForLogout() {
         conversationLoadTask?.cancel()
         conversationLoadTask = nil
+        isLoadingConversationHistory = false
         conversationRevision &+= 1
         isProcessing = false
         clearConversationError = nil
@@ -997,6 +1009,7 @@ struct IOSAIAssistantPanel: View {
 
         conversationLoadTask?.cancel()
         conversationLoadTask = nil
+        isLoadingConversationHistory = false
         conversationRevision &+= 1
         isProcessing = false
         isClearingConversation = true
@@ -1064,12 +1077,31 @@ struct IOSAIAssistantPanel: View {
             .filter { !$0.isEmpty }
     }
 
-    /// Own the current history load so every lifecycle transition can cancel it.
+    /// Own the current history load so lifecycle transitions can cancel it and the
+    /// composer stays disabled until both UI rows and model context are hydrated.
     private func loadCurrentConversation() async {
-        conversationLoadTask?.cancel()
-        let task = Task { await loadSavedMessages() }
-        conversationLoadTask = task
+        let task = beginCurrentConversationLoad()
         await task.value
+    }
+
+    @discardableResult
+    private func beginCurrentConversationLoad() -> Task<Void, Never> {
+        conversationLoadTask?.cancel()
+        isLoadingConversationHistory = true
+        let loadConversationId = conversationId
+        let loadOwnerUserId = appCore.currentUser?.id
+        let loadConversationRevision = conversationRevision
+        let task = Task {
+            await loadSavedMessages()
+            guard !Task.isCancelled,
+                  conversationId == loadConversationId,
+                  appCore.currentUser?.id == loadOwnerUserId,
+                  conversationRevision == loadConversationRevision else { return }
+            isLoadingConversationHistory = false
+            conversationLoadTask = nil
+        }
+        conversationLoadTask = task
+        return task
     }
 
     /// Load previously saved messages for the current conversation from the DB.
@@ -1180,6 +1212,7 @@ struct IOSAIAssistantPanel: View {
             return
         }
         conversationLoadTask?.cancel()
+        isLoadingConversationHistory = false
         conversationRevision &+= 1
         isProcessing = false
         clearConversationError = nil
@@ -1187,7 +1220,7 @@ struct IOSAIAssistantPanel: View {
         conversationId = id
         messages = []
         showConversationPicker = false
-        conversationLoadTask = Task { await loadSavedMessages() }
+        beginCurrentConversationLoad()
     }
 
     /// Generates a response using Foundation Models with tool calling when available,

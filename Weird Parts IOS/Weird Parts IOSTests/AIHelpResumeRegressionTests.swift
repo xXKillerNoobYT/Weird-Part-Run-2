@@ -178,6 +178,39 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         }
     }
 
+    func testComposerWaitsForConversationHydrationBeforeSending() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let sendQuery = try TestSourceSlicer.braceBalancedBody(
+            after: "private func sendQuery()",
+            in: assistant
+        )
+        let beginLoad = try TestSourceSlicer.braceBalancedBody(
+            after: "private func beginCurrentConversationLoad()",
+            in: assistant
+        )
+        let resume = try TestSourceSlicer.braceBalancedBody(
+            after: "private func resumeConversation(_ id: String)",
+            in: assistant
+        )
+
+        XCTAssertTrue(assistant.contains("@State private var isLoadingConversationHistory = false"))
+        XCTAssertTrue(assistant.contains(".task {\n            isLoadingConversationHistory = true"))
+        XCTAssertTrue(sendQuery.contains("!isLoadingConversationHistory"))
+        XCTAssertTrue(
+            assistant.contains(".disabled(isProcessing || isClearingConversation || isLoadingConversationHistory)"),
+            "The editor must stay disabled while persisted history hydrates."
+        )
+        XCTAssertTrue(
+            assistant.contains("|| isLoadingConversationHistory\n            )"),
+            "The Send control must stay disabled while persisted history hydrates."
+        )
+        XCTAssertTrue(beginLoad.contains("isLoadingConversationHistory = true"))
+        XCTAssertTrue(beginLoad.contains("await loadSavedMessages()"))
+        XCTAssertTrue(beginLoad.contains("conversationRevision == loadConversationRevision"))
+        XCTAssertTrue(beginLoad.contains("isLoadingConversationHistory = false"))
+        XCTAssertTrue(resume.contains("beginCurrentConversationLoad()"))
+    }
+
     func testAssistantMessagesAndHistoryPreviewsRenderMarkdown() throws {
         let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
 
