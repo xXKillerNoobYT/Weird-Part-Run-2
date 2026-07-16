@@ -106,6 +106,61 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertLessThan(waitIndex, generationIndex, "Follow-up generation must be ordered after completed Help staging.")
     }
 
+    func testHelpPersistenceErrorCannotBleedAcrossLifecycleChanges() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let persist = try TestSourceSlicer.braceBalancedBody(
+            after: "private func persistHelpHandoffTurn(userPrompt: String, assistantResponse: String)",
+            in: assistant
+        )
+        let cancel = try TestSourceSlicer.braceBalancedBody(
+            after: "private func cancelHelpPersistenceTask() -> Task<Void, Never>?",
+            in: assistant
+        )
+
+        XCTAssertTrue(persist.contains("let currentConversationId = conversationId"))
+        XCTAssertTrue(persist.contains("let currentConversationRevision = conversationRevision"))
+        XCTAssertTrue(persist.contains("appCore.currentUser?.id == ownerUserId"))
+        XCTAssertEqual(
+            persist.components(separatedBy: "conversationRevision == currentConversationRevision").count - 1,
+            2,
+            "Help persistence must guard both success and failure writes against stale conversation revisions."
+        )
+        XCTAssertTrue(cancel.contains("pendingHelpPersistence?.cancel()"))
+        XCTAssertTrue(cancel.contains("helpPersistenceTask = nil"))
+
+        for lifecycleFunction in [
+            "private func startNewConversation()",
+            "private func resetForLogout()",
+            "private func clearPersistedConversation(_ cid: String)",
+            "private func resumeConversation(_ id: String)",
+        ] {
+            let body = try TestSourceSlicer.braceBalancedBody(after: lifecycleFunction, in: assistant)
+            XCTAssertTrue(body.contains("cancelHelpPersistenceTask()"), "\(lifecycleFunction) must cancel and take ownership of stale Help persistence.")
+        }
+
+        let resume = try TestSourceSlicer.braceBalancedBody(
+            after: "private func resumeConversation(_ id: String)",
+            in: assistant
+        )
+        XCTAssertTrue(resume.contains("conversationPersistenceError = nil"))
+    }
+
+    func testConversationPickerLoadingFlagClearsOnStaleListReturn() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let list = try TestSourceSlicer.braceBalancedBody(
+            after: "private func loadConversationList() async",
+            in: assistant
+        )
+
+        XCTAssertTrue(list.contains("isLoadingConversations = true"))
+        XCTAssertTrue(list.contains("defer { isLoadingConversations = false }"))
+        XCTAssertLessThan(
+            list.range(of: "defer { isLoadingConversations = false }")!.lowerBound,
+            list.range(of: "FoundationModelsService.listConversations")!.lowerBound,
+            "The loading flag must be protected before any delayed list call can return through stale identity guards."
+        )
+    }
+
     func testClearInvalidatesPendingFollowUpBeforeDeletion() throws {
         let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
         let sendQuery = try TestSourceSlicer.braceBalancedBody(

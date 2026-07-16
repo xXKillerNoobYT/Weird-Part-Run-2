@@ -847,8 +847,9 @@ struct IOSAIAssistantPanel: View {
             return
         }
         let currentConversationId = conversationId
+        let currentConversationRevision = conversationRevision
         let previousHelpPersistence = helpPersistenceTask
-        helpPersistenceTask = Task { [db, currentConversationId, ownerUserId, userPrompt, assistantResponse] in
+        helpPersistenceTask = Task { [db, currentConversationId, ownerUserId, currentConversationRevision, userPrompt, assistantResponse] in
             await previousHelpPersistence?.value
             do {
                 let staged = try await aiService.stageHelpConversation(
@@ -858,19 +859,36 @@ struct IOSAIAssistantPanel: View {
                     assistantResponse: assistantResponse,
                     in: db
                 )
+                guard !Task.isCancelled,
+                      conversationId == currentConversationId,
+                      appCore.currentUser?.id == ownerUserId,
+                      conversationRevision == currentConversationRevision else { return }
                 conversationPersistenceError = staged
                     ? nil
                     : "This Help conversation changed while it was being saved. Start a new Help handoff before asking a follow-up."
             } catch {
+                guard !Task.isCancelled,
+                      conversationId == currentConversationId,
+                      appCore.currentUser?.id == ownerUserId,
+                      conversationRevision == currentConversationRevision else { return }
                 conversationPersistenceError = "This Help conversation is visible now but could not be saved: \(error.localizedDescription)"
             }
         }
+    }
+
+    @discardableResult
+    private func cancelHelpPersistenceTask() -> Task<Void, Never>? {
+        let pendingHelpPersistence = helpPersistenceTask
+        pendingHelpPersistence?.cancel()
+        helpPersistenceTask = nil
+        return pendingHelpPersistence
     }
 
     // MARK: - Conversation Lifecycle
 
     /// Start a brand-new conversation — clears the AI session, resets messages, generates a new ID.
     private func startNewConversation() {
+        let pendingHelpPersistence = cancelHelpPersistenceTask()
         conversationLoadTask?.cancel()
         conversationLoadTask = nil
         isLoadingConversationHistory = false
@@ -879,6 +897,7 @@ struct IOSAIAssistantPanel: View {
         clearConversationError = nil
         clearConversationRetryId = nil
         conversationPersistenceError = nil
+        Task { await pendingHelpPersistence?.value }
         Task { await aiService.clearConversation() }
         conversationId = UUID().uuidString
         messages = [welcomeMessage()]
@@ -886,6 +905,7 @@ struct IOSAIAssistantPanel: View {
 
     /// Clear volatile assistant state when the app logs out, without deleting persisted history.
     private func resetForLogout() {
+        let pendingHelpPersistence = cancelHelpPersistenceTask()
         conversationLoadTask?.cancel()
         conversationLoadTask = nil
         isLoadingConversationHistory = false
@@ -895,6 +915,7 @@ struct IOSAIAssistantPanel: View {
         clearConversationRetryId = nil
         conversationPersistenceError = nil
         isClearingConversation = false
+        Task { await pendingHelpPersistence?.value }
         Task { await aiService.clearConversation() }
         conversationId = UUID().uuidString
         messages.removeAll()
@@ -1012,7 +1033,7 @@ struct IOSAIAssistantPanel: View {
         clearConversationError = nil
         clearConversationRetryId = cid
 
-        let pendingHelpPersistence = helpPersistenceTask
+        let pendingHelpPersistence = cancelHelpPersistenceTask()
         Task {
             do {
                 await pendingHelpPersistence?.value
@@ -1183,6 +1204,7 @@ struct IOSAIAssistantPanel: View {
         }
         let listConversationRevision = conversationRevision
         isLoadingConversations = true
+        defer { isLoadingConversations = false }
         if let rows = try? await FoundationModelsService.listConversations(
             ownerUserId: ownerUserId,
             from: db
@@ -1199,20 +1221,22 @@ struct IOSAIAssistantPanel: View {
                   conversationRevision == listConversationRevision else { return }
             savedConversations = []
         }
-        isLoadingConversations = false
     }
 
     private func resumeConversation(_ id: String) {
+        conversationPersistenceError = nil
         guard id != conversationId else {
             showConversationPicker = false
             return
         }
+        let pendingHelpPersistence = cancelHelpPersistenceTask()
         conversationLoadTask?.cancel()
         isLoadingConversationHistory = false
         conversationRevision &+= 1
         isProcessing = false
         clearConversationError = nil
         clearConversationRetryId = nil
+        Task { await pendingHelpPersistence?.value }
         conversationId = id
         messages = []
         showConversationPicker = false
