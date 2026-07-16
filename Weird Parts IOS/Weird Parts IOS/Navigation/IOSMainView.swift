@@ -145,7 +145,11 @@ struct IOSMainView: View {
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             case .aiAssistant:
-                IOSAIAssistantPanel(displayMode: $aiDisplayMode, isVisible: $showAIAssistant)
+                IOSAIAssistantPanel(
+                    displayMode: $aiDisplayMode,
+                    isVisible: $showAIAssistant,
+                    pendingHelpRequest: $pendingAIHelpRequest
+                )
                     .environmentObject(appCore)
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
@@ -250,8 +254,8 @@ struct IOSMainView: View {
         }
     }
 
-    /// Presents the assistant after Help dismisses, then forwards the pending payload
-    /// after the assistant's notification observer is mounted.
+    /// Presents the assistant after Help dismisses. The mounted assistant consumes the
+    /// pending payload only after its initial conversation load has completed.
     private func presentAssistantForHelpRequest() {
         aiDisplayMode = .sheet
 
@@ -263,12 +267,6 @@ struct IOSMainView: View {
                 activeRootSheet = .aiAssistant
             }
             showAIAssistant = true
-
-            try? await Task.sleep(for: .milliseconds(500))
-            if let request = pendingAIHelpRequest {
-                NotificationCenter.default.post(name: .seedAIHelpRequest, object: nil, userInfo: request)
-                pendingAIHelpRequest = nil
-            }
         }
     }
 
@@ -320,7 +318,11 @@ struct IOSMainView: View {
         }
         .overlay(alignment: .bottomTrailing) {
             if showAIAssistant && aiDisplayMode == .overlay {
-                IOSAIAssistantPanel(displayMode: $aiDisplayMode, isVisible: $showAIAssistant)
+                IOSAIAssistantPanel(
+                    displayMode: $aiDisplayMode,
+                    isVisible: $showAIAssistant,
+                    pendingHelpRequest: $pendingAIHelpRequest
+                )
                     .environmentObject(appCore)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                     .padding(.bottom, 90)
@@ -371,7 +373,11 @@ struct IOSMainView: View {
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             case .aiAssistant:
-                IOSAIAssistantPanel(displayMode: $aiDisplayMode, isVisible: $showAIAssistant)
+                IOSAIAssistantPanel(
+                    displayMode: $aiDisplayMode,
+                    isVisible: $showAIAssistant,
+                    pendingHelpRequest: $pendingAIHelpRequest
+                )
                     .environmentObject(appCore)
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
@@ -384,7 +390,11 @@ struct IOSMainView: View {
         }
         .overlay(alignment: .bottomTrailing) {
             if showAIAssistant && aiDisplayMode == .overlay {
-                IOSAIAssistantPanel(displayMode: $aiDisplayMode, isVisible: $showAIAssistant)
+                IOSAIAssistantPanel(
+                    displayMode: $aiDisplayMode,
+                    isVisible: $showAIAssistant,
+                    pendingHelpRequest: $pendingAIHelpRequest
+                )
                     .environmentObject(appCore)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                     .padding(.bottom, DS.Space.xl)

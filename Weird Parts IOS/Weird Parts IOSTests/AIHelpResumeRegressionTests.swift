@@ -19,8 +19,8 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         )
         XCTAssertTrue(
             mainView.contains("publisher(for: .askAIAboutHelp)")
-                && mainView.contains("name: .seedAIHelpRequest"),
-            "The shell must present the assistant and then forward the pending Help payload."
+                && mainView.contains("pendingHelpRequest: $pendingAIHelpRequest"),
+            "The shell must present the assistant with an owned pending Help payload."
         )
     }
 
@@ -37,7 +37,7 @@ final class AIHelpResumeRegressionTests: XCTestCase {
     func testHelpHandoffSeedsLocalResponseWithoutModelCall() throws {
         let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
         let handoff = try TestSourceSlicer.braceBalancedBody(
-            after: "private func handleHelpHandoff(_ notification: Notification)",
+            after: "private func handleHelpHandoff(_ userInfo: [AnyHashable: Any])",
             in: assistant
         )
 
@@ -61,6 +61,27 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertTrue(assistant.contains("accessibilityLabel(\"Resume a past conversation\")"))
         XCTAssertTrue(assistant.contains("accessibilityLabel(\"Resume conversation: \\(conversation.preview)\")"))
         XCTAssertTrue(assistant.contains("await resumeLastConversationIfNeeded()"))
+        XCTAssertTrue(assistant.contains(".frame(minWidth: 44, minHeight: 44)"))
+    }
+
+    func testHelpHandoffWaitsForInitialHistoryAndClearWaitsForPersistence() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let mainView = try Self.readSource("Navigation/IOSMainView.swift")
+
+        XCTAssertTrue(assistant.contains("await loadSavedMessages()\n            isReadyForHelpHandoff = true"))
+        XCTAssertTrue(assistant.contains("consumePendingHelpRequestIfReady()"))
+        XCTAssertFalse(mainView.contains("Task.sleep(for: .milliseconds(500))"))
+        XCTAssertTrue(assistant.contains("let pendingHelpPersistence = helpPersistenceTask"))
+        XCTAssertTrue(assistant.contains("await pendingHelpPersistence?.value"))
+        XCTAssertFalse(assistant.contains("Task.detached { [db, currentConversationId, userPrompt, assistantResponse]"))
+    }
+
+    func testAssistantMessagesAndHistoryPreviewsRenderMarkdown() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+
+        XCTAssertTrue(assistant.contains("Text(renderedMarkdown(message.content))"))
+        XCTAssertTrue(assistant.contains("Text(renderedMarkdown(conversation.preview))"))
+        XCTAssertTrue(assistant.contains("AttributedString(markdown: content)"))
     }
 
     func testExistingAssistantBugReportContextRemainsAvailable() throws {

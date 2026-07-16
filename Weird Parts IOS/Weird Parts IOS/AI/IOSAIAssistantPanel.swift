@@ -29,6 +29,7 @@ struct IOSAIAssistantPanel: View {
 
     @Binding var displayMode: AIDisplayMode
     @Binding var isVisible: Bool
+    @Binding var pendingHelpRequest: [AnyHashable: Any]?
 
     @State private var query = ""
     @State private var messages: [AssistantMessage] = []
@@ -123,6 +124,9 @@ struct IOSAIAssistantPanel: View {
     @State private var savedConversations: [SavedConversation] = []
     @State private var showConversationPicker = false
     @State private var isLoadingConversations = false
+    @State private var isReadyForHelpHandoff = false
+    @State private var queuedHelpRequest: [AnyHashable: Any]?
+    @State private var helpPersistenceTask: Task<Void, Never>?
 
     struct SavedConversation: Identifiable, Equatable {
         let id: String
@@ -186,6 +190,7 @@ struct IOSAIAssistantPanel: View {
                             presentConversationPicker()
                         } label: {
                             Image(systemName: "clock.arrow.circlepath")
+                                .frame(minWidth: 44, minHeight: 44)
                         }
                         .help("Resume a past conversation")
                         .accessibilityLabel("Resume a past conversation")
@@ -295,6 +300,7 @@ struct IOSAIAssistantPanel: View {
             } label: {
                 Image(systemName: "clock.arrow.circlepath")
                     .font(.caption)
+                    .frame(minWidth: 44, minHeight: 44)
             }
             .buttonStyle(.plain)
             .help("Resume a past conversation")
@@ -365,7 +371,7 @@ struct IOSAIAssistantPanel: View {
                             resumeConversation(conversation.id)
                         } label: {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(conversation.preview)
+                                Text(renderedMarkdown(conversation.preview))
                                     .font(.subheadline)
                                     .lineLimit(2)
                                     .foregroundStyle(.primary)
@@ -413,6 +419,8 @@ struct IOSAIAssistantPanel: View {
             aiAvailability = aiService.checkAvailability()
             await resumeLastConversationIfNeeded()
             await loadSavedMessages()
+            isReadyForHelpHandoff = true
+            consumePendingHelpRequestIfReady()
         }
         .sheet(isPresented: $showConversationPicker) {
             conversationPicker
@@ -504,7 +512,8 @@ struct IOSAIAssistantPanel: View {
             resetForLogout()
         }
         .onReceive(NotificationCenter.default.publisher(for: .seedAIHelpRequest)) { notification in
-            handleHelpHandoff(notification)
+            queuedHelpRequest = notification.userInfo
+            consumePendingHelpRequestIfReady()
         }
     }
 
@@ -631,7 +640,7 @@ struct IOSAIAssistantPanel: View {
             if message.role == .user { Spacer(minLength: 60) }
 
             VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 4) {
-                Text(message.content)
+                Text(renderedMarkdown(message.content))
                     .font(.subheadline)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
@@ -726,12 +735,26 @@ struct IOSAIAssistantPanel: View {
 
     // MARK: - Help Handoff
 
+    private func consumePendingHelpRequestIfReady() {
+        if let pendingHelpRequest {
+            queuedHelpRequest = pendingHelpRequest
+            self.pendingHelpRequest = nil
+        }
+        guard isReadyForHelpHandoff, let request = queuedHelpRequest else { return }
+        queuedHelpRequest = nil
+        handleHelpHandoff(request)
+    }
+
     /// Seeds a read-only help turn locally. No model or network response is required.
-    private func handleHelpHandoff(_ notification: Notification) {
-        let title = notification.userInfo?["title"] as? String ?? "This Page"
-        let prompt = notification.userInfo?["prompt"] as? String ?? "Help me understand \(title)."
-        let helpBody = notification.userInfo?["helpBody"] as? String
-        let pageId = notification.userInfo?["pageId"] as? String
+    private func handleHelpHandoff(_ userInfo: [AnyHashable: Any]) {
+        guard !isClearingConversation else {
+            queuedHelpRequest = userInfo
+            return
+        }
+        let title = userInfo["title"] as? String ?? "This Page"
+        let prompt = userInfo["prompt"] as? String ?? "Help me understand \(title)."
+        let helpBody = userInfo["helpBody"] as? String
+        let pageId = userInfo["pageId"] as? String
 
         if let pageId, HelpContentRegistry.helpFor(pageId) != nil {
             activePageId = pageId
@@ -767,7 +790,7 @@ struct IOSAIAssistantPanel: View {
     private func persistHelpHandoffTurn(userPrompt: String, assistantResponse: String) {
         guard let db = appCore.db else { return }
         let currentConversationId = conversationId
-        Task.detached { [db, currentConversationId, userPrompt, assistantResponse] in
+        helpPersistenceTask = Task { [db, currentConversationId, userPrompt, assistantResponse] in
             try? await FoundationModelsService.saveMessage(
                 AIConversationMessage(conversationId: currentConversationId, role: "user", content: userPrompt),
                 to: db
@@ -902,8 +925,10 @@ struct IOSAIAssistantPanel: View {
         clearConversationError = nil
         clearConversationRetryId = cid
 
+        let pendingHelpPersistence = helpPersistenceTask
         Task {
             do {
+                await pendingHelpPersistence?.value
                 try await FoundationModelsService.clearPersistedConversation(cid, from: db)
                 await aiService.clearConversation()
                 await MainActor.run {
@@ -929,6 +954,10 @@ struct IOSAIAssistantPanel: View {
             role: .assistant,
             content: "How can I help you today? I can search your data, answer questions about jobs, parts, orders, and help you navigate the app."
         )
+    }
+
+    private func renderedMarkdown(_ content: String) -> AttributedString {
+        (try? AttributedString(markdown: content)) ?? AttributedString(content)
     }
 
     /// Load previously saved messages for the current conversation from the DB.
