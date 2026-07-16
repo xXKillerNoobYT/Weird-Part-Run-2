@@ -618,6 +618,56 @@ public actor FoundationModelsService {
         return history
     }
 
+    /// Persist a locally generated Help turn and stage the complete conversation for
+    /// the next Foundation Models request. This keeps Help local/read-only while making
+    /// an immediate follow-up receive the same context that is already visible in UI.
+    ///
+    /// Returns `false` when a concurrent clear invalidated the write before staging.
+    public func stageHelpConversation(
+        _ conversationId: String,
+        ownerUserId: Int64,
+        userPrompt: String,
+        assistantResponse: String,
+        in db: AppDatabase
+    ) async throws -> Bool {
+        let scope = try Self.validatedScope(
+            conversationId: conversationId,
+            ownerUserId: ownerUserId
+        )
+        let expectedRevision = conversationRevisions[scope, default: 0]
+        let helpTurns = [
+            AIConversationMessage(conversationId: conversationId, role: "user", content: userPrompt),
+            AIConversationMessage(conversationId: conversationId, role: "assistant", content: assistantResponse),
+        ]
+
+        guard try await persistMessagesIfCurrent(
+            helpTurns,
+            scope: scope,
+            expectedRevision: expectedRevision,
+            to: db
+        ) else {
+            return false
+        }
+
+        let history = try await Self.loadConversation(
+            conversationId,
+            ownerUserId: ownerUserId,
+            from: db
+        )
+        guard conversationRevisions[scope, default: 0] == expectedRevision else {
+            return false
+        }
+
+        #if canImport(FoundationModels)
+        activeChatSession = nil
+        #endif
+        activeChatConversationId = nil
+        activeChatSessionIdentity = nil
+        hydratedConversationScope = scope
+        messageHistory = history
+        return true
+    }
+
     /// Clear persisted and in-memory state as one awaitable actor operation. Incrementing
     /// the revision before the database delete invalidates any response currently in flight.
     public func clearConversation(

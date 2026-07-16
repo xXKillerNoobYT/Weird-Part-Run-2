@@ -4,6 +4,11 @@ import SwiftUI
 struct PageHelpSheet: View {
     @Environment(\.dismiss) private var dismiss
 
+    /// Set only by the Ask AI action. Publishing from `onDisappear` gives the
+    /// parent sheet a deterministic dismissal completion signal before the app
+    /// shell presents the assistant.
+    @State private var pendingAIHelpRequest: [AnyHashable: Any]?
+
     let title: String
     let sections: [(heading: String, body: String)]
 
@@ -34,6 +39,15 @@ struct PageHelpSheet: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+        .onDisappear {
+            guard let pendingAIHelpRequest else { return }
+            self.pendingAIHelpRequest = nil
+            NotificationCenter.default.post(
+                name: .askAIAboutHelp,
+                object: nil,
+                userInfo: pendingAIHelpRequest
+            )
+        }
     }
 
     private func askAIAboutThisHelp() {
@@ -51,7 +65,7 @@ struct PageHelpSheet: View {
             userInfo["pageId"] = pageId
         }
 
+        pendingAIHelpRequest = userInfo
         dismiss()
-        NotificationCenter.default.post(name: .askAIAboutHelp, object: nil, userInfo: userInfo)
     }
 }

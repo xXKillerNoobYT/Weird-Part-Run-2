@@ -454,6 +454,40 @@ struct FoundationModelsServiceTests {
         #endif
     }
 
+    @Test("local Help handoff persists and stages both turns for an immediate follow-up")
+    func testStageHelpConversation_stagesVisibleTurns() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = FoundationModelsService()
+
+        let staged = try await service.stageHelpConversation(
+            "help-follow-up",
+            ownerUserId: 77,
+            userPrompt: "Explain the Dashboard",
+            assistantResponse: "Dashboard help content",
+            in: env.db
+        )
+
+        #expect(staged)
+        let persisted = try await FoundationModelsService.loadConversation(
+            "help-follow-up",
+            ownerUserId: 77,
+            from: env.db
+        )
+        #expect(persisted.map(\.content) == ["Explain the Dashboard", "Dashboard help content"])
+        #expect(await service.currentMessageHistory().map(\.content) == persisted.map(\.content))
+
+        #if canImport(FoundationModels)
+        if #available(macOS 26.0, iOS 26.0, *) {
+            let transcript = FoundationModelsService.makeTranscript(
+                instructions: "Assistant instructions",
+                tools: [],
+                history: await service.currentMessageHistory()
+            )
+            #expect(transcript.count == 3)
+        }
+        #endif
+    }
+
     @Test("a delayed response cannot recreate history after clear completes")
     func testDelayedWriteAfterClear_isDiscarded() async throws {
         let env = try E2ETestHelpers.setUp()

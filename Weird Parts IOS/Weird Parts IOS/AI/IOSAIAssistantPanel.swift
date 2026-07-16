@@ -809,6 +809,7 @@ struct IOSAIAssistantPanel: View {
     }
 
     /// Persistence is best-effort because the locally generated help response is already visible.
+    /// Tasks are chained so Clear can await one handle and know every earlier Help write settled.
     private func persistHelpHandoffTurn(userPrompt: String, assistantResponse: String) {
         guard let db = appCore.db,
               let ownerUserId = appCore.currentUser?.id,
@@ -817,17 +818,20 @@ struct IOSAIAssistantPanel: View {
             return
         }
         let currentConversationId = conversationId
+        let previousHelpPersistence = helpPersistenceTask
         helpPersistenceTask = Task { [db, currentConversationId, ownerUserId, userPrompt, assistantResponse] in
+            await previousHelpPersistence?.value
             do {
-                try await FoundationModelsService.saveMessages(
-                    [
-                        AIConversationMessage(conversationId: currentConversationId, role: "user", content: userPrompt),
-                        AIConversationMessage(conversationId: currentConversationId, role: "assistant", content: assistantResponse),
-                    ],
+                let staged = try await aiService.stageHelpConversation(
+                    currentConversationId,
                     ownerUserId: ownerUserId,
-                    to: db
+                    userPrompt: userPrompt,
+                    assistantResponse: assistantResponse,
+                    in: db
                 )
-                conversationPersistenceError = nil
+                conversationPersistenceError = staged
+                    ? nil
+                    : "This Help conversation changed while it was being saved. Start a new Help handoff before asking a follow-up."
             } catch {
                 conversationPersistenceError = "This Help conversation is visible now but could not be saved: \(error.localizedDescription)"
             }
@@ -993,14 +997,33 @@ struct IOSAIAssistantPanel: View {
     }
 
     private func renderedMarkdown(_ content: String) -> AttributedString {
-        (try? AttributedString(
-            markdown: content,
-            options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .full)
-        )) ?? AttributedString(content)
+        var rendered = AttributedString()
+        for (index, block) in markdownBlocks(content).enumerated() {
+            if index > 0 {
+                rendered.append(AttributedString("\n\n"))
+            }
+            rendered.append(
+                (try? AttributedString(
+                    markdown: block,
+                    options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .full)
+                )) ?? AttributedString(block)
+            )
+        }
+        return rendered
     }
 
     private func plainText(fromMarkdown content: String) -> String {
-        String(renderedMarkdown(content).characters)
+        markdownBlocks(content)
+            .map { String(renderedMarkdown($0).characters) }
+            .joined(separator: "\n\n")
+    }
+
+    private func markdownBlocks(_ content: String) -> [String] {
+        content
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .components(separatedBy: "\n\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
     }
 
     /// Load previously saved messages for the current conversation from the DB.

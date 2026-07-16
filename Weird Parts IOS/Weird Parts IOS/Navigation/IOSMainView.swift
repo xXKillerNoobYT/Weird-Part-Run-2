@@ -254,20 +254,16 @@ struct IOSMainView: View {
         }
     }
 
-    /// Presents the assistant after Help dismisses. The mounted assistant consumes the
-    /// pending payload only after its initial conversation load has completed.
+    /// Presents the assistant after `PageHelpSheet.onDisappear` confirms Help dismissed.
+    /// The mounted assistant consumes the payload after its initial history load.
     private func presentAssistantForHelpRequest() {
         aiDisplayMode = .sheet
-
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(350))
-            if tabPrefs.navigationStyle == .fullSidebar {
-                activeSidebarSheet = .aiAssistant
-            } else {
-                activeRootSheet = .aiAssistant
-            }
-            showAIAssistant = true
+        if tabPrefs.navigationStyle == .fullSidebar {
+            activeSidebarSheet = .aiAssistant
+        } else {
+            activeRootSheet = .aiAssistant
         }
+        showAIAssistant = true
     }
 
     private func routeToModuleInTabLayout(_ moduleId: String) {

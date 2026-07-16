@@ -17,6 +17,8 @@ final class AIHelpResumeRegressionTests: XCTestCase {
                 && helpSheet.contains("\"helpBody\": helpBody"),
             "The Help action must forward the visible read-only help content."
         )
+        XCTAssertTrue(helpSheet.contains(".onDisappear"))
+        XCTAssertTrue(helpSheet.contains("pendingAIHelpRequest = userInfo"))
         XCTAssertTrue(
             mainView.contains("publisher(for: .askAIAboutHelp)")
                 && mainView.contains("pendingHelpRequest: $pendingAIHelpRequest"),
@@ -71,11 +73,11 @@ final class AIHelpResumeRegressionTests: XCTestCase {
 
         XCTAssertTrue(assistant.contains("await loadSavedMessages()\n            isReadyForHelpHandoff = true"))
         XCTAssertTrue(assistant.contains("consumePendingHelpRequestIfReady()"))
-        XCTAssertFalse(mainView.contains("Task.sleep(for: .milliseconds(500))"))
+        XCTAssertFalse(mainView.contains("Task.sleep"), "Help presentation must follow dismissal state, not a timer.")
         XCTAssertTrue(assistant.contains("let pendingHelpPersistence = helpPersistenceTask"))
         XCTAssertTrue(assistant.contains("await pendingHelpPersistence?.value"))
         XCTAssertTrue(assistant.contains("try await aiService.clearConversation(cid, ownerUserId: ownerUserId, from: db)"))
-        XCTAssertTrue(assistant.contains("FoundationModelsService.saveMessages("))
+        XCTAssertTrue(assistant.contains("aiService.stageHelpConversation("))
         XCTAssertTrue(assistant.contains("ownerUserId: ownerUserId"))
         XCTAssertTrue(assistant.contains("conversationPersistenceError = \"This Help conversation is visible now but could not be saved"))
         XCTAssertFalse(assistant.contains("try? await FoundationModelsService.saveMessages"))
@@ -87,9 +89,10 @@ final class AIHelpResumeRegressionTests: XCTestCase {
 
         XCTAssertTrue(assistant.contains("Text(renderedMarkdown(message.content))"))
         XCTAssertTrue(assistant.contains("Text(renderedMarkdown(conversation.preview))"))
-        XCTAssertTrue(assistant.contains("markdown: content"))
+        XCTAssertTrue(assistant.contains("markdown: block"))
         XCTAssertTrue(assistant.contains("interpretedSyntax: .full"))
-        XCTAssertTrue(assistant.contains("String(renderedMarkdown(content).characters)"))
+        XCTAssertTrue(assistant.contains("markdownBlocks(content)"))
+        XCTAssertTrue(assistant.contains(".joined(separator: \"\\n\\n\")"))
     }
 
     func testExistingAssistantBugReportContextRemainsAvailable() throws {

@@ -28,6 +28,8 @@ Review and user-like QA found five requirements that must be satisfied before th
 3. Assistant messages and saved-conversation previews render supported Markdown rather than exposing formatting markers.
 4. Resume controls provide a minimum 44×44-point hit target in sheet and overlay modes.
 5. Persisted conversations are scoped to the authenticated user and a resumed transcript hydrates the next Foundation Models request. The durable persistence/session contract is owned by BackendCoder in WEI-5008; the frontend must fail closed until that contract is integrated.
+6. Help dismissal drives assistant presentation through `PageHelpSheet.onDisappear`; no fixed delay guesses when sheet dismissal completed.
+7. The actor persists and stages locally seeded Help turns before follow-up input uses the model, and Markdown rendering preserves explicit blank-line boundaries in visible and accessibility text.
 
 Verification requires focused source-regression tests for notification wiring, help/title lookup, accessible controls, resume hooks, local-only seeding, and preservation of assistant bug-report context, followed by an iOS build and user-like iPhone/iPad verification.
 
