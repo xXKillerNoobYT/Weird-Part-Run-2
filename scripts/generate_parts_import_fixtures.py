@@ -167,13 +167,14 @@ def write_zip_text(z: zipfile.ZipFile, name: str, content: str) -> None:
 
 
 def make_xlsx(path: Path, sheet_name: str, headers: list[str], data_rows: list[list[str]]) -> None:
-    def shared_strings(values: list[str]) -> str:
+    def shared_strings(values: list[str], reference_count: int) -> str:
         sis = ''.join(f"<si><t>{escape(v)}</t></si>" for v in values)
         return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="{len(values)}" uniqueCount="{len(values)}">{sis}</sst>"""
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="{reference_count}" uniqueCount="{len(values)}">{sis}</sst>"""
 
     all_values = headers + [str(v) for row in data_rows for v in row]
-    value_index = {v: i for i, v in enumerate(all_values)}
+    unique_values = list(dict.fromkeys(all_values))
+    value_index = {value: index for index, value in enumerate(unique_values)}
     sheet_rows = []
     for r_idx, row in enumerate([headers] + data_rows, start=1):
         cells = []
@@ -197,7 +198,7 @@ def make_xlsx(path: Path, sheet_name: str, headers: list[str], data_rows: list[l
         write_zip_text(z, "xl/workbook.xml", workbook)
         write_zip_text(z, "xl/_rels/workbook.xml.rels", workbook_rels)
         write_zip_text(z, "xl/worksheets/sheet1.xml", sheet)
-        write_zip_text(z, "xl/sharedStrings.xml", shared_strings(all_values))
+        write_zip_text(z, "xl/sharedStrings.xml", shared_strings(unique_values, len(all_values)))
 
 
 def write_xlsx(path: Path, parts: list[Part], style: int) -> None:

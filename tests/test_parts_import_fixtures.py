@@ -1,10 +1,15 @@
 import csv
 import json
+import platform
 import re
+import shutil
 import subprocess
 import zipfile
 from pathlib import Path
+from typing import Optional
 from xml.etree import ElementTree as ET
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "docs" / "testing" / "parts-import-fixtures"
@@ -35,6 +40,13 @@ def _manifest_rows() -> dict[str, int]:
 
 def _manifest_entries() -> list[dict]:
     return json.loads((FIXTURES / "manifest.json").read_text())["files"]
+
+
+def _require_pdfkit_toolchain() -> None:
+    if platform.system() != "Darwin":
+        pytest.skip("PDFKit extraction requires macOS")
+    if shutil.which("xcrun") is None:
+        pytest.skip("PDFKit extraction requires xcrun")
 
 
 def test_parts_import_fixture_manifest_contract():
@@ -99,6 +111,7 @@ def test_xlsx_fixtures_are_valid_openxml_with_30_plus_data_rows():
     header_signatures = set()
     for path in sorted((FIXTURES / "xlsx").glob("*.xlsx")):
         with zipfile.ZipFile(path) as z:
+            assert z.testzip() is None, f"Corrupt ZIP member in {path}"
             names = set(z.namelist())
             assert "xl/workbook.xml" in names
             assert "xl/worksheets/sheet1.xml" in names
@@ -106,6 +119,22 @@ def test_xlsx_fixtures_are_valid_openxml_with_30_plus_data_rows():
             shared = ET.fromstring(z.read("xl/sharedStrings.xml"))
         shared_values = [node.text or "" for node in shared.findall("main:si/main:t", ns)]
         rows = sheet.findall(".//main:sheetData/main:row", ns)
+        cells = sheet.findall(".//main:sheetData/main:row/main:c", ns)
+        referenced_values = []
+        for cell in cells:
+            assert cell.get("t") == "s", f"Unexpected non-shared-string cell in {path}"
+            value_node = cell.find("main:v", ns)
+            assert value_node is not None and value_node.text is not None
+            index = int(value_node.text)
+            assert 0 <= index < len(shared_values), f"Out-of-range shared-string index in {path}"
+            referenced_values.append(shared_values[index])
+
+        assert len(shared_values) == len(set(shared_values)), f"Duplicate shared strings in {path}"
+        assert shared_values == list(dict.fromkeys(referenced_values)), (
+            f"Shared strings are not in stable first-seen order in {path}"
+        )
+        assert int(shared.get("count", "-1")) == len(cells), path
+        assert int(shared.get("uniqueCount", "-1")) == len(shared_values), path
         first_row_values = []
         for cell in rows[0].findall("main:c", ns):
             value_node = cell.find("main:v", ns)
@@ -210,6 +239,7 @@ def test_pdf_fixtures_resolve_fonts_and_extract_every_table_row():
 
 
 def test_pdfkit_extracts_declared_headers_and_separators_without_invalid_text():
+    _require_pdfkit_toolchain()
     entries = [entry for entry in _manifest_entries() if entry["format"] == "pdf"]
     paths = [FIXTURES / entry["file"] for entry in entries]
     result = subprocess.run(
@@ -229,3 +259,23 @@ def test_pdfkit_extracts_declared_headers_and_separators_without_invalid_text():
         assert entry["headerSignature"] in text, path
         assert entry["separator"] in entry["headerSignature"], path
         assert text.count(entry["separator"]) >= entry["rows"], path
+
+
+@pytest.mark.parametrize(
+    ("system_name", "xcrun_path", "reason"),
+    [
+        ("Linux", "/usr/bin/xcrun", "requires macOS"),
+        ("Darwin", None, "requires xcrun"),
+    ],
+)
+def test_pdfkit_contract_skips_when_platform_or_xcrun_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+    system_name: str,
+    xcrun_path: Optional[str],
+    reason: str,
+):
+    monkeypatch.setattr(platform, "system", lambda: system_name)
+    monkeypatch.setattr(shutil, "which", lambda _command: xcrun_path)
+
+    with pytest.raises(pytest.skip.Exception, match=reason):
+        _require_pdfkit_toolchain()
