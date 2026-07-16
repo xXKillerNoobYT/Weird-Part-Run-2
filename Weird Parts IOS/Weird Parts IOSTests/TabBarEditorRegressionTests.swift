@@ -30,6 +30,48 @@ final class TabBarEditorRegressionTests: XCTestCase {
         XCTAssertTrue(layout.exportsFastDemoteActions)
     }
 
+    @MainActor
+    func testFourthFastRowDroppedImmediatelyBelowDividerChangesModuleOrder() {
+        let original = ["dashboard", "jobs", "chat", "scheduling", "warehouse", "orders"]
+        let layout = TabBarEditorLayout(orderedIds: original)
+
+        let moved = layout.movingModules(fromRenderedOffsets: IndexSet(integer: 3), toRenderedOffset: 5)
+
+        XCTAssertEqual(moved, ["dashboard", "jobs", "chat", "warehouse", "scheduling", "orders"])
+        XCTAssertNotEqual(moved, original, "Crossing the divider downward must not persist as a no-op.")
+    }
+
+    @MainActor
+    func testFirstMoreRowDroppedImmediatelyAboveDividerChangesModuleOrder() {
+        let original = ["dashboard", "jobs", "chat", "scheduling", "warehouse", "orders"]
+        let layout = TabBarEditorLayout(orderedIds: original)
+
+        let moved = layout.movingModules(fromRenderedOffsets: IndexSet(integer: 5), toRenderedOffset: 4)
+
+        XCTAssertEqual(moved, ["dashboard", "jobs", "chat", "warehouse", "scheduling", "orders"])
+        XCTAssertNotEqual(moved, original, "Crossing the divider upward must not persist as a no-op.")
+    }
+
+    @MainActor
+    func testMovedModuleOrderSurvivesSaveAndReload() {
+        let userId = Int64.random(in: 1_000_000...Int64.max)
+        let defaultsKey = "tabOrder_\(userId)"
+        defer { UserDefaults.standard.removeObject(forKey: defaultsKey) }
+
+        let original = ["dashboard", "jobs", "chat", "scheduling", "warehouse", "orders"]
+        let expected = TabBarEditorLayout(orderedIds: original)
+            .movingModules(fromRenderedOffsets: IndexSet(integer: 3), toRenderedOffset: 5)
+        let savingPreferences = TabBarPreferences()
+        savingPreferences.load(userId: userId)
+        savingPreferences.tabOrder = expected
+        savingPreferences.save()
+
+        let reopenedPreferences = TabBarPreferences()
+        reopenedPreferences.load(userId: userId)
+
+        XCTAssertEqual(reopenedPreferences.tabOrder, expected)
+    }
+
     func testSourceKeepsMoreDividerAndFastDemoteButtonBehindDestinationCheck() throws {
         let source = try Self.readTabBarEditorSource()
 

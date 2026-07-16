@@ -7,6 +7,49 @@ struct TabBarEditorLayout: Equatable, Sendable {
     var moreIds: [String] { Array(orderedIds.dropFirst(min(4, orderedIds.count))) }
     var hasMoreDestination: Bool { !moreIds.isEmpty }
     var exportsFastDemoteActions: Bool { hasMoreDestination }
+
+    private var dividerRenderedIndex: Int? { hasMoreDestination ? bottomIds.count : nil }
+    private var renderedItemCount: Int { orderedIds.count + (hasMoreDestination ? 1 : 0) }
+
+    /// Maps a rendered list row back to the persisted module-order index.
+    /// The synthetic More divider has no module index.
+    func moduleIndex(forRenderedIndex renderedIndex: Int) -> Int? {
+        guard (0..<renderedItemCount).contains(renderedIndex) else { return nil }
+        guard let dividerRenderedIndex else { return renderedIndex }
+        if renderedIndex == dividerRenderedIndex { return nil }
+        return renderedIndex > dividerRenderedIndex ? renderedIndex - 1 : renderedIndex
+    }
+
+    /// Reorders persisted module IDs from SwiftUI's rendered `onMove` indices.
+    /// Crossing the dynamic divider must advance one module beyond the visual
+    /// sentinel so an adjacent cross-boundary drop cannot collapse to a no-op.
+    func movingModules(fromRenderedOffsets source: IndexSet, toRenderedOffset destination: Int) -> [String] {
+        guard !source.isEmpty,
+              source.allSatisfy({ (0..<renderedItemCount).contains($0) }),
+              (0...renderedItemCount).contains(destination) else { return orderedIds }
+
+        let moduleOffsets = source.compactMap(moduleIndex(forRenderedIndex:))
+        guard moduleOffsets.count == source.count else { return orderedIds }
+
+        var moduleDestination = destination
+        if let dividerRenderedIndex {
+            let allSourcesAreFast = source.allSatisfy { $0 < dividerRenderedIndex }
+            let allSourcesAreMore = source.allSatisfy { $0 > dividerRenderedIndex }
+
+            if destination > dividerRenderedIndex {
+                moduleDestination = allSourcesAreFast ? destination : destination - 1
+            } else if destination == dividerRenderedIndex, allSourcesAreMore {
+                moduleDestination = destination - 1
+            }
+        }
+
+        var movedIds = orderedIds
+        movedIds.move(
+            fromOffsets: IndexSet(moduleOffsets),
+            toOffset: min(max(0, moduleDestination), orderedIds.count)
+        )
+        return movedIds
+    }
 }
 
 /// Full-screen editor for customizing the tab bar order.
@@ -250,21 +293,13 @@ struct TabBarEditorView: View {
 
     // MARK: - Movement
 
-    /// Reorders module rows while keeping the More boundary fixed after the
-    /// fourth module. The divider participates in layout only and is never
-    /// persisted or accepted as a drag source.
+    /// Reorders persisted module IDs by explicitly translating the rendered
+    /// list indices around the synthetic More divider.
     private func moveEditorItems(from source: IndexSet, to destination: Int) {
-        let currentItems = editorItems
-        guard source.allSatisfy({ currentItems.indices.contains($0) }),
-              source.allSatisfy({ currentItems[$0] != .moreDivider }),
-              destination <= currentItems.count else { return }
-
-        var movedItems = currentItems
-        movedItems.move(fromOffsets: source, toOffset: destination)
-        orderedIds = movedItems.compactMap { item in
-            guard case .module(let id) = item else { return nil }
-            return id
-        }
+        orderedIds = layout.movingModules(
+            fromRenderedOffsets: source,
+            toRenderedOffset: destination
+        )
         showDemoteMinimumWarning = false
     }
 
