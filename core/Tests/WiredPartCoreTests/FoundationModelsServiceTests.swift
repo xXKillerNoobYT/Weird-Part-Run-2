@@ -2,6 +2,9 @@ import Foundation
 import Testing
 import GRDB
 @testable import WiredPartCore
+#if canImport(FoundationModels)
+import FoundationModels
+#endif
 
 @Suite("FoundationModelsService Tests")
 struct FoundationModelsServiceTests {
@@ -91,6 +94,22 @@ struct FoundationModelsServiceTests {
             navigationContext: "App: Jobs, Parts, Settings"
         )
         #expect(!result.success)
+    }
+
+    @Test("chatWithTools fails closed without an authenticated user")
+    func testChatWithTools_missingUserFailsClosed() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = FoundationModelsService()
+        let result = await service.chatWithTools(
+            query: "Show my recent jobs",
+            db: env.db,
+            permissions: ["view_jobs"],
+            userId: nil,
+            navigationContext: "App: Jobs"
+        )
+
+        #expect(!result.success)
+        #expect(result.error == AIConversationPersistenceError.missingAuthenticatedUser.localizedDescription)
     }
 
     // MARK: - AIResult Factory
@@ -198,8 +217,8 @@ struct FoundationModelsServiceTests {
             content: "How many jobs are open?",
             createdAt: "2026-04-20 10:00:00"
         )
-        try await FoundationModelsService.saveMessage(msg, to: env.db)
-        let loaded = try await FoundationModelsService.loadConversation("conv-001", from: env.db)
+        try await FoundationModelsService.saveMessage(msg, ownerUserId: 1, to: env.db)
+        let loaded = try await FoundationModelsService.loadConversation("conv-001", ownerUserId: 1, from: env.db)
         #expect(loaded.count == 1)
         #expect(loaded[0].content == "How many jobs are open?")
         #expect(loaded[0].role == "user")
@@ -215,9 +234,9 @@ struct FoundationModelsServiceTests {
             AIConversationMessage(id: "m3", conversationId: "conv-002", role: "user", content: "Q2", createdAt: "2026-04-20 10:00:02"),
         ]
         for msg in msgs {
-            try await FoundationModelsService.saveMessage(msg, to: env.db)
+            try await FoundationModelsService.saveMessage(msg, ownerUserId: 1, to: env.db)
         }
-        let loaded = try await FoundationModelsService.loadConversation("conv-002", from: env.db)
+        let loaded = try await FoundationModelsService.loadConversation("conv-002", ownerUserId: 1, from: env.db)
         #expect(loaded.count == 3)
         #expect(loaded[0].content == "Q1")
         #expect(loaded[1].content == "A1")
@@ -228,9 +247,9 @@ struct FoundationModelsServiceTests {
     func testDeleteConversation() async throws {
         let env = try E2ETestHelpers.setUp()
         let msg = AIConversationMessage(id: "del-1", conversationId: "conv-delete", role: "user", content: "Delete me", createdAt: "2026-04-20 11:00:00")
-        try await FoundationModelsService.saveMessage(msg, to: env.db)
-        try await FoundationModelsService.deleteConversation("conv-delete", from: env.db)
-        let remaining = try await FoundationModelsService.loadConversation("conv-delete", from: env.db)
+        try await FoundationModelsService.saveMessage(msg, ownerUserId: 1, to: env.db)
+        try await FoundationModelsService.deleteConversation("conv-delete", ownerUserId: 1, from: env.db)
+        let remaining = try await FoundationModelsService.loadConversation("conv-delete", ownerUserId: 1, from: env.db)
         #expect(remaining.isEmpty)
     }
 
@@ -239,11 +258,11 @@ struct FoundationModelsServiceTests {
         let env = try E2ETestHelpers.setUp()
         let keep = AIConversationMessage(id: "keep-1", conversationId: "conv-keep", role: "user", content: "Keep me", createdAt: "2026-04-20 12:00:00")
         let del = AIConversationMessage(id: "del-2", conversationId: "conv-del2", role: "user", content: "Delete me", createdAt: "2026-04-20 12:00:01")
-        try await FoundationModelsService.saveMessage(keep, to: env.db)
-        try await FoundationModelsService.saveMessage(del, to: env.db)
-        try await FoundationModelsService.deleteConversation("conv-del2", from: env.db)
-        let kept = try await FoundationModelsService.loadConversation("conv-keep", from: env.db)
-        let deleted = try await FoundationModelsService.loadConversation("conv-del2", from: env.db)
+        try await FoundationModelsService.saveMessage(keep, ownerUserId: 1, to: env.db)
+        try await FoundationModelsService.saveMessage(del, ownerUserId: 1, to: env.db)
+        try await FoundationModelsService.deleteConversation("conv-del2", ownerUserId: 1, from: env.db)
+        let kept = try await FoundationModelsService.loadConversation("conv-keep", ownerUserId: 1, from: env.db)
+        let deleted = try await FoundationModelsService.loadConversation("conv-del2", ownerUserId: 1, from: env.db)
         #expect(kept.count == 1)
         #expect(deleted.isEmpty)
     }
@@ -258,11 +277,11 @@ struct FoundationModelsServiceTests {
             content: "Delete and verify me",
             createdAt: "2026-04-20 12:05:00"
         )
-        try await FoundationModelsService.saveMessage(msg, to: env.db)
+        try await FoundationModelsService.saveMessage(msg, ownerUserId: 1, to: env.db)
 
-        try await FoundationModelsService.clearPersistedConversation("conv-clear-persisted", from: env.db)
+        try await FoundationModelsService.clearPersistedConversation("conv-clear-persisted", ownerUserId: 1, from: env.db)
 
-        let remaining = try await FoundationModelsService.loadConversation("conv-clear-persisted", from: env.db)
+        let remaining = try await FoundationModelsService.loadConversation("conv-clear-persisted", ownerUserId: 1, from: env.db)
         #expect(remaining.isEmpty)
     }
 
@@ -274,7 +293,7 @@ struct FoundationModelsServiceTests {
         }
 
         await #expect(throws: (any Error).self) {
-            try await FoundationModelsService.clearPersistedConversation("conv-delete-fails", from: env.db)
+            try await FoundationModelsService.clearPersistedConversation("conv-delete-fails", ownerUserId: 1, from: env.db)
         }
     }
 
@@ -286,8 +305,8 @@ struct FoundationModelsServiceTests {
             AIConversationMessage(id: "lc2", conversationId: "list-conv-A", role: "assistant", content: "msgA2", createdAt: "2026-04-20 09:00:01"),
             AIConversationMessage(id: "lc3", conversationId: "list-conv-B", role: "user", content: "msgB1", createdAt: "2026-04-20 08:00:00"),
         ]
-        for msg in msgs { try await FoundationModelsService.saveMessage(msg, to: env.db) }
-        let list = try await FoundationModelsService.listConversations(from: env.db)
+        for msg in msgs { try await FoundationModelsService.saveMessage(msg, ownerUserId: 1, to: env.db) }
+        let list = try await FoundationModelsService.listConversations(ownerUserId: 1, from: env.db)
         #expect(list.count == 2)
         // Most recent conversation (conv-A, last message at 09:00:01) should be first
         #expect(list[0].id == "list-conv-A")
@@ -300,15 +319,15 @@ struct FoundationModelsServiceTests {
             AIConversationMessage(id: "pv1", conversationId: "prev-conv", role: "user", content: "First message", createdAt: "2026-04-20 07:00:00"),
             AIConversationMessage(id: "pv2", conversationId: "prev-conv", role: "assistant", content: "Latest reply", createdAt: "2026-04-20 07:00:01"),
         ]
-        for msg in msgs { try await FoundationModelsService.saveMessage(msg, to: env.db) }
-        let list = try await FoundationModelsService.listConversations(from: env.db)
+        for msg in msgs { try await FoundationModelsService.saveMessage(msg, ownerUserId: 1, to: env.db) }
+        let list = try await FoundationModelsService.listConversations(ownerUserId: 1, from: env.db)
         #expect(list.first?.preview == "Latest reply")
     }
 
     @Test("latestConversationId returns nil when no messages exist")
     func testLatestConversationId_emptyDatabase() async throws {
         let env = try E2ETestHelpers.setUp()
-        let latest = try await FoundationModelsService.latestConversationId(from: env.db)
+        let latest = try await FoundationModelsService.latestConversationId(ownerUserId: 1, from: env.db)
         #expect(latest == nil)
     }
 
@@ -329,11 +348,140 @@ struct FoundationModelsServiceTests {
             content: "Newer thread",
             createdAt: "2026-04-20 08:00:00"
         )
-        try await FoundationModelsService.saveMessage(older, to: env.db)
-        try await FoundationModelsService.saveMessage(newer, to: env.db)
+        try await FoundationModelsService.saveMessage(older, ownerUserId: 1, to: env.db)
+        try await FoundationModelsService.saveMessage(newer, ownerUserId: 1, to: env.db)
 
-        let latest = try await FoundationModelsService.latestConversationId(from: env.db)
+        let latest = try await FoundationModelsService.latestConversationId(ownerUserId: 1, from: env.db)
         #expect(latest == "newer-conv")
+    }
+
+    @Test("conversation persistence is isolated by authenticated owner")
+    func testConversationPersistence_isolatedByOwner() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let ownerAMessage = AIConversationMessage(
+            id: "owner-a-message",
+            conversationId: "shared-conversation-id",
+            role: "user",
+            content: "Owner A private turn",
+            createdAt: "2026-07-16 08:00:00"
+        )
+        let ownerBMessage = AIConversationMessage(
+            id: "owner-b-message",
+            conversationId: "shared-conversation-id",
+            role: "user",
+            content: "Owner B private turn",
+            createdAt: "2026-07-16 09:00:00"
+        )
+        try await FoundationModelsService.saveMessage(ownerAMessage, ownerUserId: 101, to: env.db)
+        try await FoundationModelsService.saveMessage(ownerBMessage, ownerUserId: 202, to: env.db)
+
+        let ownerBLoaded = try await FoundationModelsService.loadConversation(
+            "shared-conversation-id",
+            ownerUserId: 202,
+            from: env.db
+        )
+        let ownerBList = try await FoundationModelsService.listConversations(ownerUserId: 202, from: env.db)
+        let ownerBLatest = try await FoundationModelsService.latestConversationId(ownerUserId: 202, from: env.db)
+        #expect(ownerBLoaded.map(\.content) == ["Owner B private turn"])
+        #expect(ownerBList.map(\.preview) == ["Owner B private turn"])
+        #expect(ownerBLatest == "shared-conversation-id")
+
+        try await FoundationModelsService.deleteConversation(
+            "shared-conversation-id",
+            ownerUserId: 202,
+            from: env.db
+        )
+        let ownerAStillPresent = try await FoundationModelsService.loadConversation(
+            "shared-conversation-id",
+            ownerUserId: 101,
+            from: env.db
+        )
+        #expect(ownerAStillPresent.map(\.content) == ["Owner A private turn"])
+        #expect(try await FoundationModelsService.listConversations(ownerUserId: 202, from: env.db).isEmpty)
+        #expect(try await FoundationModelsService.latestConversationId(ownerUserId: 202, from: env.db) == nil)
+    }
+
+    @Test("conversation persistence rejects missing authenticated owner")
+    func testConversationPersistence_rejectsMissingOwner() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let message = AIConversationMessage(conversationId: "missing-owner", role: "user", content: "Private")
+
+        await #expect(throws: AIConversationPersistenceError.missingAuthenticatedUser) {
+            try await FoundationModelsService.saveMessage(message, ownerUserId: 0, to: env.db)
+        }
+        await #expect(throws: AIConversationPersistenceError.missingAuthenticatedUser) {
+            try await FoundationModelsService.listConversations(ownerUserId: 0, from: env.db)
+        }
+    }
+
+    @Test("resume stages persisted turns for model-session hydration")
+    func testResumeConversation_stagesPriorTurns() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = FoundationModelsService()
+        let priorTurns = [
+            AIConversationMessage(id: "resume-u", conversationId: "resume", role: "user", content: "Original question"),
+            AIConversationMessage(id: "resume-a", conversationId: "resume", role: "assistant", content: "Original answer"),
+        ]
+        try await FoundationModelsService.saveMessages(priorTurns, ownerUserId: 77, to: env.db)
+
+        let hydrated = try await service.resumeConversation("resume", ownerUserId: 77, from: env.db)
+        #expect(hydrated.map(\.content) == ["Original question", "Original answer"])
+        #expect(await service.currentMessageHistory().map(\.content) == hydrated.map(\.content))
+
+        #if canImport(FoundationModels)
+        if #available(macOS 26.0, iOS 26.0, *) {
+            let transcript = FoundationModelsService.makeTranscript(
+                instructions: "Assistant instructions",
+                tools: [],
+                history: hydrated
+            )
+            #expect(transcript.count == 3)
+            guard case .prompt(let prompt) = transcript[1],
+                  let promptSegment = prompt.segments.first,
+                  case .text(let promptText) = promptSegment else {
+                Issue.record("Hydrated user turn was not forwarded as a model prompt")
+                return
+            }
+            guard case .response(let response) = transcript[2],
+                  let responseSegment = response.segments.first,
+                  case .text(let responseText) = responseSegment else {
+                Issue.record("Hydrated assistant turn was not forwarded as a model response")
+                return
+            }
+            #expect(promptText.content == "Original question")
+            #expect(responseText.content == "Original answer")
+        }
+        #endif
+    }
+
+    @Test("a delayed response cannot recreate history after clear completes")
+    func testDelayedWriteAfterClear_isDiscarded() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = FoundationModelsService()
+        let scope = AIConversationScope(conversationId: "clear-race", ownerUserId: 88)
+        let revisionBeforeClear = await service.persistenceRevision(for: scope)
+
+        try await service.clearConversation("clear-race", ownerUserId: 88, from: env.db)
+        let delayedMessage = AIConversationMessage(
+            id: "delayed-after-clear",
+            conversationId: "clear-race",
+            role: "assistant",
+            content: "Late response"
+        )
+        let wasPersisted = try await service.persistMessagesIfCurrent(
+            [delayedMessage],
+            scope: scope,
+            expectedRevision: revisionBeforeClear,
+            to: env.db
+        )
+
+        let remaining = try await FoundationModelsService.loadConversation(
+            "clear-race",
+            ownerUserId: 88,
+            from: env.db
+        )
+        #expect(!wasPersisted)
+        #expect(remaining.isEmpty)
     }
 
     // MARK: - AIConversationMessage Init
