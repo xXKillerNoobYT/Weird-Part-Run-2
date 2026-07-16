@@ -333,6 +333,39 @@ struct PartsServiceAdvancedTests {
         #expect(part.fields["part_type"] == "field-kit")
     }
 
+    @Test("committed CRLF CSV fixtures preview and import every manifest row")
+    func testCommittedCRLFFixturesPreviewAndImportEveryManifestRow() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let fixtureRoot = repositoryRoot.appendingPathComponent("docs/testing/parts-import-fixtures")
+        let manifestData = try Data(contentsOf: fixtureRoot.appendingPathComponent("manifest.json"))
+        let manifest = try #require(JSONSerialization.jsonObject(with: manifestData) as? [String: Any])
+        let files = try #require(manifest["files"] as? [[String: Any]])
+        let csvFixtures = files.filter { $0["format"] as? String == "csv" }
+
+        #expect(csvFixtures.count == 8)
+        for fixture in csvFixtures {
+            let relativePath = try #require(fixture["file"] as? String)
+            let expectedRows = try #require(fixture["rows"] as? Int)
+            let data = try Data(contentsOf: fixtureRoot.appendingPathComponent(relativePath))
+            let csv = try #require(String(data: data, encoding: .utf8))
+            let env = try E2ETestHelpers.setUp()
+
+            #expect(data.range(of: Data("\r\n".utf8)) != nil, "Fixture must exercise CRLF parsing: \(relativePath)")
+            let preview = try env.parts.previewPartsImportCSV(csv)
+            #expect(preview.totalRows == expectedRows, "Preview row mismatch for \(relativePath)")
+            #expect(preview.newParts.count == expectedRows, "Preview did not accept every row in \(relativePath)")
+            #expect(preview.errors.isEmpty, "Preview errors for \(relativePath): \(preview.errors)")
+
+            let result = try env.parts.commitPartsImportCSV(preview)
+            #expect(result.created == expectedRows, "Commit row mismatch for \(relativePath)")
+            #expect(try env.parts.getImportExportStats().totalParts == expectedRows)
+        }
+    }
+
     @Test("previewPartsImportCSV reports invalid cost_price and markup_percent values with row and column context")
     func testPreviewPartsImportCSVRejectsInvalidNumericValues() throws {
         let env = try E2ETestHelpers.setUp()
@@ -362,6 +395,23 @@ struct PartsServiceAdvancedTests {
         #expect(preview.newParts.isEmpty)
         #expect(preview.errors.count == 1)
         #expect(preview.errors.contains { $0.rowNumber == 2 && $0.message == "Invalid number for sell_price: not-a-number" })
+    }
+
+    @Test("previewPartsImportCSV accepts percent suffix only for markup_percent")
+    func testPreviewPartsImportCSVRejectsPercentSuffixOnMoneyFields() throws {
+        let env = try E2ETestHelpers.setUp()
+        let csv = """
+        name,code,category,cost_price,markup_percent,sell_price
+        Percent Money Part,PERCENT-MONEY-001,Test,12%,35%,19%
+        """
+
+        let preview = try env.parts.previewPartsImportCSV(csv)
+
+        #expect(preview.newParts.isEmpty)
+        #expect(preview.errors.count == 2)
+        #expect(preview.errors.contains { $0.rowNumber == 2 && $0.message == "Invalid number for cost_price: 12%" })
+        #expect(preview.errors.contains { $0.rowNumber == 2 && $0.message == "Invalid number for sell_price: 19%" })
+        #expect(!preview.errors.contains { $0.message.contains("markup_percent") })
     }
 
     @Test("previewPartsImportCSV keeps rows with valid numeric pricing fields")
@@ -1216,6 +1266,116 @@ struct PartsServiceAdvancedTests {
         #expect(decisionsByRow[5] == .quarantined)
         #expect(decisionsByRow[6] == .new)
         #expect(preview.errors.contains { $0.rowNumber == 5 })
+    }
+
+    @Test("previewPartsImportCSV treats formatted equivalent numerics as duplicates")
+    func testPreviewPartsImportCSVTreatsFormattedEquivalentNumericsAsDuplicates() throws {
+        let env = try E2ETestHelpers.setUp()
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "Formatted Numeric Category")
+        _ = try env.parts.createPart(
+            categoryId: categoryId,
+            name: "Currency Equivalent Part",
+            code: "FMT-COST-001",
+            companyCostPrice: 1_234.50,
+            companyMarkupPercent: 25.0
+        )
+        _ = try env.parts.createPart(
+            categoryId: categoryId,
+            name: "Percent Equivalent Part",
+            code: "FMT-MARKUP-001",
+            companyCostPrice: 12.50,
+            companyMarkupPercent: 35.0
+        )
+
+        let preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,cost_price,markup_percent
+        Currency Equivalent Part,FMT-COST-001,Formatted Numeric Category,"$1,234.50",25
+        Percent Equivalent Part,FMT-MARKUP-001,Formatted Numeric Category,12.50,35%
+        """)
+
+        let decisionsByRow = Dictionary(uniqueKeysWithValues: preview.decisions.map { ($0.rowNumber, $0.classification) })
+        #expect(decisionsByRow[2] == .duplicateSkip)
+        #expect(decisionsByRow[3] == .duplicateSkip)
+    }
+
+    @Test("previewPartsImportCSV normalizes signed currency before duplicate and negative validation")
+    func testPreviewPartsImportCSVNormalizesSignedCurrency() throws {
+        let env = try E2ETestHelpers.setUp()
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "Signed Currency Category")
+        _ = try env.parts.createPart(
+            categoryId: categoryId,
+            name: "Positive Signed Currency Part",
+            code: "SIGNED-COST-001",
+            companyCostPrice: 1_234.50
+        )
+
+        let preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,cost_price
+        Positive Signed Currency Part,SIGNED-COST-001,Signed Currency Category,"+$1,234.50"
+        Negative Signed Currency Part,SIGNED-COST-002,Signed Currency Category,-$12.34
+        """)
+
+        let decisionsByRow = Dictionary(uniqueKeysWithValues: preview.decisions.map { ($0.rowNumber, $0.classification) })
+        #expect(decisionsByRow[2] == .duplicateSkip)
+        #expect(decisionsByRow[3] == .quarantined)
+        #expect(preview.errors.contains { $0.rowNumber == 3 && $0.message == "cost_price cannot be negative" })
+        #expect(!preview.errors.contains { $0.rowNumber == 3 && $0.message.hasPrefix("Invalid number") })
+    }
+
+    @Test("commitPartsImportCSV creates matching part and supplier costs from signed currency")
+    func testCommitPartsImportCSVNormalizesSupplierCostOnCreate() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Signed Currency Create Supplier")
+        let preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,supplier_part_number,cost_price
+        Supplier Currency Create,SUP-COST-CREATE-001,Supplier Currency Category,VEN-CREATE-001,"+$1,234.50"
+        """, supplierId: supplierId)
+
+        let result = try env.parts.commitPartsImportCSV(preview)
+
+        #expect(result.created == 1)
+        let part = try #require(try env.parts.findPartByCode("SUP-COST-CREATE-001"))
+        let supplierCosts = try env.parts.getPartSupplierCosts(partId: try #require(part.id))
+        #expect(part.companyCostPrice == 1_234.50)
+        #expect(supplierCosts.count == 1)
+        #expect(supplierCosts.first?.supplierCostPrice == part.companyCostPrice)
+    }
+
+    @Test("commitPartsImportCSV updates matching part and supplier costs from signed currency")
+    func testCommitPartsImportCSVNormalizesSupplierCostOnUpdate() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Signed Currency Update Supplier")
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "Supplier Currency Category")
+        let partId = try env.parts.createPart(
+            categoryId: categoryId,
+            name: "Supplier Currency Update",
+            code: "SUP-COST-UPDATE-001",
+            companyCostPrice: 10
+        )
+        _ = try env.parts.addPartSupplierLink(
+            partId: partId,
+            supplierId: supplierId,
+            supplierPartNumber: "VEN-UPDATE-001",
+            costPrice: 20
+        )
+        var preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,supplier_part_number,cost_price
+        Supplier Currency Update,SUP-COST-UPDATE-001,Supplier Currency Category,VEN-UPDATE-001,"+$1,234.50"
+        """, supplierId: supplierId)
+        preview.conflicts = preview.conflicts.map { conflict in
+            var editable = conflict
+            editable.resolution = .update
+            return editable
+        }
+
+        let result = try env.parts.commitPartsImportCSV(preview)
+
+        #expect(result.updated == 1)
+        let part = try #require(try env.parts.findPartByCode("SUP-COST-UPDATE-001"))
+        let supplierCosts = try env.parts.getPartSupplierCosts(partId: try #require(part.id))
+        #expect(part.companyCostPrice == 1_234.50)
+        #expect(supplierCosts.count == 1)
+        #expect(supplierCosts.first?.supplierCostPrice == part.companyCostPrice)
     }
 
     @Test("previewPartsImportCSV classifies update when mutable import fields differ")
