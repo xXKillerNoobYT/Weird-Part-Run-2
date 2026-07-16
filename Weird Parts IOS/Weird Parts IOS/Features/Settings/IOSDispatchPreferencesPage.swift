@@ -248,7 +248,10 @@ struct IOSDispatchPreferencesPage: View {
                 crewHistoryMonths: crewHistoryMonths,
                 crewContinuityWeight: crewContinuityWeight
             )
-            try service.updateDispatchPreferences(preferences)
+            // The service returns the canonical persisted settings for callers
+            // that need to rehydrate. This form already owns the submitted
+            // values, so explicitly discard the intentionally unused result.
+            _ = try service.updateDispatchPreferences(preferences)
             saveError = nil
             isDirty = false
             saveSuccessMessage = "Dispatch preferences saved."
