@@ -44,6 +44,15 @@ struct HelpContentRegistry {
         entries[pageId]
     }
 
+    /// Finds canonical help by its visible sheet title for Help → Assistant handoff.
+    static func pageId(matchingTitle title: String) -> String? {
+        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalizedTitle.isEmpty else { return nil }
+        return entries.values.first { entry in
+            entry.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalizedTitle
+        }?.pageId
+    }
+
     /// All available help topic names, sorted alphabetically.
     static var availableTopics: [String] {
         entries.values.map(\.title).sorted()

@@ -116,6 +116,20 @@ struct IOSAIAssistantPanel: View {
     /// Unique ID for the current conversation thread. Changing this starts a fresh session.
     @State private var conversationId: String = UUID().uuidString
 
+    /// Guards the one-time cross-launch resume so it only runs on the panel's first appearance.
+    @State private var didAttemptResume = false
+
+    /// Past conversations for the resume picker, loaded on demand.
+    @State private var savedConversations: [SavedConversation] = []
+    @State private var showConversationPicker = false
+    @State private var isLoadingConversations = false
+
+    struct SavedConversation: Identifiable, Equatable {
+        let id: String
+        let lastMessageAt: String
+        let preview: String
+    }
+
     /// Whether the beta bug-report sheet is presented from the assistant.
     @State private var isBugReportPresented = false
 
@@ -167,6 +181,14 @@ struct IOSAIAssistantPanel: View {
                         }
                         .help("Switch to floating overlay")
                         .accessibilityLabel("Switch to floating overlay")
+
+                        Button {
+                            presentConversationPicker()
+                        } label: {
+                            Image(systemName: "clock.arrow.circlepath")
+                        }
+                        .help("Resume a past conversation")
+                        .accessibilityLabel("Resume a past conversation")
 
                         Button {
                             startNewConversation()
@@ -269,6 +291,16 @@ struct IOSAIAssistantPanel: View {
             .accessibilityLabel("Switch to full sheet")
 
             Button {
+                presentConversationPicker()
+            } label: {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .help("Resume a past conversation")
+            .accessibilityLabel("Resume a past conversation")
+
+            Button {
                 startNewConversation()
             } label: {
                 Image(systemName: "plus.bubble")
@@ -312,6 +344,59 @@ struct IOSAIAssistantPanel: View {
         .padding(.vertical, 8)
     }
 
+    // MARK: - Conversation Picker
+
+    @ViewBuilder
+    private var conversationPicker: some View {
+        NavigationStack {
+            Group {
+                if isLoadingConversations {
+                    ProgressView("Loading conversations…")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if savedConversations.isEmpty {
+                    ContentUnavailableView(
+                        "No Saved Conversations",
+                        systemImage: "clock.arrow.circlepath",
+                        description: Text("Chats you have with the assistant will appear here so you can pick them back up later.")
+                    )
+                } else {
+                    List(savedConversations) { conversation in
+                        Button {
+                            resumeConversation(conversation.id)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(conversation.preview)
+                                    .font(.subheadline)
+                                    .lineLimit(2)
+                                    .foregroundStyle(.primary)
+                                Text(conversationTimestamp(conversation.lastMessageAt))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            .contentShape(Rectangle())
+                        }
+                        .accessibilityLabel("Resume conversation: \(conversation.preview)")
+                    }
+                }
+            }
+            .navigationTitle("Resume Conversation")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { showConversationPicker = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+
+    private func conversationTimestamp(_ iso: String) -> String {
+        guard let date = CoreFormatters.parseISO(iso) else { return "" }
+        return date.formatted(date: .abbreviated, time: .shortened)
+    }
+
     // MARK: - Shared Chat Body
 
     @ViewBuilder
@@ -326,7 +411,11 @@ struct IOSAIAssistantPanel: View {
         }
         .task {
             aiAvailability = aiService.checkAvailability()
+            await resumeLastConversationIfNeeded()
             await loadSavedMessages()
+        }
+        .sheet(isPresented: $showConversationPicker) {
+            conversationPicker
         }
         .modifier(PartsPageContextObservers(
             catalogContext: $catalogContext,
@@ -413,6 +502,9 @@ struct IOSAIAssistantPanel: View {
         .modifier(ActivePageIdTracker(activePageId: $activePageId))
         .onReceive(NotificationCenter.default.publisher(for: .appDidLogout)) { _ in
             resetForLogout()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .seedAIHelpRequest)) { notification in
+            handleHelpHandoff(notification)
         }
     }
 
@@ -632,6 +724,61 @@ struct IOSAIAssistantPanel: View {
         }
     }
 
+    // MARK: - Help Handoff
+
+    /// Seeds a read-only help turn locally. No model or network response is required.
+    private func handleHelpHandoff(_ notification: Notification) {
+        let title = notification.userInfo?["title"] as? String ?? "This Page"
+        let prompt = notification.userInfo?["prompt"] as? String ?? "Help me understand \(title)."
+        let helpBody = notification.userInfo?["helpBody"] as? String
+        let pageId = notification.userInfo?["pageId"] as? String
+
+        if let pageId, HelpContentRegistry.helpFor(pageId) != nil {
+            activePageId = pageId
+        }
+
+        query = ""
+        isProcessing = false
+
+        let response: String
+        if let pageId, let entry = HelpContentRegistry.helpFor(pageId) {
+            response = formattedHelpResponse(title: entry.title, sections: entry.sections)
+        } else if let helpBody, !helpBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            response = "**\(title)**\n\n\(helpBody)\n\nI can answer follow-up questions about these read-only help instructions."
+        } else {
+            response = "I opened the assistant for **\(title)**. Ask me what you want to do on this page and I'll explain the available actions."
+        }
+
+        messages.append(AssistantMessage(role: .user, content: prompt))
+        messages.append(AssistantMessage(role: .assistant, content: response))
+        persistHelpHandoffTurn(userPrompt: prompt, assistantResponse: response)
+    }
+
+    private func formattedHelpResponse(title: String, sections: [(String, String)]) -> String {
+        var response = "**\(title)**\n\n"
+        for (heading, body) in sections {
+            response += "**\(heading):** \(body)\n\n"
+        }
+        response += "I can answer follow-up questions about these read-only help instructions."
+        return response.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Persistence is best-effort because the locally generated help response is already visible.
+    private func persistHelpHandoffTurn(userPrompt: String, assistantResponse: String) {
+        guard let db = appCore.db else { return }
+        let currentConversationId = conversationId
+        Task.detached { [db, currentConversationId, userPrompt, assistantResponse] in
+            try? await FoundationModelsService.saveMessage(
+                AIConversationMessage(conversationId: currentConversationId, role: "user", content: userPrompt),
+                to: db
+            )
+            try? await FoundationModelsService.saveMessage(
+                AIConversationMessage(conversationId: currentConversationId, role: "assistant", content: assistantResponse),
+                to: db
+            )
+        }
+    }
+
     // MARK: - Conversation Lifecycle
 
     /// Start a brand-new conversation — clears the AI session, resets messages, generates a new ID.
@@ -812,6 +959,52 @@ struct IOSAIAssistantPanel: View {
         if messages.isEmpty {
             messages.append(welcomeMessage())
         }
+    }
+
+    // MARK: - Conversation Resume
+
+    private func resumeLastConversationIfNeeded() async {
+        guard !didAttemptResume else { return }
+        didAttemptResume = true
+        guard let db = appCore.db else { return }
+        if let latest = try? await FoundationModelsService.latestConversationId(from: db) {
+            conversationId = latest
+        }
+    }
+
+    private func presentConversationPicker() {
+        showConversationPicker = true
+        Task { await loadConversationList() }
+    }
+
+    private func loadConversationList() async {
+        guard let db = appCore.db else {
+            savedConversations = []
+            return
+        }
+        isLoadingConversations = true
+        defer { isLoadingConversations = false }
+        if let rows = try? await FoundationModelsService.listConversations(from: db) {
+            savedConversations = rows.map {
+                SavedConversation(id: $0.id, lastMessageAt: $0.lastMessageAt, preview: $0.preview)
+            }
+        } else {
+            savedConversations = []
+        }
+    }
+
+    private func resumeConversation(_ id: String) {
+        guard id != conversationId else {
+            showConversationPicker = false
+            return
+        }
+        clearConversationError = nil
+        clearConversationRetryId = nil
+        Task { await aiService.clearConversation() }
+        conversationId = id
+        messages = []
+        showConversationPicker = false
+        Task { await loadSavedMessages() }
     }
 
     /// Generates a response using Foundation Models with tool calling when available,
