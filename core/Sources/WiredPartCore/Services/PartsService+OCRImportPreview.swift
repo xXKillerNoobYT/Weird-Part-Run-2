@@ -83,6 +83,7 @@ extension PartsService {
             self.sourceEvidence = sourceEvidence ?? PartsImportSourceEvidence(
                 kind: .textBlock,
                 pageNumber: pageNumber,
+                rowNumber: rowNumber,
                 text: sourceSnippet,
                 confidence: confidence
             )
@@ -454,6 +455,7 @@ extension PartsService {
         var category: String?
         var brand: String?
         var fields: [String: String] = [:]
+        let hasExplicitNameHeader = header.headers.contains("name")
 
         for (index, headerName) in header.headers.enumerated() {
             guard index < cells.count else { continue }
@@ -469,10 +471,10 @@ extension PartsService {
             case "markup", "markup_percent": fields["markup_percent"] = value
             case "unit", "unit_of_measure", "uom": fields["unit_of_measure"] = value
             case "description":
-                if name == nil {
-                    name = value
-                } else {
+                if hasExplicitNameHeader {
                     fields["description"] = value
+                } else if name == nil {
+                    name = value
                 }
             case "shelf", "shelf_location": fields["shelf_location"] = value
             case "bin", "bin_location": fields["bin_location"] = value

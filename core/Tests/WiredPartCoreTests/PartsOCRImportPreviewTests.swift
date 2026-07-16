@@ -62,9 +62,42 @@ struct PartsOCRImportPreviewTests {
         #expect(preview.chunks.count == 1)
         #expect(preview.candidates.count == 1)
         #expect(preview.candidates.first?.sourceKind == .ocr)
+        #expect(preview.candidates.first?.sourceEvidence.rowNumber == 1)
         #expect(preview.reviewReadyCandidates.count == 1)
         #expect(preview.quarantinedCandidates.isEmpty)
         #expect(preview.isCommitAllowed == false)
+    }
+
+    @Test("previewPartsImportOCR retains Description when an explicit Name header exists")
+    func previewPartsImportOCRRetainsDescriptionAlongsideExplicitName() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let preview = try env.parts.previewPartsImportOCR(pages: [
+            .init(pageNumber: 6, text: """
+            Description | Name | Code | Category
+            Flexible copper conductor | 14 AWG THHN Wire | W-14 | Wire
+            """)
+        ])
+
+        let candidate = try #require(preview.candidates.first)
+        #expect(candidate.name == "14 AWG THHN Wire")
+        #expect(candidate.fields["description"] == "Flexible copper conductor")
+    }
+
+    @Test("previewPartsImportOCR uses Description as name when no Name header exists")
+    func previewPartsImportOCRUsesDescriptionAsNameFallback() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let preview = try env.parts.previewPartsImportOCR(pages: [
+            .init(pageNumber: 7, text: """
+            Description | Code | Category
+            Description Only Breaker | BRK-1 | Electrical
+            """)
+        ])
+
+        let candidate = try #require(preview.candidates.first)
+        #expect(candidate.name == "Description Only Breaker")
+        #expect(candidate.fields["description"] == nil)
     }
 
     @Test("previewPartsImportOCR quarantines low-confidence OCR candidates and does not write parts")
