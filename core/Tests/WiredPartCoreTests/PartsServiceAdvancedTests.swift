@@ -397,6 +397,23 @@ struct PartsServiceAdvancedTests {
         #expect(preview.errors.contains { $0.rowNumber == 2 && $0.message == "Invalid number for sell_price: not-a-number" })
     }
 
+    @Test("previewPartsImportCSV accepts percent suffix only for markup_percent")
+    func testPreviewPartsImportCSVRejectsPercentSuffixOnMoneyFields() throws {
+        let env = try E2ETestHelpers.setUp()
+        let csv = """
+        name,code,category,cost_price,markup_percent,sell_price
+        Percent Money Part,PERCENT-MONEY-001,Test,12%,35%,19%
+        """
+
+        let preview = try env.parts.previewPartsImportCSV(csv)
+
+        #expect(preview.newParts.isEmpty)
+        #expect(preview.errors.count == 2)
+        #expect(preview.errors.contains { $0.rowNumber == 2 && $0.message == "Invalid number for cost_price: 12%" })
+        #expect(preview.errors.contains { $0.rowNumber == 2 && $0.message == "Invalid number for sell_price: 19%" })
+        #expect(!preview.errors.contains { $0.message.contains("markup_percent") })
+    }
+
     @Test("previewPartsImportCSV keeps rows with valid numeric pricing fields")
     func testPreviewPartsImportCSVAcceptsValidNumericValues() throws {
         let env = try E2ETestHelpers.setUp()

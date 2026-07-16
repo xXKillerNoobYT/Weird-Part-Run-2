@@ -6438,7 +6438,10 @@ public final class PartsService: Sendable {
 
             for numericHeader in ["cost_price", "markup_percent", "sell_price"] {
                 if let raw = fields[numericHeader] {
-                    guard let value = parsedPartsImportNumeric(raw) else {
+                    guard let value = parsedPartsImportNumeric(
+                        raw,
+                        allowsPercent: numericHeader == "markup_percent"
+                    ) else {
                         let message = "Invalid number for \(numericHeader): \(raw)"
                         preview.errors.append(PartsImportError(rowNumber: rowNumber, message: message))
                         errorsByRowNumber[rowNumber, default: []].append(message)
@@ -6693,7 +6696,11 @@ public final class PartsService: Sendable {
                 && optionalImportFieldMatches(parsed.fields["description"], existingPart.description)
                 && optionalImportFieldMatches(parsed.fields["unit_of_measure"], existingPart.unitOfMeasure)
                 && optionalImportNumberMatches(parsed.fields["cost_price"], existingPart.companyCostPrice)
-                && optionalImportNumberMatches(parsed.fields["markup_percent"], existingPart.companyMarkupPercent)
+                && optionalImportNumberMatches(
+                    parsed.fields["markup_percent"],
+                    existingPart.companyMarkupPercent,
+                    allowsPercent: true
+                )
                 && optionalImportIntMatches(parsed.fields["min_stock"], existingPart.minStockLevel ?? 0)
                 && optionalImportIntMatches(parsed.fields["target_stock"], existingPart.targetStockLevel ?? 0)
                 && optionalImportIntMatches(parsed.fields["max_stock"], existingPart.maxStockLevel ?? 0)
@@ -6708,9 +6715,13 @@ public final class PartsService: Sendable {
         return normalizedImportValue(imported) == normalizedImportValue(existing ?? "")
     }
 
-    private func optionalImportNumberMatches(_ imported: String?, _ existing: Double) -> Bool {
+    private func optionalImportNumberMatches(
+        _ imported: String?,
+        _ existing: Double,
+        allowsPercent: Bool = false
+    ) -> Bool {
         guard let imported else { return true }
-        guard let importedNumber = parsedPartsImportNumeric(imported) else { return false }
+        guard let importedNumber = parsedPartsImportNumeric(imported, allowsPercent: allowsPercent) else { return false }
         return abs(importedNumber - existing) < 0.000_001
     }
 
@@ -6766,7 +6777,7 @@ public final class PartsService: Sendable {
             .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
     }
 
-    private func parsedPartsImportNumeric(_ value: String) -> Double? {
+    private func parsedPartsImportNumeric(_ value: String, allowsPercent: Bool = false) -> Double? {
         var normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
         if normalized.hasPrefix("$") {
             normalized.removeFirst()
@@ -6776,6 +6787,7 @@ public final class PartsService: Sendable {
             normalized.remove(at: normalized.index(after: normalized.startIndex))
         }
         if normalized.hasSuffix("%") {
+            guard allowsPercent else { return nil }
             normalized.removeLast()
         }
         normalized = normalized.replacingOccurrences(of: ",", with: "")
@@ -6894,7 +6906,10 @@ public final class PartsService: Sendable {
                     guard let rawValue else { return nil }
                     let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !trimmed.isEmpty else { return nil }
-                    guard let value = parsedPartsImportNumeric(trimmed) else {
+                    guard let value = parsedPartsImportNumeric(
+                        trimmed,
+                        allowsPercent: header == "markup_percent"
+                    ) else {
                         throw PartsError.invalidInput("Invalid number for \(header) at row \(rowNumber): \(rawValue)")
                     }
                     if value < 0 {
