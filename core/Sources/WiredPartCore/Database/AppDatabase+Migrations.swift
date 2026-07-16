@@ -150,6 +150,7 @@ extension AppDatabase {
         registerMigration109DispatchPreferenceBackfill(&migrator)
         registerMigration110InspectionTemplateRequiredFlag(&migrator)
         registerMigration111ChatAttachmentStorageRelative(&migrator)
+        registerMigration113AIConversationOwners(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6075,5 +6076,27 @@ private func registerMigration111ChatAttachmentStorageRelative(_ migrator: inout
                 )
                 """)
         }
+    }
+}
+
+// MARK: - Migration 113: User-scoped AI conversations
+
+/// Adds durable ownership to persisted AI turns. Existing rows intentionally remain
+/// unowned: there is no trustworthy way to infer which authenticated user created them,
+/// and assigning them to an arbitrary user would expose private conversation history.
+private func registerMigration113AIConversationOwners(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("113_ai_conversation_owners") { db in
+        try addColumnIfMissing(
+            db,
+            table: "ai_conversation_messages",
+            column: "owner_user_id",
+            type: .integer
+        )
+        try db.create(
+            index: "idx_ai_conv_msgs_owner_conv",
+            on: "ai_conversation_messages",
+            columns: ["owner_user_id", "conversation_id", "created_at"],
+            ifNotExists: true
+        )
     }
 }
