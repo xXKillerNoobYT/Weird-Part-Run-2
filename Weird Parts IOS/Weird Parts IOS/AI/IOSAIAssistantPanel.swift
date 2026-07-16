@@ -130,6 +130,7 @@ struct IOSAIAssistantPanel: View {
     @State private var isReadyForHelpHandoff = false
     @State private var queuedHelpRequest: [AnyHashable: Any]?
     @State private var helpPersistenceTask: Task<Void, Never>?
+    @State private var conversationLoadTask: Task<Void, Never>?
 
     struct SavedConversation: Identifiable, Equatable {
         let id: String
@@ -423,7 +424,7 @@ struct IOSAIAssistantPanel: View {
         .task {
             aiAvailability = aiService.checkAvailability()
             await resumeLastConversationIfNeeded()
-            await loadSavedMessages()
+            await loadCurrentConversation()
             isReadyForHelpHandoff = true
             consumePendingHelpRequestIfReady()
         }
@@ -864,6 +865,8 @@ struct IOSAIAssistantPanel: View {
 
     /// Start a brand-new conversation — clears the AI session, resets messages, generates a new ID.
     private func startNewConversation() {
+        conversationLoadTask?.cancel()
+        conversationLoadTask = nil
         conversationRevision &+= 1
         isProcessing = false
         clearConversationError = nil
@@ -876,6 +879,8 @@ struct IOSAIAssistantPanel: View {
 
     /// Clear volatile assistant state when the app logs out, without deleting persisted history.
     private func resetForLogout() {
+        conversationLoadTask?.cancel()
+        conversationLoadTask = nil
         conversationRevision &+= 1
         isProcessing = false
         clearConversationError = nil
@@ -885,6 +890,9 @@ struct IOSAIAssistantPanel: View {
         Task { await aiService.clearConversation() }
         conversationId = UUID().uuidString
         messages.removeAll()
+        savedConversations.removeAll()
+        showConversationPicker = false
+        didAttemptResume = false
         clearVolatilePageContext()
     }
 
@@ -987,6 +995,8 @@ struct IOSAIAssistantPanel: View {
             return
         }
 
+        conversationLoadTask?.cancel()
+        conversationLoadTask = nil
         conversationRevision &+= 1
         isProcessing = false
         isClearingConversation = true
@@ -1054,6 +1064,14 @@ struct IOSAIAssistantPanel: View {
             .filter { !$0.isEmpty }
     }
 
+    /// Own the current history load so every lifecycle transition can cancel it.
+    private func loadCurrentConversation() async {
+        conversationLoadTask?.cancel()
+        let task = Task { await loadSavedMessages() }
+        conversationLoadTask = task
+        await task.value
+    }
+
     /// Load previously saved messages for the current conversation from the DB.
     private func loadSavedMessages() async {
         guard let db = appCore.db,
@@ -1062,12 +1080,18 @@ struct IOSAIAssistantPanel: View {
             addWelcomeMessageIfNeeded()
             return
         }
+        let loadConversationId = conversationId
+        let loadConversationRevision = conversationRevision
         do {
             let saved = try await aiService.resumeConversation(
-                conversationId,
+                loadConversationId,
                 ownerUserId: ownerUserId,
                 from: db
             )
+            guard !Task.isCancelled,
+                  conversationId == loadConversationId,
+                  appCore.currentUser?.id == ownerUserId,
+                  conversationRevision == loadConversationRevision else { return }
             if saved.isEmpty {
                 addWelcomeMessageIfNeeded()
             } else {
@@ -1079,6 +1103,10 @@ struct IOSAIAssistantPanel: View {
                 }
             }
         } catch {
+            guard !Task.isCancelled,
+                  conversationId == loadConversationId,
+                  appCore.currentUser?.id == ownerUserId,
+                  conversationRevision == loadConversationRevision else { return }
             addWelcomeMessageIfNeeded()
         }
     }
@@ -1098,10 +1126,17 @@ struct IOSAIAssistantPanel: View {
         guard let db = appCore.db,
               let ownerUserId = appCore.currentUser?.id,
               ownerUserId > 0 else { return }
+        let lookupConversationId = conversationId
+        let lookupConversationRevision = conversationRevision
         if let latest = try? await FoundationModelsService.latestConversationId(
             ownerUserId: ownerUserId,
             from: db
         ) {
+            guard !Task.isCancelled,
+                  conversationId == lookupConversationId,
+                  appCore.currentUser?.id == ownerUserId,
+                  conversationRevision == lookupConversationRevision else { return }
+            conversationRevision &+= 1
             conversationId = latest
         }
     }
@@ -1118,18 +1153,25 @@ struct IOSAIAssistantPanel: View {
             savedConversations = []
             return
         }
+        let listConversationRevision = conversationRevision
         isLoadingConversations = true
-        defer { isLoadingConversations = false }
         if let rows = try? await FoundationModelsService.listConversations(
             ownerUserId: ownerUserId,
             from: db
         ) {
+            guard !Task.isCancelled,
+                  appCore.currentUser?.id == ownerUserId,
+                  conversationRevision == listConversationRevision else { return }
             savedConversations = rows.map {
                 SavedConversation(id: $0.id, lastMessageAt: $0.lastMessageAt, preview: $0.preview)
             }
         } else {
+            guard !Task.isCancelled,
+                  appCore.currentUser?.id == ownerUserId,
+                  conversationRevision == listConversationRevision else { return }
             savedConversations = []
         }
+        isLoadingConversations = false
     }
 
     private func resumeConversation(_ id: String) {
@@ -1137,6 +1179,7 @@ struct IOSAIAssistantPanel: View {
             showConversationPicker = false
             return
         }
+        conversationLoadTask?.cancel()
         conversationRevision &+= 1
         isProcessing = false
         clearConversationError = nil
@@ -1144,7 +1187,7 @@ struct IOSAIAssistantPanel: View {
         conversationId = id
         messages = []
         showConversationPicker = false
-        Task { await loadSavedMessages() }
+        conversationLoadTask = Task { await loadSavedMessages() }
     }
 
     /// Generates a response using Foundation Models with tool calling when available,

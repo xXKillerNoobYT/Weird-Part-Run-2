@@ -71,7 +71,7 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
         let mainView = try Self.readSource("Navigation/IOSMainView.swift")
 
-        XCTAssertTrue(assistant.contains("await loadSavedMessages()\n            isReadyForHelpHandoff = true"))
+        XCTAssertTrue(assistant.contains("await loadCurrentConversation()\n            isReadyForHelpHandoff = true"))
         XCTAssertTrue(assistant.contains("consumePendingHelpRequestIfReady()"))
         XCTAssertFalse(mainView.contains("Task.sleep"), "Help presentation must follow dismissal state, not a timer.")
         XCTAssertTrue(assistant.contains("let pendingHelpPersistence = helpPersistenceTask"))
@@ -135,6 +135,47 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         }
         XCTAssertLessThan(invalidateIndex, waitIndex)
         XCTAssertLessThan(invalidateIndex, deleteIndex)
+    }
+
+    func testConversationLoadsAreCancelledAndGenerationCheckedAcrossLifecycleChanges() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let load = try TestSourceSlicer.braceBalancedBody(
+            after: "private func loadSavedMessages() async",
+            in: assistant
+        )
+        let latest = try TestSourceSlicer.braceBalancedBody(
+            after: "private func resumeLastConversationIfNeeded() async",
+            in: assistant
+        )
+        let list = try TestSourceSlicer.braceBalancedBody(
+            after: "private func loadConversationList() async",
+            in: assistant
+        )
+
+        XCTAssertTrue(assistant.contains("@State private var conversationLoadTask: Task<Void, Never>?"))
+        XCTAssertTrue(load.contains("let loadConversationId = conversationId"))
+        XCTAssertTrue(load.contains("let loadConversationRevision = conversationRevision"))
+        XCTAssertTrue(load.contains("!Task.isCancelled"))
+        XCTAssertTrue(load.contains("conversationId == loadConversationId"))
+        XCTAssertTrue(load.contains("appCore.currentUser?.id == ownerUserId"))
+        XCTAssertTrue(load.contains("conversationRevision == loadConversationRevision"))
+        XCTAssertTrue(latest.contains("let lookupConversationRevision = conversationRevision"))
+        XCTAssertTrue(latest.contains("conversationRevision == lookupConversationRevision"))
+        XCTAssertTrue(latest.contains("conversationRevision &+= 1"))
+        XCTAssertTrue(list.contains("let listConversationRevision = conversationRevision"))
+        XCTAssertTrue(list.contains("appCore.currentUser?.id == ownerUserId"))
+        XCTAssertTrue(list.contains("conversationRevision == listConversationRevision"))
+        XCTAssertTrue(assistant.contains("savedConversations.removeAll()"))
+
+        for lifecycleFunction in [
+            "private func startNewConversation()",
+            "private func resetForLogout()",
+            "private func clearPersistedConversation(_ cid: String)",
+            "private func resumeConversation(_ id: String)",
+        ] {
+            let body = try TestSourceSlicer.braceBalancedBody(after: lifecycleFunction, in: assistant)
+            XCTAssertTrue(body.contains("conversationLoadTask?.cancel()"), "\(lifecycleFunction) must cancel stale history hydration.")
+        }
     }
 
     func testAssistantMessagesAndHistoryPreviewsRenderMarkdown() throws {

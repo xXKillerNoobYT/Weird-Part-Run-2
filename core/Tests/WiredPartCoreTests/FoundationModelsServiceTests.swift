@@ -454,6 +454,88 @@ struct FoundationModelsServiceTests {
         #endif
     }
 
+    @Test("a second resume supersedes delayed history hydration")
+    func testResumeConversation_secondResumeWins() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = FoundationModelsService()
+        let gate = AsyncGate()
+        try await FoundationModelsService.saveMessages([
+            AIConversationMessage(conversationId: "resume-a", role: "user", content: "Conversation A"),
+            AIConversationMessage(conversationId: "resume-b", role: "user", content: "Conversation B"),
+        ], ownerUserId: 77, to: env.db)
+
+        let delayedResume = Task {
+            try await service.resumeConversation(
+                "resume-a",
+                ownerUserId: 77,
+                from: env.db,
+                beforeHydrating: { await gate.enterAndWaitForRelease() }
+            )
+        }
+        await gate.waitUntilEntered()
+        let winningHistory = try await service.resumeConversation("resume-b", ownerUserId: 77, from: env.db)
+        await gate.release()
+
+        await #expect(throws: CancellationError.self) { try await delayedResume.value }
+        #expect(winningHistory.map(\.content) == ["Conversation B"])
+        #expect(await service.currentMessageHistory().map(\.content) == ["Conversation B"])
+    }
+
+    @Test("clear prevents delayed resume from restaging deleted history")
+    func testResumeConversation_clearWinsOverDelayedHydration() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = FoundationModelsService()
+        let gate = AsyncGate()
+        try await FoundationModelsService.saveMessage(
+            AIConversationMessage(conversationId: "resume-clear", role: "user", content: "Private history"),
+            ownerUserId: 77,
+            to: env.db
+        )
+
+        let delayedResume = Task {
+            try await service.resumeConversation(
+                "resume-clear",
+                ownerUserId: 77,
+                from: env.db,
+                beforeHydrating: { await gate.enterAndWaitForRelease() }
+            )
+        }
+        await gate.waitUntilEntered()
+        try await service.clearConversation("resume-clear", ownerUserId: 77, from: env.db)
+        await gate.release()
+
+        await #expect(throws: CancellationError.self) { try await delayedResume.value }
+        #expect(await service.currentMessageHistory().isEmpty)
+        #expect(try await FoundationModelsService.loadConversation("resume-clear", ownerUserId: 77, from: env.db).isEmpty)
+    }
+
+    @Test("volatile clear for New or logout prevents delayed resume hydration")
+    func testResumeConversation_volatileClearWinsOverDelayedHydration() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = FoundationModelsService()
+        let gate = AsyncGate()
+        try await FoundationModelsService.saveMessage(
+            AIConversationMessage(conversationId: "resume-logout", role: "user", content: "Prior user history"),
+            ownerUserId: 77,
+            to: env.db
+        )
+
+        let delayedResume = Task {
+            try await service.resumeConversation(
+                "resume-logout",
+                ownerUserId: 77,
+                from: env.db,
+                beforeHydrating: { await gate.enterAndWaitForRelease() }
+            )
+        }
+        await gate.waitUntilEntered()
+        await service.clearConversation()
+        await gate.release()
+
+        await #expect(throws: CancellationError.self) { try await delayedResume.value }
+        #expect(await service.currentMessageHistory().isEmpty)
+    }
+
     @Test("local Help handoff persists and stages both turns for an immediate follow-up")
     func testStageHelpConversation_stagesVisibleTurns() async throws {
         let env = try E2ETestHelpers.setUp()

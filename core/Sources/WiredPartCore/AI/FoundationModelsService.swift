@@ -176,6 +176,9 @@ public actor FoundationModelsService {
     /// Invalidates a model response when its conversation is cleared while generation is in flight.
     private var conversationRevisions: [AIConversationScope: Int] = [:]
 
+    /// Invalidates suspended history hydration whenever another resume or lifecycle action wins.
+    private var conversationLifecycleRevision: UInt = 0
+
     public init(maxContextChars: Int = 1000) {
         self.maxContextChars = maxContextChars
     }
@@ -583,6 +586,7 @@ public actor FoundationModelsService {
     /// Clear the active conversation session and in-memory history.
     /// The UI should call this when the user taps "New Conversation".
     public func clearConversation() {
+        conversationLifecycleRevision &+= 1
         #if canImport(FoundationModels)
         activeChatSession = nil
         #endif
@@ -599,15 +603,40 @@ public actor FoundationModelsService {
         ownerUserId: Int64,
         from db: AppDatabase
     ) async throws -> [AIConversationMessage] {
+        try await resumeConversation(
+            conversationId,
+            ownerUserId: ownerUserId,
+            from: db,
+            beforeHydrating: nil
+        )
+    }
+
+    /// Testable hydration seam used to hold a loaded transcript across lifecycle changes.
+    func resumeConversation(
+        _ conversationId: String,
+        ownerUserId: Int64,
+        from db: AppDatabase,
+        beforeHydrating: (@Sendable () async -> Void)? = nil
+    ) async throws -> [AIConversationMessage] {
+        let scope = try Self.validatedScope(
+            conversationId: conversationId,
+            ownerUserId: ownerUserId
+        )
+        guard !Task.isCancelled else { throw CancellationError() }
+        conversationLifecycleRevision &+= 1
+        let expectedLifecycleRevision = conversationLifecycleRevision
         let history = try await Self.loadConversation(
             conversationId,
             ownerUserId: ownerUserId,
             from: db
         )
-        let scope = try Self.validatedScope(
-            conversationId: conversationId,
-            ownerUserId: ownerUserId
-        )
+        if let beforeHydrating {
+            await beforeHydrating()
+        }
+        guard !Task.isCancelled,
+              conversationLifecycleRevision == expectedLifecycleRevision else {
+            throw CancellationError()
+        }
         #if canImport(FoundationModels)
         activeChatSession = nil
         #endif
@@ -636,6 +665,8 @@ public actor FoundationModelsService {
             ownerUserId: ownerUserId
         )
         let expectedRevision = conversationRevisions[scope, default: 0]
+        conversationLifecycleRevision &+= 1
+        let expectedLifecycleRevision = conversationLifecycleRevision
         let helpTurns = [
             AIConversationMessage(conversationId: conversationId, role: "user", content: userPrompt),
             AIConversationMessage(conversationId: conversationId, role: "assistant", content: assistantResponse),
@@ -659,7 +690,9 @@ public actor FoundationModelsService {
             ownerUserId: ownerUserId,
             from: db
         )
-        guard conversationRevisions[scope, default: 0] == expectedRevision else {
+        guard !Task.isCancelled,
+              conversationRevisions[scope, default: 0] == expectedRevision,
+              conversationLifecycleRevision == expectedLifecycleRevision else {
             return false
         }
 
@@ -684,6 +717,7 @@ public actor FoundationModelsService {
             conversationId: conversationId,
             ownerUserId: ownerUserId
         )
+        conversationLifecycleRevision &+= 1
         conversationRevisions[scope, default: 0] += 1
         try await Self.clearPersistedConversation(
             conversationId,
