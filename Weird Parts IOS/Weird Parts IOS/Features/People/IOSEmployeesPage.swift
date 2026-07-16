@@ -357,7 +357,7 @@ private struct AddEmployeeSheet: View {
             dismiss()
             onSave()
         } catch {
-            errorMessage = userFriendlyError(error, context: "load employees")
+            errorMessage = userFriendlyError(error, context: "save employee")
         }
     }
 }

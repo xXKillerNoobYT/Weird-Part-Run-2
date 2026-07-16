@@ -2,10 +2,10 @@ import SwiftUI
 
 /// Full-screen editor for customizing the tab bar order.
 ///
-/// Users freely drag modules between the "Fast Access Bar" (≤ 4 slots) and
-/// the "More" section. Clear messaging explains **why** the limit exists
-/// (iOS tab bars support at most 4 items + More). The editor enforces the
-/// cap visually rather than locking modules in place.
+/// Users freely drag modules in one continuous list. The first 4 rows become
+/// the "Fast Access Bar" and the remaining rows live under "More". Clear
+/// messaging explains **why** the limit exists (iOS tab bars support at most
+/// 4 items + More) without making users jump between two separate drag lists.
 struct TabBarEditorView: View {
     @EnvironmentObject private var tabPrefs: TabBarPreferences
     @Environment(\.dismiss) private var dismiss
@@ -14,13 +14,13 @@ struct TabBarEditorView: View {
     /// All permission-visible modules in the user's current order.
     let allVisibleModules: [AppModule]
 
-    @State private var bottomIds: [String] = []
-    @State private var moreIds: [String] = []
+    @State private var orderedIds: [String] = []
 
     @State private var showResetConfirmation = false
     @State private var showDemoteMinimumWarning = false
 
-    private var isOverCap: Bool { bottomIds.count > 4 }
+    private var bottomIds: [String] { Array(orderedIds.prefix(min(4, orderedIds.count))) }
+    private var moreIds: [String] { Array(orderedIds.dropFirst(min(4, orderedIds.count))) }
 
     var body: some View {
         NavigationStack {
@@ -29,35 +29,27 @@ struct TabBarEditorView: View {
                 infoBanner
 
                 List {
-                    // ── Fast Access Bar ──
                     Section {
-                        ForEach(bottomIds, id: \.self) { moduleId in
+                        ForEach(Array(orderedIds.enumerated()), id: \.element) { index, moduleId in
                             if let mod = allModulesById[moduleId] {
-                                moduleRow(mod, section: .bottom)
+                                moduleRow(mod, index: index, showsMoreDivider: index == 4)
                             }
                         }
                         .onMove { from, to in
-                            bottomIds.move(fromOffsets: from, toOffset: to)
+                            orderedIds.move(fromOffsets: from, toOffset: to)
                             showDemoteMinimumWarning = false
                         }
                     } header: {
                         HStack {
-                            Text("Fast Access Bar")
+                            Text("Drag Tab Order")
                             Spacer()
-                            Text("\(bottomIds.count) / 4")
+                            Text("\(bottomIds.count) Fast • \(moreIds.count) More")
                                 .font(.caption)
                                 .fontWeight(.medium)
-                                .foregroundStyle(isOverCap ? .red : .secondary)
+                                .foregroundStyle(.secondary)
                         }
                     } footer: {
-                        if isOverCap {
-                            Label(
-                                "Move \(bottomIds.count - 4) module\(bottomIds.count - 4 == 1 ? "" : "s") to More — the tab bar only fits 4.",
-                                systemImage: "exclamationmark.triangle.fill"
-                            )
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                        } else if showDemoteMinimumWarning {
+                        if showDemoteMinimumWarning {
                             Label(
                                 "Keep at least one module in Fast Access Bar.",
                                 systemImage: "info.circle.fill"
@@ -65,25 +57,8 @@ struct TabBarEditorView: View {
                             .font(.caption)
                             .foregroundStyle(.orange)
                         } else {
-                            Text("These modules appear on the bottom tab bar for quick access.")
+                            Text("Drag any module above or below the More divider. The first 4 rows appear in the bottom tab bar; everything below appears under More.")
                         }
-                    }
-
-                    // ── More ──
-                    Section {
-                        ForEach(moreIds, id: \.self) { moduleId in
-                            if let mod = allModulesById[moduleId] {
-                                moduleRow(mod, section: .more)
-                            }
-                        }
-                        .onMove { from, to in
-                            moreIds.move(fromOffsets: from, toOffset: to)
-                            showDemoteMinimumWarning = false
-                        }
-                    } header: {
-                        Text("More")
-                    } footer: {
-                        Text("These modules live under the More tab. Tap arrows to move between sections.")
                     }
                 }
                 .environment(\.editMode, .constant(.active))
@@ -101,7 +76,6 @@ struct TabBarEditorView: View {
                         saveAndDismiss()
                     }
                     .fontWeight(.semibold)
-                    .disabled(isOverCap)
                 }
             }
             .onAppear {
@@ -130,7 +104,7 @@ struct TabBarEditorView: View {
                     Text("Customize Your Tab Bar")
                         .font(.subheadline)
                         .fontWeight(.semibold)
-                    Text("Drag to reorder. Use arrows to move modules between sections. Up to 4 modules can sit in the fast access bar.")
+                    Text("Drag any row to reorder. Drop it above the More divider for fast access, or below the divider to hide it under More.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -165,41 +139,71 @@ struct TabBarEditorView: View {
 
     // MARK: - Row
 
-    private enum RowSection { case bottom, more }
+    private var moreDivider: some View {
+        HStack(spacing: 8) {
+            Capsule()
+                .fill(Color.secondary.opacity(0.25))
+                .frame(height: 1)
+            Label("More menu starts here", systemImage: "ellipsis.circle")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: true, vertical: false)
+            Capsule()
+                .fill(Color.secondary.opacity(0.25))
+                .frame(height: 1)
+        }
+        .listRowBackground(Color(.secondarySystemGroupedBackground))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("More menu starts here. Drag rows above this divider for fast access, or below it for the More menu.")
+    }
 
     @ViewBuilder
-    private func moduleRow(_ module: AppModule, section: RowSection) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: module.icon)
-                .font(.title3)
-                .foregroundStyle(.tint)
-                .frame(width: 28)
+    private func moduleRow(_ module: AppModule, index: Int, showsMoreDivider: Bool) -> some View {
+        let isFastAccess = index < 4
 
-            Text(module.label)
-                .font(.body)
-
-            Spacer()
-
-            // Move-between-sections button
-            Button {
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    switch section {
-                    case .bottom:
-                        demoteModule(module.id)
-                    case .more:
-                        promoteModule(module.id)
-                    }
-                }
-            } label: {
-                Image(systemName: section == .bottom ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
-                    .font(.title3)
-                    .foregroundStyle(section == .bottom ? .orange : .green)
+        VStack(spacing: 8) {
+            if showsMoreDivider {
+                moreDivider
             }
-            .buttonStyle(.plain)
-            .dsMinTapTarget()
-            .accessibilityLabel(section == .bottom
-                                ? "Move \(module.label) to More menu"
-                                : "Move \(module.label) to tab bar")
+
+            HStack(spacing: 12) {
+                Image(systemName: module.icon)
+                    .font(.title3)
+                    .foregroundStyle(.tint)
+                    .frame(width: 28)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(module.label)
+                        .font(.body)
+
+                    Text(isFastAccess ? "Fast Access Bar" : "More menu")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                // Move-between-sections button
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        if isFastAccess {
+                            demoteModule(module.id)
+                        } else {
+                            promoteModule(module.id)
+                        }
+                    }
+                } label: {
+                    Image(systemName: isFastAccess ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(isFastAccess ? .orange : .green)
+                }
+                .buttonStyle(.plain)
+                .dsMinTapTarget()
+                .accessibilityLabel(isFastAccess
+                                    ? "Move \(module.label) to More menu"
+                                    : "Move \(module.label) to tab bar")
+            }
         }
         .padding(.vertical, 2)
     }
@@ -207,24 +211,25 @@ struct TabBarEditorView: View {
     // MARK: - Movement
 
     /// Move a module from "More" into "Fast Access Bar".
-    /// Freely adds — the UI shows a warning if > 4 and blocks Done.
+    /// Inserts at the bottom of the first 4 rows so the displaced row naturally
+    /// drops below the divider into More.
     private func promoteModule(_ id: String) {
-        guard let index = moreIds.firstIndex(of: id) else { return }
-        moreIds.remove(at: index)
-        bottomIds.append(id)
+        guard let index = orderedIds.firstIndex(of: id), index >= 4 else { return }
+        orderedIds.remove(at: index)
+        orderedIds.insert(id, at: min(3, orderedIds.count))
         showDemoteMinimumWarning = false
     }
 
     /// Move a module from "Fast Access Bar" to the top of "More".
     /// Requires at least 1 module remain in the bar.
     private func demoteModule(_ id: String) {
-        guard let index = bottomIds.firstIndex(of: id) else { return }
+        guard let index = orderedIds.firstIndex(of: id), index < 4 else { return }
         guard bottomIds.count > 1 else {
             showDemoteMinimumWarning = true
             return
         }
-        bottomIds.remove(at: index)
-        moreIds.insert(id, at: 0)
+        orderedIds.remove(at: index)
+        orderedIds.insert(id, at: min(4, orderedIds.count))
         showDemoteMinimumWarning = false
     }
 
@@ -232,22 +237,17 @@ struct TabBarEditorView: View {
 
     private func loadCurrentOrder() {
         let ordered = tabPrefs.orderedModules(from: allVisibleModules)
-        let ids = ordered.map(\.id)
-        bottomIds = Array(ids.prefix(min(4, ids.count)))
-        moreIds = Array(ids.dropFirst(min(4, ids.count)))
+        orderedIds = ordered.map(\.id)
         showDemoteMinimumWarning = false
     }
 
     private func resetToDefaultsDraft() {
-        let defaultIds = allVisibleModules.map(\.id)
-        bottomIds = Array(defaultIds.prefix(min(4, defaultIds.count)))
-        moreIds = Array(defaultIds.dropFirst(min(4, defaultIds.count)))
+        orderedIds = allVisibleModules.map(\.id)
         showDemoteMinimumWarning = false
     }
 
     private func saveAndDismiss() {
-        guard bottomIds.count <= 4 else { return }
-        tabPrefs.tabOrder = bottomIds + moreIds
+        tabPrefs.tabOrder = orderedIds
         tabPrefs.save()
         dismiss()
     }

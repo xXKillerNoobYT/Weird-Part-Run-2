@@ -76,20 +76,28 @@ Full capability list: [FEATURES.md](FEATURES.md). A quick loop to touch the main
 
 ## 5. How to Report Bugs
 
-Bug reports go to **GitHub Issues**. Owner problem-screenshots may also be dropped in `docs/problems/` (renamed from the old misspelled `docs/Problomes ` folder), where the triage loop picks them up.
+Bug reports go to **GitHub Issues**. The app now includes an in-app reporter that attaches app version, device, OS, current page/module, and recent in-app errors so reports have better diagnostic context. Owner problem-screenshots may also be dropped in `docs/problems/` (renamed from the old misspelled `docs/Problomes ` folder), where the triage loop picks them up.
+
+**Preferred in-app path:**
 
 1. **Take a screenshot** (or screen recording) of the problem the moment you see it.
-2. Open a new issue at <https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues> and attach the screenshot.
-3. **Title format:** `[Area][Bug] short description` — e.g. `[Warehouse][Bug] Movement Wizard skips confirm step`. Area = the feature you were in (Parts, Orders, Jobs, Scheduling, ...).
-4. **Include in the description:**
+2. Open **Settings → Report a Bug** from the user/settings menu. If the bug is in the AI assistant, use the assistant's report action; if startup/database loading fails, use **Report this startup problem** on the failure screen.
+3. Enter a short title and describe what you did, what you expected, and what actually happened.
+4. Tap **Open GitHub issue** to submit the pre-filled issue while signed in to GitHub, or tap **Share report** and send the generated report text plus your screenshot to the owner.
+
+**Manual GitHub path:**
+
+1. Open a new issue at <https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues> and attach the screenshot.
+2. **Title format:** `[Area][Bug] short description` — e.g. `[Warehouse][Bug] Movement Wizard skips confirm step`. Area = the feature you were in (Parts, Orders, Jobs, Scheduling, ...).
+3. **Include in the description:**
    - What you did (steps, in order)
    - What you expected
    - What actually happened
    - Device model + iOS version, and whether you were offline or synced with another device
    - A `Status: OPEN` line
-5. Not sure if it's a bug or intended? File it anyway and say so — triage will sort it.
+4. Not sure if it's a bug or intended? File it anyway and say so — triage will sort it.
 
-If you can't use GitHub, send the screenshot and the same details to the owner and they will file it.
+If you can't use GitHub, use **Share report** from the in-app reporter or send the screenshot and the same details to the owner and they will file it.
 
 ---
 
@@ -121,4 +129,3 @@ Deliberate beta-scope decisions — these are not bugs to report:
 - **Formal numbered RFIs** are descoped; informal Q&A/RFI chat flows are the supported path (GH #79 decision).
 - **Parts-order bulk actions** and the **Remote Sync page controls** are hidden until their backing services ship (GH #1338).
 - **Chat file attachments**: sending and receiving work, but received files show as info chips without preview/share yet (GH #1372), and attachments don't survive iOS storage-pressure cleanup (GH #1371). Don't rely on chat as file storage.
-- **In-app bug reporting** (GH #574) isn't built yet — report via TestFlight feedback or GitHub as described above.
