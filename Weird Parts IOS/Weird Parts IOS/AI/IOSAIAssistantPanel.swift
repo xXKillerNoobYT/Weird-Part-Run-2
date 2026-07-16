@@ -35,6 +35,8 @@ struct IOSAIAssistantPanel: View {
     @State private var messages: [AssistantMessage] = []
     @State private var isProcessing = false
     @State private var isClearingConversation = false
+    /// Invalidates response tasks when Clear, New, Resume, or logout changes visible history.
+    @State private var conversationRevision: UInt = 0
     @State private var clearConversationError: String?
     @State private var clearConversationRetryId: String?
     @State private var conversationPersistenceError: String?
@@ -210,7 +212,7 @@ struct IOSAIAssistantPanel: View {
                         } label: {
                             Image(systemName: "trash")
                         }
-                        .disabled(messages.isEmpty || isClearingConversation)
+                        .disabled(messages.isEmpty || isProcessing || isClearingConversation)
                         .accessibilityLabel("Clear conversation")
 
                         Button {
@@ -326,7 +328,7 @@ struct IOSAIAssistantPanel: View {
                     .font(.caption)
             }
             .buttonStyle(.plain)
-            .disabled(messages.isEmpty || isClearingConversation)
+            .disabled(messages.isEmpty || isProcessing || isClearingConversation)
             .accessibilityLabel("Clear conversation")
 
             Button {
@@ -751,19 +753,14 @@ struct IOSAIAssistantPanel: View {
         let pendingHelpPersistence = helpPersistenceTask
         let sendConversationId = conversationId
         let sendOwnerUserId = appCore.currentUser?.id
+        let sendConversationRevision = conversationRevision
 
         Task {
             await pendingHelpPersistence?.value
 
             guard conversationId == sendConversationId,
-                  appCore.currentUser?.id == sendOwnerUserId else {
-                messages.append(AssistantMessage(
-                    role: .assistant,
-                    content: "This conversation changed before the Help context finished staging. Ask your follow-up again in the current conversation."
-                ))
-                isProcessing = false
-                return
-            }
+                  appCore.currentUser?.id == sendOwnerUserId,
+                  conversationRevision == sendConversationRevision else { return }
 
             if let conversationPersistenceError {
                 messages.append(AssistantMessage(role: .assistant, content: conversationPersistenceError))
@@ -772,6 +769,9 @@ struct IOSAIAssistantPanel: View {
             }
 
             let response = await generateResponse(for: trimmed)
+            guard conversationId == sendConversationId,
+                  appCore.currentUser?.id == sendOwnerUserId,
+                  conversationRevision == sendConversationRevision else { return }
             messages.append(AssistantMessage(role: .assistant, content: response))
             isProcessing = false
         }
@@ -864,6 +864,8 @@ struct IOSAIAssistantPanel: View {
 
     /// Start a brand-new conversation — clears the AI session, resets messages, generates a new ID.
     private func startNewConversation() {
+        conversationRevision &+= 1
+        isProcessing = false
         clearConversationError = nil
         clearConversationRetryId = nil
         conversationPersistenceError = nil
@@ -874,6 +876,8 @@ struct IOSAIAssistantPanel: View {
 
     /// Clear volatile assistant state when the app logs out, without deleting persisted history.
     private func resetForLogout() {
+        conversationRevision &+= 1
+        isProcessing = false
         clearConversationError = nil
         clearConversationRetryId = nil
         conversationPersistenceError = nil
@@ -983,6 +987,8 @@ struct IOSAIAssistantPanel: View {
             return
         }
 
+        conversationRevision &+= 1
+        isProcessing = false
         isClearingConversation = true
         clearConversationError = nil
         clearConversationRetryId = cid
@@ -1131,6 +1137,8 @@ struct IOSAIAssistantPanel: View {
             showConversationPicker = false
             return
         }
+        conversationRevision &+= 1
+        isProcessing = false
         clearConversationError = nil
         clearConversationRetryId = nil
         conversationId = id

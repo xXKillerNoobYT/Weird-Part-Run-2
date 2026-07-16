@@ -106,6 +106,37 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertLessThan(waitIndex, generationIndex, "Follow-up generation must be ordered after completed Help staging.")
     }
 
+    func testClearInvalidatesPendingFollowUpBeforeDeletion() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let sendQuery = try TestSourceSlicer.braceBalancedBody(
+            after: "private func sendQuery()",
+            in: assistant
+        )
+        let clear = try TestSourceSlicer.braceBalancedBody(
+            after: "private func clearPersistedConversation(_ cid: String)",
+            in: assistant
+        )
+
+        XCTAssertTrue(
+            assistant.contains(".disabled(messages.isEmpty || isProcessing || isClearingConversation)"),
+            "Clear must not remain user-actionable while a response task is pending."
+        )
+        XCTAssertTrue(sendQuery.contains("let sendConversationRevision = conversationRevision"))
+        XCTAssertEqual(
+            sendQuery.components(separatedBy: "conversationRevision == sendConversationRevision").count - 1,
+            2,
+            "Send must reject an invalidated task before generation and before appending its response."
+        )
+        guard let invalidateIndex = clear.range(of: "conversationRevision &+= 1")?.lowerBound,
+              let waitIndex = clear.range(of: "await pendingHelpPersistence?.value")?.lowerBound,
+              let deleteIndex = clear.range(of: "try await aiService.clearConversation")?.lowerBound else {
+            XCTFail("Clear must synchronously invalidate pending sends before awaiting Help staging or deletion.")
+            return
+        }
+        XCTAssertLessThan(invalidateIndex, waitIndex)
+        XCTAssertLessThan(invalidateIndex, deleteIndex)
+    }
+
     func testAssistantMessagesAndHistoryPreviewsRenderMarkdown() throws {
         let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
 
