@@ -1,17 +1,31 @@
 name: "CodeQL Security Scan"
 
-# Auto-scans all Swift code for security issues and code-quality problems.
-# Free for public repos. Results appear in the repo's Security tab and as
-# PR review comments when a PR is opened against main.
-#
-# Runs on:
-# - Every push to main
-# - Every PR targeting main
-# - Weekly schedule (Monday 2:33 AM UTC) — catches regressions in dependencies
+# CodeQL event behavior:
+# - Same-repository PRs targeting main run only the fast, echo-only `CodeQL`
+#   and `Analyze (swift)` compatibility gates; they do not analyze or upload
+#   SARIF. Fork PRs are excluded from these self-hosted jobs by repository guards.
+# - Pushes to main, the Monday 2:33 AM UTC schedule, and workflow_dispatch run
+#   the full Swift analysis and upload SARIF directly to GitHub Code Scanning.
 #
 # Companion to GITHUB FLOW's code-review sub-task (which posts commit
 # comments for direct-to-main commits). CodeQL handles security;
 # GITHUB FLOW handles general code quality.
+#
+# Operations contract:
+# - Inputs: repository Swift sources plus .github/codeql/codeql-config.yml.
+# - Output for full-analysis events: SARIF uploaded directly to GitHub Code
+#   Scanning; no Actions artifact is retained because Code Scanning is the
+#   review/source-of-truth surface. PR compatibility gates produce logs only.
+# - Logs/check URL: the applicable `CodeQL` / `Analyze (swift)` jobs in the
+#   triggering Actions run; full-analysis results also appear under Security >
+#   Code scanning.
+# - Review cadence: inspect every same-repo PR gate, every main-push analysis,
+#   and the weekly scan; use workflow_dispatch to rerun a transient failure or
+#   missed schedule.
+# - Failure threshold: any analysis or Code Scanning upload failure keeps this
+#   job red and requires a GitHub/Paperclip CI issue before the next merge train.
+# - Rollback: revert the direct-upload change only if Code Scanning itself is
+#   unavailable; do not restore long-lived duplicate SARIF artifacts by default.
 
 on:
   workflow_dispatch: # re-fire a missed weekly full scan manually
@@ -21,6 +35,10 @@ on:
     branches: ["main"]
   schedule:
     - cron: "33 2 * * 1"
+
+# Deny permissions by default. Echo-only compatibility jobs need no repository
+# access; the full analysis job grants only its required scopes below.
+permissions: {}
 
 # One queued run per ref — a new push supersedes the queued/in-flight run for
 # the same branch instead of stacking duplicate CodeQL analyses (10-20 min
@@ -109,12 +127,7 @@ jobs:
         uses: github/codeql-action/analyze@v3
         with:
           category: "/language:${{ matrix.language }}"
-          output: codeql-results
-          upload: never
-
-      - name: Upload CodeQL SARIF artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: codeql-${{ matrix.language }}-sarif
-          path: codeql-results
-          if-no-files-found: error
+          # Upload directly to Code Scanning. The previous duplicate Actions
+          # artifact used 90-day retention and made otherwise-successful scans
+          # fail when repository artifact storage was exhausted (#1437).
+          upload: always
