@@ -115,39 +115,53 @@ final class QRScanSheetRegressionTests: XCTestCase {
 
     func testWrongTypeWarningIsOrangeAndPrecedesSuccessRendering() throws {
         let source = try Self.qrScanSheetSource()
-        let feedback = try Self.braceBalancedBody(after: "private var feedbackStatusView", in: source)
+        let feedbackView = try Self.braceBalancedBody(after: "private var feedbackStatusView", in: source)
+        let feedback = QRScanFeedback(
+            isFound: true,
+            entityType: .job,
+            expectedType: .po,
+            title: "JOB-42",
+            code: "JOB-42"
+        )
 
-        guard let mismatchRange = feedback.range(
-            of: "typeMismatch, let got = resultEntityType, let expected = expectedType"
-        ), let resultRange = feedback.range(of: "else if let title = resultTitle") else {
+        guard let mismatchRange = feedbackView.range(
+            of: "else if let feedback = resultFeedback, feedback.typeMismatch"
+        ), let resultRange = feedbackView.range(of: "else if let feedback = resultFeedback {") else {
             XCTFail("Expected type mismatch to branch before generic result rendering.")
             return
         }
 
         XCTAssertLessThan(mismatchRange.lowerBound, resultRange.lowerBound)
+        XCTAssertTrue(feedback.typeMismatch)
+        XCTAssertEqual(feedback.message, "Expected po, got job")
+        XCTAssertFalse(
+            source.contains("@State private var typeMismatch"),
+            "Mismatch classification must be derived from the current result rather than stored independently."
+        )
         XCTAssertTrue(
-            feedback.contains("Text(\"Expected \\(expected.rawValue), got \\(got.rawValue)\")")
-                && feedback.contains(".foregroundStyle(.orange)"),
+            feedbackView.contains("Text(feedback.message)")
+                && feedbackView.contains(".foregroundStyle(.orange)"),
             "Wrong-type results must show an orange Expected/got warning."
+        )
+        XCTAssertTrue(
+            source.contains("return resultFeedback.message"),
+            "Visible and accessibility result copy must consume the same derived feedback message."
         )
     }
 
     func testNotFoundWithExpectedTypeKeepsNotFoundMessageAndIsNotMismatch() throws {
         let source = try Self.qrScanSheetSource()
         let code = "MANUAL-404"
-        let isMismatch = QRScanFeedback.isTypeMismatch(
+        let feedback = QRScanFeedback(
             isFound: false,
             entityType: nil,
-            expectedType: .po
-        )
-        let message = QRScanFeedback.resultMessage(
-            isFound: false,
+            expectedType: .po,
             title: code,
             code: code
         )
 
-        XCTAssertFalse(isMismatch)
-        XCTAssertEqual(message, "Not found: MANUAL-404")
+        XCTAssertFalse(feedback.typeMismatch)
+        XCTAssertEqual(feedback.message, "Not found: MANUAL-404")
         XCTAssertTrue(
             source.contains("let shouldAutoComplete = result.isFound\n                && (expectedType == nil || result.entityType == expectedType)"),
             "Only found matching results may auto-complete."
