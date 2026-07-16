@@ -335,9 +335,12 @@ private struct AddTeamSheet: View {
     }
 
     private func save() {
-        guard let service = appCore.peopleService,
-              let actorUserId = appCore.currentUser?.id else {
+        guard let service = appCore.peopleService else {
             errorMessage = "People service unavailable"
+            return
+        }
+        guard let actorUserId = appCore.currentUser?.id else {
+            errorMessage = "No signed-in user"
             return
         }
         do {
@@ -349,7 +352,7 @@ private struct AddTeamSheet: View {
             dismiss()
             onSave()
         } catch {
-            errorMessage = userFriendlyError(error, context: "load teams")
+            errorMessage = userFriendlyError(error, context: "create team")
         }
     }
 }

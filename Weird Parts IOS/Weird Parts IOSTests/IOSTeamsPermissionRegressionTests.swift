@@ -79,6 +79,41 @@ final class IOSTeamsPermissionRegressionTests: XCTestCase {
         )
     }
 
+    func testTeamMutationFailuresDistinguishMissingServiceAndSignedOutUser() throws {
+        let teamsSource = try Self.readPeopleSource("IOSTeamsPage.swift")
+        let detailSource = try Self.readPeopleSource("IOSTeamDetailPage.swift")
+        let addTeamSave = try TestSourceSlicer.braceBalancedBody(after: "private func save()", in: teamsSource)
+        let removeMember = try TestSourceSlicer.braceBalancedBody(after: "private func removeMember", in: detailSource)
+        let deleteTeam = try TestSourceSlicer.braceBalancedBody(after: "private func deleteTeam()", in: detailSource)
+        let editTeam = try TestSourceSlicer.braceBalancedBody(after: "private struct EditTeamSheet", in: detailSource)
+        let addMember = try TestSourceSlicer.braceBalancedBody(after: "private func addEmployee", in: detailSource)
+
+        for body in [addTeamSave, removeMember, deleteTeam, editTeam, addMember] {
+            XCTAssertTrue(body.contains("guard let service = appCore.peopleService else"))
+            XCTAssertTrue(body.contains("guard let actorUserId = appCore.currentUser?.id else"))
+            XCTAssertTrue(body.contains("No signed-in user"))
+        }
+        XCTAssertTrue(addTeamSave.contains("userFriendlyError(error, context: \"create team\")"))
+        XCTAssertTrue(removeMember.contains("userFriendlyError(error, context: \"remove team member\")"))
+        XCTAssertTrue(deleteTeam.contains("userFriendlyError(error, context: \"delete team\")"))
+        XCTAssertTrue(editTeam.contains("userFriendlyError(error, context: \"update team\")"))
+        XCTAssertTrue(addMember.contains("userFriendlyError(error, context: \"add team member\")"))
+    }
+
+    func testPreservedUITestFixturesRestoreTeamAndMembershipState() throws {
+        let source = try Self.readAppSource("AppCore.swift")
+        let fixtureBody = try TestSourceSlicer.braceBalancedBody(
+            after: "if ProcessInfo.processInfo.arguments.contains(\"-UITestingTeamsViewOnly\")",
+            in: source
+        )
+
+        XCTAssertTrue(fixtureBody.contains("ON CONFLICT(name) DO UPDATE SET"))
+        XCTAssertTrue(fixtureBody.contains("is_active = 1"))
+        XCTAssertTrue(fixtureBody.contains("deleted_at = NULL"))
+        XCTAssertTrue(fixtureBody.contains("ON CONFLICT(team_id, user_id) DO UPDATE SET"))
+        XCTAssertTrue(fixtureBody.contains("removed_by = NULL"))
+    }
+
     private static func readPeopleSource(_ filename: String, file: StaticString = #filePath) throws -> String {
         let testFileURL = URL(fileURLWithPath: "\(file)")
         let projectRoot = testFileURL
@@ -88,6 +123,18 @@ final class IOSTeamsPermissionRegressionTests: XCTestCase {
             .appendingPathComponent("Weird Parts IOS")
             .appendingPathComponent("Features")
             .appendingPathComponent("People")
+            .appendingPathComponent(filename)
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    private static func readAppSource(_ filename: String, file: StaticString = #filePath) throws -> String {
+        let testFileURL = URL(fileURLWithPath: "\(file)")
+        let projectRoot = testFileURL
+            .deletingLastPathComponent() // Weird Parts IOSTests
+            .deletingLastPathComponent() // Weird Parts IOS
+        let sourceURL = projectRoot
+            .appendingPathComponent("Weird Parts IOS")
+            .appendingPathComponent("App")
             .appendingPathComponent(filename)
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }

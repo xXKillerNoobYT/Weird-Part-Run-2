@@ -281,9 +281,12 @@ struct IOSTeamDetailPage: View {
     }
 
     private func removeMember(_ member: PeopleService.TeamMemberDetail) async {
-        guard let service = appCore.peopleService,
-              let actorUserId = appCore.currentUser?.id else {
-            actionError = "Service not available"
+        guard let service = appCore.peopleService else {
+            actionError = "People service unavailable"
+            return
+        }
+        guard let actorUserId = appCore.currentUser?.id else {
+            actionError = "No signed-in user"
             return
         }
         do {
@@ -294,14 +297,17 @@ struct IOSTeamDetailPage: View {
             actionError = nil
             await loadData()
         } catch {
-            actionError = userFriendlyError(error, context: "remove member")
+            actionError = userFriendlyError(error, context: "remove team member")
         }
     }
 
     private func deleteTeam() async {
-        guard let service = appCore.peopleService,
-              let actorUserId = appCore.currentUser?.id else {
-            actionError = "Service not available"
+        guard let service = appCore.peopleService else {
+            actionError = "People service unavailable"
+            return
+        }
+        guard let actorUserId = appCore.currentUser?.id else {
+            actionError = "No signed-in user"
             return
         }
         do {
@@ -377,9 +383,12 @@ private struct EditTeamSheet: View {
     }
 
     private func save() {
-        guard let service = appCore.peopleService,
-              let actorUserId = appCore.currentUser?.id else {
+        guard let service = appCore.peopleService else {
             errorMessage = "People service unavailable"
+            return
+        }
+        guard let actorUserId = appCore.currentUser?.id else {
+            errorMessage = "No signed-in user"
             return
         }
         do {
@@ -392,7 +401,7 @@ private struct EditTeamSheet: View {
             dismiss()
             onSave()
         } catch {
-            errorMessage = userFriendlyError(error, context: "load team")
+            errorMessage = userFriendlyError(error, context: "update team")
         }
     }
 }
@@ -481,9 +490,12 @@ private struct AddMemberSheet: View {
     }
 
     private func addEmployee(_ employee: PeopleService.EmployeeListItem) {
-        guard let service = appCore.peopleService,
-              let actorUserId = appCore.currentUser?.id else {
-            errorMessage = "Service not available"
+        guard let service = appCore.peopleService else {
+            errorMessage = "People service unavailable"
+            return
+        }
+        guard let actorUserId = appCore.currentUser?.id else {
+            errorMessage = "No signed-in user"
             return
         }
         do {
@@ -496,7 +508,7 @@ private struct AddMemberSheet: View {
             employees.removeAll { $0.id == employee.id }
             onAdd()
         } catch {
-            errorMessage = userFriendlyError(error, context: "load team")
+            errorMessage = userFriendlyError(error, context: "add team member")
         }
     }
 }

@@ -349,8 +349,13 @@ Teams need a **full detail page**, not just a list.
 - Permission required for every team or membership mutation: `manage_people`
 - Team mutation service contracts require the acting user ID, verify `manage_people`
   inside the same database transaction as the write, and persist actor attribution.
+- Adding a member rejects inactive or deleted teams. Re-adding a previously removed
+  member restores the existing membership row with the current role, actor, and join
+  timestamp so the `(team_id, user_id)` uniqueness rule cannot preserve stale state.
 - Users with `view_people` but without `manage_people` retain read-only access to the
   Teams list and detail pages; create/edit/delete/add/remove controls are not exposed.
+- Mutation failures distinguish an unavailable People service from a signed-out actor,
+  and error fallbacks name the attempted create/update/delete/member operation.
 
 ---
 

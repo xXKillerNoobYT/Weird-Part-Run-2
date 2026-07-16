@@ -62,6 +62,7 @@ public final class PeopleService: Sendable {
         case contactNotFound(Int64)
         case contractorNotFound(Int64)
         case userNotFound(Int64)
+        case teamNotFound(Int64)
         case cannotDeleteBuiltinHat
         case requiredFieldEmpty(String)
         case hatNotFound(Int64)
@@ -1242,14 +1243,15 @@ public final class PeopleService: Sendable {
                 userId: actorUserId,
                 permissionKey: "manage_people"
             )
-            // Guard: team + user must exist and not be tombstoned — a stale UI could
+            // Guard: team + user must be active and not tombstoned — a stale UI could
             // otherwise create orphan employee_team_members rows against deleted teams
             // or deleted users, which would be invisible to getTeamMembers (deleted_at
-            // guard on JOIN users) but still polluting the INSERT OR IGNORE dedupe.
+            // guard on JOIN users) but still pollute the membership dedupe.
             let teamExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM employee_teams WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM employee_teams
+                WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [teamId]) ?? 0) > 0
-            guard teamExists else { return }
+            guard teamExists else { throw PeopleError.teamNotFound(teamId) }
             let userExists = (try Int.fetchOne(dbConn, sql: """
                 SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [userId]) ?? 0) > 0
@@ -1257,8 +1259,15 @@ public final class PeopleService: Sendable {
 
             try dbConn.execute(
                 sql: """
-                    INSERT OR IGNORE INTO employee_team_members (team_id, user_id, role, added_by)
+                    INSERT INTO employee_team_members (team_id, user_id, role, added_by)
                     VALUES (?, ?, ?, ?)
+                    ON CONFLICT(team_id, user_id) DO UPDATE SET
+                        role = excluded.role,
+                        joined_at = datetime('now'),
+                        deleted_at = NULL,
+                        added_by = excluded.added_by,
+                        removed_by = NULL
+                    WHERE employee_team_members.deleted_at IS NOT NULL
                     """,
                 arguments: [teamId, userId, role, actorUserId]
             )

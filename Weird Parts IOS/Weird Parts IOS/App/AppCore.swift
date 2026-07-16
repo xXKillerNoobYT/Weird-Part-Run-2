@@ -907,21 +907,32 @@ final class AppCore: ObservableObject {
 
                 try dbConn.execute(sql: """
                     INSERT INTO employee_teams
-                        (name, description, created_by, updated_by, deleted_at)
-                    SELECT 'UITest Read Only Team', 'Permission regression fixture', ?, ?, NULL
-                    WHERE NOT EXISTS (
-                        SELECT 1 FROM employee_teams
-                        WHERE name = 'UITest Read Only Team' AND deleted_at IS NULL
-                    )
+                        (name, description, is_active, created_by, updated_by, deleted_at)
+                    VALUES ('UITest Read Only Team', 'Permission regression fixture', 1, ?, ?, NULL)
+                    ON CONFLICT(name) DO UPDATE SET
+                        description = excluded.description,
+                        is_active = 1,
+                        updated_by = excluded.updated_by,
+                        updated_at = datetime('now'),
+                        deleted_at = NULL
                     """, arguments: [fixtureUserId, fixtureUserId])
                 guard let teamId = try Int64.fetchOne(
                     dbConn,
-                    sql: "SELECT id FROM employee_teams WHERE name = 'UITest Read Only Team'"
+                    sql: """
+                        SELECT id FROM employee_teams
+                        WHERE name = 'UITest Read Only Team' AND is_active = 1 AND deleted_at IS NULL
+                        """
                 ) else { return }
                 try dbConn.execute(sql: """
-                    INSERT OR IGNORE INTO employee_team_members
+                    INSERT INTO employee_team_members
                         (team_id, user_id, role, added_by, deleted_at)
                     VALUES (?, ?, 'member', ?, NULL)
+                    ON CONFLICT(team_id, user_id) DO UPDATE SET
+                        role = excluded.role,
+                        joined_at = datetime('now'),
+                        deleted_at = NULL,
+                        added_by = excluded.added_by,
+                        removed_by = NULL
                     """, arguments: [teamId, viewerUserId, fixtureUserId])
             }
         }
