@@ -178,7 +178,7 @@ final class PanelQualityInstructionBannerRegressionTests: XCTestCase {
                         arguments: [recordId]
                     )
                 }
-                try insertConflict(
+                let insertedConflictId = try insertConflict(
                     db: db,
                     recordId: recordId,
                     fieldName: field,
@@ -186,7 +186,7 @@ final class PanelQualityInstructionBannerRegressionTests: XCTestCase {
                     remoteValue: "22"
                 )
                 let conflict = try XCTUnwrap(
-                    ConflictResolver.getUnreviewedConflicts(db: db).first { $0.fieldName == field }
+                    ConflictResolver.getUnreviewedConflicts(db: db).first { $0.id == insertedConflictId }
                 )
                 guard case .critical = SyncConflictClassifier.classify(conflict) else {
                     return XCTFail("Expected persisted Parts field \(field) to require an explicit critical choice")
@@ -212,13 +212,14 @@ final class PanelQualityInstructionBannerRegressionTests: XCTestCase {
         }
     }
 
+    @discardableResult
     private func insertConflict(
         db: AppDatabase,
         recordId: Int64 = 1,
         fieldName: String,
         localValue: String,
         remoteValue: String
-    ) throws {
+    ) throws -> Int64 {
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
@@ -232,6 +233,7 @@ final class PanelQualityInstructionBannerRegressionTests: XCTestCase {
                     "2026-07-14T09:00:00Z", "2026-07-14T10:00:00Z", "2026-07-14T10:00:00Z",
                 ]
             )
+            return dbConn.lastInsertedRowID
         }
     }
 
