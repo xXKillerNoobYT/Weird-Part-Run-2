@@ -14,7 +14,33 @@ struct SyncConflictReviewPage: View {
     @State private var isLoading = true
     @State private var aiResolutions: [Int64: AIConflictResolution] = [:]
     @State private var isRequestingAI = false
-    @State private var actionError: String?
+    @State private var activeAlert: ActiveAlert?
+
+    private struct PendingCriticalResolution {
+        let conflict: ConflictLogEntry
+        let keepLocal: Bool
+    }
+
+    private enum ActiveAlert: Identifiable {
+        case critical(PendingCriticalResolution)
+        case actionError(String)
+
+        var id: String {
+            switch self {
+            case .critical(let decision):
+                return "critical-\(decision.conflict.id ?? -1)-\(decision.keepLocal)"
+            case .actionError:
+                return "action-error"
+            }
+        }
+
+        var title: String {
+            switch self {
+            case .critical: return "Confirm Critical Write Decision"
+            case .actionError: return "Sync conflict action failed"
+            }
+        }
+    }
 
     private var syncManager: IOSSyncManager { appCore.syncManager }
 
@@ -46,19 +72,46 @@ struct SyncConflictReviewPage: View {
                             if syncManager.markAllConflictsReviewed() {
                                 loadConflicts()
                             } else {
-                                actionError = syncManager.errorMessage ?? "Sync conflicts could not be marked reviewed."
+                                presentActionError(syncManager.errorMessage ?? "Sync conflicts could not be marked reviewed.")
                             }
                         }
                     }
                 }
             }
-            .alert("Sync conflict action failed", isPresented: Binding(
-                get: { actionError != nil },
-                set: { if !$0 { actionError = nil } }
-            )) {
-                Button("OK", role: .cancel) { actionError = nil }
-            } message: {
-                Text(actionError ?? "The sync conflict action could not be completed.")
+            .alert(
+                activeAlert?.title ?? "Sync conflict action",
+                isPresented: Binding(
+                    get: { activeAlert != nil },
+                    set: { if !$0 { activeAlert = nil } }
+                ),
+                presenting: activeAlert
+            ) { alert in
+                switch alert {
+                case .critical(let decision):
+                    Button("Cancel", role: .cancel) {
+                        activeAlert = nil
+                    }
+                    Button("Confirm", role: .destructive) {
+                        activeAlert = nil
+                        DispatchQueue.main.async {
+                            withAnimation {
+                                resolve(decision.conflict, keepLocal: decision.keepLocal)
+                            }
+                        }
+                    }
+                case .actionError:
+                    Button("OK", role: .cancel) { activeAlert = nil }
+                }
+            } message: { alert in
+                switch alert {
+                case .critical(let decision):
+                    let selectedLabel = decision.keepLocal ? "This Device" : "Remote"
+                    Text(
+                        "You are about to apply the \(selectedLabel) value for \(decision.conflict.tableName).\(decision.conflict.fieldName). This affects financial or inventory data."
+                    )
+                case .actionError(let message):
+                    Text(message)
+                }
             }
             .onAppear { loadConflicts() }
         }
@@ -125,10 +178,10 @@ struct SyncConflictReviewPage: View {
                 CriticalConflictView(
                     conflict: conflict,
                     onResolveLocal: {
-                        withAnimation { resolve(conflict, keepLocal: true) }
+                        requestCriticalResolution(conflict, keepLocal: true)
                     },
                     onResolveRemote: {
-                        withAnimation { resolve(conflict, keepLocal: false) }
+                        requestCriticalResolution(conflict, keepLocal: false)
                     }
                 )
 
@@ -291,16 +344,28 @@ struct SyncConflictReviewPage: View {
 
     /// Apply the reviewer's chosen side (writing the value when it differs from
     /// the LWW winner), then drop the row from the list on success.
+    private func requestCriticalResolution(_ conflict: ConflictLogEntry, keepLocal: Bool) {
+        activeAlert = .critical(PendingCriticalResolution(
+            conflict: conflict,
+            keepLocal: keepLocal
+        ))
+    }
+
+    private func presentActionError(_ message: String) {
+        activeAlert = .actionError(message)
+    }
+
     private func resolve(_ conflict: ConflictLogEntry, keepLocal: Bool) {
         guard let id = conflict.id else {
-            actionError = "This sync conflict cannot be resolved because its conflict id is missing. Reload conflicts and try again."
-            syncManager.surfaceConflictReviewActionFailure(actionError ?? "Sync conflict action failed.")
+            let message = "This sync conflict cannot be resolved because its conflict id is missing. Reload conflicts and try again."
+            presentActionError(message)
+            syncManager.surfaceConflictReviewActionFailure(message)
             return
         }
         if syncManager.resolveConflict(conflict, keepLocal: keepLocal) {
             conflicts.removeAll { $0.id == id }
         } else {
-            actionError = syncManager.errorMessage ?? "Sync conflict could not be resolved."
+            presentActionError(syncManager.errorMessage ?? "Sync conflict could not be resolved.")
         }
     }
 
@@ -309,28 +374,30 @@ struct SyncConflictReviewPage: View {
     /// transaction succeeds.
     private func resolveText(_ conflict: ConflictLogEntry, selectedValue: String) {
         guard let id = conflict.id else {
-            actionError = "This sync text conflict cannot be resolved because its conflict id is missing. Reload conflicts and try again."
-            syncManager.surfaceConflictReviewActionFailure(actionError ?? "Sync conflict action failed.")
+            let message = "This sync text conflict cannot be resolved because its conflict id is missing. Reload conflicts and try again."
+            presentActionError(message)
+            syncManager.surfaceConflictReviewActionFailure(message)
             return
         }
         if syncManager.resolveTextConflict(conflict, selectedValue: selectedValue) {
             aiResolutions[id] = nil
             conflicts.removeAll { $0.id == id }
         } else {
-            actionError = syncManager.errorMessage ?? "Sync text conflict could not be resolved."
+            presentActionError(syncManager.errorMessage ?? "Sync text conflict could not be resolved.")
         }
     }
 
     private func markReviewed(_ conflict: ConflictLogEntry) {
         guard let id = conflict.id else {
-            actionError = "This sync conflict cannot be reviewed because its conflict id is missing. Reload conflicts and try again."
-            syncManager.surfaceConflictReviewActionFailure(actionError ?? "Sync conflict action failed.")
+            let message = "This sync conflict cannot be reviewed because its conflict id is missing. Reload conflicts and try again."
+            presentActionError(message)
+            syncManager.surfaceConflictReviewActionFailure(message)
             return
         }
         if syncManager.markConflictReviewed(conflictId: id) {
             conflicts.removeAll { $0.id == id }
         } else {
-            actionError = syncManager.errorMessage ?? "Sync conflict could not be marked reviewed."
+            presentActionError(syncManager.errorMessage ?? "Sync conflict could not be marked reviewed.")
         }
     }
 
@@ -365,8 +432,9 @@ struct SyncConflictReviewPage: View {
 
     private func requestAIMerge(_ conflict: ConflictLogEntry) async {
         guard let conflictId = conflict.id else {
-            actionError = "AI merge cannot start because this sync conflict id is missing. Reload conflicts and try again."
-            syncManager.surfaceConflictReviewActionFailure(actionError ?? "Sync conflict action failed.")
+            let message = "AI merge cannot start because this sync conflict id is missing. Reload conflicts and try again."
+            presentActionError(message)
+            syncManager.surfaceConflictReviewActionFailure(message)
             return
         }
         isRequestingAI = true

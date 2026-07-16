@@ -113,6 +113,16 @@ struct WiredPartIOSApp: App {
 
     /// Resolved color scheme from the user's theme setting.
     private var resolvedColorScheme: ColorScheme? {
+        let processArguments = ProcessInfo.processInfo.arguments
+        if processArguments.contains("-UITesting"),
+           processArguments.contains("-UITestingAppearanceLight") {
+            return .light
+        }
+        if processArguments.contains("-UITesting"),
+           processArguments.contains("-UITestingAppearanceDark") {
+            return .dark
+        }
+
         switch appCore.theme.themeMode {
         case "light": return .light
         case "dark": return .dark

@@ -174,12 +174,6 @@ struct CriticalConflictView: View {
     let conflict: ConflictLogEntry
     let onResolveLocal: () -> Void
     let onResolveRemote: () -> Void
-    @State private var pendingResolution: PendingResolution?
-
-    private enum PendingResolution: String {
-        case local
-        case remote
-    }
 
     var body: some View {
         VStack(spacing: 12) {
@@ -209,14 +203,29 @@ struct CriticalConflictView: View {
                     Text(formatTS(conflict.localTs))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
-                    Button("Use This") { pendingResolution = .local }
+                    Button {
+                        onResolveLocal()
+                    } label: {
+                        Text("Use This")
+                            .dsMinTapTarget()
+                    }
                         .buttonStyle(.borderedProminent)
                         .tint(.blue)
                         .controlSize(.small)
-                        .dsMinTapTarget()
                         .accessibilityLabel("Use This Device Value")
                         .accessibilityHint("Selects the local value for confirmation.")
                         .accessibilityIdentifier("syncConflictUseLocalValue")
+                        .accessibilityAction { onResolveLocal() }
+                        // Catalyst can route pointer activation to the expanded
+                        // accessibility wrapper without firing Button.action.
+                        // Keep this overlay hidden from AX so there is still one
+                        // VoiceOver focus stop while pointer activation is reliable.
+                        .overlay {
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .onTapGesture { onResolveLocal() }
+                                .accessibilityHidden(true)
+                        }
                 }
                 .frame(maxWidth: .infinity)
 
@@ -234,14 +243,26 @@ struct CriticalConflictView: View {
                     Text(formatTS(conflict.remoteTs))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
-                    Button("Use This") { pendingResolution = .remote }
+                    Button {
+                        onResolveRemote()
+                    } label: {
+                        Text("Use This")
+                            .dsMinTapTarget()
+                    }
                         .buttonStyle(.borderedProminent)
                         .tint(.purple)
                         .controlSize(.small)
-                        .dsMinTapTarget()
                         .accessibilityLabel("Use Remote Value")
                         .accessibilityHint("Selects the remote value for confirmation.")
                         .accessibilityIdentifier("syncConflictUseRemoteValue")
+                        .accessibilityAction { onResolveRemote() }
+                        // Match the local choice's Catalyst pointer fallback.
+                        .overlay {
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .onTapGesture { onResolveRemote() }
+                                .accessibilityHidden(true)
+                        }
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -259,32 +280,6 @@ struct CriticalConflictView: View {
                         .stroke(Color.red.opacity(0.2), lineWidth: 1)
                 )
         )
-        .alert(
-            "Confirm Critical Write Decision",
-            isPresented: Binding(
-                get: { pendingResolution != nil },
-                set: { if !$0 { pendingResolution = nil } }
-            )
-        ) {
-            Button("Cancel", role: .cancel) {
-                pendingResolution = nil
-            }
-            Button("Confirm", role: .destructive) {
-                guard let pendingResolution else { return }
-                switch pendingResolution {
-                case .local:
-                    onResolveLocal()
-                case .remote:
-                    onResolveRemote()
-                }
-                self.pendingResolution = nil
-            }
-        } message: {
-            let selectedLabel = pendingResolution == .local ? "This Device" : "Remote"
-            Text(
-                "You are about to apply the \(selectedLabel) value for \(conflict.tableName).\(conflict.fieldName). This affects financial or inventory data."
-            )
-        }
     }
 
     private func formatTS(_ ts: String) -> String {

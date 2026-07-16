@@ -43,7 +43,9 @@ final class PanelQualityInstructionBannerRegressionTests: XCTestCase {
         XCTAssertTrue(source.contains("PanelQualityInstructionBanner("))
         XCTAssertTrue(source.contains("syncConflictReviewInstructionBanner"))
         XCTAssertTrue(
-            source.contains("CriticalConflictView(") && source.contains("resolve(conflict, keepLocal: true)") && source.contains("resolve(conflict, keepLocal: false)"),
+            source.contains("CriticalConflictView(")
+                && source.contains("requestCriticalResolution(conflict, keepLocal: true)")
+                && source.contains("requestCriticalResolution(conflict, keepLocal: false)"),
             "Sync conflict review must keep the existing critical choose-local/choose-remote flow; the imported banner is guidance, not a downgrade to accept-only review."
         )
         XCTAssertTrue(
@@ -66,6 +68,36 @@ final class PanelQualityInstructionBannerRegressionTests: XCTestCase {
             choiceSource.components(separatedBy: ".dsMinTapTarget()").count - 1,
             2,
             "Both critical local/remote choice controls need 44x44pt hit regions."
+        )
+        XCTAssertTrue(
+            choiceSource.contains("Text(\"Use This\")\n                            .dsMinTapTarget()"),
+            "Catalyst needs the 44pt modifier inside the Button label so the measured frame remains natively actionable."
+        )
+        XCTAssertGreaterThanOrEqual(
+            choiceSource.components(separatedBy: ".overlay {").count - 1,
+            2,
+            "Both Catalyst choices need an idempotent pointer overlay across the full measured button target."
+        )
+        XCTAssertGreaterThanOrEqual(
+            choiceSource.components(separatedBy: ".accessibilityHidden(true)").count - 1,
+            2,
+            "Pointer overlays must stay hidden from VoiceOver so each choice remains one focus stop."
+        )
+        XCTAssertGreaterThanOrEqual(
+            choiceSource.components(separatedBy: ".accessibilityAction").count - 1,
+            2,
+            "Both choices need an explicit default VoiceOver action that presents the same confirmation."
+        )
+        XCTAssertTrue(
+            source.contains("@State private var activeAlert")
+                && source.contains("case critical(PendingCriticalResolution)")
+                && source.contains("\"Confirm Critical Write Decision\""),
+            "The stable review-page scope must own the single Catalyst alert presenter."
+        )
+        XCTAssertFalse(
+            choiceSource.contains("@State private var pendingResolution")
+                || choiceSource.contains("\"Confirm Critical Write Decision\""),
+            "The recyclable List-row child must not own the Catalyst confirmation presenter."
         )
     }
 

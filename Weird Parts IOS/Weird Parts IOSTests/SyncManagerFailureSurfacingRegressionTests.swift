@@ -43,8 +43,10 @@ final class SyncManagerFailureSurfacingRegressionTests: XCTestCase {
             "AI merge requests with missing IDs must show an error instead of silently doing nothing."
         )
         XCTAssertTrue(
-            reviewSource.contains("@State private var actionError: String?") &&
-                reviewSource.contains(".alert(\"Sync conflict action failed\"") &&
+            reviewSource.contains("@State private var activeAlert: ActiveAlert?") &&
+                reviewSource.contains("case actionError(String)") &&
+                reviewSource.contains("case .actionError: return \"Sync conflict action failed\"") &&
+                reviewSource.contains("presentActionError") &&
                 reviewSource.contains("conflict id is missing"),
             "The review page should present a visible recovery message for corrupt/id-less conflict rows."
         )

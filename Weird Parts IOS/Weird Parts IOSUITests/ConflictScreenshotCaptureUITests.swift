@@ -122,11 +122,10 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
             XCTFail("No local-value choice found on the conflict review sheet")
         }
 
-        let alert = app.alerts["Confirm Critical Write Decision"]
-        if alert.waitForExistence(timeout: 5) {
+        if waitForCriticalConfirmation() {
             capture("04-critical-alert-presented")
 
-            alert.buttons["Cancel"].tap()
+            criticalConfirmationButton(named: "Cancel").tap()
             capture("05-critical-cancel-returned")
 
             let useRemoteButtons = app.buttons.matching(
@@ -134,8 +133,8 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
             )
             if useRemoteButtons.count > 0 {
                 useRemoteButtons.element(boundBy: useRemoteButtons.count - 1).tap()
-                if alert.waitForExistence(timeout: 5) {
-                    alert.buttons["Confirm"].tap()
+                if waitForCriticalConfirmation() {
+                    criticalConfirmationButton(named: "Confirm").tap()
                 }
             } else {
                 XCTFail("No remote-value choice found after cancelling the critical decision")
@@ -150,18 +149,34 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
     }
 
     func testCriticalLocalResolutionHasAccessibleTargetAndRemovesConflict() throws {
-        try assertCriticalResolution(choiceIdentifier: "syncConflictUseLocalValue", screenshotName: "critical-local-resolved")
+        try assertCriticalResolution(
+            choiceIdentifier: "syncConflictUseLocalValue",
+            appearance: "Light",
+            screenshotName: "critical-local-resolved"
+        )
     }
 
     func testCriticalRemoteResolutionHasAccessibleTargetAndRemovesConflict() throws {
-        try assertCriticalResolution(choiceIdentifier: "syncConflictUseRemoteValue", screenshotName: "critical-remote-resolved")
+        try assertCriticalResolution(
+            choiceIdentifier: "syncConflictUseRemoteValue",
+            appearance: "Dark",
+            screenshotName: "critical-remote-resolved"
+        )
     }
 
-    private func assertCriticalResolution(choiceIdentifier: String, screenshotName: String) throws {
+    private func assertCriticalResolution(
+        choiceIdentifier: String,
+        appearance: String,
+        screenshotName: String
+    ) throws {
         guard isManualCaptureOptedIn else {
             throw XCTSkip("Conflict fixture capture is not opted in.")
         }
 
+        app.launchArguments.append(
+            appearance == "Light" ? "-UITestingAppearanceLight" : "-UITestingAppearanceDark"
+        )
+        print("WEI-4928 appearance: \(appearance)")
         app.launch()
         let user = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'loginUserRow_'"))
             .firstMatch
@@ -176,29 +191,68 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
         let review = app.buttons["syncConflictBanner"]
         XCTAssertTrue(review.waitForExistence(timeout: 12))
         review.tap()
+        let collection = app.collectionViews.firstMatch
+        let scrollView = app.scrollViews.firstMatch
+        let scrollTarget: XCUIElement
+        if collection.exists {
+            scrollTarget = collection
+        } else if scrollView.exists {
+            scrollTarget = scrollView
+        } else {
+            scrollTarget = app
+        }
         let unitCost = app.staticTexts["Unit Cost"]
         for _ in 0..<5 where !unitCost.exists {
-            app.swipeUp()
+            scrollTarget.swipeUp()
             _ = unitCost.waitForExistence(timeout: 1)
         }
         XCTAssertTrue(unitCost.exists)
 
         let choice = app.buttons[choiceIdentifier]
         for _ in 0..<5 where !choice.isHittable {
-            app.swipeUp()
+            scrollTarget.swipeUp()
             _ = choice.waitForExistence(timeout: 1)
         }
         XCTAssertTrue(choice.exists)
         XCTAssertGreaterThanOrEqual(choice.frame.width, 44)
         XCTAssertGreaterThanOrEqual(choice.frame.height, 44)
+        print("WEI-4928 \(choiceIdentifier) AX frame: \(choice.frame)")
         choice.tap()
 
-        let alert = app.alerts["Confirm Critical Write Decision"]
-        XCTAssertTrue(alert.waitForExistence(timeout: 5))
-        alert.buttons["Confirm"].tap()
+        XCTAssertTrue(waitForCriticalConfirmation())
+        capture("\(screenshotName)-confirmation")
+        criticalConfirmationButton(named: "Cancel").tap()
+        XCTAssertTrue(unitCost.waitForExistence(timeout: 5), "Cancelling must preserve the unresolved Unit Cost row")
+        capture("\(screenshotName)-cancelled")
+
+        choice.tap()
+        XCTAssertTrue(waitForCriticalConfirmation())
+        criticalConfirmationButton(named: "Confirm").tap()
         XCTAssertTrue(unitCost.waitForNonExistence(timeout: 8))
         XCTAssertFalse(app.alerts["Sync conflict action failed"].exists)
         capture(screenshotName)
+    }
+
+    private func waitForCriticalConfirmation(timeout: TimeInterval = 5) -> Bool {
+        let title = "Confirm Critical Write Decision"
+        return app.alerts[title].waitForExistence(timeout: 1)
+            || app.staticTexts[title].waitForExistence(timeout: timeout)
+    }
+
+    private func criticalConfirmationButton(named name: String) -> XCUIElement {
+        let alertButton = app.alerts["Confirm Critical Write Decision"].buttons[name]
+        if alertButton.exists {
+            return alertButton
+        }
+
+        let matches = app.buttons.matching(identifier: name)
+        for index in 0..<matches.count {
+            let candidate = matches.element(boundBy: index)
+            if candidate.isHittable {
+                return candidate
+            }
+        }
+        return matches.firstMatch
     }
 
     private func capture(_ name: String) {
