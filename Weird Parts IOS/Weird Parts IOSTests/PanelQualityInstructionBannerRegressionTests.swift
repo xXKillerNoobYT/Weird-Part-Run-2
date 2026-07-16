@@ -9,8 +9,8 @@ final class PanelQualityInstructionBannerRegressionTests: XCTestCase {
 
         XCTAssertTrue(source.contains("struct PanelQualityInstructionBanner"))
         XCTAssertTrue(
-            source.contains("minHeight: 44"),
-            "Instruction banners should keep the Panel Schedule Builder tap-target floor when reused on modal/review flows."
+            source.contains(".dsMinTapTarget()"),
+            "Instruction banners should use the shared, Catalyst-compensated 44pt accessibility-frame floor."
         )
         XCTAssertTrue(
             source.contains("accessibilityIdentifier: String") && source.contains(".accessibilityIdentifier(accessibilityIdentifier)"),

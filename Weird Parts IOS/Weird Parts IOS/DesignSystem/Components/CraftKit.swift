@@ -73,7 +73,11 @@ struct PanelQualityInstructionBanner: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, DS.Space.sm)
         .padding(.vertical, DS.Space.xs)
-        .frame(minHeight: 44, alignment: .leading)
+        // Reuse the shared target floor even though the banner is informational:
+        // Catalyst scales SwiftUI geometry before exposing its AX frame, so a raw
+        // 44pt frame renders below 44pt there. `dsMinTapTarget()` centralizes the
+        // compensated Catalyst dimension while remaining 44pt on iOS/iPadOS.
+        .dsMinTapTarget()
         .background(tint.opacity(0.08), in: RoundedRectangle(cornerRadius: DS.Radius.sm))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(message)

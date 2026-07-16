@@ -198,7 +198,17 @@ final class Weird_Parts_IOSUITests: XCTestCase {
 
     @MainActor
     func testPanelScheduleMoveBannerFitsCompactWidthAndExposesFullInstruction() throws {
-        relaunchForPanelScheduleBuilderFixture()
+        try assertPanelScheduleMoveBanner(appearance: "Light")
+    }
+
+    @MainActor
+    func testPanelScheduleMoveBannerFitsCompactWidthInDarkMode() throws {
+        try assertPanelScheduleMoveBanner(appearance: "Dark")
+    }
+
+    @MainActor
+    private func assertPanelScheduleMoveBanner(appearance: String) throws {
+        relaunchForPanelScheduleBuilderFixture(appearance: appearance)
 
         let circuit = app.buttons["Circuit 1, Office lighting"]
         XCTAssertTrue(circuit.waitForExistence(timeout: 20))
@@ -209,24 +219,36 @@ final class Weird_Parts_IOSUITests: XCTestCase {
 
         let banner = app.descendants(matching: .any)["panelScheduleMoveModeBanner"]
         XCTAssertTrue(banner.waitForExistence(timeout: 5))
+        XCTAssertEqual(banner.identifier, "panelScheduleMoveModeBanner")
         XCTAssertEqual(
             banner.label,
             "Move Office lighting: tap a destination space or drag it onto the grid."
         )
+        XCTAssertGreaterThanOrEqual(
+            banner.frame.height,
+            43.9,
+            "The rendered banner AX frame must preserve the documented 44pt floor, allowing only floating-point noise."
+        )
         XCTAssertGreaterThanOrEqual(banner.frame.minX, app.frame.minX)
         XCTAssertLessThanOrEqual(banner.frame.maxX, app.frame.maxX)
+        print("WEI-4939 \(appearance) panelScheduleMoveModeBanner AX frame: \(banner.frame)")
 
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        attachment.name = "panel-schedule-move-banner-\(Int(app.frame.width))x\(Int(app.frame.height))"
+        attachment.name = "panel-schedule-move-banner-\(appearance.lowercased())-\(Int(app.frame.width))x\(Int(app.frame.height))"
         attachment.lifetime = .keepAlways
         add(attachment)
     }
 
-    private func relaunchForPanelScheduleBuilderFixture() {
+    private func relaunchForPanelScheduleBuilderFixture(appearance: String? = nil) {
         app?.terminate()
         app = XCUIApplication()
         configureUITestingEnvironment(app)
         app.launchArguments += ["-UITestingPanelScheduleBuilderFixture"]
+        if let appearance {
+            app.launchArguments.append(
+                appearance == "Dark" ? "-UITestingAppearanceDark" : "-UITestingAppearanceLight"
+            )
+        }
         app.launch()
     }
 
