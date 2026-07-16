@@ -52,16 +52,17 @@ final class AIHelpResumeRegressionTests: XCTestCase {
     func testResumeControlsUseExistingPersistenceHelpersAndSafeEmptyState() throws {
         let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
 
-        XCTAssertTrue(assistant.contains("FoundationModelsService.latestConversationId(from: db)"))
-        XCTAssertTrue(assistant.contains("FoundationModelsService.listConversations(from: db)"))
-        XCTAssertTrue(assistant.contains("guard let db = appCore.db else"))
+        XCTAssertTrue(assistant.contains("FoundationModelsService.latestConversationId(\n            ownerUserId: ownerUserId"))
+        XCTAssertTrue(assistant.contains("FoundationModelsService.listConversations(\n            ownerUserId: ownerUserId"))
+        XCTAssertTrue(assistant.contains("let ownerUserId = appCore.currentUser?.id"))
         XCTAssertTrue(assistant.contains("savedConversations = []"))
         XCTAssertTrue(assistant.contains("No Saved Conversations"))
         XCTAssertTrue(assistant.contains("Loading conversations…"))
         XCTAssertTrue(assistant.contains("accessibilityLabel(\"Resume a past conversation\")"))
-        XCTAssertTrue(assistant.contains("accessibilityLabel(\"Resume conversation: \\(conversation.preview)\")"))
+        XCTAssertTrue(assistant.contains("accessibilityLabel(\"Resume conversation: \\(plainText(fromMarkdown: conversation.preview))\")"))
         XCTAssertTrue(assistant.contains("await resumeLastConversationIfNeeded()"))
-        XCTAssertTrue(assistant.contains(".frame(minWidth: 44, minHeight: 44)"))
+        XCTAssertTrue(assistant.contains(".frame(width: 44, height: 44)\n                        .contentShape(Rectangle())"))
+        XCTAssertTrue(assistant.contains(".frame(width: 44, height: 44)\n            .contentShape(Rectangle())"))
     }
 
     func testHelpHandoffWaitsForInitialHistoryAndClearWaitsForPersistence() throws {
@@ -73,6 +74,11 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertFalse(mainView.contains("Task.sleep(for: .milliseconds(500))"))
         XCTAssertTrue(assistant.contains("let pendingHelpPersistence = helpPersistenceTask"))
         XCTAssertTrue(assistant.contains("await pendingHelpPersistence?.value"))
+        XCTAssertTrue(assistant.contains("try await aiService.clearConversation(cid, ownerUserId: ownerUserId, from: db)"))
+        XCTAssertTrue(assistant.contains("FoundationModelsService.saveMessages("))
+        XCTAssertTrue(assistant.contains("ownerUserId: ownerUserId"))
+        XCTAssertTrue(assistant.contains("conversationPersistenceError = \"This Help conversation is visible now but could not be saved"))
+        XCTAssertFalse(assistant.contains("try? await FoundationModelsService.saveMessages"))
         XCTAssertFalse(assistant.contains("Task.detached { [db, currentConversationId, userPrompt, assistantResponse]"))
     }
 
@@ -81,7 +87,9 @@ final class AIHelpResumeRegressionTests: XCTestCase {
 
         XCTAssertTrue(assistant.contains("Text(renderedMarkdown(message.content))"))
         XCTAssertTrue(assistant.contains("Text(renderedMarkdown(conversation.preview))"))
-        XCTAssertTrue(assistant.contains("AttributedString(markdown: content)"))
+        XCTAssertTrue(assistant.contains("markdown: content"))
+        XCTAssertTrue(assistant.contains("interpretedSyntax: .full"))
+        XCTAssertTrue(assistant.contains("String(renderedMarkdown(content).characters)"))
     }
 
     func testExistingAssistantBugReportContextRemainsAvailable() throws {
