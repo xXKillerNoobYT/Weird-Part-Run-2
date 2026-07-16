@@ -1322,6 +1322,62 @@ struct PartsServiceAdvancedTests {
         #expect(!preview.errors.contains { $0.rowNumber == 3 && $0.message.hasPrefix("Invalid number") })
     }
 
+    @Test("commitPartsImportCSV creates matching part and supplier costs from signed currency")
+    func testCommitPartsImportCSVNormalizesSupplierCostOnCreate() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Signed Currency Create Supplier")
+        let preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,supplier_part_number,cost_price
+        Supplier Currency Create,SUP-COST-CREATE-001,Supplier Currency Category,VEN-CREATE-001,"+$1,234.50"
+        """, supplierId: supplierId)
+
+        let result = try env.parts.commitPartsImportCSV(preview)
+
+        #expect(result.created == 1)
+        let part = try #require(try env.parts.findPartByCode("SUP-COST-CREATE-001"))
+        let supplierCosts = try env.parts.getPartSupplierCosts(partId: try #require(part.id))
+        #expect(part.companyCostPrice == 1_234.50)
+        #expect(supplierCosts.count == 1)
+        #expect(supplierCosts.first?.supplierCostPrice == part.companyCostPrice)
+    }
+
+    @Test("commitPartsImportCSV updates matching part and supplier costs from signed currency")
+    func testCommitPartsImportCSVNormalizesSupplierCostOnUpdate() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Signed Currency Update Supplier")
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "Supplier Currency Category")
+        let partId = try env.parts.createPart(
+            categoryId: categoryId,
+            name: "Supplier Currency Update",
+            code: "SUP-COST-UPDATE-001",
+            companyCostPrice: 10
+        )
+        _ = try env.parts.addPartSupplierLink(
+            partId: partId,
+            supplierId: supplierId,
+            supplierPartNumber: "VEN-UPDATE-001",
+            costPrice: 20
+        )
+        var preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,supplier_part_number,cost_price
+        Supplier Currency Update,SUP-COST-UPDATE-001,Supplier Currency Category,VEN-UPDATE-001,"+$1,234.50"
+        """, supplierId: supplierId)
+        preview.conflicts = preview.conflicts.map { conflict in
+            var editable = conflict
+            editable.resolution = .update
+            return editable
+        }
+
+        let result = try env.parts.commitPartsImportCSV(preview)
+
+        #expect(result.updated == 1)
+        let part = try #require(try env.parts.findPartByCode("SUP-COST-UPDATE-001"))
+        let supplierCosts = try env.parts.getPartSupplierCosts(partId: try #require(part.id))
+        #expect(part.companyCostPrice == 1_234.50)
+        #expect(supplierCosts.count == 1)
+        #expect(supplierCosts.first?.supplierCostPrice == part.companyCostPrice)
+    }
+
     @Test("previewPartsImportCSV classifies update when mutable import fields differ")
     func testPreviewPartsImportCSVClassifiesUpdateWhenMutableFieldsDiffer() throws {
         let env = try E2ETestHelpers.setUp()

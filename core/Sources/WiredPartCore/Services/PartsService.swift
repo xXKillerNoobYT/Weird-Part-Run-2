@@ -7275,7 +7275,7 @@ public final class PartsService: Sendable {
               let supplierPartNumber = row.supplierPartNumber?.trimmingCharacters(in: .whitespacesAndNewlines),
               !supplierPartNumber.isEmpty else { return }
 
-        let cost = row.fields["cost_price"].flatMap { Double($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        let cost = row.fields["cost_price"].flatMap { parsedPartsImportNumeric($0) }
         let existingId = try Int64.fetchOne(
             dbConn,
             sql: """
