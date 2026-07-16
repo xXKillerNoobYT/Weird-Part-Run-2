@@ -49,6 +49,38 @@ final class GeofenceAlertViewRegressionTests: XCTestCase {
         )
     }
 
+    func testLunchAndBreakExitReasonsStartBreakRecordsInsteadOfClockingOut() throws {
+        let source = try Self.readGeofenceAlertSource()
+
+        XCTAssertFalse(
+            source.contains("case .lunch, .breakTime, .doneForDay:"),
+            "Lunch/break geofence responses must not share the Done-for-Day clock-out branch."
+        )
+        XCTAssertTrue(source.contains("case .lunch:"))
+        XCTAssertTrue(source.contains("case .breakTime:"))
+        XCTAssertTrue(source.contains("case .doneForDay:"))
+        XCTAssertTrue(source.contains("guard let breakSvc = appCore.breakService else"))
+        XCTAssertTrue(source.contains("Break service is not available. Please restart the app and try again."))
+        XCTAssertTrue(source.contains("Start a paid lunch break. Clock stays active."))
+
+        let lunchCase = try XCTUnwrap(source.range(of: "case .lunch:"))
+        let breakCase = try XCTUnwrap(source.range(of: "case .breakTime:"))
+        let doneCase = try XCTUnwrap(source.range(of: "case .doneForDay:"))
+        let otherCase = try XCTUnwrap(source.range(of: "case .other:"))
+
+        let lunchBody = String(source[lunchCase.upperBound..<breakCase.lowerBound])
+        let breakBody = String(source[breakCase.upperBound..<doneCase.lowerBound])
+        let doneBody = String(source[doneCase.upperBound..<otherCase.lowerBound])
+
+        XCTAssertTrue(lunchBody.contains("try breakSvc.startBreak"))
+        XCTAssertTrue(breakBody.contains("try breakSvc.startBreak"))
+        XCTAssertTrue(lunchBody.contains("breakType: \"lunch_paid\""))
+        XCTAssertTrue(breakBody.contains("breakType: \"break\""))
+        XCTAssertFalse(lunchBody.contains("try service.clockOut"))
+        XCTAssertFalse(breakBody.contains("try service.clockOut"))
+        XCTAssertTrue(doneBody.contains("try service.clockOut"))
+    }
+
     func testGeofenceAlertHasServiceIndependentDismissEscape() throws {
         let source = try Self.readGeofenceAlertSource()
         let clockPageSource = try Self.readClockPageSource()
