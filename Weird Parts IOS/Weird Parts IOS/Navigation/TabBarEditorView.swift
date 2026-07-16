@@ -179,8 +179,11 @@ struct TabBarEditorView: View {
                 .fill(Color.secondary.opacity(0.25))
                 .frame(height: 1)
         }
+        .frame(height: 28)
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
         .listRowBackground(Color(.secondarySystemGroupedBackground))
-        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
         .listRowSeparator(.hidden)
         .moveDisabled(true)
         .accessibilityElement(children: .ignore)
