@@ -6770,6 +6770,10 @@ public final class PartsService: Sendable {
         var normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
         if normalized.hasPrefix("$") {
             normalized.removeFirst()
+        } else if let sign = normalized.first,
+                  (sign == "+" || sign == "-"),
+                  normalized.dropFirst().hasPrefix("$") {
+            normalized.remove(at: normalized.index(after: normalized.startIndex))
         }
         if normalized.hasSuffix("%") {
             normalized.removeLast()

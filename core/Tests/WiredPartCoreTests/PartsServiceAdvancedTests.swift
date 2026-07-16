@@ -1281,6 +1281,30 @@ struct PartsServiceAdvancedTests {
         #expect(decisionsByRow[3] == .duplicateSkip)
     }
 
+    @Test("previewPartsImportCSV normalizes signed currency before duplicate and negative validation")
+    func testPreviewPartsImportCSVNormalizesSignedCurrency() throws {
+        let env = try E2ETestHelpers.setUp()
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "Signed Currency Category")
+        _ = try env.parts.createPart(
+            categoryId: categoryId,
+            name: "Positive Signed Currency Part",
+            code: "SIGNED-COST-001",
+            companyCostPrice: 1_234.50
+        )
+
+        let preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,cost_price
+        Positive Signed Currency Part,SIGNED-COST-001,Signed Currency Category,"+$1,234.50"
+        Negative Signed Currency Part,SIGNED-COST-002,Signed Currency Category,-$12.34
+        """)
+
+        let decisionsByRow = Dictionary(uniqueKeysWithValues: preview.decisions.map { ($0.rowNumber, $0.classification) })
+        #expect(decisionsByRow[2] == .duplicateSkip)
+        #expect(decisionsByRow[3] == .quarantined)
+        #expect(preview.errors.contains { $0.rowNumber == 3 && $0.message == "cost_price cannot be negative" })
+        #expect(!preview.errors.contains { $0.rowNumber == 3 && $0.message.hasPrefix("Invalid number") })
+    }
+
     @Test("previewPartsImportCSV classifies update when mutable import fields differ")
     func testPreviewPartsImportCSVClassifiesUpdateWhenMutableFieldsDiffer() throws {
         let env = try E2ETestHelpers.setUp()
