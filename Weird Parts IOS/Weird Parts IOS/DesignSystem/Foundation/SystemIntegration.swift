@@ -99,7 +99,13 @@ struct DSTransparencyAwareGlass: ViewModifier {
 
 /// Ensures the tappable area is at least 44x44pt per Apple HIG.
 struct DSMinimumTapTarget: ViewModifier {
+    #if targetEnvironment(macCatalyst)
+    /// Catalyst exposes SwiftUI frames in scaled AppKit accessibility points.
+    /// Sixty logical points preserve a measured accessibility frame above 44pt.
+    @ScaledMetric private var minSize: CGFloat = 60
+    #else
     @ScaledMetric private var minSize: CGFloat = 44
+    #endif
 
     func body(content: Content) -> some View {
         content
