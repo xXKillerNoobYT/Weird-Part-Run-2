@@ -182,7 +182,7 @@ extension PartsService {
         chunkLineLimit: Int = 12
     ) throws -> PartsOCRImportPreview {
         let cleanedPages = pages
-            .filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .filter { !$0.text.isBlankRequiredText }
             .sorted { $0.pageNumber < $1.pageNumber }
         guard !cleanedPages.isEmpty else {
             throw PartsError.invalidInput("Digital PDF import preview requires at least one page of extracted text.")

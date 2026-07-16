@@ -4,6 +4,17 @@ import Testing
 
 @Suite("Parts PDF/OCR import preview tests")
 struct PartsOCRImportPreviewTests {
+    @Test("previewPartsImportDigitalPDF rejects an empty page list")
+    func previewPartsImportDigitalPDFRejectsEmptyPages() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        #expect(throws: PartsService.PartsError.invalidInput(
+            "Digital PDF import preview requires at least one page of extracted text."
+        )) {
+            _ = try env.parts.previewPartsImportDigitalPDF(pages: [])
+        }
+    }
+
     @Test("previewPartsImportDigitalPDF extracts text-layer tables with page evidence")
     func previewPartsImportDigitalPDFExtractsTablesWithEvidence() throws {
         let env = try E2ETestHelpers.setUp()
@@ -97,6 +108,17 @@ struct PartsOCRImportPreviewTests {
         #expect(preview.reviewReadyCandidates.count == 1)
         #expect(preview.quarantinedCandidates.isEmpty)
         #expect(preview.isCommitAllowed == false)
+    }
+
+    @Test("previewPartsImportOCR bridge rejects empty chunks and candidates")
+    func previewPartsImportOCRBridgeRejectsEmptyInput() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        #expect(throws: PartsService.PartsError.invalidInput(
+            "OCR import preview requires at least one chunk or candidate."
+        )) {
+            _ = try env.parts.previewPartsImportOCR(chunks: [], candidates: [])
+        }
     }
 
     @Test("previewPartsImportOCR rejects malformed confidence and threshold values")
