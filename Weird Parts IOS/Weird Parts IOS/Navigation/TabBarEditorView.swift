@@ -1,5 +1,14 @@
 import SwiftUI
 
+struct TabBarEditorLayout: Equatable, Sendable {
+    var orderedIds: [String]
+
+    var bottomIds: [String] { Array(orderedIds.prefix(min(4, orderedIds.count))) }
+    var moreIds: [String] { Array(orderedIds.dropFirst(min(4, orderedIds.count))) }
+    var hasMoreDestination: Bool { !moreIds.isEmpty }
+    var exportsFastDemoteActions: Bool { hasMoreDestination }
+}
+
 /// Full-screen editor for customizing the tab bar order.
 ///
 /// Users freely drag modules in one continuous list. The first 4 rows become
@@ -19,8 +28,10 @@ struct TabBarEditorView: View {
     @State private var showResetConfirmation = false
     @State private var showDemoteMinimumWarning = false
 
-    private var bottomIds: [String] { Array(orderedIds.prefix(min(4, orderedIds.count))) }
-    private var moreIds: [String] { Array(orderedIds.dropFirst(min(4, orderedIds.count))) }
+    private var layout: TabBarEditorLayout { TabBarEditorLayout(orderedIds: orderedIds) }
+    private var bottomIds: [String] { layout.bottomIds }
+    private var moreIds: [String] { layout.moreIds }
+    private var hasMoreDestination: Bool { layout.hasMoreDestination }
 
     private enum EditorItem: Identifiable, Equatable {
         case module(String)
@@ -212,25 +223,27 @@ struct TabBarEditorView: View {
 
             Spacer()
 
-            // Move-between-sections button
-            Button {
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    if isFastAccess {
-                        demoteModule(module.id)
-                    } else {
-                        promoteModule(module.id)
+            if !isFastAccess || hasMoreDestination {
+                // Move-between-sections button
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        if isFastAccess {
+                            demoteModule(module.id)
+                        } else {
+                            promoteModule(module.id)
+                        }
                     }
+                } label: {
+                    Image(systemName: isFastAccess ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(isFastAccess ? .orange : .green)
                 }
-            } label: {
-                Image(systemName: isFastAccess ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
-                    .font(.title3)
-                    .foregroundStyle(isFastAccess ? .orange : .green)
+                .buttonStyle(.plain)
+                .dsMinTapTarget()
+                .accessibilityLabel(isFastAccess
+                                    ? "Move \(module.label) to More menu"
+                                    : "Move \(module.label) to tab bar")
             }
-            .buttonStyle(.plain)
-            .dsMinTapTarget()
-            .accessibilityLabel(isFastAccess
-                                ? "Move \(module.label) to More menu"
-                                : "Move \(module.label) to tab bar")
         }
         .padding(.vertical, 2)
     }
