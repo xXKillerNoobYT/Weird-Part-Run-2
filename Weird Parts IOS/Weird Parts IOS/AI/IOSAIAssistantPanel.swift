@@ -37,6 +37,7 @@ struct IOSAIAssistantPanel: View {
     @State private var isClearingConversation = false
     @State private var clearConversationError: String?
     @State private var clearConversationRetryId: String?
+    @State private var conversationPersistenceError: String?
     @State private var aiAvailability: AIAvailability = .notSupported
     @State private var catalogContext: String?
     @State private var pricingContext: String?
@@ -190,8 +191,9 @@ struct IOSAIAssistantPanel: View {
                             presentConversationPicker()
                         } label: {
                             Image(systemName: "clock.arrow.circlepath")
-                                .frame(minWidth: 44, minHeight: 44)
                         }
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                         .help("Resume a past conversation")
                         .accessibilityLabel("Resume a past conversation")
 
@@ -300,8 +302,9 @@ struct IOSAIAssistantPanel: View {
             } label: {
                 Image(systemName: "clock.arrow.circlepath")
                     .font(.caption)
-                    .frame(minWidth: 44, minHeight: 44)
             }
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
             .buttonStyle(.plain)
             .help("Resume a past conversation")
             .accessibilityLabel("Resume a past conversation")
@@ -382,7 +385,7 @@ struct IOSAIAssistantPanel: View {
                             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                             .contentShape(Rectangle())
                         }
-                        .accessibilityLabel("Resume conversation: \(conversation.preview)")
+                        .accessibilityLabel("Resume conversation: \(plainText(fromMarkdown: conversation.preview))")
                     }
                 }
             }
@@ -595,6 +598,25 @@ struct IOSAIAssistantPanel: View {
             .frame(maxWidth: .infinity)
             .background(Color.red.opacity(0.12))
             .accessibilityElement(children: .contain)
+        } else if let conversationPersistenceError {
+            HStack(alignment: .center, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .accessibilityHidden(true)
+                Text(conversationPersistenceError)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 8)
+                Button("Dismiss") {
+                    self.conversationPersistenceError = nil
+                }
+                .font(.caption)
+                .accessibilityLabel("Dismiss conversation save warning")
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity)
+            .background(Color.orange.opacity(0.12))
+            .accessibilityElement(children: .contain)
         }
     }
 
@@ -767,7 +789,7 @@ struct IOSAIAssistantPanel: View {
         if let pageId, let entry = HelpContentRegistry.helpFor(pageId) {
             response = formattedHelpResponse(title: entry.title, sections: entry.sections)
         } else if let helpBody, !helpBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            response = "**\(title)**\n\n\(helpBody)\n\nI can answer follow-up questions about these read-only help instructions."
+            response = "# \(title)\n\n\(helpBody)\n\nI can answer follow-up questions about these read-only help instructions."
         } else {
             response = "I opened the assistant for **\(title)**. Ask me what you want to do on this page and I'll explain the available actions."
         }
@@ -778,9 +800,9 @@ struct IOSAIAssistantPanel: View {
     }
 
     private func formattedHelpResponse(title: String, sections: [(String, String)]) -> String {
-        var response = "**\(title)**\n\n"
+        var response = "# \(title)\n\n"
         for (heading, body) in sections {
-            response += "**\(heading):** \(body)\n\n"
+            response += "## \(heading)\n\n\(body)\n\n"
         }
         response += "I can answer follow-up questions about these read-only help instructions."
         return response.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -788,17 +810,27 @@ struct IOSAIAssistantPanel: View {
 
     /// Persistence is best-effort because the locally generated help response is already visible.
     private func persistHelpHandoffTurn(userPrompt: String, assistantResponse: String) {
-        guard let db = appCore.db else { return }
+        guard let db = appCore.db,
+              let ownerUserId = appCore.currentUser?.id,
+              ownerUserId > 0 else {
+            conversationPersistenceError = "This Help conversation is visible now but could not be saved because the database or signed-in user is unavailable."
+            return
+        }
         let currentConversationId = conversationId
-        helpPersistenceTask = Task { [db, currentConversationId, userPrompt, assistantResponse] in
-            try? await FoundationModelsService.saveMessage(
-                AIConversationMessage(conversationId: currentConversationId, role: "user", content: userPrompt),
-                to: db
-            )
-            try? await FoundationModelsService.saveMessage(
-                AIConversationMessage(conversationId: currentConversationId, role: "assistant", content: assistantResponse),
-                to: db
-            )
+        helpPersistenceTask = Task { [db, currentConversationId, ownerUserId, userPrompt, assistantResponse] in
+            do {
+                try await FoundationModelsService.saveMessages(
+                    [
+                        AIConversationMessage(conversationId: currentConversationId, role: "user", content: userPrompt),
+                        AIConversationMessage(conversationId: currentConversationId, role: "assistant", content: assistantResponse),
+                    ],
+                    ownerUserId: ownerUserId,
+                    to: db
+                )
+                conversationPersistenceError = nil
+            } catch {
+                conversationPersistenceError = "This Help conversation is visible now but could not be saved: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -808,6 +840,7 @@ struct IOSAIAssistantPanel: View {
     private func startNewConversation() {
         clearConversationError = nil
         clearConversationRetryId = nil
+        conversationPersistenceError = nil
         Task { await aiService.clearConversation() }
         conversationId = UUID().uuidString
         messages = [welcomeMessage()]
@@ -817,6 +850,7 @@ struct IOSAIAssistantPanel: View {
     private func resetForLogout() {
         clearConversationError = nil
         clearConversationRetryId = nil
+        conversationPersistenceError = nil
         isClearingConversation = false
         Task { await aiService.clearConversation() }
         conversationId = UUID().uuidString
@@ -915,9 +949,11 @@ struct IOSAIAssistantPanel: View {
     /// Fail closed: do not clear the visible conversation until persistent deletion succeeds.
     private func clearPersistedConversation(_ cid: String) {
         guard !isClearingConversation else { return }
-        guard let db = appCore.db else {
+        guard let db = appCore.db,
+              let ownerUserId = appCore.currentUser?.id,
+              ownerUserId > 0 else {
             clearConversationRetryId = cid
-            clearConversationError = "The app database is unavailable. Your stored messages were not deleted; try again after the app finishes loading."
+            clearConversationError = "The database or signed-in user is unavailable. Your stored messages were not deleted; try again after signing in and the app finishes loading."
             return
         }
 
@@ -929,14 +965,14 @@ struct IOSAIAssistantPanel: View {
         Task {
             do {
                 await pendingHelpPersistence?.value
-                try await FoundationModelsService.clearPersistedConversation(cid, from: db)
-                await aiService.clearConversation()
+                try await aiService.clearConversation(cid, ownerUserId: ownerUserId, from: db)
                 await MainActor.run {
                     if conversationId == cid {
                         messages = [welcomeMessage()]
                     }
                     clearConversationError = nil
                     clearConversationRetryId = nil
+                    conversationPersistenceError = nil
                     isClearingConversation = false
                 }
             } catch {
@@ -957,17 +993,30 @@ struct IOSAIAssistantPanel: View {
     }
 
     private func renderedMarkdown(_ content: String) -> AttributedString {
-        (try? AttributedString(markdown: content)) ?? AttributedString(content)
+        (try? AttributedString(
+            markdown: content,
+            options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .full)
+        )) ?? AttributedString(content)
+    }
+
+    private func plainText(fromMarkdown content: String) -> String {
+        String(renderedMarkdown(content).characters)
     }
 
     /// Load previously saved messages for the current conversation from the DB.
     private func loadSavedMessages() async {
-        guard let db = appCore.db else {
+        guard let db = appCore.db,
+              let ownerUserId = appCore.currentUser?.id,
+              ownerUserId > 0 else {
             addWelcomeMessageIfNeeded()
             return
         }
         do {
-            let saved = try await FoundationModelsService.loadConversation(conversationId, from: db)
+            let saved = try await aiService.resumeConversation(
+                conversationId,
+                ownerUserId: ownerUserId,
+                from: db
+            )
             if saved.isEmpty {
                 addWelcomeMessageIfNeeded()
             } else {
@@ -995,8 +1044,13 @@ struct IOSAIAssistantPanel: View {
     private func resumeLastConversationIfNeeded() async {
         guard !didAttemptResume else { return }
         didAttemptResume = true
-        guard let db = appCore.db else { return }
-        if let latest = try? await FoundationModelsService.latestConversationId(from: db) {
+        guard let db = appCore.db,
+              let ownerUserId = appCore.currentUser?.id,
+              ownerUserId > 0 else { return }
+        if let latest = try? await FoundationModelsService.latestConversationId(
+            ownerUserId: ownerUserId,
+            from: db
+        ) {
             conversationId = latest
         }
     }
@@ -1007,13 +1061,18 @@ struct IOSAIAssistantPanel: View {
     }
 
     private func loadConversationList() async {
-        guard let db = appCore.db else {
+        guard let db = appCore.db,
+              let ownerUserId = appCore.currentUser?.id,
+              ownerUserId > 0 else {
             savedConversations = []
             return
         }
         isLoadingConversations = true
         defer { isLoadingConversations = false }
-        if let rows = try? await FoundationModelsService.listConversations(from: db) {
+        if let rows = try? await FoundationModelsService.listConversations(
+            ownerUserId: ownerUserId,
+            from: db
+        ) {
             savedConversations = rows.map {
                 SavedConversation(id: $0.id, lastMessageAt: $0.lastMessageAt, preview: $0.preview)
             }
@@ -1029,7 +1088,6 @@ struct IOSAIAssistantPanel: View {
         }
         clearConversationError = nil
         clearConversationRetryId = nil
-        Task { await aiService.clearConversation() }
         conversationId = id
         messages = []
         showConversationPicker = false
