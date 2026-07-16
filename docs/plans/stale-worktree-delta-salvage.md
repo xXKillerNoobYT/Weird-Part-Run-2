@@ -8,7 +8,7 @@ Paperclip WEI-4980 reconciles small uncommitted deltas left in registered WPR2 w
 
 - Tab editor: Paperclip WEI-4508 explicitly asks for one fluid reorderable list so modules can cross the Fast Access/More boundary by drag instead of moving between separate lists.
 - Beta bug reporting guide: GitHub #574 is closed and `ReportABugPage` exposes Settings → Report a Bug, Open GitHub issue, and Share report. The guide must describe the shipped flow rather than list it as unavailable.
-- People add sheets: GitHub #1429 requires save failures in Customer, Contractor, Employee, Hat, Team, and Contact creation to identify the failed save operation rather than misleadingly report a load failure.
+- People add sheets: this PR preserves the six top-level GitHub #1429 save-context corrections for Customer, Contractor, Employee, Hat, Team, and Contact creation. #1429 remains open for the later expanded same-class detail-page/delete/action paths.
 - Delivery date tests: the test class uses main-actor-isolated formatter state and should be isolated to `@MainActor` to avoid the Swift 6 actor warning found by WEI-4554.
 - Repository hygiene: `.worktrees/` is generated execution state and should be ignored.
 
@@ -22,7 +22,7 @@ No new backend contract, data model, visual language, or navigation route is int
 | WEI-4508 | One-list tab editor is absent from main and has no PR. | Preserve. |
 | WEI-4515 | Shipped in-app bug reporter exists on main, but the beta guide still says it is unavailable. No PR exists. | Preserve. |
 | WEI-4532 | Geofence lunch/break behavior is superseded by merged PR #1420 / commit `d0a0166a`, whose implementation also centralizes service-unavailable handling. | Do not duplicate. |
-| WEI-4542 | Six save-context corrections and regression coverage are absent from main; GitHub #1429 remains open. | Preserve. |
+| WEI-4542 | Six save-context corrections and regression coverage are absent from main. Preserve them here while linking the PR with `Refs #1429` so the expanded detail/action-path scope stays open. | Preserve partial fix; do not auto-close #1429. |
 | WEI-4554 | Dispatch warning fix is superseded by merged PR #1438 / commit `ed961899`. The independent `DeliveryTimelineBarDateTests` MainActor annotation is absent from main. | Preserve only the test isolation annotation. |
 | WEI-4563, WEI-4570, WEI-4571 | Overlapping QR actor/race changes are superseded by PR #1443's stronger `QRScanDeliveryGate`, executable callback-count coverage, and single MainActor completion path in parent PR #1441. PR #1449 adds the remaining derived-feedback preservation. | Do not duplicate. |
 
