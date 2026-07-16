@@ -22,6 +22,27 @@ struct TabBarEditorView: View {
     private var bottomIds: [String] { Array(orderedIds.prefix(min(4, orderedIds.count))) }
     private var moreIds: [String] { Array(orderedIds.dropFirst(min(4, orderedIds.count))) }
 
+    private enum EditorItem: Identifiable, Equatable {
+        case module(String)
+        case moreDivider
+
+        var id: String {
+            switch self {
+            case .module(let id): "module-\(id)"
+            case .moreDivider: "more-divider"
+            }
+        }
+    }
+
+    private var editorItems: [EditorItem] {
+        var items = bottomIds.map(EditorItem.module)
+        if !moreIds.isEmpty {
+            items.append(.moreDivider)
+            items.append(contentsOf: moreIds.map(EditorItem.module))
+        }
+        return items
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -30,14 +51,19 @@ struct TabBarEditorView: View {
 
                 List {
                     Section {
-                        ForEach(Array(orderedIds.enumerated()), id: \.element) { index, moduleId in
-                            if let mod = allModulesById[moduleId] {
-                                moduleRow(mod, index: index, showsMoreDivider: index == 4)
+                        ForEach(editorItems) { item in
+                            switch item {
+                            case .module(let moduleId):
+                                if let index = orderedIds.firstIndex(of: moduleId),
+                                   let module = allModulesById[moduleId] {
+                                    moduleRow(module, index: index)
+                                }
+                            case .moreDivider:
+                                moreDivider
                             }
                         }
                         .onMove { from, to in
-                            orderedIds.move(fromOffsets: from, toOffset: to)
-                            showDemoteMinimumWarning = false
+                            moveEditorItems(from: from, to: to)
                         }
                     } header: {
                         HStack {
@@ -154,61 +180,77 @@ struct TabBarEditorView: View {
                 .frame(height: 1)
         }
         .listRowBackground(Color(.secondarySystemGroupedBackground))
-        .accessibilityElement(children: .combine)
+        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+        .listRowSeparator(.hidden)
+        .moveDisabled(true)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("More menu starts here. Drag rows above this divider for fast access, or below it for the More menu.")
+        .accessibilityAddTraits(.isHeader)
     }
 
     @ViewBuilder
-    private func moduleRow(_ module: AppModule, index: Int, showsMoreDivider: Bool) -> some View {
+    private func moduleRow(_ module: AppModule, index: Int) -> some View {
         let isFastAccess = index < 4
 
-        VStack(spacing: 8) {
-            if showsMoreDivider {
-                moreDivider
+        HStack(spacing: 12) {
+            Image(systemName: module.icon)
+                .font(.title3)
+                .foregroundStyle(.tint)
+                .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(module.label)
+                    .font(.body)
+
+                Text(isFastAccess ? "Fast Access Bar" : "More menu")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
-            HStack(spacing: 12) {
-                Image(systemName: module.icon)
-                    .font(.title3)
-                    .foregroundStyle(.tint)
-                    .frame(width: 28)
+            Spacer()
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(module.label)
-                        .font(.body)
-
-                    Text(isFastAccess ? "Fast Access Bar" : "More menu")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                // Move-between-sections button
-                Button {
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        if isFastAccess {
-                            demoteModule(module.id)
-                        } else {
-                            promoteModule(module.id)
-                        }
+            // Move-between-sections button
+            Button {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    if isFastAccess {
+                        demoteModule(module.id)
+                    } else {
+                        promoteModule(module.id)
                     }
-                } label: {
-                    Image(systemName: isFastAccess ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
-                        .font(.title3)
-                        .foregroundStyle(isFastAccess ? .orange : .green)
                 }
-                .buttonStyle(.plain)
-                .dsMinTapTarget()
-                .accessibilityLabel(isFastAccess
-                                    ? "Move \(module.label) to More menu"
-                                    : "Move \(module.label) to tab bar")
+            } label: {
+                Image(systemName: isFastAccess ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(isFastAccess ? .orange : .green)
             }
+            .buttonStyle(.plain)
+            .dsMinTapTarget()
+            .accessibilityLabel(isFastAccess
+                                ? "Move \(module.label) to More menu"
+                                : "Move \(module.label) to tab bar")
         }
         .padding(.vertical, 2)
     }
 
     // MARK: - Movement
+
+    /// Reorders module rows while keeping the More boundary fixed after the
+    /// fourth module. The divider participates in layout only and is never
+    /// persisted or accepted as a drag source.
+    private func moveEditorItems(from source: IndexSet, to destination: Int) {
+        let currentItems = editorItems
+        guard source.allSatisfy({ currentItems.indices.contains($0) }),
+              source.allSatisfy({ currentItems[$0] != .moreDivider }),
+              destination <= currentItems.count else { return }
+
+        var movedItems = currentItems
+        movedItems.move(fromOffsets: source, toOffset: destination)
+        orderedIds = movedItems.compactMap { item in
+            guard case .module(let id) = item else { return nil }
+            return id
+        }
+        showDemoteMinimumWarning = false
+    }
 
     /// Move a module from "More" into "Fast Access Bar".
     /// Inserts at the bottom of the first 4 rows so the displaced row naturally
