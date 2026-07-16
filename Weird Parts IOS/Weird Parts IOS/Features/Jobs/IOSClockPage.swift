@@ -643,7 +643,7 @@ struct IOSClockPage: View {
         }
     }
 
-    // MARK: - Active Break Banner
+    // MARK: - Active Supply Run Card
 
     private func activeSupplyRunCard(startedAt: Date) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -684,6 +684,8 @@ struct IOSClockPage: View {
         .accessibilityLabel("Supply Run Active. Started \(formatClockTime(startedAt)). Duration \(supplyRunElapsedText). You stay clocked in and billable while this supply run is active.")
         .accessibilityIdentifier("clock-active-supply-run-card")
     }
+
+    // MARK: - Active Break Banner
 
     private func activeBreakBanner(_ breakRecord: BreakRecord) -> some View {
         VStack(spacing: 6) {

@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 
 /// Regression coverage for GitHub #1450 / Paperclip WEI-4906.
