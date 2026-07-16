@@ -9,6 +9,7 @@ import XCTest
 /// All tests inject a fixed clock through `DeliveryTimelineBar.now`, so
 /// they are deterministic and genuinely exercise multiple times of day —
 /// including instants just before local midnight.
+@MainActor
 final class DeliveryTimelineBarDateTests: XCTestCase {
     /// Single reference instant captured once per test case so a midnight
     /// rollover mid-test cannot skew date strings against assertions.
