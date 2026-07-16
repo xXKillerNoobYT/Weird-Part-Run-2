@@ -482,6 +482,7 @@ public actor FoundationModelsService {
                     tools: tools,
                     instructions: chatInstructions
                 )
+                let startingLifecycleRevision = conversationLifecycleRevision
                 let response = try await session.respond(to: query)
                 let text = response.content.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
 
@@ -500,8 +501,12 @@ public actor FoundationModelsService {
                 guard persisted else {
                     return .fail("Conversation was cleared while the response was being generated")
                 }
-                messageHistory.append(userMsg)
-                messageHistory.append(assistantMsg)
+                guard appendGeneratedMessagesIfCurrent(
+                    [userMsg, assistantMsg],
+                    expectedLifecycleRevision: startingLifecycleRevision
+                ) else {
+                    return .fail("Conversation changed while the response was being generated")
+                }
 
                 return .ok(text)
             } catch {
@@ -530,6 +535,10 @@ public actor FoundationModelsService {
            let existing = activeChatSession as? LanguageModelSession {
             return existing
         }
+        // Switching model sessions invalidates any response still suspended in the prior
+        // session. Without this boundary, Conversation A can finish after Conversation B
+        // becomes active and append A's turns into B's staged transcript.
+        conversationLifecycleRevision &+= 1
         let scope = AIConversationScope(
             conversationId: identity.conversationId,
             ownerUserId: identity.userId ?? 0
@@ -736,6 +745,27 @@ public actor FoundationModelsService {
     /// Returns the in-memory message history for debugging / display.
     public func currentMessageHistory() -> [AIConversationMessage] {
         messageHistory
+    }
+
+    /// Captures the actor lifecycle generation that owns an in-flight model response.
+    /// Internal visibility keeps the async Resume-vs-generation contract testable without
+    /// requiring the Foundation Models runtime to produce a response.
+    func generationLifecycleRevision() -> UInt {
+        conversationLifecycleRevision
+    }
+
+    /// Appends generated turns only while the originating model lifecycle still owns the
+    /// actor's staged history. Resume, Help staging, Clear, New/logout, and a model-session
+    /// switch all advance the lifecycle revision before replacing that history.
+    func appendGeneratedMessagesIfCurrent(
+        _ messages: [AIConversationMessage],
+        expectedLifecycleRevision: UInt
+    ) -> Bool {
+        guard conversationLifecycleRevision == expectedLifecycleRevision else {
+            return false
+        }
+        messageHistory.append(contentsOf: messages)
+        return true
     }
 
     func persistenceRevision(for scope: AIConversationScope) -> Int {

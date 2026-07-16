@@ -3,13 +3,13 @@ import XCTest
 /// Regression coverage for GitHub #1459 / WEI-4986: Help can seed a local,
 /// read-only assistant turn and users can safely resume persisted conversations.
 final class AIHelpResumeRegressionTests: XCTestCase {
-    func testHelpHandoffUsesStableNotificationNamesAndPayload() throws {
+    func testHelpHandoffUsesStableNotificationAndOwnedPayload() throws {
         let navigation = try Self.readSource("Navigation/NavigationConfig.swift")
         let helpSheet = try Self.readSource("Shared/PageHelpSheet.swift")
         let mainView = try Self.readSource("Navigation/IOSMainView.swift")
 
         XCTAssertTrue(navigation.contains("WiredPart.askAIAboutHelp"))
-        XCTAssertTrue(navigation.contains("WiredPart.seedAIHelpRequest"))
+        XCTAssertFalse(navigation.contains("WiredPart.seedAIHelpRequest"))
         XCTAssertTrue(
             helpSheet.contains("name: .askAIAboutHelp")
                 && helpSheet.contains("\"title\": title")

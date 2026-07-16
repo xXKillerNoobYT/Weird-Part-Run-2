@@ -520,10 +520,6 @@ struct IOSAIAssistantPanel: View {
         .onReceive(NotificationCenter.default.publisher(for: .appDidLogout)) { _ in
             resetForLogout()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .seedAIHelpRequest)) { notification in
-            queuedHelpRequest = notification.userInfo
-            consumePendingHelpRequestIfReady()
-        }
     }
 
     // MARK: - Availability Header

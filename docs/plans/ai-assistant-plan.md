@@ -32,6 +32,7 @@ Review and user-like QA found five requirements that must be satisfied before th
 7. The actor persists and stages locally seeded Help turns before follow-up input uses the model, and Markdown rendering preserves explicit blank-line boundaries in visible and accessibility text.
 8. Clear is unavailable while a response is pending and synchronously advances a UI conversation revision before awaiting Help staging or persistent deletion. Send captures that revision and checks it both before model generation and before appending a response, so a programmatic or stale Clear cannot recreate visible or persisted history after reporting success.
 9. Conversation hydration owns a visible loading state that disables both the composer and Send control. Resume starts that state synchronously, and only the matching owner/conversation/revision load may clear it, so an immediate prompt cannot create an empty model session or be overwritten by delayed persisted rows.
+10. Model generation owns an actor lifecycle revision through completion. Resume, Help staging, Clear, New/logout, or switching the active model session invalidates an older generation before it can append turns to the newly staged transcript, so Conversation A cannot contaminate Conversation B's next model context.
 
 Verification requires focused source-regression tests for notification wiring, help/title lookup, accessible controls, resume hooks, local-only seeding, and preservation of assistant bug-report context, followed by an iOS build and user-like iPhone/iPad verification.
 

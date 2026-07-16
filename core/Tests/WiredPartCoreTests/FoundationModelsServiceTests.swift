@@ -481,6 +481,31 @@ struct FoundationModelsServiceTests {
         #expect(await service.currentMessageHistory().map(\.content) == ["Conversation B"])
     }
 
+    @Test("resuming another conversation rejects an in-flight generation's stale history append")
+    func testResumeConversation_rejectsStaleGenerationAppend() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = FoundationModelsService()
+        try await FoundationModelsService.saveMessages([
+            AIConversationMessage(conversationId: "generation-a", role: "user", content: "Conversation A"),
+            AIConversationMessage(conversationId: "generation-b", role: "user", content: "Conversation B"),
+        ], ownerUserId: 77, to: env.db)
+
+        _ = try await service.resumeConversation("generation-a", ownerUserId: 77, from: env.db)
+        let generationARevision = await service.generationLifecycleRevision()
+
+        _ = try await service.resumeConversation("generation-b", ownerUserId: 77, from: env.db)
+        let appended = await service.appendGeneratedMessagesIfCurrent([
+            AIConversationMessage(
+                conversationId: "generation-a",
+                role: "assistant",
+                content: "Delayed Conversation A response"
+            ),
+        ], expectedLifecycleRevision: generationARevision)
+
+        #expect(!appended)
+        #expect(await service.currentMessageHistory().map(\.content) == ["Conversation B"])
+    }
+
     @Test("clear prevents delayed resume from restaging deleted history")
     func testResumeConversation_clearWinsOverDelayedHydration() async throws {
         let env = try E2ETestHelpers.setUp()
