@@ -55,6 +55,31 @@ final class WEI3900ClockFlowQATests: XCTestCase {
         verifyBreakLunchAndSupplyRunControlsAreReachable()
     }
 
+    /// GitHub #1450 / WEI-4956 regression: the canonical active Supply Run
+    /// card must cross a real minute boundary while the foreground Clock page
+    /// remains untouched. This intentionally waits instead of navigating away
+    /// and back, which previously hid the invalidated timer bug.
+    @MainActor
+    func testActiveSupplyRunDurationAdvancesWithoutLeavingClockPage() throws {
+        app.launchArguments.append("-UITestingActiveSupplyRunNearMinute")
+        app.launch()
+        RunLoop.current.run(until: Date().addingTimeInterval(8))
+
+        XCTAssertTrue(waitForClockPage())
+        let card = app.descendants(matching: .any)["clock-active-supply-run-card"]
+        for _ in 0..<6 where !card.exists {
+            app.swipeUp()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        }
+        XCTAssertTrue(card.waitForExistence(timeout: 10), "The deterministic active Supply Run should show one canonical card.")
+        XCTAssertTrue(card.label.contains("Duration 0h 0m"), "The active Supply Run should begin inside its first minute.")
+
+        XCTAssertTrue(
+            waitUntil(timeout: 30) { card.label.contains("Duration 0h 1m") },
+            "The foreground card accessibility label must advance to 0h 1m without leaving or re-entering the Clock page. Last label: \(card.label)"
+        )
+    }
+
     private func waitForClockPage(timeout: TimeInterval = 25) -> Bool {
         waitUntil(timeout: timeout) {
             app.navigationBars["Clock In / Out"].exists

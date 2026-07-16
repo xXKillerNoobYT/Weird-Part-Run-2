@@ -38,7 +38,15 @@ final class ClockSupplyRunCardRegressionTests: XCTestCase {
 
         XCTAssertTrue(card.contains("Text(\"Started\")"))
         XCTAssertTrue(card.contains("Text(\"Duration\")"))
-        XCTAssertTrue(card.contains("Text(supplyRunElapsedText)"), "Supply Run duration must remain live.")
+        XCTAssertTrue(
+            card.contains("TimelineView(.periodic(from: .now, by: 1))"),
+            "The active card must own a foreground timeline so its duration keeps advancing after the state-picker sheet dismisses."
+        )
+        XCTAssertTrue(card.contains("formatDuration(max(0, context.date.timeIntervalSince(startedAt)))"))
+        XCTAssertFalse(
+            source.contains("@State private var supplyRunElapsedText"),
+            "Supply Run duration must not depend on a manually managed timer state that can be invalidated by sheet lifecycle events."
+        )
         XCTAssertTrue(card.contains("You stay clocked in and billable while this supply run is active."))
         XCTAssertTrue(card.contains(".accessibilityElement(children: .combine)"))
         XCTAssertTrue(card.contains(".accessibilityLabel("))

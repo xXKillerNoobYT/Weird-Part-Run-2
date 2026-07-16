@@ -34,7 +34,6 @@ struct IOSClockPage: View {
     // Activity status (working, supply_run, break, lunch_paid, lunch_unpaid)
     @State private var activityStatus: String = "working"
     @State private var activeSupplyRunStartDate: Date?
-    @State private var supplyRunElapsedText: String = ""
 
     // Break/lunch tracking
     @State private var activeBreakRecord: BreakRecord?
@@ -664,47 +663,51 @@ struct IOSClockPage: View {
     // MARK: - Active Supply Run Card
 
     private func activeSupplyRunCard(startedAt: Date) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Supply Run Active", systemImage: "car.fill")
-                .font(.subheadline)
-                .fontWeight(.semibold)
-                .foregroundStyle(.orange)
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let duration = formatDuration(max(0, context.date.timeIntervalSince(startedAt)))
 
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Started")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(formatClockTime(startedAt))
-                        .font(.system(.body, design: .monospaced))
-                        .fontWeight(.medium)
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Supply Run Active", systemImage: "car.fill")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.orange)
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Started")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(formatClockTime(startedAt))
+                            .font(.system(.body, design: .monospaced))
+                            .fontWeight(.medium)
+                    }
+
+                    Spacer()
+
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("Duration")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(duration)
+                            .font(.system(.body, design: .monospaced))
+                            .fontWeight(.medium)
+                    }
                 }
 
-                Spacer()
-
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("Duration")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(supplyRunElapsedText)
-                        .font(.system(.body, design: .monospaced))
-                        .fontWeight(.medium)
-                }
+                Text("You stay clocked in and billable while this supply run is active.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-
-            Text("You stay clocked in and billable while this supply run is active.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            // The card is a compact operational summary. Cap its visual typography
+            // at xxxLarge so the complete evidence card fits in the compact Clock
+            // viewport at AX5. Its combined accessibility label remains complete.
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+            .padding(10)
+            .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Supply Run Active. Started \(formatClockTime(startedAt)). Duration \(duration). You stay clocked in and billable while this supply run is active.")
+            .accessibilityIdentifier("clock-active-supply-run-card")
         }
-        // The card is a compact operational summary. Cap its visual typography
-        // at xxxLarge so the complete evidence card fits in the compact Clock
-        // viewport at AX5. Its combined accessibility label remains complete.
-        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-        .padding(10)
-        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Supply Run Active. Started \(formatClockTime(startedAt)). Duration \(supplyRunElapsedText). You stay clocked in and billable while this supply run is active.")
-        .accessibilityIdentifier("clock-active-supply-run-card")
     }
 
     // MARK: - Active Break Banner
@@ -1646,7 +1649,6 @@ struct IOSClockPage: View {
                 activeBreakRecord = nil
                 activityStatus = "working"
                 activeSupplyRunStartDate = nil
-                supplyRunElapsedText = ""
                 breakElapsedText = ""
                 errorMessage = nil
             }
@@ -1777,11 +1779,6 @@ struct IOSClockPage: View {
             await MainActor.run {
                 activityStatus = newStatus
                 activeSupplyRunStartDate = newStart
-                if let newStart {
-                    supplyRunElapsedText = formatDuration(Date().timeIntervalSince(newStart))
-                } else {
-                    supplyRunElapsedText = ""
-                }
                 errorMessage = nil
             }
         } catch {
@@ -1870,12 +1867,10 @@ struct IOSClockPage: View {
 
     private func startElapsedTimer(clockInISO: String) {
         updateElapsedText(clockInISO: clockInISO)
-        updateSupplyRunElapsedText()
         elapsedTimer?.invalidate()
         elapsedTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
             Task { @MainActor in
                 updateElapsedText(clockInISO: clockInISO)
-                updateSupplyRunElapsedText()
             }
         }
     }
@@ -1893,17 +1888,6 @@ struct IOSClockPage: View {
         let hours = Int(elapsed) / 3600
         let minutes = (Int(elapsed) % 3600) / 60
         elapsedText = "\(hours)h \(minutes)m"
-        if let activeSupplyRunStartDate {
-            supplyRunElapsedText = formatDuration(max(0, Date().timeIntervalSince(activeSupplyRunStartDate)))
-        }
-    }
-
-    private func updateSupplyRunElapsedText() {
-        guard let activeSupplyRunStartDate else {
-            supplyRunElapsedText = ""
-            return
-        }
-        supplyRunElapsedText = formatDuration(max(0, Date().timeIntervalSince(activeSupplyRunStartDate)))
     }
 
     // MARK: - To-Do Actions
@@ -2141,7 +2125,6 @@ struct IOSClockPage: View {
                 if let brk = currentBreak {
                     activityStatus = brk.breakType
                     activeSupplyRunStartDate = nil
-                    supplyRunElapsedText = ""
                     if let timer = brk.timerDurationMinutes, timer > 0 {
                         switch brk.breakType {
                         case "break": breakBudgetMinutes = timer
@@ -2151,15 +2134,9 @@ struct IOSClockPage: View {
                     }
                     startBreakTimer()
                     activeSupplyRunStartDate = nil
-                    supplyRunElapsedText = ""
                 } else {
                     activityStatus = currentActivity
                     activeSupplyRunStartDate = currentSupplyRunStart
-                    if let currentSupplyRunStart {
-                        supplyRunElapsedText = formatDuration(Date().timeIntervalSince(currentSupplyRunStart))
-                    } else {
-                        supplyRunElapsedText = ""
-                    }
                     breakTimer?.invalidate()
                     breakTimer = nil
                     breakElapsedText = ""
@@ -2176,7 +2153,6 @@ struct IOSClockPage: View {
                     elapsedTimer = nil
                     elapsedText = "0h 0m"
                     activeSupplyRunStartDate = nil
-                    supplyRunElapsedText = ""
                     showRecoveredTimerBanner = false
                     recoveredBannerDismissed = false
                 }

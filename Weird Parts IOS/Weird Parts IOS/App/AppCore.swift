@@ -993,6 +993,23 @@ final class AppCore: ObservableObject {
                     sql: "SELECT id FROM jobs WHERE job_number = 'UITEST-JPO-001' AND deleted_at IS NULL"
                 )!
 
+                if ProcessInfo.processInfo.arguments.contains("-UITestingActiveSupplyRunNearMinute") {
+                    let clockIn = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-300))
+                    let supplyRunStart = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-30))
+                    try dbConn.execute(
+                        sql: "DELETE FROM labor_entries WHERE user_id = ? AND status = 'clocked_in' AND clock_out IS NULL",
+                        arguments: [userId]
+                    )
+                    try dbConn.execute(
+                        sql: """
+                            INSERT INTO labor_entries
+                            (user_id, job_id, clock_in, status, notes, created_at)
+                            VALUES (?, ?, ?, 'clocked_in', ?, ?)
+                            """,
+                        arguments: [userId, jobId, clockIn, "[supply_run_start:\(supplyRunStart)]", clockIn]
+                    )
+                }
+
                 try dbConn.execute(
                     sql: """
                         INSERT OR IGNORE INTO job_parts_orders
