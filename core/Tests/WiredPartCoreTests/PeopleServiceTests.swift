@@ -220,6 +220,41 @@ struct PeopleServiceTests {
         #expect(membershipCount == 0)
     }
 
+    @Test("Update and delete ignore inactive teams")
+    func testUpdateAndDeleteIgnoreInactiveTeams() throws {
+        let env = try E2ETestHelpers.setUp()
+        let teamId = try env.people.createTeam(
+            name: "Inactive Team",
+            description: "Original",
+            actorUserId: env.adminUserId
+        )
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE employee_teams SET is_active = 0 WHERE id = ?",
+                arguments: [teamId]
+            )
+        }
+
+        try env.people.updateTeam(
+            teamId: teamId,
+            name: "Should Not Stick",
+            description: "Changed",
+            actorUserId: env.adminUserId
+        )
+        try env.people.deleteTeam(teamId: teamId, actorUserId: env.adminUserId)
+
+        let inactiveTeam = try #require(try env.db.writer.read { db in
+            try Row.fetchOne(
+                db,
+                sql: "SELECT name, description, deleted_at FROM employee_teams WHERE id = ?",
+                arguments: [teamId]
+            )
+        })
+        #expect(inactiveTeam["name"] as String? == "Inactive Team")
+        #expect(inactiveTeam["description"] as String? == "Original")
+        #expect(inactiveTeam["deleted_at"] as String? == nil)
+    }
+
     @Test("Re-adding a removed team member restores the existing membership")
     func testAddTeamMemberRestoresSoftDeletedMembership() throws {
         let env = try E2ETestHelpers.setUp()

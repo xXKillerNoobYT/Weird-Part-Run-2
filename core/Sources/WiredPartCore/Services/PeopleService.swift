@@ -1313,7 +1313,7 @@ public final class PeopleService: Sendable {
                 sql: """
                     UPDATE employee_teams
                     SET name = ?, description = ?, updated_by = ?, updated_at = datetime('now')
-                    WHERE id = ? AND deleted_at IS NULL
+                    WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                     """,
                 arguments: [name, description, actorUserId, teamId]
             )
@@ -1333,7 +1333,7 @@ public final class PeopleService: Sendable {
                     UPDATE employee_teams
                     SET deleted_at = datetime('now'), deleted_by = ?, updated_by = ?,
                         updated_at = datetime('now')
-                    WHERE id = ? AND deleted_at IS NULL
+                    WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                     """,
                 arguments: [actorUserId, actorUserId, teamId]
             )
