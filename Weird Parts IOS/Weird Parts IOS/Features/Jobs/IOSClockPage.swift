@@ -12,6 +12,7 @@ import os.log
 /// time to a specific job without clocking out/in.
 struct IOSClockPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @StateObject private var locationManager = LocationManager()
     @StateObject private var geofenceManager = GeofenceManager()
 
@@ -477,6 +478,15 @@ struct IOSClockPage: View {
                     flexPoolSection
                     todayHoursSection
                 }
+
+                // The compact tab bar and floating assistant are overlays in the
+                // app shell. Keep enough trailing scroll content for the final
+                // Clock controls to move completely above both at large text
+                // sizes instead of stopping underneath them (#1456).
+                Color.clear
+                    .frame(height: dynamicTypeSize.isAccessibilitySize ? 104 : 76)
+                    .listRowBackground(Color.clear)
+                    .accessibilityHidden(true)
             }
             .accessibilityIdentifier("clockPage_root")
             .listStyle(.insetGrouped)
@@ -486,7 +496,11 @@ struct IOSClockPage: View {
     // MARK: - Clocked-In Section
 
     private func clockedInSection(_ entry: JobsService.LaborEntryRow) -> some View {
-        Section("Current Status") {
+        let actionLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: 12))
+            : AnyLayout(HStackLayout(spacing: 12))
+
+        return Section("Current Status") {
             VStack(alignment: .leading, spacing: 8) {
                 // Status label
                 Label(statusLabel, systemImage: statusIcon)
@@ -527,13 +541,14 @@ struct IOSClockPage: View {
                 }
 
                 // Clock Out + Switch Job (disabled during active break)
-                HStack(spacing: 12) {
+                actionLayout {
                     Button(role: .destructive) {
                         pendingClockOutEntryId = entry.id
                         showClockOutConfirmation = true
                     } label: {
                         Label("Clock Out", systemImage: "stop.circle.fill")
-                            .frame(maxWidth: .infinity)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
@@ -557,7 +572,8 @@ struct IOSClockPage: View {
                         switchJob(entryId: entry.id)
                     } label: {
                         Label("Switch Job", systemImage: "arrow.triangle.swap")
-                            .frame(maxWidth: .infinity)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
@@ -585,7 +601,8 @@ struct IOSClockPage: View {
                     } label: {
                         Label(activeBreakRecord?.breakType == "lunch_unpaid" ? "Resume Work" : "End \(activeBreakRecord?.breakType == "break" ? "Break" : "Lunch")",
                               systemImage: "checkmark.circle.fill")
-                            .frame(maxWidth: .infinity)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.orange)
@@ -599,7 +616,8 @@ struct IOSClockPage: View {
                             activityStatus == "supply_run" ? "Break / Lunch / End Supply Run" : "Break / Lunch / Supply Run",
                             systemImage: activityStatus == "supply_run" ? "checkmark.circle" : "timer"
                         )
-                        .frame(maxWidth: .infinity)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(activityStatus == "supply_run" ? .green : .orange)
@@ -678,6 +696,10 @@ struct IOSClockPage: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+        // The card is a compact operational summary. Cap its visual typography
+        // at xxxLarge so the complete evidence card fits in the compact Clock
+        // viewport at AX5. Its combined accessibility label remains complete.
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .padding(10)
         .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
         .accessibilityElement(children: .combine)

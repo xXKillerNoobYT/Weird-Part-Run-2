@@ -42,11 +42,65 @@ final class ClockSupplyRunCardRegressionTests: XCTestCase {
         XCTAssertTrue(card.contains("You stay clocked in and billable while this supply run is active."))
         XCTAssertTrue(card.contains(".accessibilityElement(children: .combine)"))
         XCTAssertTrue(card.contains(".accessibilityLabel("))
+        XCTAssertTrue(
+            card.contains(".dynamicTypeSize(...DynamicTypeSize.xxxLarge)"),
+            "The compact evidence card must stay fully visible at AX5 instead of growing beyond the phone viewport."
+        )
         XCTAssertEqual(
             Self.occurrenceCount(of: ".accessibilityIdentifier(\"clock-active-supply-run-card\")", in: source),
             1,
             "The canonical card must expose exactly one stable accessibility identifier."
         )
+    }
+
+    func testClockAX5LayoutStacksActionsAndReservesBottomChromeClearance() throws {
+        let source = try Self.readClockSource()
+        let section = try Self.section(
+            named: "private func clockedInSection",
+            in: source,
+            endingBefore: "// MARK: - Status Helpers"
+        )
+
+        XCTAssertTrue(source.contains("@Environment(\\.dynamicTypeSize) private var dynamicTypeSize"))
+        XCTAssertTrue(section.contains("AnyLayout(VStackLayout(spacing: 12))"))
+        XCTAssertTrue(section.contains("AnyLayout(HStackLayout(spacing: 12))"))
+        XCTAssertGreaterThanOrEqual(
+            Self.occurrenceCount(of: ".frame(maxWidth: .infinity, minHeight: 44)", in: section),
+            4,
+            "Clock actions must retain explicit 44pt minimum targets after AX layout changes."
+        )
+        XCTAssertTrue(
+            source.contains(".frame(height: dynamicTypeSize.isAccessibilitySize ? 104 : 76)"),
+            "Clock scroll content must clear the floating assistant and persistent tab bar."
+        )
+    }
+
+    func testAX5NavigationChromeDoesNotExpandAcrossClockContent() throws {
+        let source = try Self.readMainViewSource()
+        let assistant = try Self.section(
+            named: "private func aiFloatingButton",
+            in: source,
+            endingBefore: "// MARK: - More Tab"
+        )
+        let chip = try Self.section(
+            named: "private func subTabChip",
+            in: source,
+            endingBefore: "\n}"
+        )
+
+        XCTAssertFalse(
+            assistant.contains(".dsMinTapTarget()"),
+            "The fixed 52pt assistant must not scale its hit frame over card copy at AX5."
+        )
+        XCTAssertTrue(assistant.contains(".frame(width: 52, height: 52)"))
+        XCTAssertTrue(
+            chip.contains(".dynamicTypeSize(...DynamicTypeSize.large)"),
+            "Sub-tab visuals must remain compact enough to avoid covering adjacent tabs at AX5."
+        )
+        XCTAssertTrue(chip.contains(".frame(minWidth: 44, minHeight: 44)"))
+        XCTAssertTrue(source.contains("!dynamicTypeSize.isAccessibilitySize"))
+        XCTAssertTrue(source.contains(".accessibilityIdentifier(\"moreAIAssistantButton\")"))
+        XCTAssertTrue(source.contains(".accessibilityIdentifier(\"sidebarAIAssistantButton\")"))
     }
 
     private static func section(named startMarker: String, in source: String, endingBefore endMarker: String) throws -> String {
@@ -76,6 +130,18 @@ final class ClockSupplyRunCardRegressionTests: XCTestCase {
             .appendingPathComponent("Features")
             .appendingPathComponent("Jobs")
             .appendingPathComponent("IOSClockPage.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    private static func readMainViewSource(file: StaticString = #filePath) throws -> String {
+        let testFileURL = URL(fileURLWithPath: "\(file)")
+        let projectRoot = testFileURL
+            .deletingLastPathComponent() // Weird Parts IOSTests
+            .deletingLastPathComponent() // Weird Parts IOS
+        let sourceURL = projectRoot
+            .appendingPathComponent("Weird Parts IOS")
+            .appendingPathComponent("Navigation")
+            .appendingPathComponent("IOSMainView.swift")
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 }

@@ -13,6 +13,7 @@ struct IOSMainView: View {
     @EnvironmentObject private var tabPrefs: TabBarPreferences
     @EnvironmentObject private var badgeManager: BadgeCountManager
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var selectedModuleId: String = "dashboard"
     @State private var showLogoutConfirm = false
     @State private var showAIAssistant = false
@@ -287,7 +288,7 @@ struct IOSMainView: View {
                 .accessibilityIdentifier("tab_more")
         }
         .overlay(alignment: .bottomTrailing) {
-            if !showAIAssistant || aiDisplayMode == .sheet {
+            if (!showAIAssistant || aiDisplayMode == .sheet) && !dynamicTypeSize.isAccessibilitySize {
                 aiFloatingButton(bottomPadding: 90)
             }
         }
@@ -351,7 +352,7 @@ struct IOSMainView: View {
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if !showAIAssistant || aiDisplayMode == .sheet {
+            if (!showAIAssistant || aiDisplayMode == .sheet) && !dynamicTypeSize.isAccessibilitySize {
                 aiFloatingButton(bottomPadding: DS.Space.xl)
             }
         }
@@ -592,6 +593,15 @@ struct IOSMainView: View {
     private var fullSidebarActions: some View {
         VStack(spacing: DS.Space.xxs) {
             Button {
+                activeSidebarSheet = .aiAssistant
+                showAIAssistant = true
+            } label: {
+                sidebarActionRow(icon: "sparkles", label: "AI Assistant")
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("sidebarAIAssistantButton")
+
+            Button {
                 activeSidebarSheet = .tabEditor
             } label: {
                 sidebarActionRow(icon: "square.grid.2x2", label: "Edit Tabs")
@@ -646,7 +656,10 @@ struct IOSMainView: View {
                 .background(Circle().fill(Color.accentColor))
                 .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
         }
-        .dsMinTapTarget()
+        // The visible circle is already larger than the 44pt HIG target. Do not
+        // apply dsMinTapTarget here: its @ScaledMetric expands the overlay to
+        // 124pt at AX5 and obscures Clock card content (#1456).
+        .contentShape(Rectangle())
         .accessibilityLabel("AI Assistant")
         .accessibilityIdentifier("aiAssistantButton")
         .padding(.trailing, DS.Space.lg)
@@ -673,6 +686,14 @@ struct IOSMainView: View {
 
                 // Edit & Logout
                 Section {
+                    Button {
+                        activeRootSheet = .aiAssistant
+                        showAIAssistant = true
+                    } label: {
+                        Label("AI Assistant", systemImage: "sparkles")
+                    }
+                    .accessibilityIdentifier("moreAIAssistantButton")
+
                     Button {
                         showTabEditor = true
                     } label: {
@@ -1011,6 +1032,10 @@ struct ModuleHostView: View {
                 .dsStyle(.detail)
                 .fontWeight(selected ? .semibold : .regular)
         }
+        // Keep the horizontally scrolling navigation usable at AX sizes. The
+        // full tab name remains its accessibility label; only the compact visual
+        // chip is capped so a selected chip cannot cover its neighbors (#1456).
+        .dynamicTypeSize(...DynamicTypeSize.large)
         .padding(.horizontal, chipH)
         .padding(.vertical, DS.Space.sm)
         .frame(minWidth: 44, minHeight: 44)
