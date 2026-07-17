@@ -44,6 +44,28 @@ struct HelpContentRegistry {
         entries[pageId]
     }
 
+    /// Finds canonical help by its visible sheet title for Help → Assistant handoff.
+    static func pageId(matchingTitle title: String) -> String? {
+        pageId(matchingTitle: title, in: allEntries)
+    }
+
+    /// Finds canonical help by title from a declaration-ordered candidate list.
+    ///
+    /// `entries` is dictionary-backed for direct page ID lookup, so title matching must
+    /// walk `allEntries` (or an explicitly ordered candidate list in tests) to avoid
+    /// returning a random context when normalized titles collide.
+    static func pageId(matchingTitle title: String, in candidates: [HelpEntry]) -> String? {
+        let normalizedTitle = normalizedHelpTitle(title)
+        guard !normalizedTitle.isEmpty else { return nil }
+        return candidates.first { entry in
+            normalizedHelpTitle(entry.title) == normalizedTitle
+        }?.pageId
+    }
+
+    private static func normalizedHelpTitle(_ title: String) -> String {
+        title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
     /// All available help topic names, sorted alphabetically.
     static var availableTopics: [String] {
         entries.values.map(\.title).sorted()
