@@ -235,7 +235,7 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
 
     private func waitForCriticalConfirmation(timeout: TimeInterval = 5) -> Bool {
         let title = "Confirm Critical Write Decision"
-        return app.alerts[title].waitForExistence(timeout: 1)
+        return app.alerts[title].waitForExistence(timeout: timeout)
             || app.staticTexts[title].waitForExistence(timeout: timeout)
     }
 
