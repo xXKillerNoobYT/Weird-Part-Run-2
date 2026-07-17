@@ -230,6 +230,9 @@ extension Notification.Name {
     /// Posted by the AI panel to set catalog filters programmatically.
     static let aiSetCatalogFilters = Notification.Name("WiredPart.aiSetCatalogFilters")
 
+    /// Posted by `PageHelpSheet` to request the assistant with visible, read-only help context.
+    static let askAIAboutHelp = Notification.Name("WiredPart.askAIAboutHelp")
+
     /// Posted when the Pricing page appears, with current context for AI.
     static let pricingPageActive = Notification.Name("WiredPart.pricingPageActive")
 

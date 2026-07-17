@@ -29,13 +29,17 @@ struct IOSAIAssistantPanel: View {
 
     @Binding var displayMode: AIDisplayMode
     @Binding var isVisible: Bool
+    @Binding var pendingHelpRequest: [AnyHashable: Any]?
 
     @State private var query = ""
     @State private var messages: [AssistantMessage] = []
     @State private var isProcessing = false
     @State private var isClearingConversation = false
+    /// Invalidates response tasks when Clear, New, Resume, or logout changes visible history.
+    @State private var conversationRevision: UInt = 0
     @State private var clearConversationError: String?
     @State private var clearConversationRetryId: String?
+    @State private var conversationPersistenceError: String?
     @State private var aiAvailability: AIAvailability = .notSupported
     @State private var catalogContext: String?
     @State private var pricingContext: String?
@@ -116,6 +120,48 @@ struct IOSAIAssistantPanel: View {
     /// Unique ID for the current conversation thread. Changing this starts a fresh session.
     @State private var conversationId: String = UUID().uuidString
 
+    /// Guards the one-time cross-launch resume so it only runs on the panel's first appearance.
+    @State private var didAttemptResume = false
+
+    /// Past conversations for the resume picker, loaded on demand.
+    @State private var savedConversations: [SavedConversation] = []
+    @State private var showConversationPicker = false
+    @State private var isLoadingConversations = false
+    /// Prevents a prompt from racing ahead of persisted transcript hydration.
+    @State private var isLoadingConversationHistory = false
+    @State private var helpHandoffReadiness = AIHelpHandoffReadinessCoordinator()
+    @State private var queuedHelpRequest: [AnyHashable: Any]?
+    @State private var helpPersistenceTask: Task<Void, Never>?
+    @State private var conversationLoadTask: Task<Void, Never>?
+    @State private var conversationListTask: Task<Void, Never>?
+    @State private var conversationListRequestID: UInt = 0
+
+    /// Constant-size identity used to notice a new Help handoff without rebuilding
+    /// a token from the potentially large visible Help body during view updates.
+    private var pendingHelpRequestToken: String? {
+        pendingHelpRequest?["requestID"] as? String
+    }
+
+    private struct ResumePrerequisiteToken: Hashable {
+        let ownerUserId: Int64?
+        let isDatabaseReady: Bool
+    }
+
+    /// Restarts assistant initialization when a panel mounted during startup/login
+    /// gains the prerequisites needed to resume authenticated conversation history.
+    private var resumePrerequisiteToken: ResumePrerequisiteToken {
+        ResumePrerequisiteToken(
+            ownerUserId: appCore.currentUser?.id,
+            isDatabaseReady: appCore.db != nil
+        )
+    }
+
+    struct SavedConversation: Identifiable, Equatable {
+        let id: String
+        let lastMessageAt: String
+        let preview: String
+    }
+
     /// Whether the beta bug-report sheet is presented from the assistant.
     @State private var isBugReportPresented = false
 
@@ -169,6 +215,16 @@ struct IOSAIAssistantPanel: View {
                         .accessibilityLabel("Switch to floating overlay")
 
                         Button {
+                            presentConversationPicker()
+                        } label: {
+                            Image(systemName: "clock.arrow.circlepath")
+                        }
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                        .help("Resume a past conversation")
+                        .accessibilityLabel("Resume a past conversation")
+
+                        Button {
                             startNewConversation()
                         } label: {
                             Image(systemName: "plus.bubble")
@@ -181,7 +237,7 @@ struct IOSAIAssistantPanel: View {
                         } label: {
                             Image(systemName: "trash")
                         }
-                        .disabled(messages.isEmpty || isClearingConversation)
+                        .disabled(messages.isEmpty || isProcessing || isClearingConversation)
                         .accessibilityLabel("Clear conversation")
 
                         Button {
@@ -269,6 +325,18 @@ struct IOSAIAssistantPanel: View {
             .accessibilityLabel("Switch to full sheet")
 
             Button {
+                presentConversationPicker()
+            } label: {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.caption)
+            }
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .help("Resume a past conversation")
+            .accessibilityLabel("Resume a past conversation")
+
+            Button {
                 startNewConversation()
             } label: {
                 Image(systemName: "plus.bubble")
@@ -285,7 +353,7 @@ struct IOSAIAssistantPanel: View {
                     .font(.caption)
             }
             .buttonStyle(.plain)
-            .disabled(messages.isEmpty || isClearingConversation)
+            .disabled(messages.isEmpty || isProcessing || isClearingConversation)
             .accessibilityLabel("Clear conversation")
 
             Button {
@@ -312,6 +380,59 @@ struct IOSAIAssistantPanel: View {
         .padding(.vertical, 8)
     }
 
+    // MARK: - Conversation Picker
+
+    @ViewBuilder
+    private var conversationPicker: some View {
+        NavigationStack {
+            Group {
+                if isLoadingConversations {
+                    ProgressView("Loading conversations…")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if savedConversations.isEmpty {
+                    ContentUnavailableView(
+                        "No Saved Conversations",
+                        systemImage: "clock.arrow.circlepath",
+                        description: Text("Chats you have with the assistant will appear here so you can pick them back up later.")
+                    )
+                } else {
+                    List(savedConversations) { conversation in
+                        Button {
+                            resumeConversation(conversation.id)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(renderedMarkdown(conversation.preview))
+                                    .font(.subheadline)
+                                    .lineLimit(2)
+                                    .foregroundStyle(.primary)
+                                Text(conversationTimestamp(conversation.lastMessageAt))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            .contentShape(Rectangle())
+                        }
+                        .accessibilityLabel("Resume conversation: \(plainText(fromMarkdown: conversation.preview))")
+                    }
+                }
+            }
+            .navigationTitle("Resume Conversation")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { showConversationPicker = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+
+    private func conversationTimestamp(_ iso: String) -> String {
+        guard let date = CoreFormatters.parseISO(iso) else { return "" }
+        return date.formatted(date: .abbreviated, time: .shortened)
+    }
+
     // MARK: - Shared Chat Body
 
     @ViewBuilder
@@ -324,9 +445,29 @@ struct IOSAIAssistantPanel: View {
             messagesArea
             inputBar
         }
-        .task {
+        .task(id: resumePrerequisiteToken) {
+            let initialization = helpHandoffReadiness.beginInitialization()
+            isLoadingConversationHistory = true
             aiAvailability = aiService.checkAvailability()
-            await loadSavedMessages()
+            await resumeLastConversationIfNeeded()
+            await loadCurrentConversation()
+            guard !Task.isCancelled,
+                  helpHandoffReadiness.finishInitialization(initialization) else { return }
+            consumePendingHelpRequestIfReady()
+        }
+        .onChange(of: resumePrerequisiteToken) { _, _ in
+            helpHandoffReadiness.invalidateInitialization()
+        }
+        .onChange(of: pendingHelpRequestToken) { _, _ in
+            consumePendingHelpRequestIfReady()
+        }
+        .onChange(of: isClearingConversation) { _, isClearing in
+            if !isClearing {
+                consumePendingHelpRequestIfReady()
+            }
+        }
+        .sheet(isPresented: $showConversationPicker) {
+            conversationPicker
         }
         .modifier(PartsPageContextObservers(
             catalogContext: $catalogContext,
@@ -494,6 +635,25 @@ struct IOSAIAssistantPanel: View {
             .frame(maxWidth: .infinity)
             .background(Color.red.opacity(0.12))
             .accessibilityElement(children: .contain)
+        } else if let conversationPersistenceError {
+            HStack(alignment: .center, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .accessibilityHidden(true)
+                Text(conversationPersistenceError)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 8)
+                Button("Dismiss") {
+                    self.conversationPersistenceError = nil
+                }
+                .font(.caption)
+                .accessibilityLabel("Dismiss conversation save warning")
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity)
+            .background(Color.orange.opacity(0.12))
+            .accessibilityElement(children: .contain)
         }
     }
 
@@ -539,7 +699,7 @@ struct IOSAIAssistantPanel: View {
             if message.role == .user { Spacer(minLength: 60) }
 
             VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 4) {
-                Text(message.content)
+                Text(renderedMarkdown(message.content))
                     .font(.subheadline)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
@@ -573,7 +733,12 @@ struct IOSAIAssistantPanel: View {
                     .foregroundStyle(Color.accentColor)
             }
             .accessibilityLabel("Send message")
-            .disabled(query.isBlankRequiredText || isProcessing || isClearingConversation)
+            .disabled(
+                query.isBlankRequiredText
+                    || isProcessing
+                    || isClearingConversation
+                    || isLoadingConversationHistory
+            )
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
@@ -600,7 +765,7 @@ struct IOSAIAssistantPanel: View {
                             .fill(Color(.secondarySystemGroupedBackground))
                     )
             )
-            .disabled(isProcessing || isClearingConversation)
+            .disabled(isProcessing || isClearingConversation || isLoadingConversationHistory)
             .onKeyPress(.return, phases: .down) { keyPress in
                 if keyPress.modifiers.contains(.shift) {
                     // Shift+Enter: allow default (insert newline)
@@ -617,7 +782,9 @@ struct IOSAIAssistantPanel: View {
 
     private func sendQuery() {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !isClearingConversation else { return }
+        guard !trimmed.isEmpty,
+              !isClearingConversation,
+              !isLoadingConversationHistory else { return }
 
         clearConversationError = nil
         clearConversationRetryId = nil
@@ -625,19 +792,186 @@ struct IOSAIAssistantPanel: View {
         query = ""
         isProcessing = true
 
+        let pendingHelpPersistence = helpPersistenceTask
+        let sendConversationId = conversationId
+        let sendOwnerUserId = appCore.currentUser?.id
+        let sendConversationRevision = conversationRevision
+
         Task {
+            await pendingHelpPersistence?.value
+
+            guard conversationId == sendConversationId,
+                  appCore.currentUser?.id == sendOwnerUserId,
+                  conversationRevision == sendConversationRevision else { return }
+
+            if let conversationPersistenceError {
+                messages.append(AssistantMessage(role: .assistant, content: conversationPersistenceError))
+                isProcessing = false
+                return
+            }
+
             let response = await generateResponse(for: trimmed)
+            guard conversationId == sendConversationId,
+                  appCore.currentUser?.id == sendOwnerUserId,
+                  conversationRevision == sendConversationRevision else { return }
             messages.append(AssistantMessage(role: .assistant, content: response))
             isProcessing = false
         }
+    }
+
+    // MARK: - Help Handoff
+
+    private func consumePendingHelpRequestIfReady() {
+        if let pendingHelpRequest {
+            queuedHelpRequest = pendingHelpRequest
+            helpHandoffReadiness.queueHelpRequest(
+                id: pendingHelpRequest["requestID"] as? String ?? UUID().uuidString
+            )
+            self.pendingHelpRequest = nil
+        }
+        guard helpHandoffReadiness.consumeQueuedHelpRequest() != nil,
+              let request = queuedHelpRequest else { return }
+        queuedHelpRequest = nil
+        handleHelpHandoff(request)
+    }
+
+    /// Seeds a read-only help turn locally. No model or network response is required.
+    private func handleHelpHandoff(_ userInfo: [AnyHashable: Any]) {
+        guard !isClearingConversation else {
+            queuedHelpRequest = userInfo
+            helpHandoffReadiness.queueHelpRequest(
+                id: userInfo["requestID"] as? String ?? UUID().uuidString
+            )
+            return
+        }
+        let title = userInfo["title"] as? String ?? "This Page"
+        let prompt = userInfo["prompt"] as? String ?? "Help me understand \(title)."
+        let helpBody = userInfo["helpBody"] as? String
+        let pageId = userInfo["pageId"] as? String
+
+        if let pageId, HelpContentRegistry.helpFor(pageId) != nil {
+            activePageId = pageId
+        }
+
+        query = ""
+        if isProcessing {
+            conversationRevision &+= 1
+        }
+        isProcessing = false
+
+        let response: String
+        if let pageId, let entry = HelpContentRegistry.helpFor(pageId) {
+            response = formattedHelpResponse(title: entry.title, sections: entry.sections)
+        } else if let helpBody, !helpBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            response = "# \(title)\n\n\(helpBody)\n\nI can answer follow-up questions about these read-only help instructions."
+        } else {
+            response = "I opened the assistant for **\(title)**. Ask me what you want to do on this page and I'll explain the available actions."
+        }
+
+        messages.append(AssistantMessage(role: .user, content: prompt))
+        messages.append(AssistantMessage(role: .assistant, content: response))
+        persistHelpHandoffTurn(userPrompt: prompt, assistantResponse: response)
+    }
+
+    private func formattedHelpResponse(title: String, sections: [(String, String)]) -> String {
+        var response = "# \(title)\n\n"
+        for (heading, body) in sections {
+            response += "## \(heading)\n\n\(body)\n\n"
+        }
+        response += "I can answer follow-up questions about these read-only help instructions."
+        return response.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Persistence is best-effort because the locally generated help response is already visible.
+    /// Tasks are chained so Clear can await one handle and know every earlier Help write settled.
+    private func persistHelpHandoffTurn(userPrompt: String, assistantResponse: String) {
+        guard let db = appCore.db,
+              let ownerUserId = appCore.currentUser?.id,
+              ownerUserId > 0 else {
+            conversationPersistenceError = "This Help conversation is visible now but could not be saved because the database or signed-in user is unavailable."
+            return
+        }
+        let currentConversationId = conversationId
+        let currentConversationRevision = conversationRevision
+        let currentLifecycle = AIConversationLifecycleSnapshot(
+            conversationId: currentConversationId,
+            ownerUserId: ownerUserId,
+            revision: currentConversationRevision
+        )
+        let previousHelpPersistence = helpPersistenceTask
+        helpPersistenceTask = Task { [db, currentConversationId, ownerUserId, currentLifecycle, userPrompt, assistantResponse] in
+            await previousHelpPersistence?.value
+            do {
+                let staged = try await aiService.stageHelpConversation(
+                    currentConversationId,
+                    ownerUserId: ownerUserId,
+                    userPrompt: userPrompt,
+                    assistantResponse: assistantResponse,
+                    in: db
+                )
+                var lifecycleCoordinator = currentLifecycleCoordinator()
+                guard lifecycleCoordinator.finishHelpPersistence(
+                    lifecycle: currentLifecycle,
+                    staged: staged,
+                    errorDescription: nil,
+                    isCancelled: Task.isCancelled
+                ) else { return }
+                conversationPersistenceError = lifecycleCoordinator.conversationPersistenceError
+            } catch {
+                var lifecycleCoordinator = currentLifecycleCoordinator()
+                guard lifecycleCoordinator.finishHelpPersistence(
+                    lifecycle: currentLifecycle,
+                    staged: false,
+                    errorDescription: error.localizedDescription,
+                    isCancelled: Task.isCancelled
+                ) else { return }
+                conversationPersistenceError = lifecycleCoordinator.conversationPersistenceError
+            }
+        }
+    }
+
+    private func currentLifecycleCoordinator() -> AIAssistantLifecycleCoordinator<SavedConversation> {
+        AIAssistantLifecycleCoordinator(
+            conversationId: conversationId,
+            ownerUserId: appCore.currentUser?.id,
+            conversationRevision: conversationRevision,
+            conversationPersistenceError: conversationPersistenceError,
+            savedConversations: savedConversations,
+            isLoadingConversations: isLoadingConversations,
+            conversationListRequestID: conversationListRequestID
+        )
+    }
+
+    private func cancelConversationListLoad() {
+        conversationListTask?.cancel()
+        conversationListTask = nil
+        conversationListRequestID &+= 1
+        isLoadingConversations = false
+    }
+
+    @discardableResult
+    private func cancelHelpPersistenceTask() -> Task<Void, Never>? {
+        let pendingHelpPersistence = helpPersistenceTask
+        pendingHelpPersistence?.cancel()
+        helpPersistenceTask = nil
+        return pendingHelpPersistence
     }
 
     // MARK: - Conversation Lifecycle
 
     /// Start a brand-new conversation — clears the AI session, resets messages, generates a new ID.
     private func startNewConversation() {
+        let pendingHelpPersistence = cancelHelpPersistenceTask()
+        conversationLoadTask?.cancel()
+        conversationLoadTask = nil
+        cancelConversationListLoad()
+        isLoadingConversationHistory = false
+        conversationRevision &+= 1
+        isProcessing = false
         clearConversationError = nil
         clearConversationRetryId = nil
+        conversationPersistenceError = nil
+        Task { await pendingHelpPersistence?.value }
         Task { await aiService.clearConversation() }
         conversationId = UUID().uuidString
         messages = [welcomeMessage()]
@@ -645,12 +979,24 @@ struct IOSAIAssistantPanel: View {
 
     /// Clear volatile assistant state when the app logs out, without deleting persisted history.
     private func resetForLogout() {
+        let pendingHelpPersistence = cancelHelpPersistenceTask()
+        conversationLoadTask?.cancel()
+        conversationLoadTask = nil
+        cancelConversationListLoad()
+        isLoadingConversationHistory = false
+        conversationRevision &+= 1
+        isProcessing = false
         clearConversationError = nil
         clearConversationRetryId = nil
+        conversationPersistenceError = nil
         isClearingConversation = false
+        Task { await pendingHelpPersistence?.value }
         Task { await aiService.clearConversation() }
         conversationId = UUID().uuidString
         messages.removeAll()
+        savedConversations.removeAll()
+        showConversationPicker = false
+        didAttemptResume = false
         clearVolatilePageContext()
     }
 
@@ -745,26 +1091,36 @@ struct IOSAIAssistantPanel: View {
     /// Fail closed: do not clear the visible conversation until persistent deletion succeeds.
     private func clearPersistedConversation(_ cid: String) {
         guard !isClearingConversation else { return }
-        guard let db = appCore.db else {
+        guard let db = appCore.db,
+              let ownerUserId = appCore.currentUser?.id,
+              ownerUserId > 0 else {
             clearConversationRetryId = cid
-            clearConversationError = "The app database is unavailable. Your stored messages were not deleted; try again after the app finishes loading."
+            clearConversationError = "The database or signed-in user is unavailable. Your stored messages were not deleted; try again after signing in and the app finishes loading."
             return
         }
 
+        conversationLoadTask?.cancel()
+        conversationLoadTask = nil
+        cancelConversationListLoad()
+        isLoadingConversationHistory = false
+        conversationRevision &+= 1
+        isProcessing = false
         isClearingConversation = true
         clearConversationError = nil
         clearConversationRetryId = cid
 
+        let pendingHelpPersistence = cancelHelpPersistenceTask()
         Task {
             do {
-                try await FoundationModelsService.clearPersistedConversation(cid, from: db)
-                await aiService.clearConversation()
+                await pendingHelpPersistence?.value
+                try await aiService.clearConversation(cid, ownerUserId: ownerUserId, from: db)
                 await MainActor.run {
                     if conversationId == cid {
                         messages = [welcomeMessage()]
                     }
                     clearConversationError = nil
                     clearConversationRetryId = nil
+                    conversationPersistenceError = nil
                     isClearingConversation = false
                 }
             } catch {
@@ -784,14 +1140,61 @@ struct IOSAIAssistantPanel: View {
         )
     }
 
+    private func renderedMarkdown(_ content: String) -> AttributedString {
+        AIAssistantMarkdownRenderer.renderedMarkdown(content)
+    }
+
+    private func plainText(fromMarkdown content: String) -> String {
+        AIAssistantMarkdownRenderer.plainText(fromMarkdown: content)
+    }
+
+    /// Own the current history load so lifecycle transitions can cancel it and the
+    /// composer stays disabled until both UI rows and model context are hydrated.
+    private func loadCurrentConversation() async {
+        let task = beginCurrentConversationLoad()
+        await task.value
+    }
+
+    @discardableResult
+    private func beginCurrentConversationLoad() -> Task<Void, Never> {
+        conversationLoadTask?.cancel()
+        isLoadingConversationHistory = true
+        let loadConversationId = conversationId
+        let loadOwnerUserId = appCore.currentUser?.id
+        let loadConversationRevision = conversationRevision
+        let task = Task {
+            await loadSavedMessages()
+            guard !Task.isCancelled,
+                  conversationId == loadConversationId,
+                  appCore.currentUser?.id == loadOwnerUserId,
+                  conversationRevision == loadConversationRevision else { return }
+            isLoadingConversationHistory = false
+            conversationLoadTask = nil
+        }
+        conversationLoadTask = task
+        return task
+    }
+
     /// Load previously saved messages for the current conversation from the DB.
     private func loadSavedMessages() async {
-        guard let db = appCore.db else {
+        guard let db = appCore.db,
+              let ownerUserId = appCore.currentUser?.id,
+              ownerUserId > 0 else {
             addWelcomeMessageIfNeeded()
             return
         }
+        let loadConversationId = conversationId
+        let loadConversationRevision = conversationRevision
         do {
-            let saved = try await FoundationModelsService.loadConversation(conversationId, from: db)
+            let saved = try await aiService.resumeConversation(
+                loadConversationId,
+                ownerUserId: ownerUserId,
+                from: db
+            )
+            guard !Task.isCancelled,
+                  conversationId == loadConversationId,
+                  appCore.currentUser?.id == ownerUserId,
+                  conversationRevision == loadConversationRevision else { return }
             if saved.isEmpty {
                 addWelcomeMessageIfNeeded()
             } else {
@@ -803,6 +1206,10 @@ struct IOSAIAssistantPanel: View {
                 }
             }
         } catch {
+            guard !Task.isCancelled,
+                  conversationId == loadConversationId,
+                  appCore.currentUser?.id == ownerUserId,
+                  conversationRevision == loadConversationRevision else { return }
             addWelcomeMessageIfNeeded()
         }
     }
@@ -812,6 +1219,109 @@ struct IOSAIAssistantPanel: View {
         if messages.isEmpty {
             messages.append(welcomeMessage())
         }
+    }
+
+    // MARK: - Conversation Resume
+
+    private func resumeLastConversationIfNeeded() async {
+        guard !didAttemptResume else { return }
+        guard let db = appCore.db,
+              let ownerUserId = appCore.currentUser?.id,
+              ownerUserId > 0 else { return }
+        didAttemptResume = true
+        let lookupConversationId = conversationId
+        let lookupConversationRevision = conversationRevision
+        if let latest = try? await FoundationModelsService.latestConversationId(
+            ownerUserId: ownerUserId,
+            from: db
+        ) {
+            guard !Task.isCancelled,
+                  conversationId == lookupConversationId,
+                  appCore.currentUser?.id == ownerUserId,
+                  conversationRevision == lookupConversationRevision else { return }
+            conversationRevision &+= 1
+            conversationId = latest
+        }
+    }
+
+    private func presentConversationPicker() {
+        showConversationPicker = true
+        conversationListTask?.cancel()
+        conversationListRequestID &+= 1
+        let requestID = conversationListRequestID
+        conversationListTask = Task {
+            await loadConversationList(requestID: requestID)
+            guard !Task.isCancelled, conversationListRequestID == requestID else { return }
+            conversationListTask = nil
+        }
+    }
+
+    private func loadConversationList(requestID: UInt) async {
+        defer {
+            if conversationListRequestID == requestID {
+                isLoadingConversations = false
+            }
+        }
+
+        guard let db = appCore.db,
+              let ownerUserId = appCore.currentUser?.id,
+              ownerUserId > 0 else {
+            if conversationListRequestID == requestID {
+                savedConversations = []
+            }
+            return
+        }
+        var lifecycleCoordinator = currentLifecycleCoordinator()
+        let listLifecycle = lifecycleCoordinator.beginConversationListLoad(requestID: requestID)
+        isLoadingConversations = lifecycleCoordinator.isLoadingConversations
+        if let rows = try? await FoundationModelsService.listConversations(
+            ownerUserId: ownerUserId,
+            from: db
+        ) {
+            let conversationRows = rows.map {
+                SavedConversation(id: $0.id, lastMessageAt: $0.lastMessageAt, preview: $0.preview)
+            }
+            lifecycleCoordinator = currentLifecycleCoordinator()
+            guard lifecycleCoordinator.finishConversationListLoad(
+                lifecycle: listLifecycle,
+                requestID: requestID,
+                rows: conversationRows,
+                isCancelled: Task.isCancelled
+            ) else { return }
+            isLoadingConversations = lifecycleCoordinator.isLoadingConversations
+            savedConversations = lifecycleCoordinator.savedConversations
+        } else {
+            lifecycleCoordinator = currentLifecycleCoordinator()
+            guard lifecycleCoordinator.finishConversationListLoad(
+                lifecycle: listLifecycle,
+                requestID: requestID,
+                rows: [],
+                isCancelled: Task.isCancelled
+            ) else { return }
+            isLoadingConversations = lifecycleCoordinator.isLoadingConversations
+            savedConversations = lifecycleCoordinator.savedConversations
+        }
+    }
+
+    private func resumeConversation(_ id: String) {
+        conversationPersistenceError = nil
+        guard id != conversationId else {
+            showConversationPicker = false
+            return
+        }
+        let pendingHelpPersistence = cancelHelpPersistenceTask()
+        conversationLoadTask?.cancel()
+        cancelConversationListLoad()
+        isLoadingConversationHistory = false
+        conversationRevision &+= 1
+        isProcessing = false
+        clearConversationError = nil
+        clearConversationRetryId = nil
+        Task { await pendingHelpPersistence?.value }
+        conversationId = id
+        messages = []
+        showConversationPicker = false
+        beginCurrentConversationLoad()
     }
 
     /// Generates a response using Foundation Models with tool calling when available,
@@ -2345,5 +2855,293 @@ struct AssistantMessage: Identifiable, Sendable {
 
 enum MessageRole: Sendable {
     case user, assistant
+}
+
+/// Parses each message as one Markdown document so fenced/indented code and
+/// list nesting survive blank lines, then restores the paragraph spacing that
+/// `AttributedString` omits from its character view between presentation blocks.
+enum AIAssistantMarkdownRenderer {
+    nonisolated static func renderedMarkdown(_ content: String) -> AttributedString {
+        let normalized = content
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        guard let parsed = try? AttributedString(
+            markdown: normalized,
+            options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .full)
+        ) else {
+            return AttributedString(normalized)
+        }
+
+        var rendered = AttributedString()
+        var previousBlockIdentity: Int?
+        for run in parsed.runs {
+            let blockIdentity = run.presentationIntent?.components.first?.identity
+            if let blockIdentity,
+               let previousBlockIdentity,
+               blockIdentity != previousBlockIdentity {
+                appendBlockSeparator(to: &rendered)
+            }
+            rendered.append(AttributedString(parsed[run.range]))
+            if let blockIdentity {
+                previousBlockIdentity = blockIdentity
+            }
+        }
+        return rendered
+    }
+
+    nonisolated static func plainText(fromMarkdown content: String) -> String {
+        String(renderedMarkdown(content).characters)
+    }
+
+    nonisolated private static func appendBlockSeparator(to rendered: inout AttributedString) {
+        let trailingNewlineCount = rendered.characters.reversed().prefix { $0 == "\n" }.count
+        if trailingNewlineCount < 2 {
+            rendered.append(
+                AttributedString(String(repeating: "\n", count: 2 - trailingNewlineCount))
+            )
+        }
+    }
+}
+
+struct AIConversationLifecycleSnapshot: Equatable, Sendable {
+    let conversationId: String
+    let ownerUserId: Int64
+    let revision: UInt
+
+    func matches(
+        conversationId currentConversationId: String,
+        ownerUserId currentOwnerUserId: Int64?,
+        revision currentRevision: UInt,
+        isCancelled: Bool = false
+    ) -> Bool {
+        !isCancelled
+            && conversationId == currentConversationId
+            && ownerUserId == currentOwnerUserId
+            && revision == currentRevision
+    }
+}
+
+struct AIHelpPersistenceCompletion: Equatable, Sendable {
+    let persistenceError: String?
+}
+
+@MainActor
+struct AIHelpHandoffReadinessCoordinator {
+    private(set) var isReadyForHelpHandoff = false
+    private var initializationRequestID: UInt = 0
+    private var queuedHelpRequestID: String?
+
+    mutating func beginInitialization() -> UInt {
+        initializationRequestID &+= 1
+        isReadyForHelpHandoff = false
+        return initializationRequestID
+    }
+
+    mutating func invalidateInitialization() {
+        initializationRequestID &+= 1
+        isReadyForHelpHandoff = false
+    }
+
+    mutating func finishInitialization(_ requestID: UInt) -> Bool {
+        guard requestID == initializationRequestID else { return false }
+        isReadyForHelpHandoff = true
+        return true
+    }
+
+    mutating func queueHelpRequest(id: String) {
+        queuedHelpRequestID = id
+    }
+
+    mutating func consumeQueuedHelpRequest() -> String? {
+        guard isReadyForHelpHandoff else { return nil }
+        defer { queuedHelpRequestID = nil }
+        return queuedHelpRequestID
+    }
+}
+
+@MainActor
+struct AIAssistantLifecycleCoordinator<Row: Sendable> {
+    private(set) var conversationId: String
+    private(set) var ownerUserId: Int64?
+    private(set) var conversationRevision: UInt
+    private(set) var conversationPersistenceError: String?
+    private(set) var savedConversations: [Row]
+    private(set) var isLoadingConversations: Bool
+    private(set) var conversationListRequestID: UInt
+
+    init(
+        conversationId: String,
+        ownerUserId: Int64?,
+        conversationRevision: UInt = 0,
+        conversationPersistenceError: String? = nil,
+        savedConversations: [Row] = [],
+        isLoadingConversations: Bool = false,
+        conversationListRequestID: UInt = 0
+    ) {
+        self.conversationId = conversationId
+        self.ownerUserId = ownerUserId
+        self.conversationRevision = conversationRevision
+        self.conversationPersistenceError = conversationPersistenceError
+        self.savedConversations = savedConversations
+        self.isLoadingConversations = isLoadingConversations
+        self.conversationListRequestID = conversationListRequestID
+    }
+
+    func snapshot() -> AIConversationLifecycleSnapshot {
+        AIConversationLifecycleSnapshot(
+            conversationId: conversationId,
+            ownerUserId: ownerUserId ?? -1,
+            revision: conversationRevision
+        )
+    }
+
+    mutating func transitionToNewConversation(_ newConversationId: String) {
+        conversationRevision &+= 1
+        conversationListRequestID &+= 1
+        conversationId = newConversationId
+        conversationPersistenceError = nil
+        savedConversations = []
+        isLoadingConversations = false
+    }
+
+    mutating func resumeConversation(_ resumedConversationId: String) {
+        conversationRevision &+= 1
+        conversationListRequestID &+= 1
+        conversationId = resumedConversationId
+        conversationPersistenceError = nil
+        isLoadingConversations = false
+    }
+
+    mutating func logout(newConversationId: String) {
+        conversationRevision &+= 1
+        conversationListRequestID &+= 1
+        conversationId = newConversationId
+        ownerUserId = nil
+        conversationPersistenceError = nil
+        savedConversations = []
+        isLoadingConversations = false
+    }
+
+    mutating func clearCurrentConversation() {
+        conversationRevision &+= 1
+        conversationListRequestID &+= 1
+        conversationPersistenceError = nil
+        isLoadingConversations = false
+    }
+
+    mutating func finishHelpPersistence(
+        lifecycle: AIConversationLifecycleSnapshot,
+        staged: Bool,
+        errorDescription: String?,
+        isCancelled: Bool = false
+    ) -> Bool {
+        guard let completion = AIAsyncLifecycleCompletion.helpPersistenceResult(
+            lifecycle: lifecycle,
+            staged: staged,
+            errorDescription: errorDescription,
+            currentConversationId: conversationId,
+            currentOwnerUserId: ownerUserId,
+            currentRevision: conversationRevision,
+            isCancelled: isCancelled
+        ) else { return false }
+        conversationPersistenceError = completion.persistenceError
+        return true
+    }
+
+    mutating func beginConversationListLoad(requestID: UInt? = nil) -> AIConversationLifecycleSnapshot {
+        if let requestID {
+            conversationListRequestID = requestID
+        } else {
+            conversationListRequestID &+= 1
+        }
+        isLoadingConversations = true
+        return snapshot()
+    }
+
+    mutating func finishConversationListLoad(
+        lifecycle: AIConversationLifecycleSnapshot,
+        requestID: UInt? = nil,
+        rows: [Row],
+        isCancelled: Bool = false
+    ) -> Bool {
+        let completionRequestID = requestID ?? conversationListRequestID
+        guard completionRequestID == conversationListRequestID else { return false }
+        defer { isLoadingConversations = false }
+        guard let currentRows = AIAsyncLifecycleCompletion.conversationListResult(
+            lifecycle: lifecycle,
+            rows: rows,
+            currentConversationId: conversationId,
+            currentOwnerUserId: ownerUserId,
+            currentRevision: conversationRevision,
+            isCancelled: isCancelled
+        ) else { return false }
+        savedConversations = currentRows
+        return true
+    }
+}
+
+enum AIAsyncLifecycleCompletion {
+    static func isCurrent(
+        lifecycle: AIConversationLifecycleSnapshot,
+        currentConversationId: String,
+        currentOwnerUserId: Int64?,
+        currentRevision: UInt,
+        isCancelled: Bool = false
+    ) -> Bool {
+        lifecycle.matches(
+            conversationId: currentConversationId,
+            ownerUserId: currentOwnerUserId,
+            revision: currentRevision,
+            isCancelled: isCancelled
+        )
+    }
+
+    static func helpPersistenceResult(
+        lifecycle: AIConversationLifecycleSnapshot,
+        staged: Bool,
+        errorDescription: String?,
+        currentConversationId: String,
+        currentOwnerUserId: Int64?,
+        currentRevision: UInt,
+        isCancelled: Bool = false
+    ) -> AIHelpPersistenceCompletion? {
+        guard isCurrent(
+            lifecycle: lifecycle,
+            currentConversationId: currentConversationId,
+            currentOwnerUserId: currentOwnerUserId,
+            currentRevision: currentRevision,
+            isCancelled: isCancelled
+        ) else { return nil }
+
+        if let errorDescription {
+            return AIHelpPersistenceCompletion(
+                persistenceError: "This Help conversation is visible now but could not be saved: \(errorDescription)"
+            )
+        }
+
+        return AIHelpPersistenceCompletion(
+            persistenceError: staged
+                ? nil
+                : "This Help conversation changed while it was being saved. Start a new Help handoff before asking a follow-up."
+        )
+    }
+
+    static func conversationListResult<Row: Sendable>(
+        lifecycle: AIConversationLifecycleSnapshot,
+        rows: [Row],
+        currentConversationId: String,
+        currentOwnerUserId: Int64?,
+        currentRevision: UInt,
+        isCancelled: Bool = false
+    ) -> [Row]? {
+        guard isCurrent(
+            lifecycle: lifecycle,
+            currentConversationId: currentConversationId,
+            currentOwnerUserId: currentOwnerUserId,
+            currentRevision: currentRevision,
+            isCancelled: isCancelled
+        ) else { return nil }
+        return rows
+    }
 }
 
