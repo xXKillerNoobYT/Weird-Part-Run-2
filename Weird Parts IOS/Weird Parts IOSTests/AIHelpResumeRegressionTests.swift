@@ -217,6 +217,46 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertTrue(retry.contains("await loadCurrentConversation()"))
     }
 
+    func testHistoryRetryCapturesFullLifecycleAndKeepsMissingPrerequisitesFailClosed() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let retry = try TestSourceSlicer.braceBalancedBody(
+            after: "private func retryConversationHistoryRead()",
+            in: assistant
+        )
+
+        guard let prerequisiteGuard = retry.range(of: "guard let retry = conversationHistoryRetry")?.lowerBound,
+              let errorClear = retry.range(of: "conversationHistoryReadError = nil")?.lowerBound else {
+            XCTFail("Retry must validate prerequisites before clearing its fail-closed error state.")
+            return
+        }
+        XCTAssertLessThan(prerequisiteGuard, errorClear)
+        XCTAssertTrue(retry.contains("AIConversationHistoryRetryToken("))
+        XCTAssertTrue(retry.contains("ownerUserId: appCore.aiConversationReadOwnerUserId"))
+        XCTAssertTrue(retry.contains("database: appCore.aiConversationReadDatabase"))
+        XCTAssertTrue(retry.contains("conversationId: conversationId"))
+        XCTAssertTrue(retry.contains("revision: conversationRevision"))
+        XCTAssertTrue(retry.contains("completionToken.matches("))
+        XCTAssertTrue(assistant.contains("@State private var conversationHistoryRetryTask: Task<Void, Never>?"))
+    }
+
+    func testPrerequisiteReplacementResetsVisibleTranscriptAndResumeScope() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let reset = try TestSourceSlicer.braceBalancedBody(
+            after: "private func resetConversationReadScopeIfNeeded(for prerequisites: ResumePrerequisiteToken)",
+            in: assistant
+        )
+
+        XCTAssertTrue(reset.contains("AIConversationReadScopeState("))
+        XCTAssertTrue(reset.contains("scopeState.replaceScope"))
+        XCTAssertTrue(reset.contains("didAttemptResume = scopeState.didAttemptResume"))
+        XCTAssertTrue(reset.contains("conversationId = scopeState.conversationId"))
+        XCTAssertTrue(reset.contains("messages = scopeState.messages"))
+        XCTAssertTrue(reset.contains("savedConversations = scopeState.savedConversations"))
+        XCTAssertTrue(reset.contains("conversationHistoryReadError = nil"))
+        XCTAssertTrue(reset.contains("showConversationPicker = false"))
+        XCTAssertTrue(reset.contains("isLoadingConversationHistory = true"))
+    }
+
     func testResumeListFailurePreservesRowsAndDoesNotRenderEmptyCopy() throws {
         let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
         let list = try TestSourceSlicer.braceBalancedBody(
@@ -335,6 +375,12 @@ final class AIHelpResumeRegressionTests: XCTestCase {
             transition.contains(
                 "ALTER TABLE \\(Self.wei5134AIConversationBackupTable) RENAME TO \\(Self.wei5134AIConversationTable)"
             )
+        )
+        XCTAssertTrue(transition.contains("error.localizedDescription, privacy: .private"))
+        XCTAssertTrue(transition.contains("WEI5134 QA table state: error — transition failed"))
+        XCTAssertFalse(
+            transition.contains("wei5134AIReadFailureQAState = \"WEI5134 QA table state: error — \\(error.localizedDescription)\""),
+            "The accessibility-observable QA state must not expose private database or file details."
         )
     }
 
@@ -578,12 +624,13 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         )
         XCTAssertTrue(assistant.contains("savedConversations.removeAll()"))
 
-        let prerequisiteChange = try TestSourceSlicer.braceBalancedBody(
-            after: ".onChange(of: resumePrerequisiteToken)",
+        let scopeReset = try TestSourceSlicer.braceBalancedBody(
+            after: "private func resetConversationReadScopeIfNeeded(for prerequisites: ResumePrerequisiteToken)",
             in: assistant
         )
-        XCTAssertTrue(prerequisiteChange.contains("conversationLoadTask?.cancel()"))
-        XCTAssertTrue(prerequisiteChange.contains("cancelConversationListLoad(clearError: !showConversationPicker)"))
+        XCTAssertTrue(scopeReset.contains("conversationLoadTask?.cancel()"))
+        XCTAssertTrue(scopeReset.contains("cancelConversationListLoad()"))
+        XCTAssertTrue(scopeReset.contains("cancelConversationHistoryRetryTask()"))
 
         for lifecycleFunction in [
             "private func startNewConversation()",
@@ -593,6 +640,7 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         ] {
             let body = try TestSourceSlicer.braceBalancedBody(after: lifecycleFunction, in: assistant)
             XCTAssertTrue(body.contains("conversationLoadTask?.cancel()"), "\(lifecycleFunction) must cancel stale history hydration.")
+            XCTAssertTrue(body.contains("cancelConversationHistoryRetryTask()"), "\(lifecycleFunction) must cancel stale manual Retry work.")
         }
     }
 

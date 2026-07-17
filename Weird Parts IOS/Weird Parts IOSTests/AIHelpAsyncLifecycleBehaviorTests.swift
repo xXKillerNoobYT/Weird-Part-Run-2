@@ -11,17 +11,113 @@ import WiredPartCore
 @MainActor
 final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
     func testDatabaseIdentityRejectsResetRebootstrapWhenOwnerIDIsReused() throws {
-        let reusedOwnerUserId: Int64 = 1
+        let reusedOwnerUserId: Int64 = 101
         let databaseBeforeReset = try AppDatabase.openInMemoryDatabase()
         let databaseAfterRebootstrap = try AppDatabase.openInMemoryDatabase()
         let requestDatabaseIdentity = AIDatabaseIdentity(databaseBeforeReset)
 
-        XCTAssertEqual(reusedOwnerUserId, 1)
+        XCTAssertEqual(reusedOwnerUserId, 101)
         XCTAssertTrue(requestDatabaseIdentity.matches(databaseBeforeReset))
         XCTAssertFalse(
             requestDatabaseIdentity.matches(databaseAfterRebootstrap),
-            "A completion from the deleted database must stay stale even when rebootstrap reuses owner ID 1."
+            "A completion from the deleted database must stay stale even when rebootstrap reuses the owner ID."
         )
+    }
+
+    func testHistoryRetryRequiresPositiveOwnerAndDatabasePrerequisites() throws {
+        let database = try AppDatabase.openInMemoryDatabase()
+
+        XCTAssertNil(AIConversationHistoryRetryToken(
+            ownerUserId: nil,
+            database: database,
+            conversationId: "conversation-a",
+            revision: 7
+        ))
+        XCTAssertNil(AIConversationHistoryRetryToken(
+            ownerUserId: 0,
+            database: database,
+            conversationId: "conversation-a",
+            revision: 7
+        ))
+        XCTAssertNil(AIConversationHistoryRetryToken(
+            ownerUserId: 101,
+            database: nil,
+            conversationId: "conversation-a",
+            revision: 7
+        ))
+        XCTAssertNotNil(AIConversationHistoryRetryToken(
+            ownerUserId: 101,
+            database: database,
+            conversationId: "conversation-a",
+            revision: 7
+        ))
+    }
+
+    func testReadScopeReplacementClearsNonEmptyTranscriptAndResumeState() {
+        let priorRows = [
+            IOSAIAssistantPanel.SavedConversation(
+                id: "private-conversation-a",
+                lastMessageAt: "2026-07-17 10:00:00",
+                preview: "private preview"
+            ),
+        ]
+        var scope = AIConversationReadScopeState(
+            didAttemptResume: true,
+            conversationId: "private-conversation-a",
+            conversationRevision: 11,
+            messages: [AssistantMessage(role: .assistant, content: "private transcript")],
+            savedConversations: priorRows
+        )
+
+        scope.replaceScope(newConversationId: "replacement-scope")
+
+        XCTAssertFalse(scope.didAttemptResume)
+        XCTAssertEqual(scope.conversationId, "replacement-scope")
+        XCTAssertEqual(scope.conversationRevision, 12)
+        XCTAssertTrue(scope.messages.isEmpty)
+        XCTAssertTrue(scope.savedConversations.isEmpty)
+    }
+
+    func testHistoryRetryTokenRejectsOwnerDatabaseConversationAndRevisionTransitions() throws {
+        let database = try AppDatabase.openInMemoryDatabase()
+        let replacementDatabase = try AppDatabase.openInMemoryDatabase()
+        let token = try XCTUnwrap(AIConversationHistoryRetryToken(
+            ownerUserId: 101,
+            database: database,
+            conversationId: "conversation-a",
+            revision: 7
+        ))
+
+        XCTAssertTrue(token.matches(
+            ownerUserId: 101,
+            database: database,
+            conversationId: "conversation-a",
+            revision: 7
+        ))
+        XCTAssertFalse(token.matches(
+            ownerUserId: 102,
+            database: database,
+            conversationId: "conversation-a",
+            revision: 7
+        ))
+        XCTAssertFalse(token.matches(
+            ownerUserId: 101,
+            database: replacementDatabase,
+            conversationId: "conversation-a",
+            revision: 7
+        ))
+        XCTAssertFalse(token.matches(
+            ownerUserId: 101,
+            database: database,
+            conversationId: "conversation-b",
+            revision: 7
+        ))
+        XCTAssertFalse(token.matches(
+            ownerUserId: 101,
+            database: database,
+            conversationId: "conversation-a",
+            revision: 8
+        ))
     }
 
     func testDelayedHelpSuccessAfterNewDoesNotContaminateConversationB() async {
@@ -258,7 +354,7 @@ final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
 
     func testStaleConversationListReturnAlwaysClearsLoadingAfterNewResumeAndLogout() async {
         for transition in ListTransition.allCases {
-            let box = CoordinatorBox(conversationId: "conversation-a", ownerUserId: 1)
+            let box = CoordinatorBox(conversationId: "conversation-a", ownerUserId: 101)
             let delayedListA = box.beginConversationListLoad(rows: [
                 IOSAIAssistantPanel.SavedConversation(
                     id: "conversation-a",
@@ -288,7 +384,7 @@ final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
     }
 
     func testOverlappingConversationListCompletionCannotInstallStaleRowsOverNewestLoad() async {
-        let box = CoordinatorBox(conversationId: "conversation-a", ownerUserId: 1)
+        let box = CoordinatorBox(conversationId: "conversation-a", ownerUserId: 101)
         let staleList = box.beginConversationListLoad(rows: [
             IOSAIAssistantPanel.SavedConversation(
                 id: "conversation-a",
@@ -322,7 +418,7 @@ final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
     }
 
     func testCurrentConversationListReturnInstallsRowsAndClearsLoading() async {
-        let box = CoordinatorBox(conversationId: "conversation-a", ownerUserId: 1)
+        let box = CoordinatorBox(conversationId: "conversation-a", ownerUserId: 101)
         let currentList = box.beginConversationListLoad(rows: [
             IOSAIAssistantPanel.SavedConversation(
                 id: "conversation-a",
@@ -701,7 +797,7 @@ private final class CoordinatorBox {
 
     init(
         conversationId: String = "conversation-a",
-        ownerUserId: Int64? = 1,
+        ownerUserId: Int64? = 101,
         conversationRevision: UInt = 0,
         messages: [AssistantMessage] = []
     ) {

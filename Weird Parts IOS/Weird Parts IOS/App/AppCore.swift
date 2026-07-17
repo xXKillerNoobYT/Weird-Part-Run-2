@@ -1266,7 +1266,10 @@ final class AppCore: ObservableObject {
                     ? "WEI5134 QA table state: table broken"
                     : "WEI5134 QA table state: table restored"
             } catch {
-                wei5134AIReadFailureQAState = "WEI5134 QA table state: error — \(error.localizedDescription)"
+                logger.error(
+                    "WEI-5134 AI conversation table transition failed: \(error.localizedDescription, privacy: .private)"
+                )
+                wei5134AIReadFailureQAState = "WEI5134 QA table state: error — transition failed"
             }
         }
     }

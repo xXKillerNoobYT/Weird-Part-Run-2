@@ -201,8 +201,10 @@ struct IOSAIAssistantPanel: View {
     @State private var queuedHelpRequest: [AnyHashable: Any]?
     @State private var helpPersistenceTask: Task<Void, Never>?
     @State private var conversationLoadTask: Task<Void, Never>?
+    @State private var conversationHistoryRetryTask: Task<Void, Never>?
     @State private var conversationListTask: Task<Void, Never>?
     @State private var conversationListRequestID: UInt = 0
+    @State private var activeResumePrerequisiteToken: ResumePrerequisiteToken?
 
     /// Constant-size identity used to notice a new Help handoff without rebuilding
     /// a token from the potentially large visible Help body during view updates.
@@ -733,6 +735,7 @@ struct IOSAIAssistantPanel: View {
         }
         .task(id: resumePrerequisiteToken) {
             let initializationPrerequisites = resumePrerequisiteToken
+            resetConversationReadScopeIfNeeded(for: initializationPrerequisites)
             let initialization = helpHandoffReadiness.beginInitialization()
             isLoadingConversationHistory = true
             if ProcessInfo.processInfo.arguments.contains("-UITestingAIGenerationFailure") {
@@ -758,11 +761,8 @@ struct IOSAIAssistantPanel: View {
                   helpHandoffReadiness.finishInitialization(initialization) else { return }
             consumePendingHelpRequestIfReady()
         }
-        .onChange(of: resumePrerequisiteToken) { _, _ in
-            helpHandoffReadiness.invalidateInitialization()
-            conversationLoadTask?.cancel()
-            conversationLoadTask = nil
-            cancelConversationListLoad(clearError: !showConversationPicker)
+        .onChange(of: resumePrerequisiteToken) { _, newPrerequisites in
+            resetConversationReadScopeIfNeeded(for: newPrerequisites)
         }
         .onChange(of: pendingHelpRequestToken) { _, _ in
             consumePendingHelpRequestIfReady()
@@ -1578,6 +1578,57 @@ struct IOSAIAssistantPanel: View {
         }
     }
 
+    private func cancelConversationHistoryRetryTask() {
+        conversationHistoryRetryTask?.cancel()
+        conversationHistoryRetryTask = nil
+    }
+
+    /// A database or authenticated-owner replacement is a privacy boundary. Clear
+    /// every visible/resumable conversation value before the keyed initialization
+    /// reads from the replacement scope, even when that scope reuses numeric IDs.
+    private func resetConversationReadScopeIfNeeded(for prerequisites: ResumePrerequisiteToken) {
+        guard activeResumePrerequisiteToken != prerequisites else { return }
+        let isReplacingMountedScope = activeResumePrerequisiteToken != nil
+        activeResumePrerequisiteToken = prerequisites
+        guard isReplacingMountedScope else { return }
+
+        helpHandoffReadiness.invalidateInitialization()
+        cancelConversationHistoryRetryTask()
+        conversationLoadTask?.cancel()
+        conversationLoadTask = nil
+        cancelConversationListLoad()
+        let pendingHelpPersistence = cancelHelpPersistenceTask()
+
+        var scopeState = AIConversationReadScopeState(
+            didAttemptResume: didAttemptResume,
+            conversationId: conversationId,
+            conversationRevision: conversationRevision,
+            messages: messages,
+            savedConversations: savedConversations
+        )
+        scopeState.replaceScope(newConversationId: UUID().uuidString)
+        didAttemptResume = scopeState.didAttemptResume
+        conversationId = scopeState.conversationId
+        conversationRevision = scopeState.conversationRevision
+        messages = scopeState.messages
+        savedConversations = scopeState.savedConversations
+
+        isLoadingConversationHistory = true
+        isLoadingConversations = false
+        showConversationPicker = false
+        conversationHistoryReadError = nil
+        conversationHistoryRetry = nil
+        conversationListReadError = nil
+        conversationPersistenceError = nil
+        clearConversationError = nil
+        clearConversationRetryId = nil
+        isProcessing = false
+        isClearingConversation = false
+        clearVolatilePageContext()
+        Task { await pendingHelpPersistence?.value }
+        Task { await aiService.clearConversation() }
+    }
+
     @discardableResult
     private func cancelHelpPersistenceTask() -> Task<Void, Never>? {
         let pendingHelpPersistence = helpPersistenceTask
@@ -1591,6 +1642,7 @@ struct IOSAIAssistantPanel: View {
     /// Start a brand-new conversation — clears the AI session, resets messages, generates a new ID.
     private func startNewConversation() {
         let pendingHelpPersistence = cancelHelpPersistenceTask()
+        cancelConversationHistoryRetryTask()
         conversationLoadTask?.cancel()
         conversationLoadTask = nil
         cancelConversationListLoad()
@@ -1612,6 +1664,7 @@ struct IOSAIAssistantPanel: View {
     /// Clear volatile assistant state when the app logs out, without deleting persisted history.
     private func resetForLogout() {
         let pendingHelpPersistence = cancelHelpPersistenceTask()
+        cancelConversationHistoryRetryTask()
         conversationLoadTask?.cancel()
         conversationLoadTask = nil
         cancelConversationListLoad()
@@ -1735,6 +1788,7 @@ struct IOSAIAssistantPanel: View {
             return
         }
 
+        cancelConversationHistoryRetryTask()
         conversationLoadTask?.cancel()
         conversationLoadTask = nil
         cancelConversationListLoad()
@@ -1916,35 +1970,67 @@ struct IOSAIAssistantPanel: View {
 
     private func retryConversationHistoryRead() {
         guard !isLoadingConversationHistory else { return }
-        let retry = conversationHistoryRetry
-        let retryDatabaseIdentity = appCore.aiConversationReadDatabase.map(AIDatabaseIdentity.init)
+        guard let retry = conversationHistoryRetry,
+              let retryDatabase = appCore.aiConversationReadDatabase,
+              let retryToken = AIConversationHistoryRetryToken(
+                ownerUserId: appCore.aiConversationReadOwnerUserId,
+                database: retryDatabase,
+                conversationId: conversationId,
+                revision: conversationRevision
+              ) else { return }
+        cancelConversationHistoryRetryTask()
+        isLoadingConversationHistory = true
         conversationHistoryReadError = nil
 
-        Task {
+        let task = Task {
             let initialization = helpHandoffReadiness.beginInitialization()
-            isLoadingConversationHistory = true
+            var completionToken = retryToken
             switch retry {
             case .latestConversationLookup:
                 didAttemptResume = false
                 guard await resumeLastConversationIfNeeded() else {
-                    guard appCore.aiConversationReadDatabase.map(AIDatabaseIdentity.init) == retryDatabaseIdentity else { return }
-                    isLoadingConversationHistory = false
+                    guard retryToken.matches(
+                        ownerUserId: appCore.aiConversationReadOwnerUserId,
+                        database: appCore.aiConversationReadDatabase,
+                        conversationId: conversationId,
+                        revision: conversationRevision,
+                        isCancelled: Task.isCancelled
+                    ) else { return }
+                    isLoadingConversationHistory = AIAssistantInitializationLoadingPolicy.keepsLoading(
+                        afterResumeFailureWith: conversationHistoryReadError,
+                        prerequisitesAvailable: true
+                    )
+                    conversationHistoryRetryTask = nil
                     return
                 }
+                guard retryToken.matchesPrerequisites(
+                    ownerUserId: appCore.aiConversationReadOwnerUserId,
+                    database: appCore.aiConversationReadDatabase,
+                    isCancelled: Task.isCancelled
+                ), let currentToken = AIConversationHistoryRetryToken(
+                    ownerUserId: appCore.aiConversationReadOwnerUserId,
+                    database: appCore.aiConversationReadDatabase,
+                    conversationId: conversationId,
+                    revision: conversationRevision
+                ) else { return }
+                completionToken = currentToken
                 await loadCurrentConversation()
             case .transcriptHydration:
                 await loadCurrentConversation()
-            case nil:
-                guard appCore.aiConversationReadDatabase.map(AIDatabaseIdentity.init) == retryDatabaseIdentity else { return }
-                isLoadingConversationHistory = false
-                return
             }
             guard !Task.isCancelled,
-                  appCore.aiConversationReadDatabase.map(AIDatabaseIdentity.init) == retryDatabaseIdentity,
+                  completionToken.matches(
+                    ownerUserId: appCore.aiConversationReadOwnerUserId,
+                    database: appCore.aiConversationReadDatabase,
+                    conversationId: conversationId,
+                    revision: conversationRevision
+                  ),
                   conversationHistoryReadError == nil,
                   helpHandoffReadiness.finishInitialization(initialization) else { return }
+            conversationHistoryRetryTask = nil
             consumePendingHelpRequestIfReady()
         }
+        conversationHistoryRetryTask = task
     }
 
     private func presentConversationPicker() {
@@ -2040,6 +2126,7 @@ struct IOSAIAssistantPanel: View {
         conversationHistoryReadError = nil
         conversationHistoryRetry = nil
         let pendingHelpPersistence = cancelHelpPersistenceTask()
+        cancelConversationHistoryRetryTask()
         conversationLoadTask?.cancel()
         cancelConversationListLoad()
         isLoadingConversationHistory = false
@@ -3621,6 +3708,68 @@ struct AIDatabaseIdentity: Equatable, Sendable {
 
     func matches(_ database: AppDatabase?) -> Bool {
         database.map(ObjectIdentifier.init) == objectIdentifier
+    }
+}
+
+struct AIConversationHistoryRetryToken: Equatable, Sendable {
+    let ownerUserId: Int64
+    let databaseIdentity: AIDatabaseIdentity
+    let conversationId: String
+    let revision: UInt
+
+    init?(
+        ownerUserId: Int64?,
+        database: AppDatabase?,
+        conversationId: String,
+        revision: UInt
+    ) {
+        guard let ownerUserId, ownerUserId > 0, let database else { return nil }
+        self.ownerUserId = ownerUserId
+        databaseIdentity = AIDatabaseIdentity(database)
+        self.conversationId = conversationId
+        self.revision = revision
+    }
+
+    func matchesPrerequisites(
+        ownerUserId currentOwnerUserId: Int64?,
+        database currentDatabase: AppDatabase?,
+        isCancelled: Bool = false
+    ) -> Bool {
+        !isCancelled
+            && ownerUserId == currentOwnerUserId
+            && databaseIdentity.matches(currentDatabase)
+    }
+
+    func matches(
+        ownerUserId currentOwnerUserId: Int64?,
+        database currentDatabase: AppDatabase?,
+        conversationId currentConversationId: String,
+        revision currentRevision: UInt,
+        isCancelled: Bool = false
+    ) -> Bool {
+        matchesPrerequisites(
+            ownerUserId: currentOwnerUserId,
+            database: currentDatabase,
+            isCancelled: isCancelled
+        )
+            && conversationId == currentConversationId
+            && revision == currentRevision
+    }
+}
+
+struct AIConversationReadScopeState<Message, ConversationRow> {
+    private(set) var didAttemptResume: Bool
+    private(set) var conversationId: String
+    private(set) var conversationRevision: UInt
+    private(set) var messages: [Message]
+    private(set) var savedConversations: [ConversationRow]
+
+    mutating func replaceScope(newConversationId: String) {
+        didAttemptResume = false
+        conversationId = newConversationId
+        conversationRevision &+= 1
+        messages.removeAll()
+        savedConversations.removeAll()
     }
 }
 
