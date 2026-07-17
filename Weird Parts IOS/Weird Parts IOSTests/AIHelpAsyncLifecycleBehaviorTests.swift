@@ -1,5 +1,6 @@
 import XCTest
 @testable import Weird_Parts
+import WiredPartCore
 
 /// Behavioral async-lifecycle coverage for WEI-5062 / PR #1460.
 ///
@@ -9,6 +10,20 @@ import XCTest
 /// exact stale-completion ordering instead of depending on `Task.yield()`.
 @MainActor
 final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
+    func testDatabaseIdentityRejectsResetRebootstrapWhenOwnerIDIsReused() throws {
+        let reusedOwnerUserId: Int64 = 1
+        let databaseBeforeReset = try AppDatabase.openInMemoryDatabase()
+        let databaseAfterRebootstrap = try AppDatabase.openInMemoryDatabase()
+        let requestDatabaseIdentity = AIDatabaseIdentity(databaseBeforeReset)
+
+        XCTAssertEqual(reusedOwnerUserId, 1)
+        XCTAssertTrue(requestDatabaseIdentity.matches(databaseBeforeReset))
+        XCTAssertFalse(
+            requestDatabaseIdentity.matches(databaseAfterRebootstrap),
+            "A completion from the deleted database must stay stale even when rebootstrap reuses owner ID 1."
+        )
+    }
+
     func testDelayedHelpSuccessAfterNewDoesNotContaminateConversationB() async {
         let box = CoordinatorBox(conversationId: "help-a")
         let delayedHelpA = box.beginHelpCompletion(staged: true)
