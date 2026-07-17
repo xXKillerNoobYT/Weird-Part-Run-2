@@ -112,8 +112,8 @@ final class AIHelpResumeRegressionTests: XCTestCase {
     func testResumeControlsUseExistingPersistenceHelpersAndSafeEmptyState() throws {
         let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
 
-        XCTAssertTrue(assistant.contains("FoundationModelsService.latestConversationId(\n            ownerUserId: ownerUserId"))
-        XCTAssertTrue(assistant.contains("FoundationModelsService.listConversations(\n            ownerUserId: ownerUserId"))
+        XCTAssertTrue(assistant.contains("FoundationModelsService.latestConversationId("))
+        XCTAssertTrue(assistant.contains("FoundationModelsService.listConversations("))
         XCTAssertTrue(assistant.contains("let ownerUserId = appCore.currentUser?.id"))
         XCTAssertTrue(assistant.contains("savedConversations = []"))
         XCTAssertTrue(assistant.contains("No Saved Conversations"))
@@ -142,6 +142,69 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertTrue(assistant.contains("private var resumePrerequisiteToken: ResumePrerequisiteToken"))
         XCTAssertTrue(assistant.contains("ownerUserId: appCore.currentUser?.id"))
         XCTAssertTrue(assistant.contains("isDatabaseReady: appCore.db != nil"))
+    }
+
+    func testTranscriptHydrationFailureSurfacesRetryWithoutWelcomeFallback() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let load = try TestSourceSlicer.braceBalancedBody(
+            after: "private func loadSavedMessages() async",
+            in: assistant
+        )
+        let catchBody = try XCTUnwrap(load.components(separatedBy: "} catch {").last)
+
+        XCTAssertTrue(catchBody.contains("conversationHistoryReadError = \"Stored messages could not be loaded"))
+        XCTAssertTrue(catchBody.contains("conversationHistoryRetry = .transcriptHydration"))
+        XCTAssertTrue(catchBody.contains("aiConversationLog.error"))
+        XCTAssertFalse(
+            catchBody.contains("addWelcomeMessageIfNeeded()"),
+            "A thrown transcript read must not masquerade as a genuinely empty conversation."
+        )
+        XCTAssertTrue(assistant.contains("accessibilityLabel(\"Retry loading conversation history\")"))
+    }
+
+    func testLatestConversationLookupFailureRemainsRetryableForSameOwner() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let latest = try TestSourceSlicer.braceBalancedBody(
+            after: "private func resumeLastConversationIfNeeded() async -> Bool",
+            in: assistant
+        )
+
+        XCTAssertTrue(latest.contains("let latest = try await FoundationModelsService.latestConversationId"))
+        XCTAssertFalse(latest.contains("try? await FoundationModelsService.latestConversationId"))
+        XCTAssertTrue(latest.contains("appCore.currentUser?.id == ownerUserId"))
+        XCTAssertTrue(latest.contains("didAttemptResume = false"))
+        XCTAssertTrue(latest.contains("conversationHistoryRetry = .latestConversationLookup"))
+        XCTAssertTrue(latest.contains("return false"))
+
+        let retry = try TestSourceSlicer.braceBalancedBody(
+            after: "private func retryConversationHistoryRead()",
+            in: assistant
+        )
+        XCTAssertTrue(retry.contains("guard await resumeLastConversationIfNeeded()"))
+        XCTAssertTrue(retry.contains("await loadCurrentConversation()"))
+    }
+
+    func testResumeListFailurePreservesRowsAndDoesNotRenderEmptyCopy() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let list = try TestSourceSlicer.braceBalancedBody(
+            after: "private func loadConversationList(requestID: UInt) async",
+            in: assistant
+        )
+
+        XCTAssertTrue(list.contains("let rows = try await FoundationModelsService.listConversations"))
+        XCTAssertFalse(list.contains("try? await FoundationModelsService.listConversations"))
+        XCTAssertTrue(list.contains("rows: savedConversations"))
+        XCTAssertTrue(list.contains("conversationListReadError = \"Saved conversations could not be read"))
+        XCTAssertTrue(list.contains("appCore.currentUser?.id"))
+        XCTAssertTrue(assistant.contains("else if let conversationListReadError"))
+        XCTAssertTrue(assistant.contains("accessibilityLabel(\"Retry loading saved conversations\")"))
+
+        guard let errorBranch = assistant.range(of: "else if let conversationListReadError")?.lowerBound,
+              let emptyBranch = assistant.range(of: "else if savedConversations.isEmpty")?.lowerBound else {
+            XCTFail("Resume picker must distinguish read failure from a genuine empty result.")
+            return
+        }
+        XCTAssertLessThan(errorBranch, emptyBranch)
     }
 
     func testHelpObservationUsesDedicatedConstantSizeRequestIdentity() throws {
@@ -358,11 +421,11 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         )
         XCTAssertTrue(sendQuery.contains("!isLoadingConversationHistory"))
         XCTAssertTrue(
-            assistant.contains(".disabled(isProcessing || isClearingConversation || isLoadingConversationHistory)"),
+            assistant.contains("|| conversationHistoryReadError != nil"),
             "The editor must stay disabled while persisted history hydrates."
         )
         XCTAssertTrue(
-            assistant.contains("|| isLoadingConversationHistory\n            )"),
+            assistant.contains("|| isLoadingConversationHistory\n                    || conversationHistoryReadError != nil"),
             "The Send control must stay disabled while persisted history hydrates."
         )
         XCTAssertTrue(beginLoad.contains("isLoadingConversationHistory = true"))
