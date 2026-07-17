@@ -500,26 +500,7 @@ struct IOSAIAssistantPanel: View {
                         ProgressView("Loading conversations…")
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else if let conversationListReadError {
-                        VStack(spacing: 12) {
-                            ContentUnavailableView(
-                                "Saved Conversations Could Not Be Loaded",
-                                systemImage: "exclamationmark.triangle",
-                                description: Text(conversationListReadError)
-                            )
-                            Button {
-                                presentConversationPicker()
-                            } label: {
-                                Text("Retry")
-                                    .frame(minWidth: 45, minHeight: 45)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .accessibilityLabel("Retry loading saved conversations")
-
-                            if !savedConversations.isEmpty {
-                                conversationList
-                            }
-                        }
+                        conversationListReadFailure(message: conversationListReadError)
                     } else if savedConversations.isEmpty {
                         ContentUnavailableView(
                             "No Saved Conversations",
@@ -543,8 +524,59 @@ struct IOSAIAssistantPanel: View {
         .presentationDragIndicator(.visible)
     }
 
+    private func conversationListReadFailure(message: String) -> some View {
+        List {
+            Section {
+                VStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
+
+                    Text("Saved Conversations Could Not Be Loaded")
+                        .font(.headline)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text(message)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("savedConversationListReadFailureMessage")
+
+                    Button {
+                        presentConversationPicker()
+                    } label: {
+                        Text("Retry")
+                            .frame(minWidth: 45, minHeight: 45)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityLabel("Retry loading saved conversations")
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .listRowBackground(Color.clear)
+            }
+
+            if !savedConversations.isEmpty {
+                Section {
+                    conversationRows
+                }
+            }
+        }
+        .listStyle(.plain)
+    }
+
     private var conversationList: some View {
-        List(savedConversations) { conversation in
+        List {
+            conversationRows
+        }
+    }
+
+    @ViewBuilder
+    private var conversationRows: some View {
+        ForEach(savedConversations) { conversation in
             Button {
                 resumeConversation(conversation.id)
             } label: {

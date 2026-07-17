@@ -51,6 +51,7 @@ The three conversation-read recovery paths are verified hermetically in one runn
 3. Break and restore are idempotent state transitions: current-only breaks, backup-only restores, an already-requested state is a no-op, and both/neither tables produce an explicit observable test error. Normal test completion and teardown restore the table best-effort.
 4. The assistant body and Resume sheet each render visible, labeled controls with minimum 44×44-point hit regions plus an accessibility-observable completion/error state identifier. The controls are never transparent, hidden, coordinate-driven, or overlaid invisibly.
 5. `WEI5134AIReadFailureQATests` proves in one launch: initial latest-history failure and recovery; Resume-list failure while preserving last-known rows and recovery; and selected-transcript failure without welcome substitution followed by recovery. Each unresolved latest/transcript read keeps the composer and Send disabled.
+6. The Resume-list failure title, complete recovery explanation, Retry control, and preserved conversation rows share one vertically scrollable surface. Compact and regular portrait layouts must not compress or clip the explanation to make room for preserved rows; every element remains reachable without reducing any 44×44-point hit region.
 
 Verification requires focused source-regression tests for notification wiring, help/title lookup, accessible controls, resume hooks, local-only seeding, and preservation of assistant bug-report context, followed by an iOS build and user-like iPhone/iPad verification.
 

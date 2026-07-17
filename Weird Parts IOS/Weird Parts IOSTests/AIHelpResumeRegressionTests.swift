@@ -216,13 +216,13 @@ final class AIHelpResumeRegressionTests: XCTestCase {
 
         XCTAssertTrue(
             assistant.contains(
-                "Text(\"Retry\")\n                                .frame(minWidth: 44, minHeight: 44)\n                                .contentShape(Rectangle())\n                        }\n                        .buttonStyle(.borderedProminent)\n                        .accessibilityLabel(\"Retry loading saved conversations\")"
+                "Text(\"Retry\")\n                            .frame(minWidth: 45, minHeight: 45)\n                            .contentShape(Rectangle())\n                    }\n                    .buttonStyle(.borderedProminent)\n                    .accessibilityLabel(\"Retry loading saved conversations\")"
             ),
             "The saved-conversation Retry label must own a 44×44-point hit region before button styling is applied."
         )
         XCTAssertTrue(
             assistant.contains(
-                "Text(\"Retry\")\n                        .font(.caption)\n                        .frame(minWidth: 44, minHeight: 44)\n                        .contentShape(Rectangle())\n                }\n                .disabled(isLoadingConversationHistory)\n                .accessibilityLabel(\"Retry loading conversation history\")"
+                "Text(\"Retry\")\n                        .font(.caption)\n                        .frame(minWidth: 45, minHeight: 45)\n                        .contentShape(Rectangle())\n                }\n                .disabled(isLoadingConversationHistory)\n                .accessibilityLabel(\"Retry loading conversation history\")"
             ),
             "The history Retry label must own a 44×44-point hit region while preserving its accessible name and disabled state."
         )
