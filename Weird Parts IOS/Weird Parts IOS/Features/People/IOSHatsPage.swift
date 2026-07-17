@@ -295,7 +295,7 @@ private struct AddHatSheet: View {
             dismiss()
             onSave()
         } catch {
-            errorMessage = userFriendlyError(error, context: "load hats")
+            errorMessage = userFriendlyError(error, context: "save hat")
         }
     }
 }

@@ -341,7 +341,7 @@ private struct AddTeamSheet: View {
             dismiss()
             onSave()
         } catch {
-            errorMessage = userFriendlyError(error, context: "load teams")
+            errorMessage = userFriendlyError(error, context: "save team")
         }
     }
 }
