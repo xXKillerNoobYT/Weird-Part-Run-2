@@ -259,7 +259,7 @@ private struct AddCustomerSheet: View {
             dismiss()
             onSave()
         } catch {
-            errorMessage = userFriendlyError(error, context: "load customers")
+            errorMessage = userFriendlyError(error, context: "save customer")
         }
     }
 }

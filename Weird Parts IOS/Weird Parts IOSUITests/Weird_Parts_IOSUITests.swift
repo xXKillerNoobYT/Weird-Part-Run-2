@@ -171,6 +171,39 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     // MARK: - Panel Schedule Accessibility
 
     @MainActor
+    func testWEI5031EditTabsMoreDividerIsCompact() throws {
+        logInAsUITestOwnerIfNeeded()
+
+        let moreTab = app.tabBars.buttons["More"]
+        XCTAssertTrue(moreTab.waitForExistence(timeout: 10), "The More tab should be reachable after login.")
+        moreTab.tap()
+
+        let editTabs = app.buttons["Edit Tabs"]
+        XCTAssertTrue(editTabs.waitForExistence(timeout: 10), "The More tab should expose Edit Tabs without extra scrolling.")
+        editTabs.tap()
+
+        XCTAssertTrue(
+            app.navigationBars["Edit Tabs"].waitForExistence(timeout: 10) || app.staticTexts["Edit Tabs"].waitForExistence(timeout: 10),
+            "Edit Tabs should open as a sheet."
+        )
+
+        let divider = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH 'More menu starts here'"))
+            .firstMatch
+        XCTAssertTrue(divider.waitForExistence(timeout: 10), "The More divider should be visible on initial presentation.")
+        XCTAssertLessThan(divider.frame.height, 80, "The More divider must remain a compact row, not a 300pt-class blank cell.")
+
+        let firstMoreModuleStatus = app.staticTexts["More menu"].firstMatch
+        XCTAssertTrue(firstMoreModuleStatus.waitForExistence(timeout: 5), "At least one More module should be visible on initial presentation.")
+        print("WEI-5031 divider frame: \(divider.frame); first More module status frame: \(firstMoreModuleStatus.frame)")
+        XCTAssertLessThanOrEqual(
+            firstMoreModuleStatus.frame.maxY,
+            app.frame.maxY,
+            "The first More module should be visible without scrolling."
+        )
+    }
+
+    @MainActor
     func testPanelScheduleAccessibleCircuitButtonOpensEditor() throws {
         relaunchForPanelScheduleBuilderFixture()
 

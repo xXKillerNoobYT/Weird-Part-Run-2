@@ -390,7 +390,7 @@ private struct AddContactSheet: View {
             dismiss()
             onSave()
         } catch {
-            errorMessage = userFriendlyError(error, context: "load contacts")
+            errorMessage = userFriendlyError(error, context: "save contact")
         }
     }
 }
