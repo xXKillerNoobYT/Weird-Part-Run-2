@@ -1,203 +1,314 @@
 import XCTest
 @testable import Weird_Parts
 
-/// Behavioral async-lifecycle coverage for WEI-5060 / PR #1460.
+/// Behavioral async-lifecycle coverage for WEI-5062 / PR #1460.
 ///
-/// These tests drive the same production completion seam used by
-/// `persistHelpHandoffTurn` and `loadConversationList`: each test starts a
-/// delayed async completion against Conversation A, performs a lifecycle
-/// transition, releases success/failure, and verifies Conversation B remains
-/// clean. They intentionally avoid source-substring assertions and avoid a
-/// DEBUG-only duplicate of the completion logic.
+/// These tests drive the production `AIAssistantLifecycleCoordinator` used by
+/// Help persistence and conversation-list completions in `IOSAIAssistantPanel`.
+/// Suspensions are controlled with explicit continuations so the test owns the
+/// exact stale-completion ordering instead of depending on `Task.yield()`.
 @MainActor
 final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
     func testDelayedHelpSuccessAfterNewDoesNotContaminateConversationB() async {
-        var state = LifecycleState(conversationId: "help-a")
-        let delayedHelpA = state.beginHelpCompletion(staged: true)
+        let box = CoordinatorBox(conversationId: "help-a")
+        let delayedHelpA = box.beginHelpCompletion(staged: true)
 
-        state.transitionToNewConversation("conversation-b")
-        await state.finishHelpCompletion(delayedHelpA)
-        state.sendInCurrentConversation()
+        let task = box.finishHelpCompletionAfterGate(delayedHelpA)
+        await delayedHelpA.gate.waitUntilEntered()
+        box.transitionToNewConversation("conversation-b")
+        await delayedHelpA.gate.release()
 
-        XCTAssertNil(state.conversationPersistenceError)
-        XCTAssertEqual(state.messages.map(\.content), [
+        let applied = await task.value
+        XCTAssertFalse(applied)
+        box.sendInCurrentConversation()
+
+        XCTAssertNil(box.conversationPersistenceError)
+        XCTAssertEqual(box.messages.map(\.content), [
             "Conversation B question",
             "Generated response for conversation-b",
         ])
     }
 
     func testDelayedHelpFailureAfterNewDoesNotContaminateConversationB() async {
-        var state = LifecycleState(conversationId: "help-a")
-        let delayedHelpA = state.beginHelpCompletion(
+        let box = CoordinatorBox(conversationId: "help-a")
+        let delayedHelpA = box.beginHelpCompletion(
             staged: false,
             errorDescription: "stale Help A persistence failure"
         )
 
-        state.transitionToNewConversation("conversation-b")
-        await state.finishHelpCompletion(delayedHelpA)
-        state.sendInCurrentConversation()
+        let task = box.finishHelpCompletionAfterGate(delayedHelpA)
+        await delayedHelpA.gate.waitUntilEntered()
+        box.transitionToNewConversation("conversation-b")
+        await delayedHelpA.gate.release()
 
-        XCTAssertNil(state.conversationPersistenceError)
-        XCTAssertEqual(state.messages.map(\.content), [
+        let applied = await task.value
+        XCTAssertFalse(applied)
+        box.sendInCurrentConversation()
+
+        XCTAssertNil(box.conversationPersistenceError)
+        XCTAssertEqual(box.messages.map(\.content), [
             "Conversation B question",
             "Generated response for conversation-b",
         ])
-        XCTAssertFalse(state.messages.contains { $0.content.contains("stale Help A") })
+        XCTAssertFalse(box.messages.contains { $0.content.contains("stale Help A") })
     }
 
     func testDelayedHelpSuccessAfterResumeDoesNotContaminateConversationB() async {
-        var state = LifecycleState(conversationId: "help-a")
-        let delayedHelpA = state.beginHelpCompletion(staged: true)
+        let box = CoordinatorBox(conversationId: "help-a")
+        let delayedHelpA = box.beginHelpCompletion(staged: true)
 
-        state.resumeConversation("conversation-b")
-        await state.finishHelpCompletion(delayedHelpA)
-        state.sendInCurrentConversation()
+        let task = box.finishHelpCompletionAfterGate(delayedHelpA)
+        await delayedHelpA.gate.waitUntilEntered()
+        box.resumeConversation("conversation-b")
+        await delayedHelpA.gate.release()
 
-        XCTAssertNil(state.conversationPersistenceError)
-        XCTAssertEqual(state.messages.map(\.content), [
+        let applied = await task.value
+        XCTAssertFalse(applied)
+        box.sendInCurrentConversation()
+
+        XCTAssertNil(box.conversationPersistenceError)
+        XCTAssertEqual(box.messages.map(\.content), [
             "Conversation B question",
             "Generated response for conversation-b",
         ])
     }
 
     func testDelayedHelpFailureAfterResumeDoesNotContaminateConversationB() async {
-        var state = LifecycleState(conversationId: "help-a")
-        let delayedHelpA = state.beginHelpCompletion(
+        let box = CoordinatorBox(conversationId: "help-a")
+        let delayedHelpA = box.beginHelpCompletion(
             staged: false,
             errorDescription: "stale Help A persistence failure"
         )
 
-        state.resumeConversation("conversation-b")
-        await state.finishHelpCompletion(delayedHelpA)
-        state.sendInCurrentConversation()
+        let task = box.finishHelpCompletionAfterGate(delayedHelpA)
+        await delayedHelpA.gate.waitUntilEntered()
+        box.resumeConversation("conversation-b")
+        await delayedHelpA.gate.release()
 
-        XCTAssertNil(state.conversationPersistenceError)
-        XCTAssertEqual(state.messages.map(\.content), [
+        let applied = await task.value
+        XCTAssertFalse(applied)
+        box.sendInCurrentConversation()
+
+        XCTAssertNil(box.conversationPersistenceError)
+        XCTAssertEqual(box.messages.map(\.content), [
             "Conversation B question",
             "Generated response for conversation-b",
         ])
-        XCTAssertFalse(state.messages.contains { $0.content.contains("stale Help A") })
+        XCTAssertFalse(box.messages.contains { $0.content.contains("stale Help A") })
     }
 
     func testDelayedHelpSuccessAfterLogoutDoesNotContaminateNextSession() async {
-        var state = LifecycleState(conversationId: "help-a", ownerUserId: 101)
-        let delayedHelpA = state.beginHelpCompletion(staged: true)
+        let box = CoordinatorBox(conversationId: "help-a", ownerUserId: 101)
+        let delayedHelpA = box.beginHelpCompletion(staged: true)
 
-        state.logout(newConversationId: "post-logout-b")
-        await state.finishHelpCompletion(delayedHelpA)
-        state.sendInCurrentConversation("Post logout question")
+        let task = box.finishHelpCompletionAfterGate(delayedHelpA)
+        await delayedHelpA.gate.waitUntilEntered()
+        box.logout(newConversationId: "post-logout-b")
+        await delayedHelpA.gate.release()
 
-        XCTAssertNil(state.conversationPersistenceError)
-        XCTAssertEqual(state.messages.map(\.content), [
+        let applied = await task.value
+        XCTAssertFalse(applied)
+        box.sendInCurrentConversation("Post logout question")
+
+        XCTAssertNil(box.conversationPersistenceError)
+        XCTAssertEqual(box.messages.map(\.content), [
             "Post logout question",
             "Generated response for post-logout-b",
         ])
     }
 
     func testDelayedHelpFailureAfterLogoutDoesNotContaminateNextSession() async {
-        var state = LifecycleState(conversationId: "help-a", ownerUserId: 101)
-        let delayedHelpA = state.beginHelpCompletion(
+        let box = CoordinatorBox(conversationId: "help-a", ownerUserId: 101)
+        let delayedHelpA = box.beginHelpCompletion(
             staged: false,
             errorDescription: "stale Help A persistence failure"
         )
 
-        state.logout(newConversationId: "post-logout-b")
-        await state.finishHelpCompletion(delayedHelpA)
-        state.sendInCurrentConversation("Post logout question")
+        let task = box.finishHelpCompletionAfterGate(delayedHelpA)
+        await delayedHelpA.gate.waitUntilEntered()
+        box.logout(newConversationId: "post-logout-b")
+        await delayedHelpA.gate.release()
 
-        XCTAssertNil(state.conversationPersistenceError)
-        XCTAssertEqual(state.messages.map(\.content), [
+        let applied = await task.value
+        XCTAssertFalse(applied)
+        box.sendInCurrentConversation("Post logout question")
+
+        XCTAssertNil(box.conversationPersistenceError)
+        XCTAssertEqual(box.messages.map(\.content), [
             "Post logout question",
             "Generated response for post-logout-b",
         ])
-        XCTAssertFalse(state.messages.contains { $0.content.contains("stale Help A") })
+        XCTAssertFalse(box.messages.contains { $0.content.contains("stale Help A") })
     }
 
     func testDelayedHelpSuccessAfterClearDoesNotContaminateClearedConversation() async {
-        var state = LifecycleState(conversationId: "help-a")
-        let delayedHelpA = state.beginHelpCompletion(staged: true)
+        let box = CoordinatorBox(conversationId: "help-a")
+        let delayedHelpA = box.beginHelpCompletion(staged: true)
 
-        state.clearCurrentConversation()
-        await state.finishHelpCompletion(delayedHelpA)
-        state.sendInCurrentConversation("Question after clear")
+        let task = box.finishHelpCompletionAfterGate(delayedHelpA)
+        await delayedHelpA.gate.waitUntilEntered()
+        box.clearCurrentConversation()
+        await delayedHelpA.gate.release()
 
-        XCTAssertNil(state.conversationPersistenceError)
-        XCTAssertEqual(state.messages.map(\.content), [
+        let applied = await task.value
+        XCTAssertFalse(applied)
+        box.sendInCurrentConversation("Question after clear")
+
+        XCTAssertNil(box.conversationPersistenceError)
+        XCTAssertEqual(box.messages.map(\.content), [
             "Question after clear",
             "Generated response for help-a",
         ])
     }
 
     func testDelayedHelpFailureAfterClearDoesNotContaminateClearedConversation() async {
-        var state = LifecycleState(conversationId: "help-a")
-        let delayedHelpA = state.beginHelpCompletion(
+        let box = CoordinatorBox(conversationId: "help-a")
+        let delayedHelpA = box.beginHelpCompletion(
             staged: false,
             errorDescription: "stale Help A persistence failure"
         )
 
-        state.clearCurrentConversation()
-        await state.finishHelpCompletion(delayedHelpA)
-        state.sendInCurrentConversation("Question after clear")
+        let task = box.finishHelpCompletionAfterGate(delayedHelpA)
+        await delayedHelpA.gate.waitUntilEntered()
+        box.clearCurrentConversation()
+        await delayedHelpA.gate.release()
 
-        XCTAssertNil(state.conversationPersistenceError)
-        XCTAssertEqual(state.messages.map(\.content), [
+        let applied = await task.value
+        XCTAssertFalse(applied)
+        box.sendInCurrentConversation("Question after clear")
+
+        XCTAssertNil(box.conversationPersistenceError)
+        XCTAssertEqual(box.messages.map(\.content), [
             "Question after clear",
             "Generated response for help-a",
         ])
-        XCTAssertFalse(state.messages.contains { $0.content.contains("stale Help A") })
+        XCTAssertFalse(box.messages.contains { $0.content.contains("stale Help A") })
     }
 
     func testCurrentHelpFailureStillSurfacesBeforeSending() async {
-        var state = LifecycleState(conversationId: "help-a")
-        let delayedHelpA = state.beginHelpCompletion(
+        let box = CoordinatorBox(conversationId: "help-a")
+        let delayedHelpA = box.beginHelpCompletion(
             staged: false,
             errorDescription: "current Help persistence failure"
         )
 
-        await state.finishHelpCompletion(delayedHelpA)
-        state.sendInCurrentConversation("Follow-up question")
+        let task = box.finishHelpCompletionAfterGate(delayedHelpA)
+        await delayedHelpA.gate.waitUntilEntered()
+        await delayedHelpA.gate.release()
+
+        let applied = await task.value
+        XCTAssertTrue(applied)
+        box.sendInCurrentConversation("Follow-up question")
 
         XCTAssertEqual(
-            state.conversationPersistenceError,
+            box.conversationPersistenceError,
             "This Help conversation is visible now but could not be saved: current Help persistence failure"
         )
-        XCTAssertEqual(state.messages.map(\.content), [
+        XCTAssertEqual(box.messages.map(\.content), [
             "Follow-up question",
             "This Help conversation is visible now but could not be saved: current Help persistence failure",
         ])
     }
 
+    func testSecondHelpHandoffUsesLatestLifecycleAndIgnoresEarlierCompletion() async {
+        let box = CoordinatorBox(conversationId: "help-a")
+        let firstHelp = box.beginHelpCompletion(
+            staged: false,
+            errorDescription: "first stale Help failure"
+        )
+
+        let firstTask = box.finishHelpCompletionAfterGate(firstHelp)
+        await firstHelp.gate.waitUntilEntered()
+        box.clearCurrentConversation()
+
+        let secondHelp = box.beginHelpCompletion(staged: true)
+        let secondTask = box.finishHelpCompletionAfterGate(secondHelp)
+        await secondHelp.gate.waitUntilEntered()
+        await secondHelp.gate.release()
+        await firstHelp.gate.release()
+
+        let secondApplied = await secondTask.value
+        let firstApplied = await firstTask.value
+        XCTAssertTrue(secondApplied)
+        XCTAssertFalse(firstApplied)
+        box.sendInCurrentConversation("Second Help follow-up")
+
+        XCTAssertNil(box.conversationPersistenceError)
+        XCTAssertEqual(box.messages.map(\.content), [
+            "Second Help follow-up",
+            "Generated response for help-a",
+        ])
+        XCTAssertFalse(box.messages.contains { $0.content.contains("first stale Help") })
+    }
+
     func testStaleConversationListReturnAlwaysClearsLoadingAfterNewResumeAndLogout() async {
         for transition in ListTransition.allCases {
-            var state = LifecycleState(conversationId: "conversation-a", ownerUserId: 1)
-            let delayedListA = state.beginConversationListLoad(rows: [
+            let box = CoordinatorBox(conversationId: "conversation-a", ownerUserId: 1)
+            let delayedListA = box.beginConversationListLoad(rows: [
                 IOSAIAssistantPanel.SavedConversation(
                     id: "conversation-a",
                     lastMessageAt: "2026-07-16 10:00:00",
                     preview: "stale A preview"
                 ),
             ])
-            XCTAssertTrue(state.isLoadingConversations)
+            XCTAssertTrue(box.isLoadingConversations)
 
+            let task = box.finishConversationListLoadAfterGate(delayedListA)
+            await delayedListA.gate.waitUntilEntered()
             switch transition {
             case .new:
-                state.transitionToNewConversation("conversation-b")
+                box.transitionToNewConversation("conversation-b")
             case .resume:
-                state.resumeConversation("conversation-b")
+                box.resumeConversation("conversation-b")
             case .logout:
-                state.logout(newConversationId: "post-logout-b")
+                box.logout(newConversationId: "post-logout-b")
             }
+            await delayedListA.gate.release()
 
-            await state.finishConversationListLoad(delayedListA)
-
-            XCTAssertFalse(state.isLoadingConversations, "\(transition) must clear the spinner even when the delayed list is stale.")
-            XCTAssertTrue(state.savedConversations.isEmpty, "\(transition) must not install stale A rows.")
+            let applied = await task.value
+            XCTAssertFalse(applied)
+            XCTAssertFalse(box.isLoadingConversations, "\(transition) must clear the spinner even when the delayed list is stale.")
+            XCTAssertTrue(box.savedConversations.isEmpty, "\(transition) must not install stale A rows.")
         }
     }
 
+    func testOverlappingConversationListCompletionCannotInstallStaleRowsOverNewestLoad() async {
+        let box = CoordinatorBox(conversationId: "conversation-a", ownerUserId: 1)
+        let staleList = box.beginConversationListLoad(rows: [
+            IOSAIAssistantPanel.SavedConversation(
+                id: "conversation-a",
+                lastMessageAt: "2026-07-16 10:00:00",
+                preview: "stale preview"
+            ),
+        ])
+        let staleTask = box.finishConversationListLoadAfterGate(staleList)
+        await staleList.gate.waitUntilEntered()
+
+        box.resumeConversation("conversation-b")
+        let currentList = box.beginConversationListLoad(rows: [
+            IOSAIAssistantPanel.SavedConversation(
+                id: "conversation-b",
+                lastMessageAt: "2026-07-16 10:02:00",
+                preview: "current preview"
+            ),
+        ])
+        let currentTask = box.finishConversationListLoadAfterGate(currentList)
+        await currentList.gate.waitUntilEntered()
+
+        await currentList.gate.release()
+        await staleList.gate.release()
+
+        let currentApplied = await currentTask.value
+        let staleApplied = await staleTask.value
+        XCTAssertTrue(currentApplied)
+        XCTAssertFalse(staleApplied)
+        XCTAssertFalse(box.isLoadingConversations)
+        XCTAssertEqual(box.savedConversations.map(\.preview), ["current preview"])
+    }
+
     func testCurrentConversationListReturnInstallsRowsAndClearsLoading() async {
-        var state = LifecycleState(conversationId: "conversation-a", ownerUserId: 1)
-        let currentList = state.beginConversationListLoad(rows: [
+        let box = CoordinatorBox(conversationId: "conversation-a", ownerUserId: 1)
+        let currentList = box.beginConversationListLoad(rows: [
             IOSAIAssistantPanel.SavedConversation(
                 id: "conversation-a",
                 lastMessageAt: "2026-07-16 10:00:00",
@@ -205,10 +316,14 @@ final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
             ),
         ])
 
-        await state.finishConversationListLoad(currentList)
+        let task = box.finishConversationListLoadAfterGate(currentList)
+        await currentList.gate.waitUntilEntered()
+        await currentList.gate.release()
 
-        XCTAssertFalse(state.isLoadingConversations)
-        XCTAssertEqual(state.savedConversations.map(\.preview), ["current preview"])
+        let applied = await task.value
+        XCTAssertTrue(applied)
+        XCTAssertFalse(box.isLoadingConversations)
+        XCTAssertEqual(box.savedConversations.map(\.preview), ["current preview"])
     }
 
     private enum ListTransition: CaseIterable, CustomStringConvertible {
@@ -227,14 +342,13 @@ final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
 }
 
 @MainActor
-private struct LifecycleState {
-    var conversationId: String
-    var ownerUserId: Int64?
-    var conversationRevision: UInt
-    var conversationPersistenceError: String?
-    var messages: [AssistantMessage]
-    var savedConversations: [IOSAIAssistantPanel.SavedConversation]
-    var isLoadingConversations = false
+private final class CoordinatorBox {
+    private var coordinator: AIAssistantLifecycleCoordinator<IOSAIAssistantPanel.SavedConversation>
+    private(set) var messages: [AssistantMessage]
+
+    var conversationPersistenceError: String? { coordinator.conversationPersistenceError }
+    var savedConversations: [IOSAIAssistantPanel.SavedConversation] { coordinator.savedConversations }
+    var isLoadingConversations: Bool { coordinator.isLoadingConversations }
 
     init(
         conversationId: String = "conversation-a",
@@ -242,11 +356,12 @@ private struct LifecycleState {
         conversationRevision: UInt = 0,
         messages: [AssistantMessage] = []
     ) {
-        self.conversationId = conversationId
-        self.ownerUserId = ownerUserId
-        self.conversationRevision = conversationRevision
+        self.coordinator = AIAssistantLifecycleCoordinator(
+            conversationId: conversationId,
+            ownerUserId: ownerUserId,
+            conversationRevision: conversationRevision
+        )
         self.messages = messages
-        self.savedConversations = []
     }
 
     func beginHelpCompletion(
@@ -254,83 +369,69 @@ private struct LifecycleState {
         errorDescription: String? = nil
     ) -> DelayedHelpCompletion {
         DelayedHelpCompletion(
-            lifecycle: snapshot(),
+            lifecycle: coordinator.snapshot(),
             staged: staged,
             errorDescription: errorDescription
         )
     }
 
-    mutating func finishHelpCompletion(_ delayedCompletion: DelayedHelpCompletion) async {
-        let completion = await delayedCompletion.resolve(
-            currentConversationId: conversationId,
-            currentOwnerUserId: ownerUserId,
-            currentRevision: conversationRevision
-        )
-        guard let completion else { return }
-        conversationPersistenceError = completion.persistenceError
+    func finishHelpCompletionAfterGate(_ delayedCompletion: DelayedHelpCompletion) -> Task<Bool, Never> {
+        Task { @MainActor in
+            await delayedCompletion.gate.enterAndWaitForRelease()
+            return coordinator.finishHelpPersistence(
+                lifecycle: delayedCompletion.lifecycle,
+                staged: delayedCompletion.staged,
+                errorDescription: delayedCompletion.errorDescription
+            )
+        }
     }
 
-    mutating func transitionToNewConversation(_ newConversationId: String) {
-        conversationRevision &+= 1
-        conversationId = newConversationId
-        conversationPersistenceError = nil
+    func transitionToNewConversation(_ newConversationId: String) {
+        coordinator.transitionToNewConversation(newConversationId)
         messages = []
     }
 
-    mutating func resumeConversation(_ resumedConversationId: String) {
-        conversationRevision &+= 1
-        conversationId = resumedConversationId
-        conversationPersistenceError = nil
+    func resumeConversation(_ resumedConversationId: String) {
+        coordinator.resumeConversation(resumedConversationId)
         messages = []
     }
 
-    mutating func logout(newConversationId: String = "post-logout") {
-        conversationRevision &+= 1
-        conversationId = newConversationId
-        ownerUserId = nil
-        conversationPersistenceError = nil
-        messages = []
-        savedConversations = []
-    }
-
-    mutating func clearCurrentConversation() {
-        conversationRevision &+= 1
-        conversationPersistenceError = nil
+    func logout(newConversationId: String = "post-logout") {
+        coordinator.logout(newConversationId: newConversationId)
         messages = []
     }
 
-    mutating func sendInCurrentConversation(_ text: String = "Conversation B question") {
+    func clearCurrentConversation() {
+        coordinator.clearCurrentConversation()
+        messages = []
+    }
+
+    func sendInCurrentConversation(_ text: String = "Conversation B question") {
         messages.append(AssistantMessage(role: .user, content: text))
         if let conversationPersistenceError {
             messages.append(AssistantMessage(role: .assistant, content: conversationPersistenceError))
         } else {
-            messages.append(AssistantMessage(role: .assistant, content: "Generated response for \(conversationId)"))
+            messages.append(AssistantMessage(role: .assistant, content: "Generated response for \(coordinator.conversationId)"))
         }
     }
 
-    mutating func beginConversationListLoad(
+    func beginConversationListLoad(
         rows: [IOSAIAssistantPanel.SavedConversation]
     ) -> DelayedConversationListCompletion {
-        isLoadingConversations = true
-        return DelayedConversationListCompletion(lifecycle: snapshot(), rows: rows)
+        let nextRequestID = coordinator.conversationListRequestID &+ 1
+        let lifecycle = coordinator.beginConversationListLoad(requestID: nextRequestID)
+        return DelayedConversationListCompletion(lifecycle: lifecycle, requestID: nextRequestID, rows: rows)
     }
 
-    mutating func finishConversationListLoad(_ delayedCompletion: DelayedConversationListCompletion) async {
-        defer { isLoadingConversations = false }
-        guard let rows = await delayedCompletion.resolve(
-            currentConversationId: conversationId,
-            currentOwnerUserId: ownerUserId,
-            currentRevision: conversationRevision
-        ) else { return }
-        savedConversations = rows
-    }
-
-    private func snapshot() -> AIConversationLifecycleSnapshot {
-        AIConversationLifecycleSnapshot(
-            conversationId: conversationId,
-            ownerUserId: ownerUserId ?? -1,
-            revision: conversationRevision
-        )
+    func finishConversationListLoadAfterGate(_ delayedCompletion: DelayedConversationListCompletion) -> Task<Bool, Never> {
+        Task { @MainActor in
+            await delayedCompletion.gate.enterAndWaitForRelease()
+            return coordinator.finishConversationListLoad(
+                lifecycle: delayedCompletion.lifecycle,
+                requestID: delayedCompletion.requestID,
+                rows: delayedCompletion.rows
+            )
+        }
     }
 }
 
@@ -338,42 +439,43 @@ private struct DelayedHelpCompletion {
     let lifecycle: AIConversationLifecycleSnapshot
     let staged: Bool
     let errorDescription: String?
-
-    @MainActor
-    func resolve(
-        currentConversationId: String,
-        currentOwnerUserId: Int64?,
-        currentRevision: UInt
-    ) async -> AIHelpPersistenceCompletion? {
-        await Task.yield()
-        return AIAsyncLifecycleCompletion.helpPersistenceResult(
-            lifecycle: lifecycle,
-            staged: staged,
-            errorDescription: errorDescription,
-            currentConversationId: currentConversationId,
-            currentOwnerUserId: currentOwnerUserId,
-            currentRevision: currentRevision
-        )
-    }
+    let gate = AsyncGate()
 }
 
 private struct DelayedConversationListCompletion {
     let lifecycle: AIConversationLifecycleSnapshot
+    let requestID: UInt
     let rows: [IOSAIAssistantPanel.SavedConversation]
+    let gate = AsyncGate()
+}
 
-    @MainActor
-    func resolve(
-        currentConversationId: String,
-        currentOwnerUserId: Int64?,
-        currentRevision: UInt
-    ) async -> [IOSAIAssistantPanel.SavedConversation]? {
-        await Task.yield()
-        return AIAsyncLifecycleCompletion.conversationListResult(
-            lifecycle: lifecycle,
-            rows: rows,
-            currentConversationId: currentConversationId,
-            currentOwnerUserId: currentOwnerUserId,
-            currentRevision: currentRevision
-        )
+private actor AsyncGate {
+    private var entered = false
+    private var released = false
+    private var enteredWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func enterAndWaitForRelease() async {
+        entered = true
+        enteredWaiters.forEach { $0.resume() }
+        enteredWaiters.removeAll()
+
+        guard !released else { return }
+        await withCheckedContinuation { continuation in
+            releaseWaiters.append(continuation)
+        }
+    }
+
+    func waitUntilEntered() async {
+        guard !entered else { return }
+        await withCheckedContinuation { continuation in
+            enteredWaiters.append(continuation)
+        }
+    }
+
+    func release() {
+        released = true
+        releaseWaiters.forEach { $0.resume() }
+        releaseWaiters.removeAll()
     }
 }

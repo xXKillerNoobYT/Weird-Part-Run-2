@@ -73,6 +73,11 @@ final class AIHelpResumeRegressionTests: XCTestCase {
 
         XCTAssertTrue(assistant.contains("await loadCurrentConversation()\n            isReadyForHelpHandoff = true"))
         XCTAssertTrue(assistant.contains("consumePendingHelpRequestIfReady()"))
+        XCTAssertTrue(assistant.contains("pendingHelpRequestToken"))
+        XCTAssertTrue(
+            assistant.contains(".onChange(of: pendingHelpRequestToken)"),
+            "The mounted assistant must observe a second Help payload after the initial task has already run."
+        )
         XCTAssertFalse(mainView.contains("Task.sleep"), "Help presentation must follow dismissal state, not a timer.")
         XCTAssertTrue(assistant.contains("let pendingHelpPersistence = helpPersistenceTask"))
         XCTAssertTrue(assistant.contains("await pendingHelpPersistence?.value"))
@@ -120,13 +125,14 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertTrue(persist.contains("let currentConversationId = conversationId"))
         XCTAssertTrue(persist.contains("let currentConversationRevision = conversationRevision"))
         XCTAssertTrue(persist.contains("let currentLifecycle = AIConversationLifecycleSnapshot"))
-        XCTAssertTrue(persist.contains("currentOwnerUserId: appCore.currentUser?.id"))
+        XCTAssertTrue(persist.contains("currentLifecycleCoordinator()"))
         XCTAssertEqual(
-            persist.components(separatedBy: "AIAsyncLifecycleCompletion.helpPersistenceResult(").count - 1,
+            persist.components(separatedBy: "lifecycleCoordinator.finishHelpPersistence(").count - 1,
             2,
-            "Help persistence must guard both success and failure writes through the production lifecycle completion seam."
+            "Help persistence must guard both success and failure writes through the production lifecycle coordinator seam."
         )
         XCTAssertFalse(assistant.contains("AIHelpAsyncLifecycleRegressionHarness"))
+        XCTAssertTrue(assistant.contains("AIAssistantLifecycleCoordinator"))
         XCTAssertTrue(cancel.contains("pendingHelpPersistence?.cancel()"))
         XCTAssertTrue(cancel.contains("helpPersistenceTask = nil"))
 
@@ -150,17 +156,14 @@ final class AIHelpResumeRegressionTests: XCTestCase {
     func testConversationPickerLoadingFlagClearsOnStaleListReturn() throws {
         let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
         let list = try TestSourceSlicer.braceBalancedBody(
-            after: "private func loadConversationList() async",
+            after: "private func loadConversationList(requestID: UInt) async",
             in: assistant
         )
 
-        XCTAssertTrue(list.contains("isLoadingConversations = true"))
-        XCTAssertTrue(list.contains("defer { isLoadingConversations = false }"))
-        XCTAssertLessThan(
-            list.range(of: "defer { isLoadingConversations = false }")!.lowerBound,
-            list.range(of: "FoundationModelsService.listConversations")!.lowerBound,
-            "The loading flag must be protected before any delayed list call can return through stale identity guards."
-        )
+        XCTAssertTrue(list.contains("isLoadingConversations = lifecycleCoordinator.isLoadingConversations"))
+        XCTAssertTrue(list.contains("conversationListRequestID == requestID"))
+        XCTAssertTrue(list.contains("lifecycleCoordinator.finishConversationListLoad"))
+        XCTAssertTrue(assistant.contains("@State private var conversationListTask: Task<Void, Never>?"))
     }
 
     func testClearInvalidatesPendingFollowUpBeforeDeletion() throws {
@@ -205,7 +208,7 @@ final class AIHelpResumeRegressionTests: XCTestCase {
             in: assistant
         )
         let list = try TestSourceSlicer.braceBalancedBody(
-            after: "private func loadConversationList() async",
+            after: "private func loadConversationList(requestID: UInt) async",
             in: assistant
         )
 
@@ -219,9 +222,9 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertTrue(latest.contains("let lookupConversationRevision = conversationRevision"))
         XCTAssertTrue(latest.contains("conversationRevision == lookupConversationRevision"))
         XCTAssertTrue(latest.contains("conversationRevision &+= 1"))
-        XCTAssertTrue(list.contains("let listConversationRevision = conversationRevision"))
-        XCTAssertTrue(list.contains("let listLifecycle = AIConversationLifecycleSnapshot"))
-        XCTAssertTrue(list.contains("AIAsyncLifecycleCompletion.conversationListResult("))
+        XCTAssertTrue(list.contains("let listLifecycle = lifecycleCoordinator.beginConversationListLoad(requestID: requestID)"))
+        XCTAssertTrue(list.contains("lifecycleCoordinator.finishConversationListLoad("))
+        XCTAssertTrue(list.contains("requestID: requestID"))
         XCTAssertTrue(assistant.contains("savedConversations.removeAll()"))
 
         for lifecycleFunction in [

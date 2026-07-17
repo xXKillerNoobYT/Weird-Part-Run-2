@@ -133,6 +133,15 @@ struct IOSAIAssistantPanel: View {
     @State private var queuedHelpRequest: [AnyHashable: Any]?
     @State private var helpPersistenceTask: Task<Void, Never>?
     @State private var conversationLoadTask: Task<Void, Never>?
+    @State private var conversationListTask: Task<Void, Never>?
+    @State private var conversationListRequestID: UInt = 0
+
+    private var pendingHelpRequestToken: String {
+        guard let pendingHelpRequest else { return "none" }
+        return ["pageId", "title", "prompt", "helpBody"]
+            .map { key in String(describing: pendingHelpRequest[key] ?? "") }
+            .joined(separator: "\u{1f}")
+    }
 
     struct SavedConversation: Identifiable, Equatable {
         let id: String
@@ -429,6 +438,9 @@ struct IOSAIAssistantPanel: View {
             await resumeLastConversationIfNeeded()
             await loadCurrentConversation()
             isReadyForHelpHandoff = true
+            consumePendingHelpRequestIfReady()
+        }
+        .onChange(of: pendingHelpRequestToken) { _, _ in
             consumePendingHelpRequestIfReady()
         }
         .sheet(isPresented: $showConversationPicker) {
@@ -864,29 +876,44 @@ struct IOSAIAssistantPanel: View {
                     assistantResponse: assistantResponse,
                     in: db
                 )
-                guard let completion = AIAsyncLifecycleCompletion.helpPersistenceResult(
+                var lifecycleCoordinator = currentLifecycleCoordinator()
+                guard lifecycleCoordinator.finishHelpPersistence(
                     lifecycle: currentLifecycle,
                     staged: staged,
                     errorDescription: nil,
-                    currentConversationId: conversationId,
-                    currentOwnerUserId: appCore.currentUser?.id,
-                    currentRevision: conversationRevision,
                     isCancelled: Task.isCancelled
                 ) else { return }
-                conversationPersistenceError = completion.persistenceError
+                conversationPersistenceError = lifecycleCoordinator.conversationPersistenceError
             } catch {
-                guard let completion = AIAsyncLifecycleCompletion.helpPersistenceResult(
+                var lifecycleCoordinator = currentLifecycleCoordinator()
+                guard lifecycleCoordinator.finishHelpPersistence(
                     lifecycle: currentLifecycle,
                     staged: false,
                     errorDescription: error.localizedDescription,
-                    currentConversationId: conversationId,
-                    currentOwnerUserId: appCore.currentUser?.id,
-                    currentRevision: conversationRevision,
                     isCancelled: Task.isCancelled
                 ) else { return }
-                conversationPersistenceError = completion.persistenceError
+                conversationPersistenceError = lifecycleCoordinator.conversationPersistenceError
             }
         }
+    }
+
+    private func currentLifecycleCoordinator() -> AIAssistantLifecycleCoordinator<SavedConversation> {
+        AIAssistantLifecycleCoordinator(
+            conversationId: conversationId,
+            ownerUserId: appCore.currentUser?.id,
+            conversationRevision: conversationRevision,
+            conversationPersistenceError: conversationPersistenceError,
+            savedConversations: savedConversations,
+            isLoadingConversations: isLoadingConversations,
+            conversationListRequestID: conversationListRequestID
+        )
+    }
+
+    private func cancelConversationListLoad() {
+        conversationListTask?.cancel()
+        conversationListTask = nil
+        conversationListRequestID &+= 1
+        isLoadingConversations = false
     }
 
     @discardableResult
@@ -904,6 +931,7 @@ struct IOSAIAssistantPanel: View {
         let pendingHelpPersistence = cancelHelpPersistenceTask()
         conversationLoadTask?.cancel()
         conversationLoadTask = nil
+        cancelConversationListLoad()
         isLoadingConversationHistory = false
         conversationRevision &+= 1
         isProcessing = false
@@ -921,6 +949,7 @@ struct IOSAIAssistantPanel: View {
         let pendingHelpPersistence = cancelHelpPersistenceTask()
         conversationLoadTask?.cancel()
         conversationLoadTask = nil
+        cancelConversationListLoad()
         isLoadingConversationHistory = false
         conversationRevision &+= 1
         isProcessing = false
@@ -1039,6 +1068,7 @@ struct IOSAIAssistantPanel: View {
 
         conversationLoadTask?.cancel()
         conversationLoadTask = nil
+        cancelConversationListLoad()
         isLoadingConversationHistory = false
         conversationRevision &+= 1
         isProcessing = false
@@ -1205,48 +1235,55 @@ struct IOSAIAssistantPanel: View {
 
     private func presentConversationPicker() {
         showConversationPicker = true
-        Task { await loadConversationList() }
+        conversationListTask?.cancel()
+        conversationListRequestID &+= 1
+        let requestID = conversationListRequestID
+        conversationListTask = Task {
+            await loadConversationList(requestID: requestID)
+            guard !Task.isCancelled, conversationListRequestID == requestID else { return }
+            conversationListTask = nil
+        }
     }
 
-    private func loadConversationList() async {
+    private func loadConversationList(requestID: UInt) async {
         guard let db = appCore.db,
               let ownerUserId = appCore.currentUser?.id,
               ownerUserId > 0 else {
             savedConversations = []
+            if conversationListRequestID == requestID {
+                isLoadingConversations = false
+            }
             return
         }
-        let listConversationRevision = conversationRevision
-        let listLifecycle = AIConversationLifecycleSnapshot(
-            conversationId: conversationId,
-            ownerUserId: ownerUserId,
-            revision: listConversationRevision
-        )
-        isLoadingConversations = true
-        defer { isLoadingConversations = false }
+        var lifecycleCoordinator = currentLifecycleCoordinator()
+        let listLifecycle = lifecycleCoordinator.beginConversationListLoad(requestID: requestID)
+        isLoadingConversations = lifecycleCoordinator.isLoadingConversations
         if let rows = try? await FoundationModelsService.listConversations(
             ownerUserId: ownerUserId,
             from: db
         ) {
-            guard let currentRows = AIAsyncLifecycleCompletion.conversationListResult(
-                lifecycle: listLifecycle,
-                rows: rows,
-                currentConversationId: conversationId,
-                currentOwnerUserId: appCore.currentUser?.id,
-                currentRevision: conversationRevision,
-                isCancelled: Task.isCancelled
-            ) else { return }
-            savedConversations = currentRows.map {
+            let conversationRows = rows.map {
                 SavedConversation(id: $0.id, lastMessageAt: $0.lastMessageAt, preview: $0.preview)
             }
-        } else {
-            guard AIAsyncLifecycleCompletion.isCurrent(
+            lifecycleCoordinator = currentLifecycleCoordinator()
+            guard lifecycleCoordinator.finishConversationListLoad(
                 lifecycle: listLifecycle,
-                currentConversationId: conversationId,
-                currentOwnerUserId: appCore.currentUser?.id,
-                currentRevision: conversationRevision,
+                requestID: requestID,
+                rows: conversationRows,
                 isCancelled: Task.isCancelled
             ) else { return }
-            savedConversations = []
+            isLoadingConversations = lifecycleCoordinator.isLoadingConversations
+            savedConversations = lifecycleCoordinator.savedConversations
+        } else {
+            lifecycleCoordinator = currentLifecycleCoordinator()
+            guard lifecycleCoordinator.finishConversationListLoad(
+                lifecycle: listLifecycle,
+                requestID: requestID,
+                rows: [],
+                isCancelled: Task.isCancelled
+            ) else { return }
+            isLoadingConversations = lifecycleCoordinator.isLoadingConversations
+            savedConversations = lifecycleCoordinator.savedConversations
         }
     }
 
@@ -1258,6 +1295,7 @@ struct IOSAIAssistantPanel: View {
         }
         let pendingHelpPersistence = cancelHelpPersistenceTask()
         conversationLoadTask?.cancel()
+        cancelConversationListLoad()
         isLoadingConversationHistory = false
         conversationRevision &+= 1
         isProcessing = false
@@ -2823,6 +2861,127 @@ struct AIConversationLifecycleSnapshot: Equatable, Sendable {
 
 struct AIHelpPersistenceCompletion: Equatable, Sendable {
     let persistenceError: String?
+}
+
+@MainActor
+struct AIAssistantLifecycleCoordinator<Row: Sendable> {
+    private(set) var conversationId: String
+    private(set) var ownerUserId: Int64?
+    private(set) var conversationRevision: UInt
+    private(set) var conversationPersistenceError: String?
+    private(set) var savedConversations: [Row]
+    private(set) var isLoadingConversations: Bool
+    private(set) var conversationListRequestID: UInt
+
+    init(
+        conversationId: String,
+        ownerUserId: Int64?,
+        conversationRevision: UInt = 0,
+        conversationPersistenceError: String? = nil,
+        savedConversations: [Row] = [],
+        isLoadingConversations: Bool = false,
+        conversationListRequestID: UInt = 0
+    ) {
+        self.conversationId = conversationId
+        self.ownerUserId = ownerUserId
+        self.conversationRevision = conversationRevision
+        self.conversationPersistenceError = conversationPersistenceError
+        self.savedConversations = savedConversations
+        self.isLoadingConversations = isLoadingConversations
+        self.conversationListRequestID = conversationListRequestID
+    }
+
+    func snapshot() -> AIConversationLifecycleSnapshot {
+        AIConversationLifecycleSnapshot(
+            conversationId: conversationId,
+            ownerUserId: ownerUserId ?? -1,
+            revision: conversationRevision
+        )
+    }
+
+    mutating func transitionToNewConversation(_ newConversationId: String) {
+        conversationRevision &+= 1
+        conversationListRequestID &+= 1
+        conversationId = newConversationId
+        conversationPersistenceError = nil
+        savedConversations = []
+        isLoadingConversations = false
+    }
+
+    mutating func resumeConversation(_ resumedConversationId: String) {
+        conversationRevision &+= 1
+        conversationListRequestID &+= 1
+        conversationId = resumedConversationId
+        conversationPersistenceError = nil
+        isLoadingConversations = false
+    }
+
+    mutating func logout(newConversationId: String) {
+        conversationRevision &+= 1
+        conversationListRequestID &+= 1
+        conversationId = newConversationId
+        ownerUserId = nil
+        conversationPersistenceError = nil
+        savedConversations = []
+        isLoadingConversations = false
+    }
+
+    mutating func clearCurrentConversation() {
+        conversationRevision &+= 1
+        conversationListRequestID &+= 1
+        conversationPersistenceError = nil
+        isLoadingConversations = false
+    }
+
+    mutating func finishHelpPersistence(
+        lifecycle: AIConversationLifecycleSnapshot,
+        staged: Bool,
+        errorDescription: String?,
+        isCancelled: Bool = false
+    ) -> Bool {
+        guard let completion = AIAsyncLifecycleCompletion.helpPersistenceResult(
+            lifecycle: lifecycle,
+            staged: staged,
+            errorDescription: errorDescription,
+            currentConversationId: conversationId,
+            currentOwnerUserId: ownerUserId,
+            currentRevision: conversationRevision,
+            isCancelled: isCancelled
+        ) else { return false }
+        conversationPersistenceError = completion.persistenceError
+        return true
+    }
+
+    mutating func beginConversationListLoad(requestID: UInt? = nil) -> AIConversationLifecycleSnapshot {
+        if let requestID {
+            conversationListRequestID = requestID
+        } else {
+            conversationListRequestID &+= 1
+        }
+        isLoadingConversations = true
+        return snapshot()
+    }
+
+    mutating func finishConversationListLoad(
+        lifecycle: AIConversationLifecycleSnapshot,
+        requestID: UInt? = nil,
+        rows: [Row],
+        isCancelled: Bool = false
+    ) -> Bool {
+        let completionRequestID = requestID ?? conversationListRequestID
+        guard completionRequestID == conversationListRequestID else { return false }
+        defer { isLoadingConversations = false }
+        guard let currentRows = AIAsyncLifecycleCompletion.conversationListResult(
+            lifecycle: lifecycle,
+            rows: rows,
+            currentConversationId: conversationId,
+            currentOwnerUserId: ownerUserId,
+            currentRevision: conversationRevision,
+            isCancelled: isCancelled
+        ) else { return false }
+        savedConversations = currentRows
+        return true
+    }
 }
 
 enum AIAsyncLifecycleCompletion {
