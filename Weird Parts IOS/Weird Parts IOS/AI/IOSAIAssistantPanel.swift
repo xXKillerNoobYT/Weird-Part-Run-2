@@ -129,7 +129,7 @@ struct IOSAIAssistantPanel: View {
     @State private var isLoadingConversations = false
     /// Prevents a prompt from racing ahead of persisted transcript hydration.
     @State private var isLoadingConversationHistory = false
-    @State private var isReadyForHelpHandoff = false
+    @State private var helpHandoffReadiness = AIHelpHandoffReadinessCoordinator()
     @State private var queuedHelpRequest: [AnyHashable: Any]?
     @State private var helpPersistenceTask: Task<Void, Never>?
     @State private var conversationLoadTask: Task<Void, Never>?
@@ -446,12 +446,17 @@ struct IOSAIAssistantPanel: View {
             inputBar
         }
         .task(id: resumePrerequisiteToken) {
+            let initialization = helpHandoffReadiness.beginInitialization()
             isLoadingConversationHistory = true
             aiAvailability = aiService.checkAvailability()
             await resumeLastConversationIfNeeded()
             await loadCurrentConversation()
-            isReadyForHelpHandoff = true
+            guard !Task.isCancelled,
+                  helpHandoffReadiness.finishInitialization(initialization) else { return }
             consumePendingHelpRequestIfReady()
+        }
+        .onChange(of: resumePrerequisiteToken) { _, _ in
+            helpHandoffReadiness.invalidateInitialization()
         }
         .onChange(of: pendingHelpRequestToken) { _, _ in
             consumePendingHelpRequestIfReady()
@@ -814,9 +819,13 @@ struct IOSAIAssistantPanel: View {
     private func consumePendingHelpRequestIfReady() {
         if let pendingHelpRequest {
             queuedHelpRequest = pendingHelpRequest
+            helpHandoffReadiness.queueHelpRequest(
+                id: pendingHelpRequest["requestID"] as? String ?? UUID().uuidString
+            )
             self.pendingHelpRequest = nil
         }
-        guard isReadyForHelpHandoff, let request = queuedHelpRequest else { return }
+        guard helpHandoffReadiness.consumeQueuedHelpRequest() != nil,
+              let request = queuedHelpRequest else { return }
         queuedHelpRequest = nil
         handleHelpHandoff(request)
     }
@@ -825,6 +834,9 @@ struct IOSAIAssistantPanel: View {
     private func handleHelpHandoff(_ userInfo: [AnyHashable: Any]) {
         guard !isClearingConversation else {
             queuedHelpRequest = userInfo
+            helpHandoffReadiness.queueHelpRequest(
+                id: userInfo["requestID"] as? String ?? UUID().uuidString
+            )
             return
         }
         let title = userInfo["title"] as? String ?? "This Page"
@@ -2879,6 +2891,40 @@ struct AIConversationLifecycleSnapshot: Equatable, Sendable {
 
 struct AIHelpPersistenceCompletion: Equatable, Sendable {
     let persistenceError: String?
+}
+
+@MainActor
+struct AIHelpHandoffReadinessCoordinator {
+    private(set) var isReadyForHelpHandoff = false
+    private var initializationRequestID: UInt = 0
+    private var queuedHelpRequestID: String?
+
+    mutating func beginInitialization() -> UInt {
+        initializationRequestID &+= 1
+        isReadyForHelpHandoff = false
+        return initializationRequestID
+    }
+
+    mutating func invalidateInitialization() {
+        initializationRequestID &+= 1
+        isReadyForHelpHandoff = false
+    }
+
+    mutating func finishInitialization(_ requestID: UInt) -> Bool {
+        guard requestID == initializationRequestID else { return false }
+        isReadyForHelpHandoff = true
+        return true
+    }
+
+    mutating func queueHelpRequest(id: String) {
+        queuedHelpRequestID = id
+    }
+
+    mutating func consumeQueuedHelpRequest() -> String? {
+        guard isReadyForHelpHandoff else { return nil }
+        defer { queuedHelpRequestID = nil }
+        return queuedHelpRequestID
+    }
 }
 
 @MainActor

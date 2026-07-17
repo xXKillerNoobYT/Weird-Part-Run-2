@@ -141,7 +141,9 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
         let mainView = try Self.readSource("Navigation/IOSMainView.swift")
 
-        XCTAssertTrue(assistant.contains("await loadCurrentConversation()\n            isReadyForHelpHandoff = true"))
+        XCTAssertTrue(assistant.contains("let initialization = helpHandoffReadiness.beginInitialization()"))
+        XCTAssertTrue(assistant.contains("helpHandoffReadiness.finishInitialization(initialization)"))
+        XCTAssertTrue(assistant.contains(".onChange(of: resumePrerequisiteToken)"))
         XCTAssertTrue(assistant.contains("consumePendingHelpRequestIfReady()"))
         XCTAssertTrue(assistant.contains("pendingHelpRequestToken"))
         XCTAssertTrue(
@@ -326,7 +328,11 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         )
 
         XCTAssertTrue(assistant.contains("@State private var isLoadingConversationHistory = false"))
-        XCTAssertTrue(assistant.contains(".task(id: resumePrerequisiteToken) {\n            isLoadingConversationHistory = true"))
+        XCTAssertTrue(
+            assistant.contains(
+                ".task(id: resumePrerequisiteToken) {\n            let initialization = helpHandoffReadiness.beginInitialization()\n            isLoadingConversationHistory = true"
+            )
+        )
         XCTAssertTrue(sendQuery.contains("!isLoadingConversationHistory"))
         XCTAssertTrue(
             assistant.contains(".disabled(isProcessing || isClearingConversation || isLoadingConversationHistory)"),

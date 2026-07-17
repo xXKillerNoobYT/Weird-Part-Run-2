@@ -326,6 +326,26 @@ final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
         XCTAssertEqual(box.savedConversations.map(\.preview), ["current preview"])
     }
 
+    func testHelpHandoffWaitsForAuthenticatedInitializationToFinish() {
+        var readiness = AIHelpHandoffReadinessCoordinator()
+
+        let unauthenticatedPass = readiness.beginInitialization()
+        XCTAssertTrue(readiness.finishInitialization(unauthenticatedPass))
+        XCTAssertTrue(readiness.isReadyForHelpHandoff)
+
+        let authenticatedPass = readiness.beginInitialization()
+        XCTAssertFalse(
+            readiness.isReadyForHelpHandoff,
+            "A login-triggered history hydration must make Help wait instead of seeding the pre-resume conversation."
+        )
+        XCTAssertNil(readiness.consumeQueuedHelpRequest())
+
+        readiness.queueHelpRequest(id: "help-arriving-during-hydration")
+        XCTAssertNil(readiness.consumeQueuedHelpRequest())
+        XCTAssertTrue(readiness.finishInitialization(authenticatedPass))
+        XCTAssertEqual(readiness.consumeQueuedHelpRequest(), "help-arriving-during-hydration")
+    }
+
     private enum ListTransition: CaseIterable, CustomStringConvertible {
         case new
         case resume
