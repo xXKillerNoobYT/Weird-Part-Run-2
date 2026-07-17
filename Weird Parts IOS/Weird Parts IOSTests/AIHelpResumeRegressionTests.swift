@@ -148,6 +148,35 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertTrue(assistant.contains("databaseIdentity: appCore.db.map(ObjectIdentifier.init)"))
     }
 
+    func testInitializationTaskKeepsMissingPrerequisitesFailClosedUntilTokenChanges() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let task = try TestSourceSlicer.braceBalancedBody(
+            after: ".task(id: resumePrerequisiteToken)",
+            in: assistant
+        )
+
+        XCTAssertTrue(task.contains("let initializationPrerequisites = resumePrerequisiteToken"))
+        XCTAssertTrue(task.contains("isLoadingConversationHistory = true"))
+        XCTAssertTrue(task.contains("guard await resumeLastConversationIfNeeded() else"))
+        XCTAssertTrue(task.contains("guard resumePrerequisiteToken == initializationPrerequisites else { return }"))
+        XCTAssertTrue(task.contains("AIAssistantInitializationLoadingPolicy.keepsLoading("))
+        XCTAssertTrue(task.contains("prerequisitesAvailable: initializationPrerequisites.databaseIdentity != nil"))
+        XCTAssertFalse(
+            task.contains("guard await resumeLastConversationIfNeeded() else {\n                guard resumePrerequisiteToken == initializationPrerequisites else { return }\n                isLoadingConversationHistory = false"),
+            "Missing DB/user prerequisites must not enable a blank composer before the keyed task retries."
+        )
+    }
+
+    func testConversationReadFailureLogsKeepLocalizedDetailsPrivate() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+
+        XCTAssertEqual(
+            assistant.components(separatedBy: "error.localizedDescription, privacy: .private").count - 1,
+            3
+        )
+        XCTAssertFalse(assistant.contains("error.localizedDescription, privacy: .public"))
+    }
+
     func testTranscriptHydrationFailureSurfacesRetryWithoutWelcomeFallback() throws {
         let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
         let load = try TestSourceSlicer.braceBalancedBody(
@@ -199,6 +228,8 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertFalse(list.contains("try? await FoundationModelsService.listConversations"))
         XCTAssertTrue(list.contains("rows: savedConversations"))
         XCTAssertTrue(list.contains("conversationListReadError = \"Saved conversations could not be read"))
+        XCTAssertTrue(list.contains("finishConversationListPrerequisiteFailure(requestID: requestID)"))
+        XCTAssertTrue(list.contains("isLoadingConversations = lifecycleCoordinator.isLoadingConversations"))
         XCTAssertTrue(list.contains("appCore.currentUser?.id"))
         XCTAssertTrue(assistant.contains("else if let conversationListReadError"))
         XCTAssertTrue(assistant.contains("accessibilityLabel(\"Retry loading saved conversations\")"))
