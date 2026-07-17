@@ -1,4 +1,5 @@
 import XCTest
+@testable import Weird_Parts
 
 /// Regression coverage for GitHub #1459 / WEI-4986: Help can seed a local,
 /// read-only assistant turn and users can safely resume persisted conversations.
@@ -35,6 +36,43 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertTrue(helpSheet.contains("accessibilityLabel(\"Ask AI about this help page\")"))
         XCTAssertTrue(helpSheet.contains("accessibilityIdentifier(\"askAIAboutHelpButton\")"))
         XCTAssertTrue(helpSheet.contains("HelpContentRegistry.pageId(matchingTitle: title)"))
+    }
+
+    @MainActor
+    func testHelpTitleLookupUsesDeclarationOrderForDuplicateNormalizedTitles() throws {
+        let candidates = [
+            HelpContentRegistry.HelpEntry(
+                pageId: "expected-context",
+                title: "Shared Help",
+                sections: [("Expected", "First declaration wins.")]
+            ),
+            HelpContentRegistry.HelpEntry(
+                pageId: "wrong-context",
+                title: "  shared help  ",
+                sections: [("Wrong", "Dictionary value order must not pick this duplicate.")]
+            ),
+        ]
+
+        XCTAssertEqual(
+            HelpContentRegistry.pageId(matchingTitle: "\nSHARED HELP\t", in: candidates),
+            "expected-context"
+        )
+        XCTAssertNotEqual(
+            HelpContentRegistry.pageId(matchingTitle: "shared help", in: candidates),
+            "wrong-context",
+            "Duplicate normalized titles must not hand the assistant the wrong page context."
+        )
+    }
+
+    func testHelpTitleLookupDoesNotUseDictionaryValueOrder() throws {
+        let registry = try Self.readSource("Shared/HelpContentRegistry.swift")
+        let lookup = try TestSourceSlicer.braceBalancedBody(
+            after: "static func pageId(matchingTitle title: String)",
+            in: registry
+        )
+
+        XCTAssertTrue(lookup.contains("pageId(matchingTitle: title, in: allEntries)"))
+        XCTAssertFalse(registry.contains("entries.values.first"))
     }
 
     func testHelpHandoffSeedsLocalResponseWithoutModelCall() throws {
