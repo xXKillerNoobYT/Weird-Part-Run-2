@@ -55,6 +55,17 @@ The three conversation-read recovery paths are verified hermetically in one runn
 5. `WEI5134AIReadFailureQATests` proves in one launch: initial latest-history failure and recovery; Resume-list failure while preserving last-known rows and recovery; and selected-transcript failure without welcome substitution followed by recovery. Each unresolved latest/transcript read keeps the composer and Send disabled.
 6. The Resume-list failure title, complete recovery explanation, Retry control, and preserved conversation rows share one vertically scrollable surface. Compact and regular portrait layouts must not compress or clip the explanation to make room for preserved rows; every element remains reachable without reducing any 44×44-point hit region.
 
+### Simulator-only prerequisite recovery seam (WEI-5159 / PR #1466)
+
+The prerequisite-keyed loading behavior is verified through a second hermetic UI-test mode without changing the production database, authentication session, or existing SQLCipher failure seam:
+
+1. The seam is compiled only under `#if DEBUG && targetEnvironment(simulator)` and activates only when the process has both `-UITesting` and `-UITestingWEI5159AIPrerequisiteRecovery`. Release builds and physical-device builds compile no control or mutable prerequisite hook.
+2. The dedicated UI-test database and positive authenticated fixture user still bootstrap normally so the app shell and AI Assistant can mount. While the seam starts in its unavailable state, only the assistant conversation-read prerequisite accessors withhold that database and owner from initialization and Resume-list reads; no production data is removed, signed out, or exposed to a test control.
+3. Visible “Withhold AI prerequisites” and “Restore AI prerequisites” controls publish an accessibility-observable state and own minimum 44×44-point label hit regions. The assistant body exposes one control surface while Resume is closed, and Resume owns the single surface while presented.
+4. In one launch, the user-like test opens the assistant while prerequisites are withheld and proves the empty transcript does not receive the normal welcome message while the composer and Send remain disabled. Restore must change the prerequisite token and recover the latest seeded transcript without recreating the panel.
+5. After a successful Resume-list load establishes last-known rows, Withhold followed by another Resume load must end its spinner with the existing readable prerequisite error, preserve both rows, and keep Retry reachable. Restore plus Retry must clear the error and refresh the rows successfully.
+6. This test runs independently in iPhone 17 portrait and iPad Air 11-inch portrait with zero skips, retained screenshots/xcresults, and measured accessibility frames for both new controls and Retry. The existing `WEI5134AIReadFailureQATests` SQLCipher table failure → restore → Retry paths remain unchanged and must continue to pass.
+
 Verification requires focused source-regression tests for notification wiring, help/title lookup, accessible controls, resume hooks, local-only seeding, and preservation of assistant bug-report context, followed by an iOS build and user-like iPhone/iPad verification.
 
 The AI Assistant is a locally-hosted intelligence layer that augments the WiredPart ERP with natural language understanding and data-driven insights. It runs entirely on-premise via **LM Studio** — no cloud dependency, no data leaving the shop network.
