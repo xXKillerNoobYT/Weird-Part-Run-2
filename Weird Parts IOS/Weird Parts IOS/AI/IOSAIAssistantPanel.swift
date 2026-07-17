@@ -570,24 +570,30 @@ struct IOSAIAssistantPanel: View {
         let isTransitioning = appCore.wei5134AIReadFailureQAState == "WEI5134 QA table state: breaking"
             || appCore.wei5134AIReadFailureQAState == "WEI5134 QA table state: restoring"
 
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 4) {
             Text("AI history recovery test controls")
                 .font(.caption)
                 .fontWeight(.semibold)
 
             HStack(spacing: 12) {
-                Button("Break AI history") {
+                Button {
                     appCore.setWEI5134AIConversationTableBroken(true)
+                } label: {
+                    Text("Break AI history")
+                        .frame(minWidth: 45, minHeight: 45)
+                        .contentShape(Rectangle())
                 }
-                .frame(minWidth: 45, minHeight: 45)
                 .buttonStyle(.bordered)
                 .disabled(isTransitioning)
                 .accessibilityLabel("WEI5134 break AI conversation table")
 
-                Button("Restore AI history") {
+                Button {
                     appCore.setWEI5134AIConversationTableBroken(false)
+                } label: {
+                    Text("Restore AI history")
+                        .frame(minWidth: 45, minHeight: 45)
+                        .contentShape(Rectangle())
                 }
-                .frame(minWidth: 45, minHeight: 45)
                 .buttonStyle(.borderedProminent)
                 .disabled(isTransitioning)
                 .accessibilityLabel("WEI5134 restore AI conversation table")
@@ -600,7 +606,7 @@ struct IOSAIAssistantPanel: View {
                 .accessibilityLabel(appCore.wei5134AIReadFailureQAState)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.secondarySystemGroupedBackground))
     }

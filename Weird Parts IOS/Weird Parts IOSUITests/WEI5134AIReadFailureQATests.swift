@@ -176,6 +176,7 @@ final class WEI5134AIReadFailureQATests: XCTestCase {
             in: application
         )
         XCTAssertTrue(control.waitForExistence(timeout: 5), "Visible QA break control must be available.")
+        assertMinimumTapTarget(control, named: "WEI5134 break AI conversation table")
         control.tap()
         assertQAState(application, expected: "WEI5134 QA table state: table broken")
     }
@@ -186,6 +187,7 @@ final class WEI5134AIReadFailureQATests: XCTestCase {
             in: application
         )
         XCTAssertTrue(control.waitForExistence(timeout: 5), "Visible QA restore control must be available.")
+        assertMinimumTapTarget(control, named: "WEI5134 restore AI conversation table")
         control.tap()
         assertQAState(application, expected: "WEI5134 QA table state: table restored")
     }
