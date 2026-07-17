@@ -145,7 +145,7 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertLessThan(prerequisiteIndex, attemptedIndex)
         XCTAssertTrue(assistant.contains("private var resumePrerequisiteToken: ResumePrerequisiteToken"))
         XCTAssertTrue(assistant.contains("ownerUserId: appCore.currentUser?.id"))
-        XCTAssertTrue(assistant.contains("isDatabaseReady: appCore.db != nil"))
+        XCTAssertTrue(assistant.contains("databaseIdentity: appCore.db.map(ObjectIdentifier.init)"))
     }
 
     func testTranscriptHydrationFailureSurfacesRetryWithoutWelcomeFallback() throws {
@@ -444,14 +444,36 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertTrue(load.contains("!Task.isCancelled"))
         XCTAssertTrue(load.contains("conversationId == loadConversationId"))
         XCTAssertTrue(load.contains("appCore.currentUser?.id == ownerUserId"))
+        XCTAssertEqual(
+            load.components(separatedBy: "databaseIdentity.matches(appCore.db)").count - 1,
+            2,
+            "Transcript success and failure completions must reject a replaced database."
+        )
         XCTAssertTrue(load.contains("conversationRevision == loadConversationRevision"))
         XCTAssertTrue(latest.contains("let lookupConversationRevision = conversationRevision"))
         XCTAssertTrue(latest.contains("conversationRevision == lookupConversationRevision"))
+        XCTAssertEqual(
+            latest.components(separatedBy: "databaseIdentity.matches(appCore.db)").count - 1,
+            2,
+            "Latest-conversation success and failure completions must reject a replaced database."
+        )
         XCTAssertTrue(latest.contains("conversationRevision &+= 1"))
         XCTAssertTrue(list.contains("let listLifecycle = lifecycleCoordinator.beginConversationListLoad(requestID: requestID)"))
         XCTAssertTrue(list.contains("lifecycleCoordinator.finishConversationListLoad("))
         XCTAssertTrue(list.contains("requestID: requestID"))
+        XCTAssertEqual(
+            list.components(separatedBy: "databaseIdentity.matches(appCore.db)").count - 1,
+            3,
+            "Resume-list success, failure, and loading cleanup must reject a replaced database."
+        )
         XCTAssertTrue(assistant.contains("savedConversations.removeAll()"))
+
+        let prerequisiteChange = try TestSourceSlicer.braceBalancedBody(
+            after: ".onChange(of: resumePrerequisiteToken)",
+            in: assistant
+        )
+        XCTAssertTrue(prerequisiteChange.contains("conversationLoadTask?.cancel()"))
+        XCTAssertTrue(prerequisiteChange.contains("cancelConversationListLoad()"))
 
         for lifecycleFunction in [
             "private func startNewConversation()",
@@ -466,6 +488,18 @@ final class AIHelpResumeRegressionTests: XCTestCase {
 
     func testComposerWaitsForConversationHydrationBeforeSending() throws {
         let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let editor = try TestSourceSlicer.braceBalancedBody(
+            after: "private var chatTextEditor: some View",
+            in: assistant
+        )
+        let inputBar = try TestSourceSlicer.braceBalancedBody(
+            after: "private var inputBar: some View",
+            in: assistant
+        )
+        let initializationTask = try TestSourceSlicer.braceBalancedBody(
+            after: ".task(id: resumePrerequisiteToken)",
+            in: assistant
+        )
         let sendQuery = try TestSourceSlicer.braceBalancedBody(
             after: "private func sendQuery()",
             in: assistant
@@ -480,11 +514,8 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         )
 
         XCTAssertTrue(assistant.contains("@State private var isLoadingConversationHistory = false"))
-        XCTAssertTrue(
-            assistant.contains(
-                ".task(id: resumePrerequisiteToken) {\n            let initialization = helpHandoffReadiness.beginInitialization()\n            isLoadingConversationHistory = true"
-            )
-        )
+        XCTAssertTrue(initializationTask.contains("let initialization = helpHandoffReadiness.beginInitialization()"))
+        XCTAssertTrue(initializationTask.contains("isLoadingConversationHistory = true"))
         XCTAssertTrue(sendQuery.contains("!isLoadingConversationHistory"))
         XCTAssertGreaterThanOrEqual(
             assistant.components(separatedBy: "|| isLoadingConversationHistory").count - 1,
@@ -499,8 +530,13 @@ final class AIHelpResumeRegressionTests: XCTestCase {
             assistant.contains("|| isLoadingConversationHistory\n                    || conversationHistoryReadError != nil"),
             "The Send control must stay disabled while persisted history hydrates."
         )
+        XCTAssertTrue(editor.contains("isLoadingConversationHistory"))
+        XCTAssertTrue(editor.contains("conversationHistoryReadError != nil"))
+        XCTAssertTrue(inputBar.contains("isLoadingConversationHistory"))
+        XCTAssertTrue(inputBar.contains("conversationHistoryReadError != nil"))
         XCTAssertTrue(beginLoad.contains("isLoadingConversationHistory = true"))
         XCTAssertTrue(beginLoad.contains("await loadSavedMessages()"))
+        XCTAssertTrue(beginLoad.contains("appCore.db.map(AIDatabaseIdentity.init) == loadDatabaseIdentity"))
         XCTAssertTrue(beginLoad.contains("conversationRevision == loadConversationRevision"))
         XCTAssertTrue(beginLoad.contains("isLoadingConversationHistory = false"))
         XCTAssertTrue(resume.contains("beginCurrentConversationLoad()"))
