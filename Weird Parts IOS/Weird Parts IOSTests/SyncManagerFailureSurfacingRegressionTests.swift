@@ -67,6 +67,38 @@ final class SyncManagerFailureSurfacingRegressionTests: XCTestCase {
         )
     }
 
+    func testShopPairingDependencyFailuresClearProgressAndSurfaceError() throws {
+        let source = try Self.readSyncManagerSource()
+        let pairWithShopBody = try TestSourceSlicer.braceBalancedBody(
+            after: "func pairWithShop(shopAddress: String, pairingCode: String) async throws",
+            in: source
+        )
+
+        XCTAssertTrue(
+            pairWithShopBody.contains(
+                """
+                guard let db, let pm = peerManager else {
+                            syncStatus = .error
+                            syncProgressMessage = nil
+                            errorMessage = SyncError.noDatabaseAvailable.localizedDescription
+                            throw SyncError.noDatabaseAvailable
+                        }
+                """
+            ),
+            "A missing database or peer manager must leave shop pairing in the same visible error state."
+        )
+        XCTAssertFalse(
+            pairWithShopBody.contains(
+                """
+                guard let pm = peerManager else {
+                            throw SyncError.noDatabaseAvailable
+                        }
+                """
+            ),
+            "The peer-manager failure path must not throw while leaving stale syncing progress visible."
+        )
+    }
+
     private static func repoRoot(file: StaticString = #filePath) -> URL {
         URL(fileURLWithPath: "\(file)")
             .deletingLastPathComponent()

@@ -972,13 +972,10 @@ final class IOSSyncManager {
         let deviceId = DeviceIdentity.current
         let deviceName = Self.advertisedDeviceName
 
-        guard let db else {
+        guard let db, let pm = peerManager else {
             syncStatus = .error
             syncProgressMessage = nil
             errorMessage = SyncError.noDatabaseAvailable.localizedDescription
-            throw SyncError.noDatabaseAvailable
-        }
-        guard let pm = peerManager else {
             throw SyncError.noDatabaseAvailable
         }
         let pairingIdentity = try await pm.localSyncIdentity(deviceId: deviceId)
