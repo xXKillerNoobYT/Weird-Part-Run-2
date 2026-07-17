@@ -40,6 +40,7 @@ Review and user-like QA found five requirements that must be satisfied before th
     - Automatic latest-conversation lookup that successfully returns `nil` completes the initialization attempt as a genuine no-history result. A thrown lookup leaves the attempt eligible for retry with the same authenticated owner/database prerequisites and shows a retryable history error.
     - Resume-list loading that successfully returns an empty array shows “No Saved Conversations.” A thrown list read preserves any last-known rows, shows a retryable picker error, and must not render the genuine-empty copy for that failed request.
 14. All three retry paths retain the authenticated positive `ownerUserId` captured for the request. Stale completions from a different owner, conversation, database, or lifecycle revision cannot install rows or clear a newer error/loading state.
+15. Selecting the already-current row from Resume is a no-op only when that conversation has no transcript-hydration failure. If hydration failed, selecting the current row starts a recovery hydration synchronously, preserves the retryable read failure until that hydration succeeds, and keeps the composer and Send disabled throughout recovery.
 
 Verification requires focused source-regression tests for notification wiring, help/title lookup, accessible controls, resume hooks, local-only seeding, and preservation of assistant bug-report context, followed by an iOS build and user-like iPhone/iPad verification.
 

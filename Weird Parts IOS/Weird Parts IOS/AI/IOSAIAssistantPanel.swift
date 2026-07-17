@@ -1446,13 +1446,24 @@ struct IOSAIAssistantPanel: View {
     }
 
     private func resumeConversation(_ id: String) {
+        let selectionAction = AIAssistantResumeSelectionPolicy.action(
+            selectedConversationId: id,
+            currentConversationId: conversationId,
+            hasTranscriptHydrationFailure: conversationHistoryRetry == .transcriptHydration
+        )
+        showConversationPicker = false
+        switch selectionAction {
+        case .retryCurrentHydration:
+            beginCurrentConversationLoad()
+            return
+        case .noChange:
+            return
+        case .switchConversation:
+            break
+        }
         conversationPersistenceError = nil
         conversationHistoryReadError = nil
         conversationHistoryRetry = nil
-        guard id != conversationId else {
-            showConversationPicker = false
-            return
-        }
         let pendingHelpPersistence = cancelHelpPersistenceTask()
         conversationLoadTask?.cancel()
         cancelConversationListLoad()
@@ -1464,7 +1475,6 @@ struct IOSAIAssistantPanel: View {
         Task { await pendingHelpPersistence?.value }
         conversationId = id
         messages = []
-        showConversationPicker = false
         beginCurrentConversationLoad()
     }
 
@@ -3100,6 +3110,25 @@ struct AIHelpHandoffReadinessCoordinator {
         guard isReadyForHelpHandoff else { return nil }
         defer { queuedHelpRequestID = nil }
         return queuedHelpRequestID
+    }
+}
+
+enum AIAssistantResumeSelectionAction: Equatable {
+    case noChange
+    case retryCurrentHydration
+    case switchConversation
+}
+
+enum AIAssistantResumeSelectionPolicy {
+    static func action(
+        selectedConversationId: String,
+        currentConversationId: String,
+        hasTranscriptHydrationFailure: Bool
+    ) -> AIAssistantResumeSelectionAction {
+        guard selectedConversationId == currentConversationId else {
+            return .switchConversation
+        }
+        return hasTranscriptHydrationFailure ? .retryCurrentHydration : .noChange
     }
 }
 

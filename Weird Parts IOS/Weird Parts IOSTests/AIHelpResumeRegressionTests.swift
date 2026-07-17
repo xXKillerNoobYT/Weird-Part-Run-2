@@ -207,6 +207,26 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertLessThan(errorBranch, emptyBranch)
     }
 
+    func testSelectingCurrentConversationAfterHydrationFailureStartsRecoveryBeforeClearingFailure() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let resume = try TestSourceSlicer.braceBalancedBody(
+            after: "private func resumeConversation(_ id: String)",
+            in: assistant
+        )
+
+        guard let policyIndex = resume.range(of: "AIAssistantResumeSelectionPolicy.action(")?.lowerBound,
+              let recoveryIndex = resume.range(of: "case .retryCurrentHydration:")?.lowerBound,
+              let loadIndex = resume.range(of: "beginCurrentConversationLoad()")?.lowerBound,
+              let clearIndex = resume.range(of: "conversationHistoryReadError = nil")?.lowerBound else {
+            XCTFail("Resume must route a failed same-conversation selection through recovery hydration.")
+            return
+        }
+        XCTAssertLessThan(policyIndex, recoveryIndex)
+        XCTAssertLessThan(recoveryIndex, loadIndex)
+        XCTAssertLessThan(loadIndex, clearIndex)
+        XCTAssertTrue(resume.contains("hasTranscriptHydrationFailure: conversationHistoryRetry == .transcriptHydration"))
+    }
+
     func testHelpObservationUsesDedicatedConstantSizeRequestIdentity() throws {
         let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
         let token = try TestSourceSlicer.braceBalancedBody(
