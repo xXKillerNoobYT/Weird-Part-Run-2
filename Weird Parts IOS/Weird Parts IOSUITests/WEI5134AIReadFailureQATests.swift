@@ -67,14 +67,15 @@ final class WEI5134AIReadFailureQATests: XCTestCase {
         let listFailureTitle = app.staticTexts["Saved Conversations Could Not Be Loaded"]
         XCTAssertTrue(listFailureTitle.waitForExistence(timeout: 10), "The failed list read must not look empty.")
         XCTAssertFalse(app.staticTexts["No Saved Conversations"].exists)
-        assertSavedRowsVisible()
 
         let listRetry = app.buttons["Retry loading saved conversations"]
         for _ in 0..<3 where !listRetry.waitForExistence(timeout: 1) {
             scrollResumeSheet(up: false)
         }
         XCTAssertTrue(listRetry.waitForExistence(timeout: 5))
+        assertSavedListFailureCopyIsReadable(before: listRetry)
         assertMinimumTapTarget(listRetry, named: "Retry loading saved conversations")
+        assertSavedRowsVisible()
         capture("03-saved-list-failure-preserves-rows")
 
         restoreConversationTable(in: app)
@@ -132,12 +133,17 @@ final class WEI5134AIReadFailureQATests: XCTestCase {
     }
 
     private func assertSavedRowsVisible() {
+        let latestRow = app.buttons["Resume conversation: WEI-5134 latest preserved transcript"]
+        var scrollCount = 0
+        for _ in 0..<3 where !latestRow.waitForExistence(timeout: 1) {
+            scrollResumeSheet(up: true)
+            scrollCount += 1
+        }
         XCTAssertTrue(
-            app.buttons["Resume conversation: WEI-5134 latest preserved transcript"].waitForExistence(timeout: 10),
+            latestRow.waitForExistence(timeout: 5),
             "The latest saved row must remain visible."
         )
         let olderRow = app.buttons["Resume conversation: WEI-5134 older saved transcript"]
-        var scrollCount = 0
         for _ in 0..<3 where !olderRow.waitForExistence(timeout: 1) {
             scrollResumeSheet(up: true)
             scrollCount += 1
@@ -151,6 +157,23 @@ final class WEI5134AIReadFailureQATests: XCTestCase {
         for _ in 0..<scrollCount {
             scrollResumeSheet(up: false)
         }
+    }
+
+    private func assertSavedListFailureCopyIsReadable(before retry: XCUIElement) {
+        let expectedCopy = "Saved conversations could not be read. Your last loaded conversations are unchanged; retry to refresh them."
+        let message = app.staticTexts.matching(identifier: "savedConversationListReadFailureMessage").firstMatch
+        XCTAssertTrue(message.waitForExistence(timeout: 5), "The complete saved-list recovery explanation must be exposed.")
+        XCTAssertEqual(message.label, expectedCopy)
+        XCTAssertGreaterThanOrEqual(
+            message.frame.height,
+            34,
+            "The recovery explanation must retain its multiline height instead of being vertically clipped."
+        )
+        XCTAssertLessThanOrEqual(
+            message.frame.maxY,
+            retry.frame.minY,
+            "The Retry control must follow the complete recovery explanation without overlapping it."
+        )
     }
 
     private func scrollResumeSheet(up: Bool) {
