@@ -57,6 +57,7 @@ struct PageHelpSheet: View {
         let prompt = "Help me understand \(title). Use the visible help content for this page and explain the key actions I can take."
 
         var userInfo: [AnyHashable: Any] = [
+            "requestID": UUID().uuidString,
             "title": title,
             "prompt": prompt,
             "helpBody": helpBody,

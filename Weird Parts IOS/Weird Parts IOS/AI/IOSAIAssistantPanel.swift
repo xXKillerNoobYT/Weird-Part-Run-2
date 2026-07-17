@@ -136,11 +136,24 @@ struct IOSAIAssistantPanel: View {
     @State private var conversationListTask: Task<Void, Never>?
     @State private var conversationListRequestID: UInt = 0
 
-    private var pendingHelpRequestToken: String {
-        guard let pendingHelpRequest else { return "none" }
-        return ["pageId", "title", "prompt", "helpBody"]
-            .map { key in String(describing: pendingHelpRequest[key] ?? "") }
-            .joined(separator: "\u{1f}")
+    /// Constant-size identity used to notice a new Help handoff without rebuilding
+    /// a token from the potentially large visible Help body during view updates.
+    private var pendingHelpRequestToken: String? {
+        pendingHelpRequest?["requestID"] as? String
+    }
+
+    private struct ResumePrerequisiteToken: Hashable {
+        let ownerUserId: Int64?
+        let isDatabaseReady: Bool
+    }
+
+    /// Restarts assistant initialization when a panel mounted during startup/login
+    /// gains the prerequisites needed to resume authenticated conversation history.
+    private var resumePrerequisiteToken: ResumePrerequisiteToken {
+        ResumePrerequisiteToken(
+            ownerUserId: appCore.currentUser?.id,
+            isDatabaseReady: appCore.db != nil
+        )
     }
 
     struct SavedConversation: Identifiable, Equatable {
@@ -432,7 +445,7 @@ struct IOSAIAssistantPanel: View {
             messagesArea
             inputBar
         }
-        .task {
+        .task(id: resumePrerequisiteToken) {
             isLoadingConversationHistory = true
             aiAvailability = aiService.checkAvailability()
             await resumeLastConversationIfNeeded()
@@ -1214,10 +1227,10 @@ struct IOSAIAssistantPanel: View {
 
     private func resumeLastConversationIfNeeded() async {
         guard !didAttemptResume else { return }
-        didAttemptResume = true
         guard let db = appCore.db,
               let ownerUserId = appCore.currentUser?.id,
               ownerUserId > 0 else { return }
+        didAttemptResume = true
         let lookupConversationId = conversationId
         let lookupConversationRevision = conversationRevision
         if let latest = try? await FoundationModelsService.latestConversationId(

@@ -12,6 +12,7 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertFalse(navigation.contains("WiredPart.seedAIHelpRequest"))
         XCTAssertTrue(
             helpSheet.contains("name: .askAIAboutHelp")
+                && helpSheet.contains("\"requestID\": UUID().uuidString")
                 && helpSheet.contains("\"title\": title")
                 && helpSheet.contains("\"prompt\": prompt")
                 && helpSheet.contains("\"helpBody\": helpBody"),
@@ -63,8 +64,39 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertTrue(assistant.contains("accessibilityLabel(\"Resume a past conversation\")"))
         XCTAssertTrue(assistant.contains("accessibilityLabel(\"Resume conversation: \\(plainText(fromMarkdown: conversation.preview))\")"))
         XCTAssertTrue(assistant.contains("await resumeLastConversationIfNeeded()"))
+        XCTAssertTrue(assistant.contains(".task(id: resumePrerequisiteToken)"))
         XCTAssertTrue(assistant.contains(".frame(width: 44, height: 44)\n                        .contentShape(Rectangle())"))
         XCTAssertTrue(assistant.contains(".frame(width: 44, height: 44)\n            .contentShape(Rectangle())"))
+    }
+
+    func testResumeAttemptWaitsForDatabaseAndAuthenticatedUser() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let resume = try TestSourceSlicer.braceBalancedBody(
+            after: "private func resumeLastConversationIfNeeded() async",
+            in: assistant
+        )
+
+        guard let prerequisiteIndex = resume.range(of: "guard let db = appCore.db")?.lowerBound,
+              let attemptedIndex = resume.range(of: "didAttemptResume = true")?.lowerBound else {
+            XCTFail("Automatic resume must guard its prerequisites and record the attempt.")
+            return
+        }
+        XCTAssertLessThan(prerequisiteIndex, attemptedIndex)
+        XCTAssertTrue(assistant.contains("private var resumePrerequisiteToken: ResumePrerequisiteToken"))
+        XCTAssertTrue(assistant.contains("ownerUserId: appCore.currentUser?.id"))
+        XCTAssertTrue(assistant.contains("isDatabaseReady: appCore.db != nil"))
+    }
+
+    func testHelpObservationUsesDedicatedConstantSizeRequestIdentity() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let token = try TestSourceSlicer.braceBalancedBody(
+            after: "private var pendingHelpRequestToken: String?",
+            in: assistant
+        )
+
+        XCTAssertTrue(token.contains("pendingHelpRequest?[\"requestID\"] as? String"))
+        XCTAssertFalse(token.contains("helpBody"))
+        XCTAssertFalse(token.contains("joined"))
     }
 
     func testHelpHandoffWaitsForInitialHistoryAndClearWaitsForPersistence() throws {
