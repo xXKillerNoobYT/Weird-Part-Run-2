@@ -854,6 +854,9 @@ struct IOSAIAssistantPanel: View {
         }
 
         query = ""
+        if isProcessing {
+            conversationRevision &+= 1
+        }
         isProcessing = false
 
         let response: String

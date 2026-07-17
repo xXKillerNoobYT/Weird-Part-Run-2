@@ -90,6 +90,25 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertFalse(handoff.contains("chatWithTools"), "Help handoff must remain local and read-only.")
     }
 
+    func testHelpHandoffInvalidatesAnInFlightSendBeforeSeedingHelp() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let handoff = try TestSourceSlicer.braceBalancedBody(
+            after: "private func handleHelpHandoff(_ userInfo: [AnyHashable: Any])",
+            in: assistant
+        )
+
+        guard let processingGuard = handoff.range(of: "if isProcessing")?.lowerBound,
+              let revisionChange = handoff.range(of: "conversationRevision &+= 1")?.lowerBound,
+              let processingReset = handoff.range(of: "isProcessing = false")?.lowerBound,
+              let helpAppend = handoff.range(of: "messages.append(AssistantMessage(role: .user")?.lowerBound else {
+            XCTFail("Help handoff must invalidate a pending send before replacing its processing state.")
+            return
+        }
+        XCTAssertLessThan(processingGuard, revisionChange)
+        XCTAssertLessThan(revisionChange, processingReset)
+        XCTAssertLessThan(processingReset, helpAppend)
+    }
+
     func testResumeControlsUseExistingPersistenceHelpersAndSafeEmptyState() throws {
         let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
 
