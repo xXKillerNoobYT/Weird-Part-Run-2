@@ -118,7 +118,7 @@ final class AIHelpResumeRegressionTests: XCTestCase {
 
         XCTAssertTrue(assistant.contains("FoundationModelsService.latestConversationId("))
         XCTAssertTrue(assistant.contains("FoundationModelsService.listConversations("))
-        XCTAssertTrue(assistant.contains("let ownerUserId = appCore.currentUser?.id"))
+        XCTAssertTrue(assistant.contains("let ownerUserId = appCore.aiConversationReadOwnerUserId"))
         XCTAssertTrue(assistant.contains("savedConversations = []"))
         XCTAssertTrue(assistant.contains("No Saved Conversations"))
         XCTAssertTrue(assistant.contains("Loading conversations…"))
@@ -137,15 +137,15 @@ final class AIHelpResumeRegressionTests: XCTestCase {
             in: assistant
         )
 
-        guard let prerequisiteIndex = resume.range(of: "guard let db = appCore.db")?.lowerBound,
+        guard let prerequisiteIndex = resume.range(of: "guard let db = appCore.aiConversationReadDatabase")?.lowerBound,
               let attemptedIndex = resume.range(of: "didAttemptResume = true")?.lowerBound else {
             XCTFail("Automatic resume must guard its prerequisites and record the attempt.")
             return
         }
         XCTAssertLessThan(prerequisiteIndex, attemptedIndex)
         XCTAssertTrue(assistant.contains("private var resumePrerequisiteToken: ResumePrerequisiteToken"))
-        XCTAssertTrue(assistant.contains("ownerUserId: appCore.currentUser?.id"))
-        XCTAssertTrue(assistant.contains("databaseIdentity: appCore.db.map(ObjectIdentifier.init)"))
+        XCTAssertTrue(assistant.contains("ownerUserId: appCore.aiConversationReadOwnerUserId"))
+        XCTAssertTrue(assistant.contains("databaseIdentity: appCore.aiConversationReadDatabase.map(ObjectIdentifier.init)"))
     }
 
     func testInitializationTaskKeepsMissingPrerequisitesFailClosedUntilTokenChanges() throws {
@@ -204,7 +204,7 @@ final class AIHelpResumeRegressionTests: XCTestCase {
 
         XCTAssertTrue(latest.contains("let latest = try await FoundationModelsService.latestConversationId"))
         XCTAssertFalse(latest.contains("try? await FoundationModelsService.latestConversationId"))
-        XCTAssertTrue(latest.contains("appCore.currentUser?.id == ownerUserId"))
+        XCTAssertTrue(latest.contains("appCore.aiConversationReadOwnerUserId == ownerUserId"))
         XCTAssertTrue(latest.contains("didAttemptResume = false"))
         XCTAssertTrue(latest.contains("conversationHistoryRetry = .latestConversationLookup"))
         XCTAssertTrue(latest.contains("return false"))
@@ -230,7 +230,7 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertTrue(list.contains("conversationListReadError = \"Saved conversations could not be read"))
         XCTAssertTrue(list.contains("finishConversationListPrerequisiteFailure(requestID: requestID)"))
         XCTAssertTrue(list.contains("isLoadingConversations = lifecycleCoordinator.isLoadingConversations"))
-        XCTAssertTrue(list.contains("appCore.currentUser?.id"))
+        XCTAssertTrue(list.contains("appCore.aiConversationReadOwnerUserId"))
         XCTAssertTrue(assistant.contains("else if let conversationListReadError"))
         XCTAssertTrue(assistant.contains("accessibilityLabel(\"Retry loading saved conversations\")"))
 
@@ -271,11 +271,41 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         )
 
         XCTAssertTrue(
-            chatBody.contains("appCore.isWEI5134AIReadFailureUITestingMode && !showConversationPicker"),
+            chatBody.contains("aiReadRecoveryQAControls") && chatBody.contains("&& !showConversationPicker"),
             "The assistant-body QA controls must leave the accessibility tree while Resume owns the controls."
         )
-        XCTAssertTrue(picker.contains("appCore.isWEI5134AIReadFailureUITestingMode"))
+        XCTAssertTrue(picker.contains("aiReadRecoveryQAControls"))
         XCTAssertFalse(picker.contains("!showConversationPicker"))
+    }
+
+    func testPrerequisiteRecoverySeamIsSimulatorFlagGatedAndReadScoped() throws {
+        let appCore = try Self.readSource("App/AppCore.swift")
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let databaseAccessor = try TestSourceSlicer.braceBalancedBody(
+            after: "var aiConversationReadDatabase: AppDatabase?",
+            in: appCore
+        )
+        let ownerAccessor = try TestSourceSlicer.braceBalancedBody(
+            after: "var aiConversationReadOwnerUserId: Int64?",
+            in: appCore
+        )
+        let controls = try TestSourceSlicer.braceBalancedBody(
+            after: "private var wei5159AIPrerequisiteRecoveryQAControls: some View",
+            in: assistant
+        )
+
+        XCTAssertTrue(appCore.contains("#if DEBUG && targetEnvironment(simulator)"))
+        XCTAssertTrue(appCore.contains("-UITestingWEI5159AIPrerequisiteRecovery"))
+        XCTAssertTrue(appCore.contains("arguments.contains(Self.uiTestingLaunchFlag)"))
+        XCTAssertTrue(databaseAccessor.contains("return nil"))
+        XCTAssertTrue(databaseAccessor.contains("return db"))
+        XCTAssertTrue(ownerAccessor.contains("return nil"))
+        XCTAssertTrue(ownerAccessor.contains("return currentUser?.id"))
+        XCTAssertTrue(assistant.contains("appCore.aiConversationReadDatabase"))
+        XCTAssertTrue(assistant.contains("appCore.aiConversationReadOwnerUserId"))
+        XCTAssertTrue(controls.contains(".frame(minWidth: 45, minHeight: 45)"))
+        XCTAssertTrue(controls.contains("WEI5159 withhold AI conversation prerequisites"))
+        XCTAssertTrue(controls.contains("WEI5159 restore AI conversation prerequisites"))
     }
 
     func testReadFailureFixtureSQLUsesCanonicalTableNameConstants() throws {
@@ -523,9 +553,9 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertTrue(load.contains("let loadConversationRevision = conversationRevision"))
         XCTAssertTrue(load.contains("!Task.isCancelled"))
         XCTAssertTrue(load.contains("conversationId == loadConversationId"))
-        XCTAssertTrue(load.contains("appCore.currentUser?.id == ownerUserId"))
+        XCTAssertTrue(load.contains("appCore.aiConversationReadOwnerUserId == ownerUserId"))
         XCTAssertEqual(
-            load.components(separatedBy: "databaseIdentity.matches(appCore.db)").count - 1,
+            load.components(separatedBy: "databaseIdentity.matches(appCore.aiConversationReadDatabase)").count - 1,
             2,
             "Transcript success and failure completions must reject a replaced database."
         )
@@ -533,7 +563,7 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertTrue(latest.contains("let lookupConversationRevision = conversationRevision"))
         XCTAssertTrue(latest.contains("conversationRevision == lookupConversationRevision"))
         XCTAssertEqual(
-            latest.components(separatedBy: "databaseIdentity.matches(appCore.db)").count - 1,
+            latest.components(separatedBy: "databaseIdentity.matches(appCore.aiConversationReadDatabase)").count - 1,
             2,
             "Latest-conversation success and failure completions must reject a replaced database."
         )
@@ -542,7 +572,7 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertTrue(list.contains("lifecycleCoordinator.finishConversationListLoad("))
         XCTAssertTrue(list.contains("requestID: requestID"))
         XCTAssertEqual(
-            list.components(separatedBy: "databaseIdentity.matches(appCore.db)").count - 1,
+            list.components(separatedBy: "databaseIdentity.matches(appCore.aiConversationReadDatabase)").count - 1,
             3,
             "Resume-list success, failure, and loading cleanup must reject a replaced database."
         )
@@ -553,7 +583,7 @@ final class AIHelpResumeRegressionTests: XCTestCase {
             in: assistant
         )
         XCTAssertTrue(prerequisiteChange.contains("conversationLoadTask?.cancel()"))
-        XCTAssertTrue(prerequisiteChange.contains("cancelConversationListLoad()"))
+        XCTAssertTrue(prerequisiteChange.contains("cancelConversationListLoad(clearError: !showConversationPicker)"))
 
         for lifecycleFunction in [
             "private func startNewConversation()",
@@ -616,7 +646,7 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertTrue(inputBar.contains("conversationHistoryReadError != nil"))
         XCTAssertTrue(beginLoad.contains("isLoadingConversationHistory = true"))
         XCTAssertTrue(beginLoad.contains("await loadSavedMessages()"))
-        XCTAssertTrue(beginLoad.contains("appCore.db.map(AIDatabaseIdentity.init) == loadDatabaseIdentity"))
+        XCTAssertTrue(beginLoad.contains("appCore.aiConversationReadDatabase.map(AIDatabaseIdentity.init) == loadDatabaseIdentity"))
         XCTAssertTrue(beginLoad.contains("conversationRevision == loadConversationRevision"))
         XCTAssertTrue(beginLoad.contains("isLoadingConversationHistory = false"))
         XCTAssertTrue(resume.contains("beginCurrentConversationLoad()"))

@@ -24,6 +24,7 @@ final class AppCore: ObservableObject {
 
     #if DEBUG && targetEnvironment(simulator)
     nonisolated private static let wei5134AIReadFailureFlag = "-UITestingWEI5134AIReadFailure"
+    nonisolated private static let wei5159AIPrerequisiteRecoveryFlag = "-UITestingWEI5159AIPrerequisiteRecovery"
     nonisolated private static let wei5134AIConversationTable = "ai_conversation_messages"
     nonisolated private static let wei5134AIConversationBackupTable = "ai_conversation_messages_wei5134_backup"
     #endif
@@ -41,6 +42,8 @@ final class AppCore: ObservableObject {
 
     #if DEBUG && targetEnvironment(simulator)
     @Published private(set) var wei5134AIReadFailureQAState = "WEI5134 QA table state: preparing"
+    @Published private(set) var wei5159AIPrerequisiteQAState = "WEI5159 QA prerequisites: unavailable"
+    @Published private(set) var wei5159AIPrerequisitesAvailable = false
     #endif
 
     // MARK: - Services (available after init completes)
@@ -105,7 +108,35 @@ final class AppCore: ObservableObject {
         return arguments.contains(Self.uiTestingLaunchFlag)
             && arguments.contains(Self.wei5134AIReadFailureFlag)
     }
+
+    var isWEI5159AIPrerequisiteRecoveryUITestingMode: Bool {
+        let arguments = ProcessInfo.processInfo.arguments
+        return arguments.contains(Self.uiTestingLaunchFlag)
+            && arguments.contains(Self.wei5159AIPrerequisiteRecoveryFlag)
+    }
     #endif
+
+    /// Conversation-read prerequisites normally mirror the live app state. The
+    /// simulator-only WEI-5159 mode can withhold only these read dependencies so
+    /// the mounted assistant exercises startup/login recovery without signing out
+    /// the shell or mutating production data.
+    var aiConversationReadDatabase: AppDatabase? {
+        #if DEBUG && targetEnvironment(simulator)
+        if isWEI5159AIPrerequisiteRecoveryUITestingMode && !wei5159AIPrerequisitesAvailable {
+            return nil
+        }
+        #endif
+        return db
+    }
+
+    var aiConversationReadOwnerUserId: Int64? {
+        #if DEBUG && targetEnvironment(simulator)
+        if isWEI5159AIPrerequisiteRecoveryUITestingMode && !wei5159AIPrerequisitesAvailable {
+            return nil
+        }
+        #endif
+        return currentUser?.id
+    }
 
     private func bootstrap() async {
         do {
@@ -804,6 +835,7 @@ final class AppCore: ObservableObject {
         case fixturePartMissing(String)
         #if DEBUG && targetEnvironment(simulator)
         case wei5134MissingOwner
+        case wei5159MissingOwner
         case wei5134InvalidTableTopology(currentExists: Bool, backupExists: Bool)
         #endif
 
@@ -816,6 +848,8 @@ final class AppCore: ObservableObject {
             #if DEBUG && targetEnvironment(simulator)
             case .wei5134MissingOwner:
                 "WEI-5134 UI test bootstrap requires the deterministic UITest Owner."
+            case .wei5159MissingOwner:
+                "WEI-5159 UI test bootstrap requires the deterministic UITest Owner."
             case let .wei5134InvalidTableTopology(currentExists, backupExists):
                 "WEI-5134 AI table topology is invalid (current: \(currentExists), backup: \(backupExists))."
             #endif
@@ -1104,6 +1138,12 @@ final class AppCore: ObservableObject {
                 throw UITestBootstrapError.wei5134MissingOwner
             }
             try prepareWEI5134AIReadFailureFixture(db: db, ownerUserId: fixtureUserId)
+        } else if uiTestingArgs.contains(Self.uiTestingLaunchFlag)
+            && uiTestingArgs.contains(Self.wei5159AIPrerequisiteRecoveryFlag) {
+            guard let fixtureUserId else {
+                throw UITestBootstrapError.wei5159MissingOwner
+            }
+            try prepareWEI5159AIPrerequisiteRecoveryFixture(db: db, ownerUserId: fixtureUserId)
         }
         #endif
     }
@@ -1151,6 +1191,40 @@ final class AppCore: ObservableObject {
         }
     }
 
+    /// Seeds owner-scoped transcripts while leaving the schema readable. WEI-5159
+    /// withholds only the mounted assistant's conversation-read prerequisites.
+    nonisolated private static func prepareWEI5159AIPrerequisiteRecoveryFixture(
+        db: AppDatabase,
+        ownerUserId: Int64
+    ) throws {
+        try db.writer.write { dbConn in
+            let currentExists = try dbConn.tableExists(Self.wei5134AIConversationTable)
+            let backupExists = try dbConn.tableExists(Self.wei5134AIConversationBackupTable)
+            guard currentExists, !backupExists else {
+                throw UITestBootstrapError.wei5134InvalidTableTopology(
+                    currentExists: currentExists,
+                    backupExists: backupExists
+                )
+            }
+
+            try dbConn.execute(
+                sql: "DELETE FROM \(Self.wei5134AIConversationTable) WHERE id LIKE 'wei5134-%'"
+            )
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO \(Self.wei5134AIConversationTable)
+                        (id, conversation_id, owner_user_id, role, content, created_at)
+                    VALUES
+                        ('wei5134-older-message', 'wei5134-older-conversation', ?, 'assistant',
+                         'WEI-5134 older saved transcript', '2026-07-17T10:00:00Z'),
+                        ('wei5134-latest-message', 'wei5134-latest-conversation', ?, 'assistant',
+                         'WEI-5134 latest preserved transcript', '2026-07-17T11:00:00Z')
+                    """,
+                arguments: [ownerUserId, ownerUserId]
+            )
+        }
+    }
+
     /// Idempotently breaks or restores the AI conversation table through the live
     /// SQLCipher/GRDB connection. No production/device build compiles this surface.
     func setWEI5134AIConversationTableBroken(_ shouldBeBroken: Bool) {
@@ -1195,6 +1269,16 @@ final class AppCore: ObservableObject {
                 wei5134AIReadFailureQAState = "WEI5134 QA table state: error — \(error.localizedDescription)"
             }
         }
+    }
+
+    /// Withholds or restores only the AI conversation-read prerequisites. The
+    /// authenticated shell and dedicated UI-test database remain intact.
+    func setWEI5159AIPrerequisitesAvailable(_ available: Bool) {
+        guard isWEI5159AIPrerequisiteRecoveryUITestingMode else { return }
+        wei5159AIPrerequisitesAvailable = available
+        wei5159AIPrerequisiteQAState = available
+            ? "WEI5159 QA prerequisites: available"
+            : "WEI5159 QA prerequisites: unavailable"
     }
     #endif
 
