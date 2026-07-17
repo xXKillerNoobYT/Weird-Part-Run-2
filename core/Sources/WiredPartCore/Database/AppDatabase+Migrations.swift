@@ -151,6 +151,7 @@ extension AppDatabase {
         registerMigration110InspectionTemplateRequiredFlag(&migrator)
         registerMigration111ChatAttachmentStorageRelative(&migrator)
         registerMigration113AIConversationOwners(&migrator)
+        registerMigration114SyncReplayGuard(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6098,5 +6099,25 @@ private func registerMigration113AIConversationOwners(_ migrator: inout Database
             columns: ["owner_user_id", "conversation_id", "created_at"],
             ifNotExists: true
         )
+    }
+}
+
+// MARK: - Migration 114: Durable sync replay guard
+
+private func registerMigration114SyncReplayGuard(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("114_sync_replay_guard") { db in
+        try db.create(table: "_sync_replay_guard", ifNotExists: true) { t in
+            t.column("request_id", .text).notNull()
+            t.column("device_id", .text).notNull()
+            t.column("endpoint", .text).notNull()
+            t.column("direction", .text).notNull()
+            t.column("body_digest", .text).notNull()
+            t.column("created_at", .datetime).notNull()
+            t.primaryKey(["device_id", "endpoint", "direction", "request_id"])
+        }
+        try db.create(index: "idx_sync_replay_guard_device_created",
+                      on: "_sync_replay_guard",
+                      columns: ["device_id", "created_at"],
+                      ifNotExists: true)
     }
 }

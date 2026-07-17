@@ -132,9 +132,9 @@ struct DatabaseTests {
         #expect(result.indexExists)
     }
 
-    @Test("Schema version is 105")
+    @Test("Schema version is 114")
     func testSchemaVersion() throws {
-        #expect(AppDatabase.schemaVersion == 105)
+        #expect(AppDatabase.schemaVersion == 114)
     }
 
     @Test("Persisted schema version matches AppDatabase schemaVersion")

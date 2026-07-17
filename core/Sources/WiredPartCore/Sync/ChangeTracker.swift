@@ -1,6 +1,18 @@
 import Foundation
 import GRDB
 
+struct PeerDeviceTrustSnapshot: Sendable {
+    let deviceName: String?
+    let platform: String?
+    let role: String?
+    let certificate: String?
+    let lastSeenAt: String?
+    let lastSyncAt: String?
+    let isTrusted: Int
+    let isDeactivated: Int
+    let createdAt: String
+}
+
 /// Change Tracker — logs all local writes for sync.
 ///
 /// Every INSERT, UPDATE, DELETE on the local SQLite database is
@@ -234,17 +246,101 @@ public enum ChangeTracker {
         db: AppDatabase,
         peerId: String,
         peerName: String,
-        platform: String? = nil
+        platform: String? = nil,
+        keyAgreementPublicKey: String? = nil
     ) throws {
+        let encodedKey = keyAgreementPublicKey.map { "x25519:\($0)" }
         try db.writer.write { dbConnection in
             try dbConnection.execute(
                 sql: """
-                    INSERT INTO _device_registry (device_id, device_name, platform, last_seen_at, is_trusted)
-                    VALUES (?, ?, ?, datetime('now'), 1)
+                    INSERT INTO _device_registry (device_id, device_name, platform, certificate, last_seen_at, is_trusted)
+                    VALUES (?, ?, ?, ?, datetime('now'), CASE WHEN ? IS NOT NULL THEN 1 ELSE 0 END)
                     ON CONFLICT(device_id)
-                    DO UPDATE SET device_name = ?, last_seen_at = datetime('now')
+                    DO UPDATE SET device_name = ?,
+                                  platform = COALESCE(?, platform),
+                                  certificate = COALESCE(?, certificate),
+                                  is_trusted = CASE WHEN ? IS NOT NULL THEN 1 ELSE is_trusted END,
+                                  is_deactivated = CASE WHEN ? IS NOT NULL THEN 0 ELSE is_deactivated END,
+                                  last_seen_at = datetime('now')
                     """,
-                arguments: [peerId, peerName, platform, peerName]
+                arguments: [
+                    peerId, peerName, platform, encodedKey,
+                    encodedKey, peerName, platform, encodedKey, encodedKey, encodedKey,
+                ]
+            )
+        }
+    }
+
+    static func capturePeerDeviceTrust(
+        db: AppDatabase,
+        peerId: String
+    ) throws -> PeerDeviceTrustSnapshot? {
+        try db.writer.read { dbConnection in
+            guard let row = try Row.fetchOne(
+                dbConnection,
+                sql: """
+                    SELECT device_name, platform, role, certificate, last_seen_at,
+                           last_sync_at, is_trusted, is_deactivated, created_at
+                    FROM _device_registry WHERE device_id = ?
+                    """,
+                arguments: [peerId]
+            ) else { return nil }
+            return PeerDeviceTrustSnapshot(
+                deviceName: row["device_name"],
+                platform: row["platform"],
+                role: row["role"],
+                certificate: row["certificate"],
+                lastSeenAt: row["last_seen_at"],
+                lastSyncAt: row["last_sync_at"],
+                isTrusted: row["is_trusted"],
+                isDeactivated: row["is_deactivated"],
+                createdAt: row["created_at"]
+            )
+        }
+    }
+
+    static func restorePeerDeviceTrust(
+        db: AppDatabase,
+        peerId: String,
+        snapshot: PeerDeviceTrustSnapshot?
+    ) throws {
+        try db.writer.write { dbConnection in
+            guard let snapshot else {
+                try dbConnection.execute(
+                    sql: "DELETE FROM _device_registry WHERE device_id = ?",
+                    arguments: [peerId]
+                )
+                return
+            }
+            try dbConnection.execute(
+                sql: """
+                    INSERT INTO _device_registry (
+                        device_id, device_name, platform, role, certificate,
+                        last_seen_at, last_sync_at, is_trusted, is_deactivated, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(device_id) DO UPDATE SET
+                        device_name = excluded.device_name,
+                        platform = excluded.platform,
+                        role = excluded.role,
+                        certificate = excluded.certificate,
+                        last_seen_at = excluded.last_seen_at,
+                        last_sync_at = excluded.last_sync_at,
+                        is_trusted = excluded.is_trusted,
+                        is_deactivated = excluded.is_deactivated,
+                        created_at = excluded.created_at
+                    """,
+                arguments: [
+                    peerId,
+                    snapshot.deviceName,
+                    snapshot.platform,
+                    snapshot.role,
+                    snapshot.certificate,
+                    snapshot.lastSeenAt,
+                    snapshot.lastSyncAt,
+                    snapshot.isTrusted,
+                    snapshot.isDeactivated,
+                    snapshot.createdAt,
+                ]
             )
         }
     }
