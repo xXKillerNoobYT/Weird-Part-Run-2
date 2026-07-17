@@ -19,8 +19,14 @@ extension BackgroundTaskService: AppCoreBackgroundTaskAuditing {}
 /// can access services and the current user without prop-drilling.
 @MainActor
 final class AppCore: ObservableObject {
-    private static let uiTestingLaunchFlag = "-UITesting"
-    private static let uiTestingPreserveDatabaseFlag = "-UITestingPreserveDatabase"
+    nonisolated private static let uiTestingLaunchFlag = "-UITesting"
+    nonisolated private static let uiTestingPreserveDatabaseFlag = "-UITestingPreserveDatabase"
+
+    #if DEBUG && targetEnvironment(simulator)
+    nonisolated private static let wei5134AIReadFailureFlag = "-UITestingWEI5134AIReadFailure"
+    nonisolated private static let wei5134AIConversationTable = "ai_conversation_messages"
+    nonisolated private static let wei5134AIConversationBackupTable = "ai_conversation_messages_wei5134_backup"
+    #endif
 
     // MARK: - Published State
 
@@ -32,6 +38,10 @@ final class AppCore: ObservableObject {
     @Published var currentToken: String?
     @Published var permissions: [String] = []
     @Published var theme: SettingsService.ThemeSettings = .defaults
+
+    #if DEBUG && targetEnvironment(simulator)
+    @Published private(set) var wei5134AIReadFailureQAState = "WEI5134 QA table state: preparing"
+    #endif
 
     // MARK: - Services (available after init completes)
 
@@ -88,6 +98,14 @@ final class AppCore: ObservableObject {
     private var shouldPreserveUITestDatabase: Bool {
         ProcessInfo.processInfo.arguments.contains(Self.uiTestingPreserveDatabaseFlag)
     }
+
+    #if DEBUG && targetEnvironment(simulator)
+    var isWEI5134AIReadFailureUITestingMode: Bool {
+        let arguments = ProcessInfo.processInfo.arguments
+        return arguments.contains(Self.uiTestingLaunchFlag)
+            && arguments.contains(Self.wei5134AIReadFailureFlag)
+    }
+    #endif
 
     private func bootstrap() async {
         do {
@@ -207,6 +225,11 @@ final class AppCore: ObservableObject {
 
             // Apply results back on MainActor
             db = result.database
+            #if DEBUG && targetEnvironment(simulator)
+            if isWEI5134AIReadFailureUITestingMode {
+                wei5134AIReadFailureQAState = "WEI5134 QA table state: table broken"
+            }
+            #endif
             authService = result.auth
             settingsService = result.settings
             partsService = result.parts
@@ -823,11 +846,21 @@ final class AppCore: ObservableObject {
 
     enum UITestBootstrapError: LocalizedError {
         case partCategoryMissing
+        #if DEBUG && targetEnvironment(simulator)
+        case wei5134MissingOwner
+        case wei5134InvalidTableTopology(currentExists: Bool, backupExists: Bool)
+        #endif
 
         var errorDescription: String? {
             switch self {
             case .partCategoryMissing:
                 "UI test bootstrap failed because the required active part category fixture is missing."
+            #if DEBUG && targetEnvironment(simulator)
+            case .wei5134MissingOwner:
+                "WEI-5134 UI test bootstrap requires the deterministic UITest Owner."
+            case let .wei5134InvalidTableTopology(currentExists, backupExists):
+                "WEI-5134 AI table topology is invalid (current: \(currentExists), backup: \(backupExists))."
+            #endif
             }
         }
     }
@@ -1091,7 +1124,107 @@ final class AppCore: ObservableObject {
         }
 
         seedWEI936OnboardingStateIfRequested(args: uiTestingArgs, userId: fixtureUserId)
+
+        #if DEBUG && targetEnvironment(simulator)
+        if uiTestingArgs.contains(Self.uiTestingLaunchFlag)
+            && uiTestingArgs.contains(Self.wei5134AIReadFailureFlag) {
+            guard let fixtureUserId else {
+                throw UITestBootstrapError.wei5134MissingOwner
+            }
+            try prepareWEI5134AIReadFailureFixture(db: db, ownerUserId: fixtureUserId)
+        }
+        #endif
     }
+
+    #if DEBUG && targetEnvironment(simulator)
+    /// Seeds two owner-scoped transcripts and starts the hermetic UI-test database
+    /// with the conversation table unavailable. This method is reachable only from
+    /// the doubly flag-gated simulator bootstrap above.
+    nonisolated private static func prepareWEI5134AIReadFailureFixture(
+        db: AppDatabase,
+        ownerUserId: Int64
+    ) throws {
+        try db.writer.write { dbConn in
+            let currentExists = try dbConn.tableExists(Self.wei5134AIConversationTable)
+            let backupExists = try dbConn.tableExists(Self.wei5134AIConversationBackupTable)
+
+            switch (currentExists, backupExists) {
+            case (true, false):
+                try dbConn.execute(
+                    sql: "DELETE FROM ai_conversation_messages WHERE id LIKE 'wei5134-%'"
+                )
+                try dbConn.execute(
+                    sql: """
+                        INSERT INTO ai_conversation_messages
+                            (id, conversation_id, owner_user_id, role, content, created_at)
+                        VALUES
+                            ('wei5134-older-message', 'wei5134-older-conversation', ?, 'assistant',
+                             'WEI-5134 older saved transcript', '2026-07-17T10:00:00Z'),
+                            ('wei5134-latest-message', 'wei5134-latest-conversation', ?, 'assistant',
+                             'WEI-5134 latest preserved transcript', '2026-07-17T11:00:00Z')
+                        """,
+                    arguments: [ownerUserId, ownerUserId]
+                )
+                try dbConn.execute(
+                    sql: "ALTER TABLE ai_conversation_messages RENAME TO ai_conversation_messages_wei5134_backup"
+                )
+            case (false, true):
+                break
+            case (true, true), (false, false):
+                throw UITestBootstrapError.wei5134InvalidTableTopology(
+                    currentExists: currentExists,
+                    backupExists: backupExists
+                )
+            }
+        }
+    }
+
+    /// Idempotently breaks or restores the AI conversation table through the live
+    /// SQLCipher/GRDB connection. No production/device build compiles this surface.
+    func setWEI5134AIConversationTableBroken(_ shouldBeBroken: Bool) {
+        guard isWEI5134AIReadFailureUITestingMode else { return }
+        guard let database = db else {
+            wei5134AIReadFailureQAState = "WEI5134 QA table state: error — database unavailable"
+            return
+        }
+
+        wei5134AIReadFailureQAState = shouldBeBroken
+            ? "WEI5134 QA table state: breaking"
+            : "WEI5134 QA table state: restoring"
+
+        Task {
+            do {
+                try await database.writer.write { dbConn in
+                    let currentExists = try dbConn.tableExists(Self.wei5134AIConversationTable)
+                    let backupExists = try dbConn.tableExists(Self.wei5134AIConversationBackupTable)
+
+                    switch (currentExists, backupExists, shouldBeBroken) {
+                    case (true, false, true):
+                        try dbConn.execute(
+                            sql: "ALTER TABLE ai_conversation_messages RENAME TO ai_conversation_messages_wei5134_backup"
+                        )
+                    case (false, true, false):
+                        try dbConn.execute(
+                            sql: "ALTER TABLE ai_conversation_messages_wei5134_backup RENAME TO ai_conversation_messages"
+                        )
+                    case (false, true, true), (true, false, false):
+                        break
+                    case (true, true, _), (false, false, _):
+                        throw UITestBootstrapError.wei5134InvalidTableTopology(
+                            currentExists: currentExists,
+                            backupExists: backupExists
+                        )
+                    }
+                }
+                wei5134AIReadFailureQAState = shouldBeBroken
+                    ? "WEI5134 QA table state: table broken"
+                    : "WEI5134 QA table state: table restored"
+            } catch {
+                wei5134AIReadFailureQAState = "WEI5134 QA table state: error — \(error.localizedDescription)"
+            }
+        }
+    }
+    #endif
 
     nonisolated static func uiTestingWEI3144JobMaterialsJobId(db: AppDatabase?) -> Int64? {
         guard ProcessInfo.processInfo.arguments.contains("-UITestingWEI3144JobMaterials"),

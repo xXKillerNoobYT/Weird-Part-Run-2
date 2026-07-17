@@ -399,39 +399,47 @@ struct IOSAIAssistantPanel: View {
     @ViewBuilder
     private var conversationPicker: some View {
         NavigationStack {
-            Group {
-                if isLoadingConversations {
-                    ProgressView("Loading conversations…")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let conversationListReadError {
-                    VStack(spacing: 12) {
-                        ContentUnavailableView(
-                            "Saved Conversations Could Not Be Loaded",
-                            systemImage: "exclamationmark.triangle",
-                            description: Text(conversationListReadError)
-                        )
-                        Button {
-                            presentConversationPicker()
-                        } label: {
-                            Text("Retry")
-                                .frame(minWidth: 44, minHeight: 44)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .accessibilityLabel("Retry loading saved conversations")
+            VStack(spacing: 0) {
+                #if DEBUG && targetEnvironment(simulator)
+                if appCore.isWEI5134AIReadFailureUITestingMode {
+                    wei5134AIReadFailureQAControls
+                }
+                #endif
 
-                        if !savedConversations.isEmpty {
-                            conversationList
+                Group {
+                    if isLoadingConversations {
+                        ProgressView("Loading conversations…")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if let conversationListReadError {
+                        VStack(spacing: 12) {
+                            ContentUnavailableView(
+                                "Saved Conversations Could Not Be Loaded",
+                                systemImage: "exclamationmark.triangle",
+                                description: Text(conversationListReadError)
+                            )
+                            Button {
+                                presentConversationPicker()
+                            } label: {
+                                Text("Retry")
+                                    .frame(minWidth: 45, minHeight: 45)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .accessibilityLabel("Retry loading saved conversations")
+
+                            if !savedConversations.isEmpty {
+                                conversationList
+                            }
                         }
+                    } else if savedConversations.isEmpty {
+                        ContentUnavailableView(
+                            "No Saved Conversations",
+                            systemImage: "clock.arrow.circlepath",
+                            description: Text("Chats you have with the assistant will appear here so you can pick them back up later.")
+                        )
+                    } else {
+                        conversationList
                     }
-                } else if savedConversations.isEmpty {
-                    ContentUnavailableView(
-                        "No Saved Conversations",
-                        systemImage: "clock.arrow.circlepath",
-                        description: Text("Chats you have with the assistant will appear here so you can pick them back up later.")
-                    )
-                } else {
-                    conversationList
                 }
             }
             .navigationTitle("Resume Conversation")
@@ -467,6 +475,48 @@ struct IOSAIAssistantPanel: View {
         }
     }
 
+    #if DEBUG && targetEnvironment(simulator)
+    @ViewBuilder
+    private var wei5134AIReadFailureQAControls: some View {
+        let isTransitioning = appCore.wei5134AIReadFailureQAState == "WEI5134 QA table state: breaking"
+            || appCore.wei5134AIReadFailureQAState == "WEI5134 QA table state: restoring"
+
+        VStack(alignment: .leading, spacing: 8) {
+            Text("AI history recovery test controls")
+                .font(.caption)
+                .fontWeight(.semibold)
+
+            HStack(spacing: 12) {
+                Button("Break AI history") {
+                    appCore.setWEI5134AIConversationTableBroken(true)
+                }
+                .frame(minWidth: 45, minHeight: 45)
+                .buttonStyle(.bordered)
+                .disabled(isTransitioning)
+                .accessibilityLabel("WEI5134 break AI conversation table")
+
+                Button("Restore AI history") {
+                    appCore.setWEI5134AIConversationTableBroken(false)
+                }
+                .frame(minWidth: 45, minHeight: 45)
+                .buttonStyle(.borderedProminent)
+                .disabled(isTransitioning)
+                .accessibilityLabel("WEI5134 restore AI conversation table")
+            }
+
+            Text(appCore.wei5134AIReadFailureQAState)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("wei5134QAState")
+                .accessibilityLabel(appCore.wei5134AIReadFailureQAState)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground))
+    }
+    #endif
+
     private func conversationTimestamp(_ iso: String) -> String {
         guard let date = CoreFormatters.parseISO(iso) else { return "" }
         return date.formatted(date: .abbreviated, time: .shortened)
@@ -480,6 +530,11 @@ struct IOSAIAssistantPanel: View {
             if displayMode == .sheet {
                 availabilityHeader
             }
+            #if DEBUG && targetEnvironment(simulator)
+            if appCore.isWEI5134AIReadFailureUITestingMode {
+                wei5134AIReadFailureQAControls
+            }
+            #endif
             conversationReadStatus
             clearConversationStatus
             messagesArea
@@ -660,7 +715,7 @@ struct IOSAIAssistantPanel: View {
                 } label: {
                     Text("Retry")
                         .font(.caption)
-                        .frame(minWidth: 44, minHeight: 44)
+                        .frame(minWidth: 45, minHeight: 45)
                         .contentShape(Rectangle())
                 }
                 .disabled(isLoadingConversationHistory)

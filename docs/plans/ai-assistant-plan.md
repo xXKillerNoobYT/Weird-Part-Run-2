@@ -42,6 +42,16 @@ Review and user-like QA found five requirements that must be satisfied before th
 14. All three retry paths retain the authenticated positive `ownerUserId` captured for the request. Stale completions from a different owner, conversation, database, or lifecycle revision cannot install rows or clear a newer error/loading state.
 15. Selecting the already-current row from Resume is a no-op only when that conversation has no transcript-hydration failure. If hydration failed, selecting the current row starts a recovery hydration synchronously, preserves the retryable read failure until that hydration succeeds, and keeps the composer and Send disabled throughout recovery.
 
+### Simulator-only SQLCipher recovery seam (WEI-5137 / PR #1466)
+
+The three conversation-read recovery paths are verified hermetically in one running UI-test launch. This seam is test infrastructure, not a product or diagnostic feature:
+
+1. The seam is compiled only under `#if DEBUG && targetEnvironment(simulator)` and activates only when the process has both `-UITesting` and `-UITestingWEI5134AIReadFailure`. Release builds and physical-device builds compile no hook and expose no UI, API, URL scheme, listener, or production-data mutation surface.
+2. `AppCore` owns all GRDB/schema mutation. The launch fixture operates only on the dedicated `wiredpart-uitesting.sqlite`, seeds two owner-scoped conversations, and starts with `ai_conversation_messages` renamed to a dedicated backup table so the first latest-history lookup fails deterministically.
+3. Break and restore are idempotent state transitions: current-only breaks, backup-only restores, an already-requested state is a no-op, and both/neither tables produce an explicit observable test error. Normal test completion and teardown restore the table best-effort.
+4. The assistant body and Resume sheet each render visible, labeled controls with minimum 44×44-point hit regions plus an accessibility-observable completion/error state identifier. The controls are never transparent, hidden, coordinate-driven, or overlaid invisibly.
+5. `WEI5134AIReadFailureQATests` proves in one launch: initial latest-history failure and recovery; Resume-list failure while preserving last-known rows and recovery; and selected-transcript failure without welcome substitution followed by recovery. Each unresolved latest/transcript read keeps the composer and Send disabled.
+
 Verification requires focused source-regression tests for notification wiring, help/title lookup, accessible controls, resume hooks, local-only seeding, and preservation of assistant bug-report context, followed by an iOS build and user-like iPhone/iPad verification.
 
 The AI Assistant is a locally-hosted intelligence layer that augments the WiredPart ERP with natural language understanding and data-driven insights. It runs entirely on-premise via **LM Studio** — no cloud dependency, no data leaving the shop network.
