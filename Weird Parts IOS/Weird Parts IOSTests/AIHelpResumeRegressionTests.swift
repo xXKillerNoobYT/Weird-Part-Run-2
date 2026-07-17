@@ -211,6 +211,23 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertLessThan(errorBranch, emptyBranch)
     }
 
+    func testReadFailureRetryControlsExpose44PointAccessibleHitRegions() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+
+        XCTAssertTrue(
+            assistant.contains(
+                "Text(\"Retry\")\n                                .frame(minWidth: 44, minHeight: 44)\n                                .contentShape(Rectangle())\n                        }\n                        .buttonStyle(.borderedProminent)\n                        .accessibilityLabel(\"Retry loading saved conversations\")"
+            ),
+            "The saved-conversation Retry label must own a 44×44-point hit region before button styling is applied."
+        )
+        XCTAssertTrue(
+            assistant.contains(
+                "Text(\"Retry\")\n                        .font(.caption)\n                        .frame(minWidth: 44, minHeight: 44)\n                        .contentShape(Rectangle())\n                }\n                .disabled(isLoadingConversationHistory)\n                .accessibilityLabel(\"Retry loading conversation history\")"
+            ),
+            "The history Retry label must own a 44×44-point hit region while preserving its accessible name and disabled state."
+        )
+    }
+
     func testSelectingCurrentConversationAfterHydrationFailureStartsRecoveryBeforeClearingFailure() throws {
         let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
         let resume = try TestSourceSlicer.braceBalancedBody(

@@ -499,11 +499,14 @@ struct IOSAIAssistantPanel: View {
                             systemImage: "exclamationmark.triangle",
                             description: Text(conversationListReadError)
                         )
-                        Button("Retry") {
+                        Button {
                             presentConversationPicker()
+                        } label: {
+                            Text("Retry")
+                                .frame(minWidth: 44, minHeight: 44)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.borderedProminent)
-                        .frame(minHeight: 44)
                         .accessibilityLabel("Retry loading saved conversations")
 
                         if !savedConversations.isEmpty {
@@ -868,11 +871,14 @@ struct IOSAIAssistantPanel: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 8)
-                Button("Retry") {
+                Button {
                     retryConversationHistoryRead()
+                } label: {
+                    Text("Retry")
+                        .font(.caption)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
-                .font(.caption)
-                .frame(minHeight: 44)
                 .disabled(isLoadingConversationHistory)
                 .accessibilityLabel("Retry loading conversation history")
             }
