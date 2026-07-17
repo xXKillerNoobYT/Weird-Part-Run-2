@@ -288,7 +288,7 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         )
 
         XCTAssertTrue(assistant.contains("@State private var isLoadingConversationHistory = false"))
-        XCTAssertTrue(assistant.contains(".task {\n            isLoadingConversationHistory = true"))
+        XCTAssertTrue(assistant.contains(".task(id: resumePrerequisiteToken) {\n            isLoadingConversationHistory = true"))
         XCTAssertTrue(sendQuery.contains("!isLoadingConversationHistory"))
         XCTAssertTrue(
             assistant.contains(".disabled(isProcessing || isClearingConversation || isLoadingConversationHistory)"),
