@@ -562,6 +562,36 @@ final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
         ))
     }
 
+    func testFailedHydrationThenResumeCurrentRowRequiresRecoveryLoad() {
+        let action = AIAssistantResumeSelectionPolicy.action(
+            selectedConversationId: "conversation-a",
+            currentConversationId: "conversation-a",
+            hasTranscriptHydrationFailure: true
+        )
+
+        XCTAssertEqual(action, .retryCurrentHydration)
+        XCTAssertNotEqual(action, .noChange)
+    }
+
+    func testCurrentRowWithoutHydrationFailureRemainsNoOp() {
+        XCTAssertEqual(
+            AIAssistantResumeSelectionPolicy.action(
+                selectedConversationId: "conversation-a",
+                currentConversationId: "conversation-a",
+                hasTranscriptHydrationFailure: false
+            ),
+            .noChange
+        )
+        XCTAssertEqual(
+            AIAssistantResumeSelectionPolicy.action(
+                selectedConversationId: "conversation-b",
+                currentConversationId: "conversation-a",
+                hasTranscriptHydrationFailure: true
+            ),
+            .switchConversation
+        )
+    }
+
     func testHelpHandoffWaitsForAuthenticatedInitializationToFinish() {
         var readiness = AIHelpHandoffReadinessCoordinator()
 
