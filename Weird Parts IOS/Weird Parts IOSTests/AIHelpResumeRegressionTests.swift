@@ -120,12 +120,13 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertTrue(persist.contains("let currentConversationId = conversationId"))
         XCTAssertTrue(persist.contains("let currentConversationRevision = conversationRevision"))
         XCTAssertTrue(persist.contains("let currentLifecycle = AIConversationLifecycleSnapshot"))
-        XCTAssertTrue(persist.contains("ownerUserId: appCore.currentUser?.id"))
+        XCTAssertTrue(persist.contains("currentOwnerUserId: appCore.currentUser?.id"))
         XCTAssertEqual(
-            persist.components(separatedBy: "currentLifecycle.matches(").count - 1,
+            persist.components(separatedBy: "AIAsyncLifecycleCompletion.helpPersistenceResult(").count - 1,
             2,
-            "Help persistence must guard both success and failure writes against stale conversation revisions."
+            "Help persistence must guard both success and failure writes through the production lifecycle completion seam."
         )
+        XCTAssertFalse(assistant.contains("AIHelpAsyncLifecycleRegressionHarness"))
         XCTAssertTrue(cancel.contains("pendingHelpPersistence?.cancel()"))
         XCTAssertTrue(cancel.contains("helpPersistenceTask = nil"))
 
@@ -220,7 +221,7 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertTrue(latest.contains("conversationRevision &+= 1"))
         XCTAssertTrue(list.contains("let listConversationRevision = conversationRevision"))
         XCTAssertTrue(list.contains("let listLifecycle = AIConversationLifecycleSnapshot"))
-        XCTAssertTrue(list.contains("listLifecycle.matches("))
+        XCTAssertTrue(list.contains("AIAsyncLifecycleCompletion.conversationListResult("))
         XCTAssertTrue(assistant.contains("savedConversations.removeAll()"))
 
         for lifecycleFunction in [

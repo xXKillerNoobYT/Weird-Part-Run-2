@@ -864,23 +864,27 @@ struct IOSAIAssistantPanel: View {
                     assistantResponse: assistantResponse,
                     in: db
                 )
-                guard currentLifecycle.matches(
-                    conversationId: conversationId,
-                    ownerUserId: appCore.currentUser?.id,
-                    revision: conversationRevision,
+                guard let completion = AIAsyncLifecycleCompletion.helpPersistenceResult(
+                    lifecycle: currentLifecycle,
+                    staged: staged,
+                    errorDescription: nil,
+                    currentConversationId: conversationId,
+                    currentOwnerUserId: appCore.currentUser?.id,
+                    currentRevision: conversationRevision,
                     isCancelled: Task.isCancelled
                 ) else { return }
-                conversationPersistenceError = staged
-                    ? nil
-                    : "This Help conversation changed while it was being saved. Start a new Help handoff before asking a follow-up."
+                conversationPersistenceError = completion.persistenceError
             } catch {
-                guard currentLifecycle.matches(
-                    conversationId: conversationId,
-                    ownerUserId: appCore.currentUser?.id,
-                    revision: conversationRevision,
+                guard let completion = AIAsyncLifecycleCompletion.helpPersistenceResult(
+                    lifecycle: currentLifecycle,
+                    staged: false,
+                    errorDescription: error.localizedDescription,
+                    currentConversationId: conversationId,
+                    currentOwnerUserId: appCore.currentUser?.id,
+                    currentRevision: conversationRevision,
                     isCancelled: Task.isCancelled
                 ) else { return }
-                conversationPersistenceError = "This Help conversation is visible now but could not be saved: \(error.localizedDescription)"
+                conversationPersistenceError = completion.persistenceError
             }
         }
     }
@@ -1223,20 +1227,23 @@ struct IOSAIAssistantPanel: View {
             ownerUserId: ownerUserId,
             from: db
         ) {
-            guard listLifecycle.matches(
-                conversationId: conversationId,
-                ownerUserId: appCore.currentUser?.id,
-                revision: conversationRevision,
+            guard let currentRows = AIAsyncLifecycleCompletion.conversationListResult(
+                lifecycle: listLifecycle,
+                rows: rows,
+                currentConversationId: conversationId,
+                currentOwnerUserId: appCore.currentUser?.id,
+                currentRevision: conversationRevision,
                 isCancelled: Task.isCancelled
             ) else { return }
-            savedConversations = rows.map {
+            savedConversations = currentRows.map {
                 SavedConversation(id: $0.id, lastMessageAt: $0.lastMessageAt, preview: $0.preview)
             }
         } else {
-            guard listLifecycle.matches(
-                conversationId: conversationId,
-                ownerUserId: appCore.currentUser?.id,
-                revision: conversationRevision,
+            guard AIAsyncLifecycleCompletion.isCurrent(
+                lifecycle: listLifecycle,
+                currentConversationId: conversationId,
+                currentOwnerUserId: appCore.currentUser?.id,
+                currentRevision: conversationRevision,
                 isCancelled: Task.isCancelled
             ) else { return }
             savedConversations = []
@@ -2814,120 +2821,72 @@ struct AIConversationLifecycleSnapshot: Equatable, Sendable {
     }
 }
 
-#if DEBUG
-@MainActor
-final class AIHelpAsyncLifecycleRegressionHarness {
-    private(set) var conversationId: String
-    private(set) var ownerUserId: Int64?
-    private(set) var conversationRevision: UInt
-    private(set) var conversationPersistenceError: String?
-    private(set) var messages: [AssistantMessage]
-    private(set) var savedConversations: [IOSAIAssistantPanel.SavedConversation]
-    private(set) var isLoadingConversations = false
+struct AIHelpPersistenceCompletion: Equatable, Sendable {
+    let persistenceError: String?
+}
 
-    init(
-        conversationId: String = "conversation-a",
-        ownerUserId: Int64? = 1,
-        conversationRevision: UInt = 0,
-        messages: [AssistantMessage] = []
-    ) {
-        self.conversationId = conversationId
-        self.ownerUserId = ownerUserId
-        self.conversationRevision = conversationRevision
-        self.messages = messages
-        self.savedConversations = []
-    }
-
-    func beginHelpCompletion() -> AIConversationLifecycleSnapshot {
-        AIConversationLifecycleSnapshot(
-            conversationId: conversationId,
-            ownerUserId: ownerUserId ?? -1,
-            revision: conversationRevision
+enum AIAsyncLifecycleCompletion {
+    static func isCurrent(
+        lifecycle: AIConversationLifecycleSnapshot,
+        currentConversationId: String,
+        currentOwnerUserId: Int64?,
+        currentRevision: UInt,
+        isCancelled: Bool = false
+    ) -> Bool {
+        lifecycle.matches(
+            conversationId: currentConversationId,
+            ownerUserId: currentOwnerUserId,
+            revision: currentRevision,
+            isCancelled: isCancelled
         )
     }
 
-    func completeHelp(
-        snapshot: AIConversationLifecycleSnapshot,
+    static func helpPersistenceResult(
+        lifecycle: AIConversationLifecycleSnapshot,
         staged: Bool,
-        error: String? = nil,
+        errorDescription: String?,
+        currentConversationId: String,
+        currentOwnerUserId: Int64?,
+        currentRevision: UInt,
         isCancelled: Bool = false
-    ) {
-        guard snapshot.matches(
-            conversationId: conversationId,
-            ownerUserId: ownerUserId,
-            revision: conversationRevision,
+    ) -> AIHelpPersistenceCompletion? {
+        guard isCurrent(
+            lifecycle: lifecycle,
+            currentConversationId: currentConversationId,
+            currentOwnerUserId: currentOwnerUserId,
+            currentRevision: currentRevision,
             isCancelled: isCancelled
-        ) else { return }
-        if let error {
-            conversationPersistenceError = error
-        } else {
-            conversationPersistenceError = staged
+        ) else { return nil }
+
+        if let errorDescription {
+            return AIHelpPersistenceCompletion(
+                persistenceError: "This Help conversation is visible now but could not be saved: \(errorDescription)"
+            )
+        }
+
+        return AIHelpPersistenceCompletion(
+            persistenceError: staged
                 ? nil
                 : "This Help conversation changed while it was being saved. Start a new Help handoff before asking a follow-up."
-        }
-    }
-
-    func transitionToNewConversation(_ newConversationId: String) {
-        conversationRevision &+= 1
-        conversationId = newConversationId
-        conversationPersistenceError = nil
-        messages = []
-    }
-
-    func resumeConversation(_ resumedConversationId: String) {
-        conversationRevision &+= 1
-        conversationId = resumedConversationId
-        conversationPersistenceError = nil
-        messages = []
-    }
-
-    func logout(newConversationId: String = "post-logout") {
-        conversationRevision &+= 1
-        conversationId = newConversationId
-        ownerUserId = nil
-        conversationPersistenceError = nil
-        messages = []
-        savedConversations = []
-    }
-
-    func clearCurrentConversation() {
-        conversationRevision &+= 1
-        conversationPersistenceError = nil
-        messages = []
-    }
-
-    func sendInCurrentConversation(_ text: String = "Conversation B question") {
-        messages.append(AssistantMessage(role: .user, content: text))
-        if let conversationPersistenceError {
-            messages.append(AssistantMessage(role: .assistant, content: conversationPersistenceError))
-        } else {
-            messages.append(AssistantMessage(role: .assistant, content: "Generated response for \(conversationId)"))
-        }
-    }
-
-    func beginConversationListLoad() -> AIConversationLifecycleSnapshot {
-        isLoadingConversations = true
-        return AIConversationLifecycleSnapshot(
-            conversationId: conversationId,
-            ownerUserId: ownerUserId ?? -1,
-            revision: conversationRevision
         )
     }
 
-    func finishConversationListLoad(
-        snapshot: AIConversationLifecycleSnapshot,
-        rows: [IOSAIAssistantPanel.SavedConversation],
+    static func conversationListResult<Row: Sendable>(
+        lifecycle: AIConversationLifecycleSnapshot,
+        rows: [Row],
+        currentConversationId: String,
+        currentOwnerUserId: Int64?,
+        currentRevision: UInt,
         isCancelled: Bool = false
-    ) {
-        defer { isLoadingConversations = false }
-        guard snapshot.matches(
-            conversationId: conversationId,
-            ownerUserId: ownerUserId,
-            revision: conversationRevision,
+    ) -> [Row]? {
+        guard isCurrent(
+            lifecycle: lifecycle,
+            currentConversationId: currentConversationId,
+            currentOwnerUserId: currentOwnerUserId,
+            currentRevision: currentRevision,
             isCancelled: isCancelled
-        ) else { return }
-        savedConversations = rows
+        ) else { return nil }
+        return rows
     }
 }
-#endif
 
