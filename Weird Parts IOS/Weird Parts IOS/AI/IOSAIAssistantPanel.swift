@@ -658,7 +658,7 @@ struct IOSAIAssistantPanel: View {
                 availabilityHeader
             }
 #if DEBUG && targetEnvironment(simulator)
-            if appCore.isWEI5134AIReadFailureUITestingMode {
+            if appCore.isWEI5134AIReadFailureUITestingMode && !showConversationPicker {
                 wei5134AIReadFailureQAControls
             }
 #endif

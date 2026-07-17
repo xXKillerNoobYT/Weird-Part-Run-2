@@ -1123,11 +1123,11 @@ final class AppCore: ObservableObject {
             switch (currentExists, backupExists) {
             case (true, false):
                 try dbConn.execute(
-                    sql: "DELETE FROM ai_conversation_messages WHERE id LIKE 'wei5134-%'"
+                    sql: "DELETE FROM \(Self.wei5134AIConversationTable) WHERE id LIKE 'wei5134-%'"
                 )
                 try dbConn.execute(
                     sql: """
-                        INSERT INTO ai_conversation_messages
+                        INSERT INTO \(Self.wei5134AIConversationTable)
                             (id, conversation_id, owner_user_id, role, content, created_at)
                         VALUES
                             ('wei5134-older-message', 'wei5134-older-conversation', ?, 'assistant',
@@ -1138,7 +1138,7 @@ final class AppCore: ObservableObject {
                     arguments: [ownerUserId, ownerUserId]
                 )
                 try dbConn.execute(
-                    sql: "ALTER TABLE ai_conversation_messages RENAME TO ai_conversation_messages_wei5134_backup"
+                    sql: "ALTER TABLE \(Self.wei5134AIConversationTable) RENAME TO \(Self.wei5134AIConversationBackupTable)"
                 )
             case (false, true):
                 break
@@ -1173,11 +1173,11 @@ final class AppCore: ObservableObject {
                     switch (currentExists, backupExists, shouldBeBroken) {
                     case (true, false, true):
                         try dbConn.execute(
-                            sql: "ALTER TABLE ai_conversation_messages RENAME TO ai_conversation_messages_wei5134_backup"
+                            sql: "ALTER TABLE \(Self.wei5134AIConversationTable) RENAME TO \(Self.wei5134AIConversationBackupTable)"
                         )
                     case (false, true, false):
                         try dbConn.execute(
-                            sql: "ALTER TABLE ai_conversation_messages_wei5134_backup RENAME TO ai_conversation_messages"
+                            sql: "ALTER TABLE \(Self.wei5134AIConversationBackupTable) RENAME TO \(Self.wei5134AIConversationTable)"
                         )
                     case (false, true, true), (true, false, false):
                         break

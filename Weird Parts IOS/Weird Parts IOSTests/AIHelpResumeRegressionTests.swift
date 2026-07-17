@@ -259,6 +259,55 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         )
     }
 
+    func testReadFailureQAControlsExposeOnlyOneAccessibilitySurfaceWhileResumeIsPresented() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let chatBody = try TestSourceSlicer.braceBalancedBody(
+            after: "private var chatBody: some View",
+            in: assistant
+        )
+        let picker = try TestSourceSlicer.braceBalancedBody(
+            after: "private var conversationPicker: some View",
+            in: assistant
+        )
+
+        XCTAssertTrue(
+            chatBody.contains("appCore.isWEI5134AIReadFailureUITestingMode && !showConversationPicker"),
+            "The assistant-body QA controls must leave the accessibility tree while Resume owns the controls."
+        )
+        XCTAssertTrue(picker.contains("appCore.isWEI5134AIReadFailureUITestingMode"))
+        XCTAssertFalse(picker.contains("!showConversationPicker"))
+    }
+
+    func testReadFailureFixtureSQLUsesCanonicalTableNameConstants() throws {
+        let appCore = try Self.readSource("App/AppCore.swift")
+        let fixture = try TestSourceSlicer.braceBalancedBody(
+            after: "nonisolated private static func prepareWEI5134AIReadFailureFixture(",
+            in: appCore
+        )
+        let transition = try TestSourceSlicer.braceBalancedBody(
+            after: "func setWEI5134AIConversationTableBroken(_ shouldBeBroken: Bool)",
+            in: appCore
+        )
+
+        XCTAssertTrue(fixture.contains("DELETE FROM \\(Self.wei5134AIConversationTable)"))
+        XCTAssertTrue(fixture.contains("INSERT INTO \\(Self.wei5134AIConversationTable)"))
+        XCTAssertTrue(
+            fixture.contains(
+                "ALTER TABLE \\(Self.wei5134AIConversationTable) RENAME TO \\(Self.wei5134AIConversationBackupTable)"
+            )
+        )
+        XCTAssertTrue(
+            transition.contains(
+                "ALTER TABLE \\(Self.wei5134AIConversationTable) RENAME TO \\(Self.wei5134AIConversationBackupTable)"
+            )
+        )
+        XCTAssertTrue(
+            transition.contains(
+                "ALTER TABLE \\(Self.wei5134AIConversationBackupTable) RENAME TO \\(Self.wei5134AIConversationTable)"
+            )
+        )
+    }
+
     func testSelectingCurrentConversationAfterHydrationFailureStartsRecoveryBeforeClearingFailure() throws {
         let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
         let resume = try TestSourceSlicer.braceBalancedBody(

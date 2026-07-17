@@ -59,6 +59,7 @@ final class WEI5134AIReadFailureQATests: XCTestCase {
         let resume = app.buttons["Resume a past conversation"]
         XCTAssertTrue(resume.waitForExistence(timeout: 5))
         resume.tap()
+        assertSingleQAControlAccessibilitySurface()
         assertSavedRowsVisible()
         app.navigationBars["Resume Conversation"].buttons["Close"].tap()
 
@@ -191,6 +192,25 @@ final class WEI5134AIReadFailureQATests: XCTestCase {
         print("WEI-5134 AX frame — \(name): \(frame.width)×\(frame.height) pt; origin=(\(frame.minX),\(frame.minY))")
         XCTAssertGreaterThanOrEqual(frame.width, 44, "\(name) AX width must be at least 44 pt.")
         XCTAssertGreaterThanOrEqual(frame.height, 44, "\(name) AX height must be at least 44 pt.")
+    }
+
+    private func assertSingleQAControlAccessibilitySurface() {
+        for label in [
+            "WEI5134 break AI conversation table",
+            "WEI5134 restore AI conversation table",
+        ] {
+            let matches = app.buttons.matching(NSPredicate(format: "label == %@", label))
+            XCTAssertEqual(
+                matches.count,
+                1,
+                "Resume must replace the assistant-body \(label) control instead of exposing a duplicate AX match."
+            )
+        }
+        XCTAssertEqual(
+            app.staticTexts.matching(identifier: "wei5134QAState").count,
+            1,
+            "Resume must expose one observable QA state element."
+        )
     }
 
     private func breakConversationTable(in application: XCUIApplication) {
