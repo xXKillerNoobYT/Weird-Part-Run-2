@@ -585,7 +585,11 @@ struct IOSAIAssistantPanel: View {
             aiAvailability = aiService.checkAvailability()
             guard await resumeLastConversationIfNeeded() else {
                 guard resumePrerequisiteToken == initializationPrerequisites else { return }
-                isLoadingConversationHistory = false
+                isLoadingConversationHistory = AIAssistantInitializationLoadingPolicy.keepsLoading(
+                    afterResumeFailureWith: conversationHistoryReadError,
+                    prerequisitesAvailable: initializationPrerequisites.databaseIdentity != nil
+                        && (initializationPrerequisites.ownerUserId ?? 0) > 0
+                )
                 return
             }
             await loadCurrentConversation()
@@ -1369,7 +1373,6 @@ struct IOSAIAssistantPanel: View {
         guard let db = appCore.db,
               let ownerUserId = appCore.currentUser?.id,
               ownerUserId > 0 else {
-            addWelcomeMessageIfNeeded()
             return
         }
         let databaseIdentity = AIDatabaseIdentity(db)
@@ -1407,7 +1410,7 @@ struct IOSAIAssistantPanel: View {
             conversationHistoryReadError = "Stored messages could not be loaded. Your saved conversation is still on this device; retry to restore it."
             conversationHistoryRetry = .transcriptHydration
             aiConversationLog.error(
-                "Transcript hydration failed for owner \(ownerUserId, privacy: .private), conversation \(loadConversationId, privacy: .private): \(error.localizedDescription, privacy: .public)"
+                "Transcript hydration failed for owner \(ownerUserId, privacy: .private), conversation \(loadConversationId, privacy: .private): \(error.localizedDescription, privacy: .private)"
             )
         }
     }
@@ -1457,7 +1460,7 @@ struct IOSAIAssistantPanel: View {
             conversationHistoryReadError = "Conversation history could not be checked. Retry to restore your latest saved conversation."
             conversationHistoryRetry = .latestConversationLookup
             aiConversationLog.error(
-                "Latest conversation lookup failed for owner \(ownerUserId, privacy: .private): \(error.localizedDescription, privacy: .public)"
+                "Latest conversation lookup failed for owner \(ownerUserId, privacy: .private): \(error.localizedDescription, privacy: .private)"
             )
             return false
         }
@@ -1513,9 +1516,11 @@ struct IOSAIAssistantPanel: View {
         guard let db = appCore.db,
               let ownerUserId = appCore.currentUser?.id,
               ownerUserId > 0 else {
-            if conversationListRequestID == requestID {
-                conversationListReadError = "The database or signed-in user is unavailable. Try again after signing in and the app finishes loading."
-            }
+            var lifecycleCoordinator = currentLifecycleCoordinator()
+            guard lifecycleCoordinator.finishConversationListPrerequisiteFailure(requestID: requestID) else { return }
+            isLoadingConversations = lifecycleCoordinator.isLoadingConversations
+            savedConversations = lifecycleCoordinator.savedConversations
+            conversationListReadError = "The database or signed-in user is unavailable. Try again after signing in and the app finishes loading."
             return
         }
         let databaseIdentity = AIDatabaseIdentity(db)
@@ -1560,7 +1565,7 @@ struct IOSAIAssistantPanel: View {
             savedConversations = lifecycleCoordinator.savedConversations
             conversationListReadError = "Saved conversations could not be read. Your last loaded conversations are unchanged; retry to refresh them."
             aiConversationLog.error(
-                "Conversation list lookup failed for owner \(ownerUserId, privacy: .private): \(error.localizedDescription, privacy: .public)"
+                "Conversation list lookup failed for owner \(ownerUserId, privacy: .private): \(error.localizedDescription, privacy: .private)"
             )
         }
     }
@@ -3264,6 +3269,19 @@ enum AIAssistantResumeSelectionPolicy {
     }
 }
 
+enum AIAssistantInitializationLoadingPolicy {
+    /// Missing persistence prerequisites are a startup wait, not a readable empty
+    /// conversation. Keep the composer fail-closed until the prerequisite-keyed
+    /// task runs again. A real read failure has visible Retry UI, so it may stop
+    /// the spinner while the existing error gate continues to disable input.
+    static func keepsLoading(
+        afterResumeFailureWith readError: String?,
+        prerequisitesAvailable: Bool
+    ) -> Bool {
+        !prerequisitesAvailable || readError == nil
+    }
+}
+
 @MainActor
 struct AIAssistantLifecycleCoordinator<Row: Sendable> {
     private(set) var conversationId: String
@@ -3361,6 +3379,12 @@ struct AIAssistantLifecycleCoordinator<Row: Sendable> {
         }
         isLoadingConversations = true
         return snapshot()
+    }
+
+    mutating func finishConversationListPrerequisiteFailure(requestID: UInt) -> Bool {
+        guard requestID == conversationListRequestID else { return false }
+        isLoadingConversations = false
+        return true
     }
 
     mutating func finishConversationListLoad(

@@ -41,6 +41,8 @@ Review and user-like QA found five requirements that must be satisfied before th
     - Resume-list loading that successfully returns an empty array shows “No Saved Conversations.” A thrown list read preserves any last-known rows, shows a retryable picker error, and must not render the genuine-empty copy for that failed request.
 14. All three retry paths retain the authenticated positive `ownerUserId` captured for the request. Stale completions from a different owner, conversation, database, or lifecycle revision cannot install rows or clear a newer error/loading state.
 15. Selecting the already-current row from Resume is a no-op only when that conversation has no transcript-hydration failure. If hydration failed, selecting the current row starts a recovery hydration synchronously, preserves the retryable read failure until that hydration succeeds, and keeps the composer and Send disabled throughout recovery.
+16. If the assistant mounts before its database or authenticated user exists, initialization remains visibly loading and the composer and Send stay disabled until the prerequisite-keyed task retries. A matching Resume-list prerequisite failure instead ends that list request, exposes retryable error copy, and preserves last-known rows; stale request/database/owner completions remain unable to overwrite current state.
+17. Technical details from all three conversation-read failures are private OSLog interpolations. User-facing recovery copy remains explicit without publishing database or device error descriptions.
 
 ### Simulator-only SQLCipher recovery seam (WEI-5137 / PR #1466)
 

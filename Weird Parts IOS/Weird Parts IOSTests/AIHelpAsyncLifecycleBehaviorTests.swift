@@ -341,6 +341,55 @@ final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
         XCTAssertEqual(box.savedConversations.map(\.preview), ["current preview"])
     }
 
+    func testMissingPrerequisiteListFailureClearsMatchingLoadAndPreservesRows() {
+        let lastKnownRows = [
+            IOSAIAssistantPanel.SavedConversation(
+                id: "conversation-a",
+                lastMessageAt: "2026-07-16 10:00:00",
+                preview: "last known preview"
+            ),
+        ]
+        var coordinator = AIAssistantLifecycleCoordinator(
+            conversationId: "conversation-a",
+            ownerUserId: nil,
+            savedConversations: lastKnownRows,
+            isLoadingConversations: true,
+            conversationListRequestID: 7
+        )
+
+        XCTAssertFalse(coordinator.finishConversationListPrerequisiteFailure(requestID: 6))
+        XCTAssertTrue(coordinator.isLoadingConversations, "A stale prerequisite failure must not clear the current spinner.")
+        XCTAssertEqual(coordinator.savedConversations, lastKnownRows)
+
+        XCTAssertTrue(coordinator.finishConversationListPrerequisiteFailure(requestID: 7))
+        XCTAssertFalse(coordinator.isLoadingConversations, "The matching prerequisite failure must reveal retryable error UI.")
+        XCTAssertEqual(coordinator.savedConversations, lastKnownRows, "Prerequisite failures must preserve last-known rows.")
+    }
+
+    func testMissingInitializationPrerequisitesStayFailClosedUntilLaterAttemptSucceeds() {
+        XCTAssertTrue(
+            AIAssistantInitializationLoadingPolicy.keepsLoading(
+                afterResumeFailureWith: nil,
+                prerequisitesAvailable: false
+            ),
+            "A panel mounted before DB/user readiness must keep history loading and input disabled."
+        )
+        XCTAssertTrue(
+            AIAssistantInitializationLoadingPolicy.keepsLoading(
+                afterResumeFailureWith: "an older read failure",
+                prerequisitesAvailable: false
+            ),
+            "Missing prerequisites must remain fail-closed even if an older error is still visible."
+        )
+        XCTAssertFalse(
+            AIAssistantInitializationLoadingPolicy.keepsLoading(
+                afterResumeFailureWith: "retryable read failure",
+                prerequisitesAvailable: true
+            ),
+            "A true read failure may stop the spinner because its visible error continues to gate input."
+        )
+    }
+
     func testFailedHydrationThenResumeCurrentRowRequiresRecoveryLoad() {
         let action = AIAssistantResumeSelectionPolicy.action(
             selectedConversationId: "conversation-a",
