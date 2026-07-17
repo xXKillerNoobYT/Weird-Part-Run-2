@@ -150,6 +150,10 @@ final class AIHelpResumeRegressionTests: XCTestCase {
             assistant.contains(".onChange(of: pendingHelpRequestToken)"),
             "The mounted assistant must observe a second Help payload after the initial task has already run."
         )
+        XCTAssertTrue(
+            assistant.contains(".onChange(of: isClearingConversation) { _, isClearing in\n            if !isClearing {\n                consumePendingHelpRequestIfReady()"),
+            "A Help handoff queued during Clear must be retried when Clear finishes."
+        )
         XCTAssertFalse(mainView.contains("Task.sleep"), "Help presentation must follow dismissal state, not a timer.")
         XCTAssertTrue(assistant.contains("let pendingHelpPersistence = helpPersistenceTask"))
         XCTAssertTrue(assistant.contains("await pendingHelpPersistence?.value"))

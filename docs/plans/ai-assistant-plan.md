@@ -24,7 +24,7 @@ The active app uses Apple Foundation Models and the local `AppDatabase`; the old
 Review and user-like QA found five requirements that must be satisfied before this slice can merge:
 
 1. Help delivery is readiness-driven, not timer-driven: the shell owns a pending payload and the assistant consumes it only after initial history loading completes.
-2. Help persistence and Clear are serialized so Clear cannot report success before an in-flight local Help turn finishes writing.
+2. Help persistence and Clear are serialized so Clear cannot report success before an in-flight local Help turn finishes writing. A new Help handoff received during Clear remains queued and is consumed as soon as Clear finishes, whether deletion succeeds or reports a retryable failure.
 3. Assistant messages and saved-conversation previews render supported Markdown rather than exposing formatting markers.
 4. Resume controls provide a minimum 44×44-point hit target in sheet and overlay modes.
 5. Persisted conversations are scoped to the authenticated user and a resumed transcript hydrates the next Foundation Models request. The durable persistence/session contract is owned by BackendCoder in WEI-5008; the frontend must fail closed until that contract is integrated.

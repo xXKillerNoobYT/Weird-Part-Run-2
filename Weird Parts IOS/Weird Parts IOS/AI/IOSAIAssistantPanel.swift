@@ -461,6 +461,11 @@ struct IOSAIAssistantPanel: View {
         .onChange(of: pendingHelpRequestToken) { _, _ in
             consumePendingHelpRequestIfReady()
         }
+        .onChange(of: isClearingConversation) { _, isClearing in
+            if !isClearing {
+                consumePendingHelpRequestIfReady()
+            }
+        }
         .sheet(isPresented: $showConversationPicker) {
             conversationPicker
         }
