@@ -1133,33 +1133,11 @@ struct IOSAIAssistantPanel: View {
     }
 
     private func renderedMarkdown(_ content: String) -> AttributedString {
-        var rendered = AttributedString()
-        for (index, block) in markdownBlocks(content).enumerated() {
-            if index > 0 {
-                rendered.append(AttributedString("\n\n"))
-            }
-            rendered.append(
-                (try? AttributedString(
-                    markdown: block,
-                    options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .full)
-                )) ?? AttributedString(block)
-            )
-        }
-        return rendered
+        AIAssistantMarkdownRenderer.renderedMarkdown(content)
     }
 
     private func plainText(fromMarkdown content: String) -> String {
-        markdownBlocks(content)
-            .map { String(renderedMarkdown($0).characters) }
-            .joined(separator: "\n\n")
-    }
-
-    private func markdownBlocks(_ content: String) -> [String] {
-        content
-            .replacingOccurrences(of: "\r\n", with: "\n")
-            .components(separatedBy: "\n\n")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        AIAssistantMarkdownRenderer.plainText(fromMarkdown: content)
     }
 
     /// Own the current history load so lifecycle transitions can cancel it and the
@@ -2869,6 +2847,52 @@ struct AssistantMessage: Identifiable, Sendable {
 
 enum MessageRole: Sendable {
     case user, assistant
+}
+
+/// Parses each message as one Markdown document so fenced/indented code and
+/// list nesting survive blank lines, then restores the paragraph spacing that
+/// `AttributedString` omits from its character view between presentation blocks.
+enum AIAssistantMarkdownRenderer {
+    nonisolated static func renderedMarkdown(_ content: String) -> AttributedString {
+        let normalized = content
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        guard let parsed = try? AttributedString(
+            markdown: normalized,
+            options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .full)
+        ) else {
+            return AttributedString(normalized)
+        }
+
+        var rendered = AttributedString()
+        var previousBlockIdentity: Int?
+        for run in parsed.runs {
+            let blockIdentity = run.presentationIntent?.components.first?.identity
+            if let blockIdentity,
+               let previousBlockIdentity,
+               blockIdentity != previousBlockIdentity {
+                appendBlockSeparator(to: &rendered)
+            }
+            rendered.append(AttributedString(parsed[run.range]))
+            if let blockIdentity {
+                previousBlockIdentity = blockIdentity
+            }
+        }
+        return rendered
+    }
+
+    nonisolated static func plainText(fromMarkdown content: String) -> String {
+        String(renderedMarkdown(content).characters)
+    }
+
+    nonisolated private static func appendBlockSeparator(to rendered: inout AttributedString) {
+        let trailingNewlineCount = rendered.characters.reversed().prefix { $0 == "\n" }.count
+        if trailingNewlineCount < 2 {
+            rendered.append(
+                AttributedString(String(repeating: "\n", count: 2 - trailingNewlineCount))
+            )
+        }
+    }
 }
 
 struct AIConversationLifecycleSnapshot: Equatable, Sendable {

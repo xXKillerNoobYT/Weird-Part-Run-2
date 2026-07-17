@@ -354,10 +354,52 @@ final class AIHelpResumeRegressionTests: XCTestCase {
 
         XCTAssertTrue(assistant.contains("Text(renderedMarkdown(message.content))"))
         XCTAssertTrue(assistant.contains("Text(renderedMarkdown(conversation.preview))"))
-        XCTAssertTrue(assistant.contains("markdown: block"))
+        XCTAssertTrue(assistant.contains("markdown: normalized"))
         XCTAssertTrue(assistant.contains("interpretedSyntax: .full"))
-        XCTAssertTrue(assistant.contains("markdownBlocks(content)"))
-        XCTAssertTrue(assistant.contains(".joined(separator: \"\\n\\n\")"))
+        XCTAssertTrue(assistant.contains("run.presentationIntent?.components.first?.identity"))
+        XCTAssertFalse(assistant.contains("markdownBlocks(content)"))
+    }
+
+    func testMarkdownRendererPreservesFencedCodeAndParagraphSpacing() {
+        let markdown = """
+        Before code.
+
+        ```swift
+        let first = 1
+
+        let second = 2
+        ```
+
+        After code.
+        """
+
+        let rendered = AIAssistantMarkdownRenderer.plainText(fromMarkdown: markdown)
+
+        XCTAssertEqual(
+            rendered,
+            "Before code.\n\nlet first = 1\n\nlet second = 2\n\nAfter code."
+        )
+        XCTAssertFalse(rendered.contains("```"))
+    }
+
+    func testMarkdownRendererPreservesBlankLineListAndIndentedCodeContent() {
+        let markdown = """
+        - First item
+
+              let first = 1
+
+              let second = 2
+
+        - Second item
+        """
+
+        let rendered = AIAssistantMarkdownRenderer.plainText(fromMarkdown: markdown)
+
+        XCTAssertEqual(
+            rendered,
+            "First item\n\nlet first = 1\n\nlet second = 2\n\nSecond item"
+        )
+        XCTAssertFalse(rendered.contains("- "))
     }
 
     func testExistingAssistantBugReportContextRemainsAvailable() throws {
