@@ -266,6 +266,34 @@ final class SilentLoadFailureSurfacingRegressionTests: XCTestCase {
         )
     }
 
+    // MARK: - People add-sheet save failures
+
+    func testPeopleAddSheetSaveFailuresUseSaveSpecificErrorContexts() throws {
+        let cases: [(path: [String], staleContext: String, fixedContext: String)] = [
+            (["Features", "People", "IOSCustomersPage.swift"], "load customers", "save customer"),
+            (["Features", "People", "IOSContractorsPage.swift"], "load contractors", "save contractor"),
+            (["Features", "People", "IOSEmployeesPage.swift"], "load employees", "save employee"),
+            (["Features", "People", "IOSHatsPage.swift"], "load hats", "save hat"),
+            (["Features", "People", "IOSTeamsPage.swift"], "load teams", "save team"),
+            (["Features", "People", "IOSContactsPage.swift"], "load contacts", "save contact")
+        ]
+
+        for testCase in cases {
+            let source = try Self.readSource(testCase.path)
+            let staleSnippet = "errorMessage = userFriendlyError(error, context: \"\(testCase.staleContext)\")"
+            let fixedSnippet = "errorMessage = userFriendlyError(error, context: \"\(testCase.fixedContext)\")"
+
+            XCTAssertFalse(
+                source.contains(staleSnippet),
+                "People add-sheet save failures must not report the operation as '\(testCase.staleContext)'."
+            )
+            XCTAssertTrue(
+                source.contains(fixedSnippet),
+                "People add-sheet save failures should report the operation as '\(testCase.fixedContext)'."
+            )
+        }
+    }
+
     // MARK: - Helpers
 
     /// Read an app source file relative to the project root, mirroring the
