@@ -324,6 +324,45 @@ struct FoundationModelsServiceTests {
         #expect(list.first?.preview == "Latest reply")
     }
 
+    @Test("equal timestamps use save order for resume, list order, and previews")
+    func testConversationRecency_equalTimestampsUsesSaveOrderWithinOwner() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let tiedTimestamp = "2026-07-17 10:00:00"
+        let ownerMessages = [
+            AIConversationMessage(id: "tie-a-1", conversationId: "tie-conv-A", role: "user", content: "A first", createdAt: tiedTimestamp),
+            AIConversationMessage(id: "tie-a-2", conversationId: "tie-conv-A", role: "assistant", content: "A actual latest preview", createdAt: tiedTimestamp),
+            AIConversationMessage(id: "tie-b-1", conversationId: "tie-conv-B", role: "user", content: "B saved last", createdAt: tiedTimestamp),
+        ]
+        for message in ownerMessages {
+            try await FoundationModelsService.saveMessage(message, ownerUserId: 101, to: env.db)
+        }
+        try await FoundationModelsService.saveMessage(
+            AIConversationMessage(
+                id: "tie-other-owner",
+                conversationId: "tie-other-owner-conv",
+                role: "user",
+                content: "Other owner saved newest",
+                createdAt: tiedTimestamp
+            ),
+            ownerUserId: 202,
+            to: env.db
+        )
+
+        let loadedA = try await FoundationModelsService.loadConversation(
+            "tie-conv-A",
+            ownerUserId: 101,
+            from: env.db
+        )
+        let ownerList = try await FoundationModelsService.listConversations(ownerUserId: 101, from: env.db)
+        let ownerLatest = try await FoundationModelsService.latestConversationId(ownerUserId: 101, from: env.db)
+
+        #expect(loadedA.map(\.content) == ["A first", "A actual latest preview"])
+        #expect(ownerList.map(\.id) == ["tie-conv-B", "tie-conv-A"])
+        #expect(ownerList.map(\.preview) == ["B saved last", "A actual latest preview"])
+        #expect(ownerLatest == "tie-conv-B")
+        #expect(try await FoundationModelsService.listConversations(ownerUserId: 202, from: env.db).map(\.id) == ["tie-other-owner-conv"])
+    }
+
     @Test("latestConversationId returns nil when no messages exist")
     func testLatestConversationId_emptyDatabase() async throws {
         let env = try E2ETestHelpers.setUp()

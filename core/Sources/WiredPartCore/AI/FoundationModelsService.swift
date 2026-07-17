@@ -834,8 +834,11 @@ public actor FoundationModelsService {
                 try dbConn.execute(
                     sql: """
                         INSERT INTO ai_conversation_messages
-                            (id, conversation_id, owner_user_id, role, content, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?)
+                            (id, conversation_id, owner_user_id, role, content, created_at, recency_order)
+                        VALUES (
+                            ?, ?, ?, ?, ?, ?,
+                            (SELECT COALESCE(MAX(recency_order), 0) + 1 FROM ai_conversation_messages)
+                        )
                         """,
                     arguments: [msg.id, msg.conversationId, ownerUserId, msg.role, msg.content, msg.createdAt]
                 )
@@ -857,7 +860,7 @@ public actor FoundationModelsService {
                     SELECT id, conversation_id, role, content, created_at
                     FROM ai_conversation_messages
                     WHERE conversation_id = ? AND owner_user_id = ?
-                    ORDER BY created_at ASC
+                    ORDER BY created_at ASC, recency_order ASC
                     """,
                 arguments: [conversationId, ownerUserId]
             )
@@ -930,16 +933,24 @@ public actor FoundationModelsService {
             let rows = try Row.fetchAll(
                 dbConn,
                 sql: """
+                    WITH ranked_messages AS (
+                        SELECT conversation_id,
+                               created_at,
+                               content,
+                               recency_order,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY conversation_id
+                                   ORDER BY created_at DESC, recency_order DESC
+                               ) AS message_rank
+                        FROM ai_conversation_messages
+                        WHERE owner_user_id = ?
+                    )
                     SELECT conversation_id,
-                           MAX(created_at) AS last_message_at,
-                           (SELECT content FROM ai_conversation_messages m2
-                            WHERE m2.conversation_id = m1.conversation_id
-                              AND m2.owner_user_id = m1.owner_user_id
-                            ORDER BY created_at DESC LIMIT 1) AS preview
-                    FROM ai_conversation_messages m1
-                    WHERE owner_user_id = ?
-                    GROUP BY owner_user_id, conversation_id
-                    ORDER BY last_message_at DESC
+                           created_at AS last_message_at,
+                           content AS preview
+                    FROM ranked_messages
+                    WHERE message_rank = 1
+                    ORDER BY last_message_at DESC, recency_order DESC
                     """,
                 arguments: [ownerUserId]
             )
@@ -971,7 +982,7 @@ public actor FoundationModelsService {
                     SELECT conversation_id
                     FROM ai_conversation_messages
                     WHERE owner_user_id = ?
-                    ORDER BY created_at DESC
+                    ORDER BY created_at DESC, recency_order DESC
                     LIMIT 1
                     """,
                 arguments: [ownerUserId]

@@ -151,6 +151,7 @@ extension AppDatabase {
         registerMigration110InspectionTemplateRequiredFlag(&migrator)
         registerMigration111ChatAttachmentStorageRelative(&migrator)
         registerMigration113AIConversationOwners(&migrator)
+        registerMigration114AIConversationRecency(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6096,6 +6097,43 @@ private func registerMigration113AIConversationOwners(_ migrator: inout Database
             index: "idx_ai_conv_msgs_owner_conv",
             on: "ai_conversation_messages",
             columns: ["owner_user_id", "conversation_id", "created_at"],
+            ifNotExists: true
+        )
+    }
+}
+
+// MARK: - Migration 114: Deterministic AI conversation recency
+
+/// Persists insertion order independently from second-resolution timestamps. Legacy rows
+/// inherit their current SQLite insertion order; new values are assigned by the serialized
+/// database writer when messages are saved.
+private func registerMigration114AIConversationRecency(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("114_ai_conversation_recency") { db in
+        try addColumnIfMissing(
+            db,
+            table: "ai_conversation_messages",
+            column: "recency_order",
+            type: .integer,
+            defaultValue: 0
+        )
+        try db.execute(
+            sql: """
+                UPDATE ai_conversation_messages
+                SET recency_order = rowid
+                WHERE recency_order = 0
+                """
+        )
+        try db.create(
+            index: "idx_ai_conv_msgs_owner_recency",
+            on: "ai_conversation_messages",
+            columns: ["owner_user_id", "created_at", "recency_order"],
+            ifNotExists: true
+        )
+        try db.create(
+            index: "idx_ai_conv_msgs_recency_order",
+            on: "ai_conversation_messages",
+            columns: ["recency_order"],
+            unique: true,
             ifNotExists: true
         )
     }

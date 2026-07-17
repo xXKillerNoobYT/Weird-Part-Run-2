@@ -51,6 +51,7 @@ The active iOS implementation uses Apple Foundation Models and local SQLite rath
 - Resuming a conversation hydrates both the displayed rows and the Foundation Models `Transcript`; follow-up requests therefore receive the prior user/assistant turns.
 - Model-response persistence is awaited. An actor-owned conversation revision invalidates a response that finishes after clear/delete began, preventing a delayed write from recreating cleared history.
 - The UI consumer must pass `appCore.currentUser.id`, await clear/delete, and call the service resume API before sending a follow-up in a restored thread.
+- Message timestamps remain the primary chronological key, but persisted turns also carry a monotonic `recency_order`. Reads use that value as the secondary key whenever second-resolution timestamps tie. This makes transcript order, latest-conversation resume, saved-conversation order, and previews reflect actual save order without weakening authenticated-owner filtering (WEI-5122 / GitHub #1464).
 
 ---
 
