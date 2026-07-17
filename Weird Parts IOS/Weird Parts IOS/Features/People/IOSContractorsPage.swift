@@ -226,7 +226,7 @@ private struct AddContractorSheet: View {
             dismiss()
             onSave()
         } catch {
-            errorMessage = userFriendlyError(error, context: "load contractors")
+            errorMessage = userFriendlyError(error, context: "save contractor")
         }
     }
 }
