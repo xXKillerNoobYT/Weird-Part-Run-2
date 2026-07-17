@@ -1,6 +1,5 @@
 import Foundation
 import GRDB
-import os.log
 
 #if canImport(FoundationModels)
 import FoundationModels
@@ -86,14 +85,22 @@ public struct AIConversationMessage: Sendable, Codable {
 }
 
 public enum AIConversationPersistenceError: LocalizedError, Sendable, Equatable {
+    case missingAuthenticatedUser
     case deleteVerificationFailed(conversationId: String, remainingMessageCount: Int)
 
     public var errorDescription: String? {
         switch self {
+        case .missingAuthenticatedUser:
+            "An authenticated user is required to access AI conversation history."
         case .deleteVerificationFailed(let conversationId, let remainingMessageCount):
             "Conversation \(conversationId) still has \(remainingMessageCount) stored message(s) after deletion."
         }
     }
+}
+
+struct AIConversationScope: Hashable, Sendable {
+    let conversationId: String
+    let ownerUserId: Int64
 }
 
 /// Identifies the security- and context-bearing inputs used to build a chat session.
@@ -134,9 +141,6 @@ struct AIChatSessionIdentity: Equatable, Sendable {
 /// All methods are safe to call on any platform. On platforms where
 /// Foundation Models is not available, methods return graceful fallbacks.
 public actor FoundationModelsService {
-
-    private let logger = Logger(subsystem: "com.wiredpart.core", category: "FoundationModels")
-
     /// Maximum characters of context to send to the model.
     private let maxContextChars: Int
 
@@ -165,6 +169,15 @@ public actor FoundationModelsService {
 
     /// In-memory message history for the current conversation.
     private var messageHistory: [AIConversationMessage] = []
+
+    /// Identifies history explicitly loaded for the next Foundation Models session.
+    private var hydratedConversationScope: AIConversationScope?
+
+    /// Invalidates a model response when its conversation is cleared while generation is in flight.
+    private var conversationRevisions: [AIConversationScope: Int] = [:]
+
+    /// Invalidates suspended history hydration whenever another resume or lifecycle action wins.
+    private var conversationLifecycleRevision: UInt = 0
 
     public init(maxContextChars: Int = 1000) {
         self.maxContextChars = maxContextChars
@@ -416,6 +429,15 @@ public actor FoundationModelsService {
         guard !query.isBlankRequiredText else {
             return .fail("Empty query")
         }
+        guard let ownerUserId = userId, ownerUserId > 0 else {
+            return .fail(AIConversationPersistenceError.missingAuthenticatedUser.localizedDescription)
+        }
+
+        let conversationScope = AIConversationScope(
+            conversationId: conversationId,
+            ownerUserId: ownerUserId
+        )
+        let startingRevision = conversationRevisions[conversationScope, default: 0]
 
         #if canImport(FoundationModels)
         if #available(macOS 26.0, iOS 26.0, *) {
@@ -460,23 +482,30 @@ public actor FoundationModelsService {
                     tools: tools,
                     instructions: chatInstructions
                 )
+                let startingLifecycleRevision = conversationLifecycleRevision
                 let response = try await session.respond(to: query)
                 let text = response.content.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
 
                 // Append user + assistant messages to in-memory history
                 let userMsg = AIConversationMessage(conversationId: conversationId, role: "user", content: query)
                 let assistantMsg = AIConversationMessage(conversationId: conversationId, role: "assistant", content: text)
-                messageHistory.append(userMsg)
-                messageHistory.append(assistantMsg)
 
-                // Persist to DB (fire-and-forget — don't block the response)
-                Task.detached { [db, userMsg, assistantMsg, logger] in
-                    do {
-                        try await Self.saveMessage(userMsg, to: db)
-                        try await Self.saveMessage(assistantMsg, to: db)
-                    } catch {
-                        logger.warning("AI conversation persist failed: \(error.localizedDescription, privacy: .public)")
-                    }
+                // Persist before reporting success. Clear/delete can therefore be awaited after
+                // this call without an older detached write recreating the transcript.
+                let persisted = try await persistMessagesIfCurrent(
+                    [userMsg, assistantMsg],
+                    scope: conversationScope,
+                    expectedRevision: startingRevision,
+                    to: db
+                )
+                guard persisted else {
+                    return .fail("Conversation was cleared while the response was being generated")
+                }
+                guard appendGeneratedMessagesIfCurrent(
+                    [userMsg, assistantMsg],
+                    expectedLifecycleRevision: startingLifecycleRevision
+                ) else {
+                    return .fail("Conversation changed while the response was being generated")
                 }
 
                 return .ok(text)
@@ -506,24 +535,211 @@ public actor FoundationModelsService {
            let existing = activeChatSession as? LanguageModelSession {
             return existing
         }
-        let session = LanguageModelSession(tools: tools, instructions: instructions)
+        // Switching model sessions invalidates any response still suspended in the prior
+        // session. Without this boundary, Conversation A can finish after Conversation B
+        // becomes active and append A's turns into B's staged transcript.
+        conversationLifecycleRevision &+= 1
+        let scope = AIConversationScope(
+            conversationId: identity.conversationId,
+            ownerUserId: identity.userId ?? 0
+        )
+        let session: LanguageModelSession
+        if hydratedConversationScope == scope, !messageHistory.isEmpty {
+            let transcript = Self.makeTranscript(
+                instructions: instructions,
+                tools: tools,
+                history: messageHistory
+            )
+            session = LanguageModelSession(tools: tools, transcript: transcript)
+            hydratedConversationScope = nil
+        } else {
+            session = LanguageModelSession(tools: tools, instructions: instructions)
+            messageHistory.removeAll()
+        }
         activeChatSession = session
         activeChatConversationId = identity.conversationId
         activeChatSessionIdentity = identity
-        messageHistory.removeAll()
         return session
+    }
+
+    /// Converts persisted user/assistant turns into the transcript used to initialize
+    /// the next Foundation Models session. Kept internal so regression tests can verify
+    /// that resume hydration reaches the model contract, not only the SwiftUI rows.
+    @available(macOS 26.0, iOS 26.0, *)
+    nonisolated static func makeTranscript(
+        instructions: String,
+        tools: [any FoundationModels.Tool],
+        history: [AIConversationMessage]
+    ) -> Transcript {
+        var entries: [Transcript.Entry] = [
+            .instructions(Transcript.Instructions(
+                segments: [.text(Transcript.TextSegment(content: instructions))],
+                toolDefinitions: tools.map { Transcript.ToolDefinition(tool: $0) }
+            )),
+        ]
+        for message in history {
+            let segment = Transcript.Segment.text(Transcript.TextSegment(content: message.content))
+            switch message.role {
+            case "user":
+                entries.append(.prompt(Transcript.Prompt(segments: [segment])))
+            case "assistant":
+                entries.append(.response(Transcript.Response(assetIDs: [], segments: [segment])))
+            default:
+                continue
+            }
+        }
+        return Transcript(entries: entries)
     }
     #endif
 
     /// Clear the active conversation session and in-memory history.
     /// The UI should call this when the user taps "New Conversation".
     public func clearConversation() {
+        conversationLifecycleRevision &+= 1
         #if canImport(FoundationModels)
         activeChatSession = nil
         #endif
         activeChatConversationId = nil
         activeChatSessionIdentity = nil
+        hydratedConversationScope = nil
         messageHistory.removeAll()
+    }
+
+    /// Load an owner-scoped persisted transcript and stage it for the next model request.
+    /// The returned rows are also suitable for UI display.
+    public func resumeConversation(
+        _ conversationId: String,
+        ownerUserId: Int64,
+        from db: AppDatabase
+    ) async throws -> [AIConversationMessage] {
+        try await resumeConversation(
+            conversationId,
+            ownerUserId: ownerUserId,
+            from: db,
+            beforeHydrating: nil
+        )
+    }
+
+    /// Testable hydration seam used to hold a loaded transcript across lifecycle changes.
+    func resumeConversation(
+        _ conversationId: String,
+        ownerUserId: Int64,
+        from db: AppDatabase,
+        beforeHydrating: (@Sendable () async -> Void)? = nil
+    ) async throws -> [AIConversationMessage] {
+        let scope = try Self.validatedScope(
+            conversationId: conversationId,
+            ownerUserId: ownerUserId
+        )
+        guard !Task.isCancelled else { throw CancellationError() }
+        conversationLifecycleRevision &+= 1
+        let expectedLifecycleRevision = conversationLifecycleRevision
+        let history = try await Self.loadConversation(
+            conversationId,
+            ownerUserId: ownerUserId,
+            from: db
+        )
+        if let beforeHydrating {
+            await beforeHydrating()
+        }
+        guard !Task.isCancelled,
+              conversationLifecycleRevision == expectedLifecycleRevision else {
+            throw CancellationError()
+        }
+        #if canImport(FoundationModels)
+        activeChatSession = nil
+        #endif
+        activeChatConversationId = nil
+        activeChatSessionIdentity = nil
+        hydratedConversationScope = scope
+        messageHistory = history
+        return history
+    }
+
+    /// Persist a locally generated Help turn and stage the complete conversation for
+    /// the next Foundation Models request. This keeps Help local/read-only while making
+    /// an immediate follow-up receive the same context that is already visible in UI.
+    ///
+    /// Returns `false` when a concurrent clear invalidated the write before staging.
+    public func stageHelpConversation(
+        _ conversationId: String,
+        ownerUserId: Int64,
+        userPrompt: String,
+        assistantResponse: String,
+        in db: AppDatabase,
+        beforePersisting: (@Sendable () async -> Void)? = nil
+    ) async throws -> Bool {
+        let scope = try Self.validatedScope(
+            conversationId: conversationId,
+            ownerUserId: ownerUserId
+        )
+        let expectedRevision = conversationRevisions[scope, default: 0]
+        conversationLifecycleRevision &+= 1
+        let expectedLifecycleRevision = conversationLifecycleRevision
+        let helpTurns = [
+            AIConversationMessage(conversationId: conversationId, role: "user", content: userPrompt),
+            AIConversationMessage(conversationId: conversationId, role: "assistant", content: assistantResponse),
+        ]
+
+        if let beforePersisting {
+            await beforePersisting()
+        }
+
+        guard try await persistMessagesIfCurrent(
+            helpTurns,
+            scope: scope,
+            expectedRevision: expectedRevision,
+            to: db
+        ) else {
+            return false
+        }
+
+        let history = try await Self.loadConversation(
+            conversationId,
+            ownerUserId: ownerUserId,
+            from: db
+        )
+        guard !Task.isCancelled,
+              conversationRevisions[scope, default: 0] == expectedRevision,
+              conversationLifecycleRevision == expectedLifecycleRevision else {
+            return false
+        }
+
+        #if canImport(FoundationModels)
+        activeChatSession = nil
+        #endif
+        activeChatConversationId = nil
+        activeChatSessionIdentity = nil
+        hydratedConversationScope = scope
+        messageHistory = history
+        return true
+    }
+
+    /// Clear persisted and in-memory state as one awaitable actor operation. Incrementing
+    /// the revision before the database delete invalidates any response currently in flight.
+    public func clearConversation(
+        _ conversationId: String,
+        ownerUserId: Int64,
+        from db: AppDatabase
+    ) async throws {
+        let scope = try Self.validatedScope(
+            conversationId: conversationId,
+            ownerUserId: ownerUserId
+        )
+        conversationLifecycleRevision &+= 1
+        conversationRevisions[scope, default: 0] += 1
+        try await Self.clearPersistedConversation(
+            conversationId,
+            ownerUserId: ownerUserId,
+            from: db
+        )
+        if activeChatSessionIdentity?.conversationId == conversationId,
+           activeChatSessionIdentity?.userId == ownerUserId {
+            clearConversation()
+        } else if hydratedConversationScope == scope {
+            hydratedConversationScope = nil
+            messageHistory.removeAll()
+        }
     }
 
     /// Returns the in-memory message history for debugging / display.
@@ -531,33 +747,119 @@ public actor FoundationModelsService {
         messageHistory
     }
 
+    /// Captures the actor lifecycle generation that owns an in-flight model response.
+    /// Internal visibility keeps the async Resume-vs-generation contract testable without
+    /// requiring the Foundation Models runtime to produce a response.
+    func generationLifecycleRevision() -> UInt {
+        conversationLifecycleRevision
+    }
+
+    /// Appends generated turns only while the originating model lifecycle still owns the
+    /// actor's staged history. Resume, Help staging, Clear, New/logout, and a model-session
+    /// switch all advance the lifecycle revision before replacing that history.
+    func appendGeneratedMessagesIfCurrent(
+        _ messages: [AIConversationMessage],
+        expectedLifecycleRevision: UInt
+    ) -> Bool {
+        guard conversationLifecycleRevision == expectedLifecycleRevision else {
+            return false
+        }
+        messageHistory.append(contentsOf: messages)
+        return true
+    }
+
+    func persistenceRevision(for scope: AIConversationScope) -> Int {
+        conversationRevisions[scope, default: 0]
+    }
+
+    /// Writes only while the originating conversation revision is still current.
+    /// This internal seam makes the delayed-response/clear ordering contract testable
+    /// without requiring the Foundation Models runtime to generate a response.
+    func persistMessagesIfCurrent(
+        _ messages: [AIConversationMessage],
+        scope: AIConversationScope,
+        expectedRevision: Int,
+        to db: AppDatabase
+    ) async throws -> Bool {
+        guard conversationRevisions[scope, default: 0] == expectedRevision else {
+            return false
+        }
+        try await Self.saveMessages(messages, ownerUserId: scope.ownerUserId, to: db)
+        guard conversationRevisions[scope, default: 0] == expectedRevision else {
+            // The actor can be re-entered while awaiting GRDB. If clear advanced the
+            // revision during that suspension, delete once more so write-vs-clear order
+            // cannot leave the just-finished stale write behind.
+            try await Self.clearPersistedConversation(
+                scope.conversationId,
+                ownerUserId: scope.ownerUserId,
+                from: db
+            )
+            return false
+        }
+        return true
+    }
+
     // MARK: - DB Persistence
 
-    /// Save a single message row to the `ai_conversation_messages` table.
-    public static func saveMessage(_ msg: AIConversationMessage, to db: AppDatabase) async throws {
+    private nonisolated static func validatedScope(
+        conversationId: String,
+        ownerUserId: Int64
+    ) throws -> AIConversationScope {
+        guard ownerUserId > 0 else {
+            throw AIConversationPersistenceError.missingAuthenticatedUser
+        }
+        return AIConversationScope(conversationId: conversationId, ownerUserId: ownerUserId)
+    }
+
+    /// Save a single owner-scoped message row.
+    public static func saveMessage(
+        _ msg: AIConversationMessage,
+        ownerUserId: Int64,
+        to db: AppDatabase
+    ) async throws {
+        try await saveMessages([msg], ownerUserId: ownerUserId, to: db)
+    }
+
+    /// Save one or more turns atomically so a response never leaves a partial pair.
+    public static func saveMessages(
+        _ messages: [AIConversationMessage],
+        ownerUserId: Int64,
+        to db: AppDatabase
+    ) async throws {
+        guard ownerUserId > 0 else {
+            throw AIConversationPersistenceError.missingAuthenticatedUser
+        }
         try await db.writer.write { dbConn in
-            try dbConn.execute(
-                sql: """
-                    INSERT INTO ai_conversation_messages (id, conversation_id, role, content, created_at)
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                arguments: [msg.id, msg.conversationId, msg.role, msg.content, msg.createdAt]
-            )
+            for msg in messages {
+                try dbConn.execute(
+                    sql: """
+                        INSERT INTO ai_conversation_messages
+                            (id, conversation_id, owner_user_id, role, content, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                    arguments: [msg.id, msg.conversationId, ownerUserId, msg.role, msg.content, msg.createdAt]
+                )
+            }
         }
     }
 
-    /// Load all messages for a conversation from the DB, ordered chronologically.
-    public static func loadConversation(_ conversationId: String, from db: AppDatabase) async throws -> [AIConversationMessage] {
-        try await db.writer.read { dbConn in
+    /// Load all owner-scoped messages for a conversation, ordered chronologically.
+    public static func loadConversation(
+        _ conversationId: String,
+        ownerUserId: Int64,
+        from db: AppDatabase
+    ) async throws -> [AIConversationMessage] {
+        _ = try validatedScope(conversationId: conversationId, ownerUserId: ownerUserId)
+        return try await db.writer.read { dbConn in
             let rows = try Row.fetchAll(
                 dbConn,
                 sql: """
                     SELECT id, conversation_id, role, content, created_at
                     FROM ai_conversation_messages
-                    WHERE conversation_id = ?
+                    WHERE conversation_id = ? AND owner_user_id = ?
                     ORDER BY created_at ASC
                     """,
-                arguments: [conversationId]
+                arguments: [conversationId, ownerUserId]
             )
             return rows.map { row in
                 AIConversationMessage(
@@ -571,12 +873,17 @@ public actor FoundationModelsService {
         }
     }
 
-    /// Delete all messages for a conversation from the DB.
-    public static func deleteConversation(_ conversationId: String, from db: AppDatabase) async throws {
+    /// Delete only the authenticated owner's messages for a conversation.
+    public static func deleteConversation(
+        _ conversationId: String,
+        ownerUserId: Int64,
+        from db: AppDatabase
+    ) async throws {
+        _ = try validatedScope(conversationId: conversationId, ownerUserId: ownerUserId)
         try await db.writer.write { dbConn in
             try dbConn.execute(
-                sql: "DELETE FROM ai_conversation_messages WHERE conversation_id = ?",
-                arguments: [conversationId]
+                sql: "DELETE FROM ai_conversation_messages WHERE conversation_id = ? AND owner_user_id = ?",
+                arguments: [conversationId, ownerUserId]
             )
         }
     }
@@ -584,8 +891,12 @@ public actor FoundationModelsService {
     /// Delete all messages for a conversation and verify persistence is clear before
     /// callers update UI state. This intentionally rethrows storage failures so the UI
     /// can show a recoverable error instead of pretending private chat history was removed.
-    public static func clearPersistedConversation(_ conversationId: String, from db: AppDatabase) async throws {
-        try await deleteConversation(conversationId, from: db)
+    public static func clearPersistedConversation(
+        _ conversationId: String,
+        ownerUserId: Int64,
+        from db: AppDatabase
+    ) async throws {
+        try await deleteConversation(conversationId, ownerUserId: ownerUserId, from: db)
 
         let remainingCount = try await db.writer.read { dbConn in
             try Int.fetchOne(
@@ -593,9 +904,9 @@ public actor FoundationModelsService {
                 sql: """
                     SELECT COUNT(*)
                     FROM ai_conversation_messages
-                    WHERE conversation_id = ?
+                    WHERE conversation_id = ? AND owner_user_id = ?
                     """,
-                arguments: [conversationId]
+                arguments: [conversationId, ownerUserId]
             ) ?? 0
         }
 
@@ -607,9 +918,15 @@ public actor FoundationModelsService {
         }
     }
 
-    /// List all distinct conversation IDs with their latest message timestamp.
-    public static func listConversations(from db: AppDatabase) async throws -> [(id: String, lastMessageAt: String, preview: String)] {
-        try await db.writer.read { dbConn in
+    /// List the authenticated owner's conversations with their latest message timestamp.
+    public static func listConversations(
+        ownerUserId: Int64,
+        from db: AppDatabase
+    ) async throws -> [(id: String, lastMessageAt: String, preview: String)] {
+        guard ownerUserId > 0 else {
+            throw AIConversationPersistenceError.missingAuthenticatedUser
+        }
+        return try await db.writer.read { dbConn in
             let rows = try Row.fetchAll(
                 dbConn,
                 sql: """
@@ -617,11 +934,14 @@ public actor FoundationModelsService {
                            MAX(created_at) AS last_message_at,
                            (SELECT content FROM ai_conversation_messages m2
                             WHERE m2.conversation_id = m1.conversation_id
+                              AND m2.owner_user_id = m1.owner_user_id
                             ORDER BY created_at DESC LIMIT 1) AS preview
                     FROM ai_conversation_messages m1
-                    GROUP BY conversation_id
+                    WHERE owner_user_id = ?
+                    GROUP BY owner_user_id, conversation_id
                     ORDER BY last_message_at DESC
-                    """
+                    """,
+                arguments: [ownerUserId]
             )
             return rows.map { row in
                 (
@@ -637,16 +957,24 @@ public actor FoundationModelsService {
     ///
     /// The AI assistant panel uses this to resume the last conversation across app launches
     /// instead of generating a new UUID every time the panel is rebuilt.
-    public static func latestConversationId(from db: AppDatabase) async throws -> String? {
-        try await db.writer.read { dbConn in
+    public static func latestConversationId(
+        ownerUserId: Int64,
+        from db: AppDatabase
+    ) async throws -> String? {
+        guard ownerUserId > 0 else {
+            throw AIConversationPersistenceError.missingAuthenticatedUser
+        }
+        return try await db.writer.read { dbConn in
             try String.fetchOne(
                 dbConn,
                 sql: """
                     SELECT conversation_id
                     FROM ai_conversation_messages
+                    WHERE owner_user_id = ?
                     ORDER BY created_at DESC
                     LIMIT 1
-                    """
+                    """,
+                arguments: [ownerUserId]
             )
         }
     }
