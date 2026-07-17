@@ -160,6 +160,8 @@ final class AIHelpResumeRegressionTests: XCTestCase {
             in: assistant
         )
 
+        XCTAssertTrue(list.contains("defer {"))
+        XCTAssertTrue(list.contains("if conversationListRequestID == requestID"))
         XCTAssertTrue(list.contains("isLoadingConversations = lifecycleCoordinator.isLoadingConversations"))
         XCTAssertTrue(list.contains("conversationListRequestID == requestID"))
         XCTAssertTrue(list.contains("lifecycleCoordinator.finishConversationListLoad"))

@@ -1246,12 +1246,17 @@ struct IOSAIAssistantPanel: View {
     }
 
     private func loadConversationList(requestID: UInt) async {
+        defer {
+            if conversationListRequestID == requestID {
+                isLoadingConversations = false
+            }
+        }
+
         guard let db = appCore.db,
               let ownerUserId = appCore.currentUser?.id,
               ownerUserId > 0 else {
-            savedConversations = []
             if conversationListRequestID == requestID {
-                isLoadingConversations = false
+                savedConversations = []
             }
             return
         }
