@@ -99,6 +99,30 @@ final class SyncManagerFailureSurfacingRegressionTests: XCTestCase {
         )
     }
 
+    func testShopPairingInvalidServerKeyClearsProgressAndSurfacesError() throws {
+        let source = try Self.readSyncManagerSource()
+        let pairWithShopBody = try TestSourceSlicer.braceBalancedBody(
+            after: "func pairWithShop(shopAddress: String, pairingCode: String) async throws",
+            in: source
+        )
+
+        XCTAssertTrue(
+            pairWithShopBody.contains(
+                """
+                guard let serverKey = pairResponse.serverKeyAgreementPublicKey,
+                              Data(base64Encoded: serverKey)?.count == 32 else {
+                            let error = SyncError.pairingVerificationFailed("The shop did not provide a trusted LAN key.")
+                            syncStatus = .error
+                            syncProgressMessage = nil
+                            errorMessage = error.localizedDescription
+                            throw error
+                        }
+                """
+            ),
+            "A missing or malformed shop key must clear stale pairing progress and expose the verification failure."
+        )
+    }
+
     private static func repoRoot(file: StaticString = #filePath) -> URL {
         URL(fileURLWithPath: "\(file)")
             .deletingLastPathComponent()

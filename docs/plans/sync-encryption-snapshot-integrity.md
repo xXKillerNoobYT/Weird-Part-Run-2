@@ -1,6 +1,6 @@
 # Sync Encryption and Bluetooth Snapshot Completion Integrity
 
-Status: Implemented, including transport-stop capability boundary review fix (WEI-4840, WEI-4847, and WEI-4855; PR #1448; GitHub #385 and #1417); pending exact-head review/CI
+Status: Implemented, including transport-stop capability boundary and pairing-error-state review fixes (WEI-4840, WEI-4847, WEI-4855, and WEI-5179; PR #1448; GitHub #385 and #1417); pending exact-head review/CI
 Date: 2026-07-15
 Owner: CTO / Sync core
 Review lanes: SecurityAgent, non-author engineering review, GitHub Copilot PR reviewer
@@ -67,6 +67,7 @@ The existing `requestFullSyncOverMultipeer` API remains throwing. Send, decode, 
 ## Acceptance criteria and evidence
 
 - Missing/malformed/unauthorized key exchange, invalid keys, and AES-GCM failures throw; no plaintext downgrade or ciphertext-as-JSON fallback.
+- A pairing response with a missing or malformed shop key clears active progress and leaves `IOSSyncManager` in a visible `.error` state before throwing.
 - LAN pairing never sends the one-time code in plaintext; accepted responses require the pairing-code-authenticated client/server X25519 transcript.
 - Device X25519 identity survives `PeerManager`/server restart through secure platform storage or deterministic injected test storage, never through normal sync settings.
 - Encrypted LAN push/pull rejects exact replay before a second read or mutation, including after restart and beyond the former seven-day retention horizon; rejects cross-endpoint/direction substitution through AAD; and binds encrypted responses to the originating request id.

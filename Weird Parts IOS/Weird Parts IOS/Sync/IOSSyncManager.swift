@@ -993,7 +993,11 @@ final class IOSSyncManager {
 
         guard let serverKey = pairResponse.serverKeyAgreementPublicKey,
               Data(base64Encoded: serverKey)?.count == 32 else {
-            throw SyncError.pairingVerificationFailed("The shop did not provide a trusted LAN key.")
+            let error = SyncError.pairingVerificationFailed("The shop did not provide a trusted LAN key.")
+            syncStatus = .error
+            syncProgressMessage = nil
+            errorMessage = error.localizedDescription
+            throw error
         }
         try ChangeTracker.registerPeerDevice(
             db: db,
