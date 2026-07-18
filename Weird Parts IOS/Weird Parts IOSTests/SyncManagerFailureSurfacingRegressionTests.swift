@@ -171,6 +171,59 @@ final class SyncManagerFailureSurfacingRegressionTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testBluetoothPairingHostKeyRequiresValid32ByteX25519Material() throws {
+        let validKey = Data(repeating: 0xA5, count: 32).base64EncodedString()
+
+        XCTAssertEqual(try IOSSyncManager.validatedBluetoothHostKey(validKey), validKey)
+
+        for invalidKey in [nil, "not-base64", Data(repeating: 0xA5, count: 31).base64EncodedString()] {
+            XCTAssertThrowsError(try IOSSyncManager.validatedBluetoothHostKey(invalidKey)) { error in
+                XCTAssertEqual(
+                    error.localizedDescription,
+                    "The Bluetooth host did not provide a valid 32-byte X25519 public key."
+                )
+            }
+        }
+    }
+
+    @MainActor
+    func testBluetoothPairingHostKeyFailureClearsProgressAndSurfacesError() {
+        let manager = IOSSyncManager()
+        manager.syncStatus = .syncing
+        manager.syncProgressMessage = "Connecting over Bluetooth…"
+        manager.syncProgressPercent = 0.3
+        let error = IOSSyncManager.SyncError.pairingVerificationFailed(
+            "The Bluetooth host did not provide a valid 32-byte X25519 public key."
+        )
+
+        manager.surfaceBluetoothPairingFailure(error)
+
+        XCTAssertEqual(manager.syncStatus, .error)
+        XCTAssertNil(manager.syncProgressMessage)
+        XCTAssertEqual(manager.syncProgressPercent, 0)
+        XCTAssertEqual(manager.errorMessage, error.localizedDescription)
+    }
+
+    func testBluetoothPairingValidatesHostKeyBeforeTrustPersistence() throws {
+        let source = try Self.readSyncManagerSource()
+        let pairingBody = try TestSourceSlicer.braceBalancedBody(
+            after: "func pairWithPeerOverBluetooth(hostDeviceId: String, hostName: String, pairingCode: String) async throws",
+            in: source
+        )
+
+        let validation = try XCTUnwrap(pairingBody.range(of: "validatedBluetoothHostKey"))
+        let registration = try XCTUnwrap(pairingBody.range(of: "ChangeTracker.registerPeerDevice"))
+        let settingsPersistence = try XCTUnwrap(pairingBody.range(of: "upsertSettingsMap"))
+        let pairedFlag = try XCTUnwrap(pairingBody.range(of: "device_paired"))
+
+        XCTAssertLessThan(validation.lowerBound, registration.lowerBound)
+        XCTAssertLessThan(validation.lowerBound, settingsPersistence.lowerBound)
+        XCTAssertLessThan(validation.lowerBound, pairedFlag.lowerBound)
+        XCTAssertTrue(pairingBody.contains("keyAgreementPublicKey: hostKey"))
+        XCTAssertTrue(pairingBody.contains("surfaceBluetoothPairingFailure(error)"))
+    }
+
     private static func repoRoot(file: StaticString = #filePath) -> URL {
         URL(fileURLWithPath: "\(file)")
             .deletingLastPathComponent()
