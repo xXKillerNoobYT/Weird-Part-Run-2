@@ -1,4 +1,6 @@
 import XCTest
+import WiredPartCore
+@testable import Weird_Parts
 
 final class SyncManagerFailureSurfacingRegressionTests: XCTestCase {
     func testSyncReadFailuresMoveManagerIntoVisibleErrorState() throws {
@@ -120,6 +122,52 @@ final class SyncManagerFailureSurfacingRegressionTests: XCTestCase {
                 """
             ),
             "A missing or malformed shop key must clear stale pairing progress and expose the verification failure."
+        )
+    }
+
+    @MainActor
+    func testShopPairingFailureTransitionClearsProgressAndSurfacesUsefulErrors() {
+        let manager = IOSSyncManager()
+        manager.syncStatus = .syncing
+        manager.syncProgressMessage = "Connecting to shop..."
+
+        manager.surfaceShopPairingFailure(SyncIdentityStoreError.keychainWriteFailed(-50))
+
+        XCTAssertEqual(manager.syncStatus, .error)
+        XCTAssertNil(manager.syncProgressMessage)
+        XCTAssertEqual(
+            manager.errorMessage,
+            "Couldn't securely load this device's sync identity. Pairing stopped; try again."
+        )
+
+        manager.syncStatus = .syncing
+        manager.syncProgressMessage = "Connecting to shop..."
+        let rejection = IOSSyncManager.SyncError.pairingVerificationFailed("Pairing was not accepted by the shop.")
+
+        manager.surfaceShopPairingFailure(rejection)
+
+        XCTAssertEqual(manager.syncStatus, .error)
+        XCTAssertNil(manager.syncProgressMessage)
+        XCTAssertEqual(manager.errorMessage, "Pairing was not accepted by the shop.")
+    }
+
+    func testShopPairingIdentityAndEncryptedResponseFailuresShareFailClosedCatch() throws {
+        let source = try Self.readSyncManagerSource()
+        let pairWithShopBody = try TestSourceSlicer.braceBalancedBody(
+            after: "func pairWithShop(shopAddress: String, pairingCode: String) async throws",
+            in: source
+        )
+        let normalized = pairWithShopBody.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+
+        XCTAssertTrue(
+            normalized.contains(
+                "do { pairingIdentity = try await pm.localSyncIdentity(deviceId: deviceId) pairResponse = try await verifyPairingCodeWithShop("
+            ),
+            "Identity acquisition and the entire encrypted response pipeline must share one visible failure boundary."
+        )
+        XCTAssertTrue(
+            normalized.contains("} catch { surfaceShopPairingFailure(error) throw error }"),
+            "Pairing failures must publish the non-stuck error state and rethrow the original fail-closed error."
         )
     }
 

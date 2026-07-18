@@ -1,6 +1,6 @@
 # Sync Encryption and Bluetooth Snapshot Completion Integrity
 
-Status: Implemented, including transport-stop capability boundary, pairing-error-state review, and idempotent identity persistence fixes (WEI-4840, WEI-4847, WEI-4855, WEI-5179, and WEI-5181; PR #1448; GitHub #385 and #1417); pending exact-head review/CI
+Status: Implemented, including transport-stop capability boundary, complete LAN pairing failure-state surfacing, and idempotent identity persistence fixes (WEI-4840, WEI-4847, WEI-4855, WEI-5179, WEI-5181, and WEI-5182; PR #1448; GitHub #385 and #1417); pending exact-head review/CI
 Date: 2026-07-15
 Owner: CTO / Sync core
 Review lanes: SecurityAgent, non-author engineering review, GitHub Copilot PR reviewer
@@ -24,6 +24,7 @@ Current `main` silently downgrades negotiated LAN encryption when key derivation
 5. Bind Bluetooth snapshot authorization to the successful pairing session with a random capability token, in addition to requiring a trusted and non-deactivated device registry entry. Reserve the token before transfer to prevent replay/concurrent snapshot duplication. A token is restored only when snapshot batch transfer fails before completion is sent. Once completion is attempted, the token remains consumed even when completion delivery or the later durable-apply acknowledgement fails or times out, preventing replay after rows may have reached the joiner.
 6. If the joiner's completion-time atomic apply fails, send `fullSyncApplied(succeeded:false)` before propagating the local error through the FIFO drain. The host consumes that negative acknowledgement immediately, removes the reservation, and records the failed transfer. It does not restore the old capability; an authorized retry requires a fresh pairing-issued capability.
 7. Make the protocol-critical platform identity write idempotent. If the add-first Keychain write reports `errSecDuplicateItem`, update the existing matching service/account item with the validated identity and this-device-only accessibility attributes. Any update failure remains visible as `keychainWriteFailed`; there is no ephemeral-key fallback or credential-policy weakening.
+8. Give LAN pairing one fail-closed UI transition after `.syncing` begins. Secure-identity load/persistence failures and every encrypted response verification failure (wrapper decode, key derivation, AES-GCM decrypt, response decode, or explicit rejection) must clear stale progress, publish `.error`, retain a user-readable retry message, and rethrow the original error unchanged.
 
 ## Design
 
@@ -59,6 +60,8 @@ Encrypted `/sync/push` and `/sync/pull` requests include a unique request id. AE
 
 The existing `requestFullSyncOverMultipeer` API remains throwing. Send, decode, apply, remote-host, transport-shutdown, and timeout failures are surfaced to onboarding; a caller can retry the same operation. Continuations are removed before resume so late completion/timeout messages cannot double-resume. Stopping either Multipeer path explicitly fails every pending pairing and full-sync continuation.
 
+`IOSSyncManager.pairWithShop` owns the visible LAN pairing state transition. Once it enters `.syncing`, identity acquisition and encrypted-response verification run inside one throwing boundary. Its catch path does not replace, downgrade, or recover from the underlying security error: it only clears the progress label, moves the manager to `.error`, publishes a fixed user-readable message (with a specific secure-identity diagnostic where applicable), logs the failure, and rethrows the same error.
+
 ## Dependency map
 
 - `PeerManager.syncViaHTTP` -> `resolveSharedKey` -> `SyncCrypto` (LAN confidentiality/correctness)
@@ -71,6 +74,7 @@ The existing `requestFullSyncOverMultipeer` API remains throwing. Send, decode, 
 
 - Missing/malformed/unauthorized key exchange, invalid keys, and AES-GCM failures throw; no plaintext downgrade or ciphertext-as-JSON fallback.
 - A pairing response with a missing or malformed shop key clears active progress and leaves `IOSSyncManager` in a visible `.error` state before throwing.
+- Secure-identity acquisition plus encrypted pairing wrapper decode, shared-key derivation, AES-GCM decrypt, accepted-response decode, and explicit rejection all clear active progress and leave `IOSSyncManager` in a visible `.error` state while preserving the original thrown error.
 - LAN pairing never sends the one-time code in plaintext; accepted responses require the pairing-code-authenticated client/server X25519 transcript.
 - Device X25519 identity survives `PeerManager`/server restart through secure platform storage or deterministic injected test storage, never through normal sync settings.
 - Duplicate Keychain identity writes update the existing matching item; failed updates surface the exact OSStatus through `keychainWriteFailed` rather than rotating silently or continuing with an unpersisted identity.
