@@ -82,6 +82,32 @@ final class AIFallbackPersistenceRegressionTests: XCTestCase {
         }
     }
 
+    func testFallbackWarningActionsCannotDismissAnInFlightRetry() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let status = try TestSourceSlicer.braceBalancedBody(
+            after: "private var clearConversationStatus: some View",
+            in: assistant
+        )
+        guard assistant.contains("private func dismissFallbackSaveWarning()") else {
+            XCTFail("The warning needs one guarded dismissal handler shared by its action surface.")
+            return
+        }
+        let dismiss = try TestSourceSlicer.braceBalancedBody(
+            after: "private func dismissFallbackSaveWarning()",
+            in: assistant
+        )
+
+        XCTAssertGreaterThanOrEqual(
+            status.components(separatedBy: ".disabled(isProcessing)").count - 1,
+            2,
+            "Retry Save and Dismiss must both be disabled while retry persistence is active."
+        )
+        XCTAssertTrue(
+            dismiss.contains("guard !isProcessing else { return }"),
+            "The action handler must preserve the exact retry payload even if dismissal is invoked programmatically."
+        )
+    }
+
     private static func readSource(_ relativePath: String, file: StaticString = #filePath) throws -> String {
         let testFileURL = URL(fileURLWithPath: "\(file)")
         let projectRoot = testFileURL

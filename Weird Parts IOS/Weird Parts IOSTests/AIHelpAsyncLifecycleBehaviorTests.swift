@@ -472,6 +472,49 @@ final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
         })
     }
 
+    func testDismissAttemptDuringSuspendedRetrySuccessPreservesPayloadUntilCompletion() async {
+        let box = FallbackRetryWarningBox()
+        let delayedRetry = box.beginRetryPersistence()
+        let retryTask = box.finishRetryPersistenceAfterGate(delayedRetry)
+        await delayedRetry.gate.waitUntilEntered()
+
+        XCTAssertFalse(box.attemptDismissWarning())
+        XCTAssertFalse(box.areWarningActionsEnabled)
+        XCTAssertTrue(box.hasPendingFallbackRetry)
+
+        await delayedRetry.gate.release()
+        await retryTask.value
+
+        XCTAssertTrue(box.areWarningActionsEnabled)
+        XCTAssertFalse(box.hasPendingFallbackRetry)
+        XCTAssertNil(box.persistenceError)
+    }
+
+    func testDismissAttemptDuringSuspendedRetryFailureRetainsRecoverableExactPair() async {
+        let box = FallbackRetryWarningBox()
+        let delayedRetry = box.beginRetryPersistence(errorDescription: "simulated retry storage failure")
+        let retryTask = box.finishRetryPersistenceAfterGate(delayedRetry)
+        await delayedRetry.gate.waitUntilEntered()
+
+        XCTAssertFalse(box.attemptDismissWarning())
+        XCTAssertFalse(box.areWarningActionsEnabled)
+        XCTAssertEqual(box.pendingPair, FallbackRetryWarningBox.Pair(
+            userPrompt: "Exact retry question",
+            assistantResponse: "Exact retry response"
+        ))
+
+        await delayedRetry.gate.release()
+        await retryTask.value
+
+        XCTAssertTrue(box.areWarningActionsEnabled)
+        XCTAssertTrue(box.hasPendingFallbackRetry)
+        XCTAssertEqual(box.persistenceError, "simulated retry storage failure")
+        XCTAssertEqual(box.pendingPair, FallbackRetryWarningBox.Pair(
+            userPrompt: "Exact retry question",
+            assistantResponse: "Exact retry response"
+        ))
+    }
+
     func testHelpHandoffWaitsForAuthenticatedInitializationToFinish() {
         var readiness = AIHelpHandoffReadinessCoordinator()
 
@@ -711,6 +754,55 @@ private struct DelayedFallbackPersistence {
     let requestID: UInt
     let userPrompt: String
     let assistantResponse: String
+    let errorDescription: String?
+    let gate = AsyncGate()
+}
+
+@MainActor
+private final class FallbackRetryWarningBox {
+    struct Pair: Equatable {
+        let userPrompt: String
+        let assistantResponse: String
+    }
+
+    private(set) var pendingPair: Pair? = Pair(
+        userPrompt: "Exact retry question",
+        assistantResponse: "Exact retry response"
+    )
+    private(set) var persistenceError: String? = "initial storage failure"
+    private var isProcessing = false
+
+    var areWarningActionsEnabled: Bool { !isProcessing }
+    var hasPendingFallbackRetry: Bool { pendingPair != nil }
+
+    func beginRetryPersistence(errorDescription: String? = nil) -> DelayedRetryPersistence {
+        precondition(pendingPair != nil)
+        isProcessing = true
+        return DelayedRetryPersistence(errorDescription: errorDescription)
+    }
+
+    func attemptDismissWarning() -> Bool {
+        guard !isProcessing else { return false }
+        pendingPair = nil
+        persistenceError = nil
+        return true
+    }
+
+    func finishRetryPersistenceAfterGate(_ delayedRetry: DelayedRetryPersistence) -> Task<Void, Never> {
+        Task { @MainActor in
+            await delayedRetry.gate.enterAndWaitForRelease()
+            if let errorDescription = delayedRetry.errorDescription {
+                persistenceError = errorDescription
+            } else {
+                pendingPair = nil
+                persistenceError = nil
+            }
+            isProcessing = false
+        }
+    }
+}
+
+private struct DelayedRetryPersistence {
     let errorDescription: String?
     let gate = AsyncGate()
 }

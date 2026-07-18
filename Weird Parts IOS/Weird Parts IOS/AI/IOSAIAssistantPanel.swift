@@ -678,14 +678,15 @@ struct IOSAIAssistantPanel: View {
                         }
                         .font(.caption)
                         .frame(minHeight: 44)
+                        .disabled(isProcessing)
                         .accessibilityLabel("Retry saving conversation turn")
                     }
                     Button("Dismiss") {
-                        pendingFallbackSave = nil
-                        self.conversationPersistenceError = nil
+                        dismissFallbackSaveWarning()
                     }
                     .font(.caption)
                     .frame(minHeight: 44)
+                    .disabled(isProcessing)
                     .accessibilityLabel("Dismiss conversation save warning")
                 }
             }
@@ -893,6 +894,12 @@ struct IOSAIAssistantPanel: View {
             }
             await persistFallbackTurn(pendingFallbackSave)
         }
+    }
+
+    private func dismissFallbackSaveWarning() {
+        guard !isProcessing else { return }
+        pendingFallbackSave = nil
+        conversationPersistenceError = nil
     }
 
     private func persistFallbackTurn(_ pendingSave: PendingFallbackSave) async {
