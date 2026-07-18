@@ -27,6 +27,37 @@ enum AIFallbackPersistenceRetryDecision: Equatable {
     }
 }
 
+enum AIFallbackPendingSaveOwnershipDecision: Equatable {
+    case persist(ownerUserId: Int64)
+    case retryStableOwner
+    case discardStale
+
+    static func resolve(
+        capturedOwnerUserId: Int64?,
+        currentOwnerUserId: Int64?,
+        databaseIsReady: Bool
+    ) -> Self {
+        guard let capturedOwnerUserId, capturedOwnerUserId > 0 else {
+            return .discardStale
+        }
+        guard let currentOwnerUserId, currentOwnerUserId > 0 else {
+            return .retryStableOwner
+        }
+        guard currentOwnerUserId == capturedOwnerUserId else {
+            return .discardStale
+        }
+        guard databaseIsReady else {
+            return .retryStableOwner
+        }
+        return .persist(ownerUserId: capturedOwnerUserId)
+    }
+
+    var ownerUserIdForWrite: Int64? {
+        guard case .persist(let ownerUserId) = self else { return nil }
+        return ownerUserId
+    }
+}
+
 // MARK: - AI Assistant Panel
 
 /// Floating AI assistant panel accessible from any page in the app.
@@ -927,13 +958,27 @@ struct IOSAIAssistantPanel: View {
             conversationPersistenceError = nil
             return
         }
-        guard let db = appCore.db,
-              let ownerUserId = appCore.currentUser?.id,
-              ownerUserId > 0,
-              pendingSave.ownerUserId == nil || pendingSave.ownerUserId == ownerUserId else {
+        guard self.pendingFallbackSave == pendingSave else { return }
+
+        let db = appCore.db
+        let ownershipDecision = AIFallbackPendingSaveOwnershipDecision.resolve(
+            capturedOwnerUserId: pendingSave.ownerUserId,
+            currentOwnerUserId: appCore.currentUser?.id,
+            databaseIsReady: db != nil
+        )
+        switch ownershipDecision {
+        case .discardStale:
+            pendingFallbackSave = nil
+            conversationPersistenceError = nil
+            return
+        case .retryStableOwner:
             conversationPersistenceError = "Resume will not include this turn yet because the database or signed-in user is unavailable. Restore access, then tap Retry Save."
             return
+        case .persist:
+            break
         }
+        guard let ownerUserId = ownershipDecision.ownerUserIdForWrite,
+              let db else { return }
 
         do {
             let outcome = try await aiService.stageLocalConversation(
@@ -961,10 +1006,18 @@ struct IOSAIAssistantPanel: View {
                 conversationPersistenceError = nil
             }
         } catch {
-            guard pendingSave.conversationId == conversationId,
-                  pendingSave.conversationRevision == conversationRevision,
-                  appCore.currentUser?.id == ownerUserId else { return }
-            conversationPersistenceError = "Resume will not include this turn yet: \(error.localizedDescription). Tap Retry Save to try again."
+            guard self.pendingFallbackSave == pendingSave else { return }
+            switch AIFallbackPendingSaveOwnershipDecision.resolve(
+                capturedOwnerUserId: pendingSave.ownerUserId,
+                currentOwnerUserId: appCore.currentUser?.id,
+                databaseIsReady: appCore.db != nil
+            ) {
+            case .discardStale:
+                pendingFallbackSave = nil
+                conversationPersistenceError = nil
+            case .persist, .retryStableOwner:
+                conversationPersistenceError = "Resume will not include this turn yet: \(error.localizedDescription). Tap Retry Save to try again."
+            }
         }
     }
 

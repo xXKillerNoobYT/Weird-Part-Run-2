@@ -54,7 +54,8 @@ final class AIFallbackPersistenceRegressionTests: XCTestCase {
             in: assistant
         )
 
-        XCTAssertTrue(persist.contains("let ownerUserId = appCore.currentUser?.id"))
+        XCTAssertTrue(persist.contains("capturedOwnerUserId: pendingSave.ownerUserId"))
+        XCTAssertTrue(persist.contains("currentOwnerUserId: appCore.currentUser?.id"))
         XCTAssertTrue(persist.contains("pendingSave.conversationId == conversationId"))
         XCTAssertTrue(persist.contains("pendingSave.conversationRevision == conversationRevision"))
         XCTAssertTrue(persist.contains("aiService.stageLocalConversation("))
@@ -108,6 +109,55 @@ final class AIFallbackPersistenceRegressionTests: XCTestCase {
             dismiss.contains("guard !isProcessing else { return }"),
             "The action handler must preserve the exact retry payload even if dismissal is invoked programmatically."
         )
+    }
+
+    @MainActor
+    func testOwnerlessFallbackCannotBindToLaterAuthenticatedOwner() throws {
+        let decision = AIFallbackPendingSaveOwnershipDecision.resolve(
+            capturedOwnerUserId: nil,
+            currentOwnerUserId: 42,
+            databaseIsReady: true
+        )
+
+        XCTAssertEqual(decision, .discardStale)
+        XCTAssertNil(decision.ownerUserIdForWrite, "An ownerless turn must never acquire the later signed-in owner.")
+
+        let stableOwnerStorageFailure = AIFallbackPendingSaveOwnershipDecision.resolve(
+            capturedOwnerUserId: 42,
+            currentOwnerUserId: 42,
+            databaseIsReady: false
+        )
+        XCTAssertEqual(stableOwnerStorageFailure, .retryStableOwner)
+
+        let changedOwner = AIFallbackPendingSaveOwnershipDecision.resolve(
+            capturedOwnerUserId: 42,
+            currentOwnerUserId: 84,
+            databaseIsReady: true
+        )
+        XCTAssertEqual(changedOwner, .discardStale)
+        XCTAssertNil(changedOwner.ownerUserIdForWrite)
+
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let persist = try TestSourceSlicer.braceBalancedBody(
+            after: "private func persistFallbackTurn(_ pendingSave: PendingFallbackSave) async",
+            in: assistant
+        )
+        guard let ownershipDecision = persist.range(of: "AIFallbackPendingSaveOwnershipDecision.resolve(")?.lowerBound,
+              let historyWrite = persist.range(of: "aiService.stageLocalConversation(")?.lowerBound else {
+            XCTFail("Fallback persistence must resolve captured ownership before any history write.")
+            return
+        }
+        XCTAssertLessThan(ownershipDecision, historyWrite)
+        XCTAssertTrue(persist.contains("case .discardStale:"))
+        XCTAssertTrue(persist.contains("pendingFallbackSave = nil"))
+        XCTAssertTrue(persist.contains("conversationPersistenceError = nil"))
+
+        let composer = try TestSourceSlicer.braceBalancedBody(
+            after: "private var chatTextEditor: some View",
+            in: assistant
+        )
+        XCTAssertTrue(composer.contains("pendingFallbackSave != nil"))
+        XCTAssertFalse(composer.contains("appCore.currentUser"), "Discarding the unsafe payload must leave the composer usable after login.")
     }
 
     private static func readSource(_ relativePath: String, file: StaticString = #filePath) throws -> String {
