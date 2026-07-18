@@ -87,6 +87,11 @@ public enum AuthResult: Sendable, Equatable {
 /// Public keys are 32 bytes, signatures are 64 bytes, both base64-encoded for transport.
 public enum SyncCrypto {
 
+    public static let bluetoothPairingProtocolVersion = 4
+    private static let bluetoothPairingProofDomain = "wiredpart-bluetooth-pairing-proof-v4"
+    private static let bluetoothPairingResponseKeyDomain = "wiredpart-bluetooth-pairing-response-key-v4"
+    private static let bluetoothPairingResponseTranscriptDomain = "wiredpart-bluetooth-pairing-response-v4"
+
     // MARK: - Pairing Codes
 
     private static let pairingCodeCharacters = Array("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
@@ -181,6 +186,178 @@ public enum SyncCrypto {
         var diff: UInt8 = 0
         for (l, r) in zip(left, right) { diff |= l ^ r }
         return diff == 0
+    }
+
+    /// Generate a cryptographically random nonce for one Bluetooth pairing attempt.
+    public static func bluetoothPairingRequestNonce() -> String {
+        var generator = SystemRandomNumberGenerator()
+        let bytes = (0..<32).map { _ in UInt8.random(in: .min ... .max, using: &generator) }
+        return Data(bytes).base64EncodedString()
+    }
+
+    public static func bluetoothPairingProof(
+        normalizedCode: String,
+        protocolVersion: Int = bluetoothPairingProtocolVersion,
+        expectedHostDeviceId: String,
+        clientDeviceId: String,
+        clientPublicKeyB64: String,
+        requestNonce: String
+    ) -> String {
+        let transcript = canonicalFields([
+            Data(bluetoothPairingProofDomain.utf8),
+            Data(String(protocolVersion).utf8),
+            Data(expectedHostDeviceId.utf8),
+            Data(clientDeviceId.utf8),
+            Data(clientPublicKeyB64.utf8),
+            Data(requestNonce.utf8),
+        ])
+        let key = SymmetricKey(data: pairingCodeDigest(normalizedCode))
+        return Data(HMAC<SHA256>.authenticationCode(for: transcript, using: key)).base64EncodedString()
+    }
+
+    public static func verifyBluetoothPairingProof(
+        _ proof: String?,
+        normalizedCode: String,
+        protocolVersion: Int,
+        expectedHostDeviceId: String,
+        clientDeviceId: String,
+        clientPublicKeyB64: String,
+        requestNonce: String
+    ) -> Bool {
+        guard let proof,
+              let supplied = Data(base64Encoded: proof),
+              let expected = Data(base64Encoded: bluetoothPairingProof(
+                normalizedCode: normalizedCode,
+                protocolVersion: protocolVersion,
+                expectedHostDeviceId: expectedHostDeviceId,
+                clientDeviceId: clientDeviceId,
+                clientPublicKeyB64: clientPublicKeyB64,
+                requestNonce: requestNonce
+              )) else { return false }
+        return constantTimeEqual(supplied, expected)
+    }
+
+    public static func bluetoothPairingResponseAuthenticator(
+        normalizedCode: String,
+        ourPrivateKeyB64: String,
+        theirPublicKeyB64: String,
+        protocolVersion: Int,
+        requestNonce: String,
+        requestPairingProof: String,
+        accepted: Bool,
+        clientDeviceId: String,
+        clientPublicKeyB64: String,
+        hostDeviceId: String,
+        hostPublicKeyB64: String,
+        companyId: String,
+        snapshotToken: String,
+        pairedAt: String
+    ) throws -> String {
+        let keyData = try deriveBluetoothPairingAuthenticatorKeyData(
+            ourPrivateKeyB64: ourPrivateKeyB64,
+            theirPublicKeyB64: theirPublicKeyB64,
+            normalizedCode: normalizedCode
+        )
+        let transcript = bluetoothPairingResponseTranscript(
+            protocolVersion: protocolVersion,
+            requestNonce: requestNonce,
+            requestPairingProof: requestPairingProof,
+            accepted: accepted,
+            clientDeviceId: clientDeviceId,
+            clientPublicKeyB64: clientPublicKeyB64,
+            hostDeviceId: hostDeviceId,
+            hostPublicKeyB64: hostPublicKeyB64,
+            companyId: companyId,
+            snapshotToken: snapshotToken,
+            pairedAt: pairedAt
+        )
+        let key = SymmetricKey(data: keyData)
+        return Data(HMAC<SHA256>.authenticationCode(for: transcript, using: key)).base64EncodedString()
+    }
+
+    public static func verifyBluetoothPairingResponseAuthenticator(
+        _ authenticator: String?,
+        normalizedCode: String,
+        ourPrivateKeyB64: String,
+        theirPublicKeyB64: String,
+        protocolVersion: Int,
+        requestNonce: String,
+        requestPairingProof: String,
+        accepted: Bool,
+        clientDeviceId: String,
+        clientPublicKeyB64: String,
+        hostDeviceId: String,
+        hostPublicKeyB64: String,
+        companyId: String,
+        snapshotToken: String,
+        pairedAt: String
+    ) -> Bool {
+        guard let authenticator,
+              let supplied = Data(base64Encoded: authenticator),
+              let expectedB64 = try? bluetoothPairingResponseAuthenticator(
+                normalizedCode: normalizedCode,
+                ourPrivateKeyB64: ourPrivateKeyB64,
+                theirPublicKeyB64: theirPublicKeyB64,
+                protocolVersion: protocolVersion,
+                requestNonce: requestNonce,
+                requestPairingProof: requestPairingProof,
+                accepted: accepted,
+                clientDeviceId: clientDeviceId,
+                clientPublicKeyB64: clientPublicKeyB64,
+                hostDeviceId: hostDeviceId,
+                hostPublicKeyB64: hostPublicKeyB64,
+                companyId: companyId,
+                snapshotToken: snapshotToken,
+                pairedAt: pairedAt
+              ),
+              let expected = Data(base64Encoded: expectedB64) else { return false }
+        return constantTimeEqual(supplied, expected)
+    }
+
+    private static func bluetoothPairingResponseTranscript(
+        protocolVersion: Int,
+        requestNonce: String,
+        requestPairingProof: String,
+        accepted: Bool,
+        clientDeviceId: String,
+        clientPublicKeyB64: String,
+        hostDeviceId: String,
+        hostPublicKeyB64: String,
+        companyId: String,
+        snapshotToken: String,
+        pairedAt: String
+    ) -> Data {
+        canonicalFields([
+            Data(bluetoothPairingResponseTranscriptDomain.utf8),
+            Data(String(protocolVersion).utf8),
+            Data(requestNonce.utf8),
+            Data(requestPairingProof.utf8),
+            Data((accepted ? "true" : "false").utf8),
+            Data(clientDeviceId.utf8),
+            Data(clientPublicKeyB64.utf8),
+            Data(hostDeviceId.utf8),
+            Data(hostPublicKeyB64.utf8),
+            Data(companyId.utf8),
+            Data(snapshotToken.utf8),
+            Data(pairedAt.utf8),
+        ])
+    }
+
+    private static func canonicalFields(_ fields: [Data]) -> Data {
+        var encoded = Data()
+        for field in fields {
+            var length = UInt64(field.count).bigEndian
+            withUnsafeBytes(of: &length) { encoded.append(contentsOf: $0) }
+            encoded.append(field)
+        }
+        return encoded
+    }
+
+    private static func constantTimeEqual(_ left: Data, _ right: Data) -> Bool {
+        guard left.count == right.count else { return false }
+        var difference: UInt8 = 0
+        for (lhs, rhs) in zip(left, right) { difference |= lhs ^ rhs }
+        return difference == 0
     }
 
     /// Constant-time pairing-code verification against a stored digest.
@@ -375,6 +552,29 @@ public enum SyncCrypto {
             using: SHA256.self,
             salt: codeSalt,
             sharedInfo: Data(transcript.utf8),
+            outputByteCount: 32
+        )
+        return symmetricKey.withUnsafeBytes { Data($0) }
+    }
+
+    private static func deriveBluetoothPairingAuthenticatorKeyData(
+        ourPrivateKeyB64: String,
+        theirPublicKeyB64: String,
+        normalizedCode: String
+    ) throws -> Data {
+        guard let ourRaw = Data(base64Encoded: ourPrivateKeyB64) else {
+            throw CryptoError.invalidBase64("our private key")
+        }
+        guard let theirRaw = Data(base64Encoded: theirPublicKeyB64) else {
+            throw CryptoError.invalidBase64("their public key")
+        }
+        let ourKey = try Curve25519.KeyAgreement.PrivateKey(rawRepresentation: ourRaw)
+        let theirKey = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: theirRaw)
+        let sharedSecret = try ourKey.sharedSecretFromKeyAgreement(with: theirKey)
+        let symmetricKey = sharedSecret.hkdfDerivedSymmetricKey(
+            using: SHA256.self,
+            salt: pairingCodeDigest(normalizedCode),
+            sharedInfo: Data(bluetoothPairingResponseKeyDomain.utf8),
             outputByteCount: 32
         )
         return symmetricKey.withUnsafeBytes { Data($0) }

@@ -337,7 +337,7 @@ struct DevicePairingView: View {
         switch error {
         case .connectionTimeout, .responseTimeout, .sendFailed, .notAvailable, .transportStopped:
             return true
-        case .rejected, .requestAlreadyInProgress, .protocolUpgradeRequired:
+        case .rejected, .requestAlreadyInProgress, .protocolUpgradeRequired, .responseVerificationFailed:
             return false
         }
     }
@@ -360,6 +360,8 @@ struct DevicePairingView: View {
             return "Bluetooth sync stopped before pairing finished. Turn Bluetooth sync back on and try again."
         case .protocolUpgradeRequired:
             return "The other device uses an older sync protocol. Update both devices before pairing again."
+        case .responseVerificationFailed:
+            return "The Bluetooth pairing response could not be authenticated. Update both devices, restart pairing, and enter the new code."
         }
     }
 

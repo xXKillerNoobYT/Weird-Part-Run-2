@@ -128,8 +128,12 @@ public struct SyncPairRequest: Codable, Sendable {
     public var pairingCode: String?
     public var pairingProof: String?
     public var platform: String?
-    /// Bluetooth pairing protocol version. Nil identifies pre-capability clients.
+    /// Bluetooth pairing protocol version. LAN pairing leaves this nil.
     public var bluetoothProtocolVersion: Int?
+    /// Fresh per-attempt nonce used only by Bluetooth protocol v4.
+    public var bluetoothRequestNonce: String?
+    /// Host identity the Bluetooth proof expects to answer.
+    public var bluetoothExpectedHostDeviceId: String?
     /// X25519 public key bound to this device by the one-time pairing proof.
     public var keyAgreementPublicKey: String?
 
@@ -140,6 +144,8 @@ public struct SyncPairRequest: Codable, Sendable {
         pairingProof: String? = nil,
         platform: String? = nil,
         bluetoothProtocolVersion: Int? = nil,
+        bluetoothRequestNonce: String? = nil,
+        bluetoothExpectedHostDeviceId: String? = nil,
         keyAgreementPublicKey: String? = nil
     ) {
         self.deviceId = deviceId
@@ -148,6 +154,8 @@ public struct SyncPairRequest: Codable, Sendable {
         self.pairingProof = pairingProof
         self.platform = platform
         self.bluetoothProtocolVersion = bluetoothProtocolVersion
+        self.bluetoothRequestNonce = bluetoothRequestNonce
+        self.bluetoothExpectedHostDeviceId = bluetoothExpectedHostDeviceId
         self.keyAgreementPublicKey = keyAgreementPublicKey
     }
 
@@ -158,6 +166,8 @@ public struct SyncPairRequest: Codable, Sendable {
         case pairingProof = "pairing_proof"
         case platform
         case bluetoothProtocolVersion = "bluetooth_protocol_version"
+        case bluetoothRequestNonce = "bluetooth_request_nonce"
+        case bluetoothExpectedHostDeviceId = "bluetooth_expected_host_device_id"
         case keyAgreementPublicKey = "key_agreement_public_key"
     }
 }
@@ -168,19 +178,33 @@ public struct SyncPairResponse: Codable, Sendable {
     public var serverDeviceId: String
     public var companyId: String
     public var pairedAt: String
+    /// Bluetooth protocol-v4 transcript fields. LAN pairing leaves these nil.
+    public var bluetoothProtocolVersion: Int? = nil
+    public var bluetoothRequestNonce: String? = nil
+    public var bluetoothRequestPairingProof: String? = nil
+    public var bluetoothClientDeviceId: String? = nil
+    public var bluetoothClientKeyAgreementPublicKey: String? = nil
     /// One-time-session capability used only by Bluetooth onboarding snapshots.
     /// LAN pairing leaves this nil.
     public var bluetoothSnapshotToken: String? = nil
     /// Server's pairing-bound X25519 identity for future encrypted LAN sync.
     public var serverKeyAgreementPublicKey: String? = nil
+    /// HMAC-SHA256 over the canonical accepted Bluetooth response transcript.
+    public var bluetoothResponseAuthenticator: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case accepted
         case serverDeviceId = "server_device_id"
         case companyId = "company_id"
         case pairedAt = "paired_at"
+        case bluetoothProtocolVersion = "bluetooth_protocol_version"
+        case bluetoothRequestNonce = "bluetooth_request_nonce"
+        case bluetoothRequestPairingProof = "bluetooth_request_pairing_proof"
+        case bluetoothClientDeviceId = "bluetooth_client_device_id"
+        case bluetoothClientKeyAgreementPublicKey = "bluetooth_client_key_agreement_public_key"
         case bluetoothSnapshotToken = "bluetooth_snapshot_token"
         case serverKeyAgreementPublicKey = "server_key_agreement_public_key"
+        case bluetoothResponseAuthenticator = "bluetooth_response_authenticator"
     }
 }
 
@@ -337,14 +361,35 @@ public actor SyncServerState {
     public func normalizedActivePairingCodeForProof(_ request: SyncPairRequest) -> String? {
         guard activePairingCodeDigest != nil,
               let normalized = activePairingCodeNormalized,
-              let key = Self.validKeyAgreementPublicKey(request.keyAgreementPublicKey),
-              SyncCrypto.verifyPairingProof(
+              let key = Self.validKeyAgreementPublicKey(request.keyAgreementPublicKey) else {
+            return nil
+        }
+
+        if let version = request.bluetoothProtocolVersion {
+            guard version == SyncCrypto.bluetoothPairingProtocolVersion,
+                  let expectedHostDeviceId = request.bluetoothExpectedHostDeviceId,
+                  let requestNonce = request.bluetoothRequestNonce,
+                  Data(base64Encoded: requestNonce)?.count == 32,
+                  SyncCrypto.verifyBluetoothPairingProof(
+                    request.pairingProof,
+                    normalizedCode: normalized,
+                    protocolVersion: version,
+                    expectedHostDeviceId: expectedHostDeviceId,
+                    clientDeviceId: request.deviceId,
+                    clientPublicKeyB64: key,
+                    requestNonce: requestNonce
+                  ) else {
+                return nil
+            }
+        } else {
+            guard SyncCrypto.verifyPairingProof(
                 request.pairingProof,
                 normalizedCode: normalized,
                 deviceId: request.deviceId,
                 clientPublicKeyB64: key
-              ) else {
-            return nil
+            ) else {
+                return nil
+            }
         }
         return normalized
     }

@@ -112,6 +112,17 @@ private struct HostedSnapshotReservation {
     var rowsSent: Int?
 }
 
+struct BluetoothPairingAttemptContext {
+    let protocolVersion: Int
+    let expectedHostDeviceId: String
+    let clientDeviceId: String
+    let clientPrivateKeyB64: String
+    let clientPublicKeyB64: String
+    let normalizedPairingCode: String
+    let requestNonce: String
+    let requestPairingProof: String
+}
+
 public enum MultipeerPairingError: Error {
     case notAvailable
     case connectionTimeout
@@ -120,6 +131,7 @@ public enum MultipeerPairingError: Error {
     case rejected
     case requestAlreadyInProgress
     case protocolUpgradeRequired
+    case responseVerificationFailed
     case transportStopped
 }
 
@@ -138,6 +150,7 @@ public actor PeerManager {
     private var multipeerManager: MultipeerManager?
     // Joiner-side: continuations awaiting a pairResponse over Bluetooth, keyed by host deviceId.
     private var pendingPairContinuations: [String: CheckedContinuation<SyncPairResponse, Error>] = [:]
+    private var pendingBluetoothPairingContexts: [String: BluetoothPairingAttemptContext] = [:]
     // Joiner-side: continuations awaiting a full initial sync to complete, keyed by host deviceId.
     private var pendingFullSyncContinuations: [String: CheckedContinuation<Void, Error>] = [:]
     // Full-snapshot pages remain in memory until completion, then commit in one transaction.
@@ -347,6 +360,7 @@ public actor PeerManager {
     private func failPendingMultipeerOperations(with error: Error) {
         let pairContinuations = Array(pendingPairContinuations.values)
         pendingPairContinuations.removeAll()
+        pendingBluetoothPairingContexts.removeAll()
         let fullSyncContinuations = Array(pendingFullSyncContinuations.values)
         pendingFullSyncContinuations.removeAll()
         pendingSnapshotChanges.removeAll()
@@ -1402,6 +1416,11 @@ public actor PeerManager {
         hostedSnapshotTokens[peerDeviceId] = token
     }
 
+    func testSetKeyAgreementIdentity(privateKeyB64: String, publicKeyB64: String) {
+        kaPrivateKeyB64 = privateKeyB64
+        kaPublicKeyB64 = publicKeyB64
+    }
+
     func testReserveHostedSnapshot(
         token: String,
         for peerDeviceId: String,
@@ -1456,6 +1475,10 @@ public actor PeerManager {
 
     func testAuthorizeReceivedSnapshot(_ token: String, from peerDeviceId: String) {
         receivedSnapshotTokens[peerDeviceId] = token
+    }
+
+    func testReceivedSnapshotToken(from peerDeviceId: String) -> String? {
+        receivedSnapshotTokens[peerDeviceId]
     }
 
     func testProcessMultipeerMessagesInFIFO(
@@ -1623,20 +1646,30 @@ public actor PeerManager {
         guard let sState = serverState,
               let request = try? JSONDecoder().decode(SyncPairRequest.self, from: payload) else { return }
 
+        func rejectionResponse() -> SyncPairResponse {
+            SyncPairResponse(
+                accepted: false,
+                serverDeviceId: sState.deviceId,
+                companyId: "",
+                pairedAt: CoreFormatters.nowISO(),
+                bluetoothProtocolVersion: request.bluetoothProtocolVersion,
+                bluetoothRequestNonce: request.bluetoothRequestNonce
+            )
+        }
+
         // Bind the code proof to the same advertised identity that owns this MCSession.
-        let protocolIsSupported = (request.bluetoothProtocolVersion ?? 0) >= 3
+        let protocolIsSupported = request.bluetoothProtocolVersion == SyncCrypto.bluetoothPairingProtocolVersion
+        let requestKeyIsValid = request.keyAgreementPublicKey
+            .flatMap { Data(base64Encoded: $0) }?.count == 32
+        let nonceIsValid = request.bluetoothRequestNonce
+            .flatMap { Data(base64Encoded: $0) }?.count == 32
         guard request.deviceId == peerDeviceId,
               protocolIsSupported,
-              request.keyAgreementPublicKey != nil,
+              request.bluetoothExpectedHostDeviceId == sState.deviceId,
+              requestKeyIsValid,
+              nonceIsValid,
               request.pairingProof != nil else {
-            _ = deliverResponse(
-                SyncPairResponse(
-                    accepted: false,
-                    serverDeviceId: sState.deviceId,
-                    companyId: "",
-                    pairedAt: CoreFormatters.nowISO()
-                )
-            )
+            _ = deliverResponse(rejectionResponse())
             logger.error("[PeerManager] Bluetooth pairing rejected — invalid identity, key, or protocol version")
             return
         }
@@ -1645,28 +1678,14 @@ public actor PeerManager {
         do {
             previousTrust = try ChangeTracker.capturePeerDeviceTrust(db: db, peerId: request.deviceId)
         } catch {
-            _ = deliverResponse(
-                SyncPairResponse(
-                    accepted: false,
-                    serverDeviceId: sState.deviceId,
-                    companyId: "",
-                    pairedAt: CoreFormatters.nowISO()
-                )
-            )
+            _ = deliverResponse(rejectionResponse())
             logger.error("[PeerManager] Bluetooth pairing rejected — could not snapshot existing trust")
             return
         }
         let previousSnapshotToken = hostedSnapshotTokens[request.deviceId]
 
         guard let pairingCode = await sState.consumePairingProof(request) else {
-            _ = deliverResponse(
-                SyncPairResponse(
-                    accepted: false,
-                    serverDeviceId: sState.deviceId,
-                    companyId: "",
-                    pairedAt: CoreFormatters.nowISO()
-                )
-            )
+            _ = deliverResponse(rejectionResponse())
             logger.error("[PeerManager] Bluetooth pairing rejected — invalid or already consumed code")
             return
         }
@@ -1684,26 +1703,54 @@ public actor PeerManager {
             try? ChangeTracker.restorePeerDeviceTrust(db: db, peerId: request.deviceId, snapshot: previousTrust)
             restoreHostedSnapshotToken(previousSnapshotToken, for: request.deviceId)
             try? await sState.setActivePairingCode(pairingCode)
-            _ = deliverResponse(
-                SyncPairResponse(
-                    accepted: false,
-                    serverDeviceId: sState.deviceId,
-                    companyId: "",
-                    pairedAt: CoreFormatters.nowISO()
-                )
-            )
+            _ = deliverResponse(rejectionResponse())
             logger.error("[PeerManager] Bluetooth pairing rejected — preparation failed")
             return
         }
 
-        let response = SyncPairResponse(
+        let pairedAt = CoreFormatters.nowISO()
+        let requestNonce = request.bluetoothRequestNonce ?? ""
+        let requestProof = request.pairingProof ?? ""
+        let clientPublicKey = request.keyAgreementPublicKey ?? ""
+        var response = SyncPairResponse(
             accepted: true,
             serverDeviceId: sState.deviceId,
             companyId: sState.companyId,
-            pairedAt: CoreFormatters.nowISO(),
+            pairedAt: pairedAt,
+            bluetoothProtocolVersion: SyncCrypto.bluetoothPairingProtocolVersion,
+            bluetoothRequestNonce: requestNonce,
+            bluetoothRequestPairingProof: requestProof,
+            bluetoothClientDeviceId: request.deviceId,
+            bluetoothClientKeyAgreementPublicKey: clientPublicKey,
             bluetoothSnapshotToken: snapshotToken,
             serverKeyAgreementPublicKey: kaPublicKeyB64
         )
+
+        do {
+            response.bluetoothResponseAuthenticator = try SyncCrypto.bluetoothPairingResponseAuthenticator(
+                normalizedCode: pairingCode,
+                ourPrivateKeyB64: kaPrivateKeyB64,
+                theirPublicKeyB64: clientPublicKey,
+                protocolVersion: SyncCrypto.bluetoothPairingProtocolVersion,
+                requestNonce: requestNonce,
+                requestPairingProof: requestProof,
+                accepted: true,
+                clientDeviceId: request.deviceId,
+                clientPublicKeyB64: clientPublicKey,
+                hostDeviceId: sState.deviceId,
+                hostPublicKeyB64: kaPublicKeyB64,
+                companyId: sState.companyId,
+                snapshotToken: snapshotToken,
+                pairedAt: pairedAt
+            )
+        } catch {
+            restoreHostedSnapshotToken(previousSnapshotToken, for: request.deviceId)
+            try? ChangeTracker.restorePeerDeviceTrust(db: db, peerId: request.deviceId, snapshot: previousTrust)
+            try? await sState.setActivePairingCode(pairingCode)
+            _ = deliverResponse(rejectionResponse())
+            logger.error("[PeerManager] Bluetooth pairing rejected — response authentication failed")
+            return
+        }
 
         let delivered = deliverResponse(response)
 
@@ -1765,6 +1812,69 @@ public actor PeerManager {
         }
     }
 
+    static func validateBluetoothPairingResponse(
+        _ response: SyncPairResponse,
+        context: BluetoothPairingAttemptContext
+    ) throws -> (snapshotToken: String, hostPublicKey: String) {
+        guard response.bluetoothProtocolVersion == SyncCrypto.bluetoothPairingProtocolVersion else {
+            throw MultipeerPairingError.protocolUpgradeRequired
+        }
+        guard response.bluetoothRequestNonce == context.requestNonce,
+              response.serverDeviceId == context.expectedHostDeviceId else {
+            throw MultipeerPairingError.responseVerificationFailed
+        }
+        guard response.accepted else { throw MultipeerPairingError.rejected }
+        guard context.protocolVersion == SyncCrypto.bluetoothPairingProtocolVersion,
+              Data(base64Encoded: context.clientPrivateKeyB64)?.count == 32,
+              Data(base64Encoded: context.clientPublicKeyB64)?.count == 32,
+              let hostPublicKey = response.serverKeyAgreementPublicKey,
+              Data(base64Encoded: hostPublicKey)?.count == 32,
+              let snapshotToken = response.bluetoothSnapshotToken,
+              !snapshotToken.isEmpty,
+              !response.pairedAt.isEmpty,
+              response.bluetoothRequestPairingProof == context.requestPairingProof,
+              response.bluetoothClientDeviceId == context.clientDeviceId,
+              response.bluetoothClientKeyAgreementPublicKey == context.clientPublicKeyB64,
+              SyncCrypto.verifyBluetoothPairingResponseAuthenticator(
+                response.bluetoothResponseAuthenticator,
+                normalizedCode: context.normalizedPairingCode,
+                ourPrivateKeyB64: context.clientPrivateKeyB64,
+                theirPublicKeyB64: hostPublicKey,
+                protocolVersion: SyncCrypto.bluetoothPairingProtocolVersion,
+                requestNonce: context.requestNonce,
+                requestPairingProof: context.requestPairingProof,
+                accepted: true,
+                clientDeviceId: context.clientDeviceId,
+                clientPublicKeyB64: context.clientPublicKeyB64,
+                hostDeviceId: context.expectedHostDeviceId,
+                hostPublicKeyB64: hostPublicKey,
+                companyId: response.companyId,
+                snapshotToken: snapshotToken,
+                pairedAt: response.pairedAt
+              ) else {
+            throw MultipeerPairingError.responseVerificationFailed
+        }
+        return (snapshotToken, hostPublicKey)
+    }
+
+    @discardableResult
+    internal func acceptBluetoothPairingResponse(
+        _ response: SyncPairResponse,
+        context: BluetoothPairingAttemptContext,
+        peerName: String
+    ) throws -> SyncPairResponse {
+        let verified = try Self.validateBluetoothPairingResponse(response, context: context)
+        try ChangeTracker.registerPeerDevice(
+            db: db,
+            peerId: response.serverDeviceId,
+            peerName: peerName,
+            platform: "ios",
+            keyAgreementPublicKey: verified.hostPublicKey
+        )
+        receivedSnapshotTokens[context.expectedHostDeviceId] = verified.snapshotToken
+        return response
+    }
+
     /// Joiner side: pair with a Bluetooth-discovered host by connecting the
     /// Multipeer session and exchanging a code-authenticated proof — no Wi-Fi needed.
     public func pairViaMultipeer(
@@ -1782,6 +1892,11 @@ public actor PeerManager {
         guard pendingPairContinuations[hostDeviceId] == nil else {
             throw MultipeerPairingError.requestAlreadyInProgress
         }
+        guard let normalizedCode = SyncCrypto.normalizedPairingCode(pairingCode),
+              Data(base64Encoded: kaPrivateKeyB64)?.count == 32,
+              Data(base64Encoded: kaPublicKeyB64)?.count == 32 else {
+            throw MultipeerPairingError.responseVerificationFailed
+        }
 
         // 1. Invite the host and wait for the MCSession to connect.
         mpManager.invite(deviceId: hostDeviceId)
@@ -1791,17 +1906,35 @@ public actor PeerManager {
             try? await Task.sleep(nanoseconds: 300_000_000)
         }
 
-        // 2. Send a proof bound to this durable device key; never put the code on wire.
+        // 2. Send a proof bound to this attempt, expected host, and durable device key.
+        let requestNonce = SyncCrypto.bluetoothPairingRequestNonce()
+        let requestProof = SyncCrypto.bluetoothPairingProof(
+            normalizedCode: normalizedCode,
+            expectedHostDeviceId: hostDeviceId,
+            clientDeviceId: myDeviceId,
+            clientPublicKeyB64: kaPublicKeyB64,
+            requestNonce: requestNonce
+        )
+        let pairingContext = BluetoothPairingAttemptContext(
+            protocolVersion: SyncCrypto.bluetoothPairingProtocolVersion,
+            expectedHostDeviceId: hostDeviceId,
+            clientDeviceId: myDeviceId,
+            clientPrivateKeyB64: kaPrivateKeyB64,
+            clientPublicKeyB64: kaPublicKeyB64,
+            normalizedPairingCode: normalizedCode,
+            requestNonce: requestNonce,
+            requestPairingProof: requestProof
+        )
+        pendingBluetoothPairingContexts[hostDeviceId] = pairingContext
+        defer { pendingBluetoothPairingContexts.removeValue(forKey: hostDeviceId) }
         let request = SyncPairRequest(
             deviceId: myDeviceId,
             deviceName: myDeviceName,
-            pairingProof: SyncCrypto.pairingProof(
-                normalizedCode: pairingCode,
-                deviceId: myDeviceId,
-                clientPublicKeyB64: kaPublicKeyB64
-            ),
+            pairingProof: requestProof,
             platform: platform,
-            bluetoothProtocolVersion: 3,
+            bluetoothProtocolVersion: SyncCrypto.bluetoothPairingProtocolVersion,
+            bluetoothRequestNonce: requestNonce,
+            bluetoothExpectedHostDeviceId: hostDeviceId,
             keyAgreementPublicKey: kaPublicKeyB64
         )
         let payload = try JSONEncoder().encode(request)
@@ -1821,28 +1954,16 @@ public actor PeerManager {
                 await self?.timeoutPairing(with: hostDeviceId)
             }
         }
-        guard response.accepted else { throw MultipeerPairingError.rejected }
-        guard response.serverDeviceId == hostDeviceId else {
-            throw MultipeerPairingError.protocolUpgradeRequired
+        guard pendingBluetoothPairingContexts[hostDeviceId]?.requestNonce == requestNonce else {
+            throw MultipeerPairingError.responseVerificationFailed
         }
-        guard let token = response.bluetoothSnapshotToken, !token.isEmpty else {
-            throw MultipeerPairingError.protocolUpgradeRequired
-        }
-        guard let hostKey = response.serverKeyAgreementPublicKey,
-              Data(base64Encoded: hostKey)?.count == 32 else {
-            throw MultipeerPairingError.protocolUpgradeRequired
-        }
-        try ChangeTracker.registerPeerDevice(
-            db: db,
-            peerId: response.serverDeviceId,
-            peerName: hostDeviceId,
-            platform: "ios",
-            keyAgreementPublicKey: hostKey
+        // Validation completes before either durable trust or the one-time snapshot
+        // capability is exposed to downstream persistence and authorization.
+        return try acceptBluetoothPairingResponse(
+            response,
+            context: pairingContext,
+            peerName: hostDeviceId
         )
-        // Expose the one-time snapshot capability only after the connected host's
-        // identity and X25519 key are validated and durably pinned.
-        receivedSnapshotTokens[hostDeviceId] = token
-        return response
     }
     #endif
 

@@ -37,6 +37,64 @@ private final class SnapshotAcknowledgementCollector: @unchecked Sendable {
     }
 }
 
+private func authenticatedBluetoothPairingFixture(
+    requestNonce: String = SyncCrypto.bluetoothPairingRequestNonce()
+) throws -> (context: BluetoothPairingAttemptContext, response: SyncPairResponse) {
+    let client = SyncCrypto.generateKeyAgreementPair()
+    let host = SyncCrypto.generateKeyAgreementPair()
+    let code = "ABCD1234"
+    let proof = SyncCrypto.bluetoothPairingProof(
+        normalizedCode: code,
+        expectedHostDeviceId: "host",
+        clientDeviceId: "joiner",
+        clientPublicKeyB64: client.publicKey,
+        requestNonce: requestNonce
+    )
+    let context = BluetoothPairingAttemptContext(
+        protocolVersion: 4,
+        expectedHostDeviceId: "host",
+        clientDeviceId: "joiner",
+        clientPrivateKeyB64: client.privateKey,
+        clientPublicKeyB64: client.publicKey,
+        normalizedPairingCode: code,
+        requestNonce: requestNonce,
+        requestPairingProof: proof
+    )
+    let pairedAt = "2026-07-18T09:00:00Z"
+    let token = "snapshot-token"
+    let authenticator = try SyncCrypto.bluetoothPairingResponseAuthenticator(
+        normalizedCode: code,
+        ourPrivateKeyB64: host.privateKey,
+        theirPublicKeyB64: client.publicKey,
+        protocolVersion: 4,
+        requestNonce: requestNonce,
+        requestPairingProof: proof,
+        accepted: true,
+        clientDeviceId: "joiner",
+        clientPublicKeyB64: client.publicKey,
+        hostDeviceId: "host",
+        hostPublicKeyB64: host.publicKey,
+        companyId: "company",
+        snapshotToken: token,
+        pairedAt: pairedAt
+    )
+    let response = SyncPairResponse(
+        accepted: true,
+        serverDeviceId: "host",
+        companyId: "company",
+        pairedAt: pairedAt,
+        bluetoothProtocolVersion: 4,
+        bluetoothRequestNonce: requestNonce,
+        bluetoothRequestPairingProof: proof,
+        bluetoothClientDeviceId: "joiner",
+        bluetoothClientKeyAgreementPublicKey: client.publicKey,
+        bluetoothSnapshotToken: token,
+        serverKeyAgreementPublicKey: host.publicKey,
+        bluetoothResponseAuthenticator: authenticator
+    )
+    return (context, response)
+}
+
 @Suite("PeerManager Tests")
 struct PeerManagerTests {
 
@@ -737,18 +795,23 @@ struct PeerManagerTests {
 
     @Test("Bluetooth pairing wire format distinguishes capability protocol clients from legacy clients")
     func testBluetoothPairingProtocolVersionWireFormat() throws {
+        let nonce = SyncCrypto.bluetoothPairingRequestNonce()
         let current = SyncPairRequest(
             deviceId: "joiner",
             deviceName: "Joiner",
             pairingProof: "proof",
             platform: "ios",
-            bluetoothProtocolVersion: 3
+            bluetoothProtocolVersion: 4,
+            bluetoothRequestNonce: nonce,
+            bluetoothExpectedHostDeviceId: "host"
         )
         let currentRoundTrip = try JSONDecoder().decode(
             SyncPairRequest.self,
             from: JSONEncoder().encode(current)
         )
-        #expect(currentRoundTrip.bluetoothProtocolVersion == 3)
+        #expect(currentRoundTrip.bluetoothProtocolVersion == 4)
+        #expect(currentRoundTrip.bluetoothRequestNonce == nonce)
+        #expect(currentRoundTrip.bluetoothExpectedHostDeviceId == "host")
         #expect(currentRoundTrip.pairingCode == nil)
 
         let legacy = try JSONDecoder().decode(
@@ -756,6 +819,170 @@ struct PeerManagerTests {
             from: Data(#"{"device_id":"legacy","device_name":"Legacy","pairing_code":"ABCD-1234","platform":"ios"}"#.utf8)
         )
         #expect(legacy.bluetoothProtocolVersion == nil)
+    }
+
+    @Test("Bluetooth host rejects non-v4 requests without consuming the fresh pairing offer")
+    func testBluetoothHostRejectsOldProtocolWithoutConsumingOffer() async throws {
+        let pm = PeerManager(db: try freshDB())
+        try await pm.startPeerSync(deviceId: "host", deviceName: "Host", companyId: "company")
+        let code = try await pm.issuePairingCode()
+        let normalizedCode = try #require(SyncCrypto.normalizedPairingCode(code))
+        let client = SyncCrypto.generateKeyAgreementPair()
+        let responses = PairResponseCollector()
+
+        func request(
+            version: Int? = 4,
+            nonce: String? = SyncCrypto.bluetoothPairingRequestNonce(),
+            expectedHost: String? = "host",
+            clientKey: String? = nil,
+            proofOverride: String? = nil
+        ) -> SyncPairRequest {
+            let proofNonce = nonce ?? SyncCrypto.bluetoothPairingRequestNonce()
+            let proofKey = clientKey ?? client.publicKey
+            let proofHost = expectedHost ?? "host"
+            return SyncPairRequest(
+                deviceId: "joiner",
+                deviceName: "Joiner",
+                pairingProof: proofOverride ?? SyncCrypto.bluetoothPairingProof(
+                    normalizedCode: normalizedCode,
+                    expectedHostDeviceId: proofHost,
+                    clientDeviceId: "joiner",
+                    clientPublicKeyB64: proofKey,
+                    requestNonce: proofNonce
+                ),
+                platform: "ios",
+                bluetoothProtocolVersion: version,
+                bluetoothRequestNonce: nonce,
+                bluetoothExpectedHostDeviceId: expectedHost,
+                keyAgreementPublicKey: proofKey
+            )
+        }
+
+        let invalidRequests = [
+            request(version: 3),
+            request(version: nil),
+            request(version: 5),
+            request(nonce: nil),
+            request(nonce: "malformed-nonce"),
+            request(expectedHost: "other-host"),
+            request(clientKey: "malformed-client-key"),
+            request(proofOverride: "wrong-proof")
+        ]
+        for invalidRequest in invalidRequests {
+            let payload = try JSONEncoder().encode(invalidRequest)
+            await pm.processBluetoothPairRequest(from: "joiner", payload: payload) { response in
+                responses.append(response)
+                return true
+            }
+            #expect(responses.values.last?.accepted == false)
+            #expect(try await pm.isTrustedBluetoothPeer("joiner") == false)
+        }
+
+        let nonce = SyncCrypto.bluetoothPairingRequestNonce()
+        let validPayload = try JSONEncoder().encode(request(nonce: nonce))
+        await pm.processBluetoothPairRequest(from: "joiner", payload: validPayload) { response in
+            responses.append(response)
+            return true
+        }
+
+        #expect(responses.values.last?.accepted == true)
+        #expect(try await pm.isTrustedBluetoothPeer("joiner"))
+        await pm.stopPeerSync()
+    }
+
+    @Test("Bluetooth response verification precedes trust/token mutation and rejects replay")
+    func testBluetoothResponseVerificationPersistenceAndReplayBoundary() async throws {
+        let fixture = try authenticatedBluetoothPairingFixture()
+        let otherKey = SyncCrypto.generateKeyAgreementPair()
+        let mutations: [(String, (inout SyncPairResponse) -> Void)] = [
+            ("host id", { $0.serverDeviceId = "other-host" }),
+            ("host key", { $0.serverKeyAgreementPublicKey = otherKey.publicKey }),
+            ("client id", { $0.bluetoothClientDeviceId = "other-client" }),
+            ("client key", { $0.bluetoothClientKeyAgreementPublicKey = otherKey.publicKey }),
+            ("company", { $0.companyId = "other-company" }),
+            ("snapshot token", { $0.bluetoothSnapshotToken = "other-token" }),
+            ("nonce", { $0.bluetoothRequestNonce = SyncCrypto.bluetoothPairingRequestNonce() }),
+            ("request proof", { $0.bluetoothRequestPairingProof = "other-proof" }),
+            ("version", { $0.bluetoothProtocolVersion = 5 }),
+            ("paired at", { $0.pairedAt = "2026-07-18T09:00:01Z" }),
+            ("missing authenticator", { $0.bluetoothResponseAuthenticator = nil }),
+            ("malformed authenticator", { $0.bluetoothResponseAuthenticator = "not-base64" })
+        ]
+
+        for (field, mutate) in mutations {
+            let forgedPM = PeerManager(db: try freshDB())
+            var forged = fixture.response
+            mutate(&forged)
+            do {
+                _ = try await forgedPM.acceptBluetoothPairingResponse(
+                    forged,
+                    context: fixture.context,
+                    peerName: "Host"
+                )
+                Issue.record("Expected tampered \(field) response to fail")
+            } catch {
+                // Expected: no mutation may precede response verification.
+            }
+            #expect(try await forgedPM.isTrustedBluetoothPeer("host") == false)
+            #expect(await forgedPM.testReceivedSnapshotToken(from: "host") == nil)
+        }
+
+        let invalidContexts = [
+            BluetoothPairingAttemptContext(
+                protocolVersion: fixture.context.protocolVersion,
+                expectedHostDeviceId: fixture.context.expectedHostDeviceId,
+                clientDeviceId: fixture.context.clientDeviceId,
+                clientPrivateKeyB64: fixture.context.clientPrivateKeyB64,
+                clientPublicKeyB64: fixture.context.clientPublicKeyB64,
+                normalizedPairingCode: "WXYZ1234",
+                requestNonce: fixture.context.requestNonce,
+                requestPairingProof: fixture.context.requestPairingProof
+            ),
+            BluetoothPairingAttemptContext(
+                protocolVersion: fixture.context.protocolVersion,
+                expectedHostDeviceId: fixture.context.expectedHostDeviceId,
+                clientDeviceId: fixture.context.clientDeviceId,
+                clientPrivateKeyB64: otherKey.privateKey,
+                clientPublicKeyB64: fixture.context.clientPublicKeyB64,
+                normalizedPairingCode: fixture.context.normalizedPairingCode,
+                requestNonce: fixture.context.requestNonce,
+                requestPairingProof: fixture.context.requestPairingProof
+            )
+        ]
+        for context in invalidContexts {
+            let forgedPM = PeerManager(db: try freshDB())
+            await #expect(throws: MultipeerPairingError.self) {
+                try await forgedPM.acceptBluetoothPairingResponse(
+                    fixture.response,
+                    context: context,
+                    peerName: "Host"
+                )
+            }
+            #expect(try await forgedPM.isTrustedBluetoothPeer("host") == false)
+            #expect(await forgedPM.testReceivedSnapshotToken(from: "host") == nil)
+        }
+
+        let validPM = PeerManager(db: try freshDB())
+        _ = try await validPM.acceptBluetoothPairingResponse(
+            fixture.response,
+            context: fixture.context,
+            peerName: "Host"
+        )
+        #expect(try await validPM.isTrustedBluetoothPeer("host"))
+        #expect(await validPM.testReceivedSnapshotToken(from: "host") == "snapshot-token")
+
+        let replayPM = PeerManager(db: try freshDB())
+        let freshAttempt = try authenticatedBluetoothPairingFixture()
+        #expect(freshAttempt.context.requestNonce != fixture.context.requestNonce)
+        await #expect(throws: MultipeerPairingError.self) {
+            try await replayPM.acceptBluetoothPairingResponse(
+                fixture.response,
+                context: freshAttempt.context,
+                peerName: "Host"
+            )
+        }
+        #expect(try await replayPM.isTrustedBluetoothPeer("host") == false)
+        #expect(await replayPM.testReceivedSnapshotToken(from: "host") == nil)
     }
 
     @Test("Transport shutdown resumes pending pairing and full-sync continuations with an error")
@@ -795,16 +1022,21 @@ struct PeerManagerTests {
         let oldToken = "existing-token"
         await pm.testIssueHostedSnapshotToken(oldToken, for: "joiner")
         let (_, peerKey) = SyncCrypto.generateKeyAgreementPair()
+        let nonce = SyncCrypto.bluetoothPairingRequestNonce()
         let payload = try JSONEncoder().encode(SyncPairRequest(
             deviceId: "joiner",
             deviceName: "Joiner",
-            pairingProof: SyncCrypto.pairingProof(
+            pairingProof: SyncCrypto.bluetoothPairingProof(
                 normalizedCode: try #require(SyncCrypto.normalizedPairingCode(pairingCode)),
-                deviceId: "joiner",
-                clientPublicKeyB64: peerKey
+                expectedHostDeviceId: "host",
+                clientDeviceId: "joiner",
+                clientPublicKeyB64: peerKey,
+                requestNonce: nonce
             ),
             platform: "ios",
-            bluetoothProtocolVersion: 3,
+            bluetoothProtocolVersion: 4,
+            bluetoothRequestNonce: nonce,
+            bluetoothExpectedHostDeviceId: "host",
             keyAgreementPublicKey: peerKey
         ))
         let responses = PairResponseCollector()
@@ -833,22 +1065,81 @@ struct PeerManagerTests {
         await pm.stopPeerSync()
     }
 
+    @Test("Bluetooth authenticator generation failure restores trust, token, and pairing offer")
+    func testBluetoothAuthenticatorFailureRollsBackPreparation() async throws {
+        let pm = PeerManager(db: try freshDB())
+        try await pm.startPeerSync(deviceId: "host", deviceName: "Host", companyId: "company")
+        let pairingCode = try await pm.issuePairingCode()
+        let normalizedCode = try #require(SyncCrypto.normalizedPairingCode(pairingCode))
+        let client = SyncCrypto.generateKeyAgreementPair()
+        let nonce = SyncCrypto.bluetoothPairingRequestNonce()
+        let payload = try JSONEncoder().encode(SyncPairRequest(
+            deviceId: "joiner",
+            deviceName: "Joiner",
+            pairingProof: SyncCrypto.bluetoothPairingProof(
+                normalizedCode: normalizedCode,
+                expectedHostDeviceId: "host",
+                clientDeviceId: "joiner",
+                clientPublicKeyB64: client.publicKey,
+                requestNonce: nonce
+            ),
+            platform: "ios",
+            bluetoothProtocolVersion: 4,
+            bluetoothRequestNonce: nonce,
+            bluetoothExpectedHostDeviceId: "host",
+            keyAgreementPublicKey: client.publicKey
+        ))
+        let responses = PairResponseCollector()
+        await pm.testIssueHostedSnapshotToken("prior-token", for: "joiner")
+        await pm.testSetKeyAgreementIdentity(
+            privateKeyB64: "malformed-private-key",
+            publicKeyB64: SyncCrypto.generateKeyAgreementPair().publicKey
+        )
+
+        await pm.processBluetoothPairRequest(from: "joiner", payload: payload) { response in
+            responses.append(response)
+            return true
+        }
+
+        #expect(responses.values.last?.accepted == false)
+        #expect(try await pm.isTrustedBluetoothPeer("joiner") == false)
+        #expect(await pm.testHostedSnapshotTokenAvailable("prior-token", for: "joiner"))
+
+        let validHost = SyncCrypto.generateKeyAgreementPair()
+        await pm.testSetKeyAgreementIdentity(
+            privateKeyB64: validHost.privateKey,
+            publicKeyB64: validHost.publicKey
+        )
+        await pm.processBluetoothPairRequest(from: "joiner", payload: payload) { response in
+            responses.append(response)
+            return true
+        }
+        #expect(responses.values.last?.accepted == true)
+        #expect(try await pm.isTrustedBluetoothPeer("joiner"))
+        await pm.stopPeerSync()
+    }
+
     @Test("Bluetooth pairing code reservation accepts only one concurrent request")
     func testBluetoothPairingCodeReservationIsAtomic() async throws {
         let pm = PeerManager(db: try freshDB())
         try await pm.startPeerSync(deviceId: "host", deviceName: "Host", companyId: "company")
         let pairingCode = try await pm.issuePairingCode()
         let (_, peerKey) = SyncCrypto.generateKeyAgreementPair()
+        let nonce = SyncCrypto.bluetoothPairingRequestNonce()
         let payload = try JSONEncoder().encode(SyncPairRequest(
             deviceId: "joiner",
             deviceName: "Joiner",
-            pairingProof: SyncCrypto.pairingProof(
+            pairingProof: SyncCrypto.bluetoothPairingProof(
                 normalizedCode: try #require(SyncCrypto.normalizedPairingCode(pairingCode)),
-                deviceId: "joiner",
-                clientPublicKeyB64: peerKey
+                expectedHostDeviceId: "host",
+                clientDeviceId: "joiner",
+                clientPublicKeyB64: peerKey,
+                requestNonce: nonce
             ),
             platform: "ios",
-            bluetoothProtocolVersion: 3,
+            bluetoothProtocolVersion: 4,
+            bluetoothRequestNonce: nonce,
+            bluetoothExpectedHostDeviceId: "host",
             keyAgreementPublicKey: peerKey
         ))
         let responses = PairResponseCollector()
@@ -1102,16 +1393,21 @@ struct PeerManagerTests {
 
         let pairingCode = try await host.issuePairingCode()
         let (_, peerKey) = SyncCrypto.generateKeyAgreementPair()
+        let nonce = SyncCrypto.bluetoothPairingRequestNonce()
         let pairRequest = try JSONEncoder().encode(SyncPairRequest(
             deviceId: peer,
             deviceName: "Joiner",
-            pairingProof: SyncCrypto.pairingProof(
+            pairingProof: SyncCrypto.bluetoothPairingProof(
                 normalizedCode: try #require(SyncCrypto.normalizedPairingCode(pairingCode)),
-                deviceId: peer,
-                clientPublicKeyB64: peerKey
+                expectedHostDeviceId: hostDeviceId,
+                clientDeviceId: peer,
+                clientPublicKeyB64: peerKey,
+                requestNonce: nonce
             ),
             platform: "ios",
-            bluetoothProtocolVersion: 3,
+            bluetoothProtocolVersion: 4,
+            bluetoothRequestNonce: nonce,
+            bluetoothExpectedHostDeviceId: hostDeviceId,
             keyAgreementPublicKey: peerKey
         ))
         let responses = PairResponseCollector()
