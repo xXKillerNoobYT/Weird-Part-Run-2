@@ -66,6 +66,7 @@ Every user/assistant pair rendered by the active native assistant is part of the
 - Retry Save and Dismiss are both disabled for the complete retry-persistence lifecycle. A suspended retry therefore keeps its exact captured pair recoverable: success clears the warning and payload together, while failure restores an actionable warning without allowing Dismiss to remove the only retry payload mid-flight.
 - Local pair persistence returns a deterministic three-state outcome: not persisted, persisted and staged, or persisted but not staged because a newer lifecycle took ownership. Both persisted outcomes clear Retry Save; only a genuine pre-write invalidation or storage failure remains retryable, so a durable pair cannot be inserted again after a post-write lifecycle race.
 - Focused regression coverage must exercise the unavailable-model fallback path, the available-model failure-to-fallback path, atomic reload/list visibility, and a failed write that leaves no partial user row.
+- The save warning gives both actions real label-owned minimum 44×44-point accessibility frames. At accessibility Dynamic Type sizes, the warning moves its actions below the untruncated message instead of compressing either surface horizontally; focused XCUI coverage measures the exported Retry Save frame and verifies the warning at default and AX5 sizes on phone and tablet destinations.
 
 ---
 

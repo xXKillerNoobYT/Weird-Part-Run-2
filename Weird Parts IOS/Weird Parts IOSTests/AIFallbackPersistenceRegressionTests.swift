@@ -63,8 +63,9 @@ final class AIFallbackPersistenceRegressionTests: XCTestCase {
         XCTAssertTrue(persist.contains("AIFallbackPersistenceRetryDecision.resolve("))
         XCTAssertTrue(persist.contains("case .saved:"))
         XCTAssertTrue(persist.contains("Tap Retry Save"))
-        XCTAssertTrue(assistant.contains("Button(\"Retry Save\")"))
-        XCTAssertTrue(assistant.contains("frame(minHeight: 44)"))
+        XCTAssertTrue(assistant.contains("Text(\"Retry Save\")"))
+        XCTAssertTrue(assistant.contains("frame(minWidth: 44, minHeight: 44)"))
+        XCTAssertTrue(assistant.contains("contentShape(Rectangle())"))
         XCTAssertTrue(assistant.contains("accessibilityLabel(\"Retry saving conversation turn\")"))
         XCTAssertTrue(assistant.contains("|| pendingFallbackSave != nil"))
     }
@@ -87,8 +88,8 @@ final class AIFallbackPersistenceRegressionTests: XCTestCase {
 
     func testFallbackWarningActionsCannotDismissAnInFlightRetry() throws {
         let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
-        let status = try TestSourceSlicer.braceBalancedBody(
-            after: "private var clearConversationStatus: some View",
+        let actions = try TestSourceSlicer.braceBalancedBody(
+            after: "private var fallbackSaveWarningActions: some View",
             in: assistant
         )
         guard assistant.contains("private func dismissFallbackSaveWarning()") else {
@@ -101,7 +102,7 @@ final class AIFallbackPersistenceRegressionTests: XCTestCase {
         )
 
         XCTAssertGreaterThanOrEqual(
-            status.components(separatedBy: ".disabled(isProcessing)").count - 1,
+            actions.components(separatedBy: ".disabled(isProcessing)").count - 1,
             2,
             "Retry Save and Dismiss must both be disabled while retry persistence is active."
         )

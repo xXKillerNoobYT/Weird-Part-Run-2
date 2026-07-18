@@ -75,6 +75,7 @@ enum AIFallbackPendingSaveOwnershipDecision: Equatable {
 struct IOSAIAssistantPanel: View {
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @Binding var displayMode: AIDisplayMode
     @Binding var isVisible: Bool
@@ -190,6 +191,17 @@ struct IOSAIAssistantPanel: View {
     /// a token from the potentially large visible Help body during view updates.
     private var pendingHelpRequestToken: String? {
         pendingHelpRequest?["requestID"] as? String
+    }
+
+    private var uiTestingFallbackSaveError: String? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains("-UITesting"),
+              arguments.contains("-UITestingAIFallbackSaveWarning") else { return nil }
+        return "Simulated storage write failure. Tap Retry Save to try again."
+    }
+
+    private var hasFallbackSaveWarning: Bool {
+        conversationPersistenceError != nil || uiTestingFallbackSaveError != nil
     }
 
     private struct ResumePrerequisiteToken: Hashable {
@@ -509,10 +521,11 @@ struct IOSAIAssistantPanel: View {
     @ViewBuilder
     private var chatBody: some View {
         VStack(spacing: 0) {
-            if displayMode == .sheet {
+            if displayMode == .sheet && !(dynamicTypeSize.isAccessibilitySize && hasFallbackSaveWarning) {
                 availabilityHeader
             }
             clearConversationStatus
+                .layoutPriority(hasFallbackSaveWarning ? 2 : 0)
             messagesArea
             inputBar
         }
@@ -706,43 +719,71 @@ struct IOSAIAssistantPanel: View {
             .frame(maxWidth: .infinity)
             .background(Color.red.opacity(0.12))
             .accessibilityElement(children: .contain)
-        } else if let conversationPersistenceError {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Conversation turn was not saved")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                    Text(conversationPersistenceError)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 8)
-                VStack(spacing: 4) {
-                    if pendingFallbackSave != nil {
-                        Button("Retry Save") {
-                            retryFallbackSave()
-                        }
-                        .font(.caption)
-                        .frame(minHeight: 44)
-                        .disabled(isProcessing)
-                        .accessibilityLabel("Retry saving conversation turn")
+        } else if let conversationPersistenceError = conversationPersistenceError ?? uiTestingFallbackSaveError {
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 8) {
+                        fallbackSaveWarningMessage(conversationPersistenceError)
+                        fallbackSaveWarningActions
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                     }
-                    Button("Dismiss") {
-                        dismissFallbackSaveWarning()
+                } else {
+                    HStack(alignment: .top, spacing: 8) {
+                        fallbackSaveWarningMessage(conversationPersistenceError)
+                        Spacer(minLength: 8)
+                        fallbackSaveWarningActions
                     }
-                    .font(.caption)
-                    .frame(minHeight: 44)
-                    .disabled(isProcessing)
-                    .accessibilityLabel("Dismiss conversation save warning")
                 }
             }
             .padding(8)
             .frame(maxWidth: .infinity)
             .background(Color.orange.opacity(0.12))
             .accessibilityElement(children: .contain)
+        }
+    }
+
+    private func fallbackSaveWarningMessage(_ error: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Conversation turn was not saved")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(error)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var fallbackSaveWarningActions: some View {
+        VStack(spacing: 4) {
+            if pendingFallbackSave != nil || uiTestingFallbackSaveError != nil {
+                Button {
+                    retryFallbackSave()
+                } label: {
+                    Text("Retry Save")
+                        .font(.caption)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .disabled(isProcessing)
+                .accessibilityLabel("Retry saving conversation turn")
+            }
+            Button {
+                dismissFallbackSaveWarning()
+            } label: {
+                Text("Dismiss")
+                    .font(.caption)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .disabled(isProcessing)
+            .accessibilityLabel("Dismiss conversation save warning")
         }
     }
 
