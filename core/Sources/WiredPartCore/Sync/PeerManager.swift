@@ -123,6 +123,11 @@ struct BluetoothPairingAttemptContext {
     let requestPairingProof: String
 }
 
+private struct PendingBluetoothPairingAttempt {
+    let requestNonce: String
+    let continuation: CheckedContinuation<SyncPairResponse, Error>
+}
+
 public enum MultipeerPairingError: Error {
     case notAvailable
     case connectionTimeout
@@ -148,8 +153,8 @@ public actor PeerManager {
 
     #if canImport(MultipeerConnectivity)
     private var multipeerManager: MultipeerManager?
-    // Joiner-side: continuations awaiting a pairResponse over Bluetooth, keyed by host deviceId.
-    private var pendingPairContinuations: [String: CheckedContinuation<SyncPairResponse, Error>] = [:]
+    // Joiner-side: each waiter is owned by its request nonce as well as host id.
+    private var pendingPairContinuations: [String: PendingBluetoothPairingAttempt] = [:]
     private var pendingBluetoothPairingContexts: [String: BluetoothPairingAttemptContext] = [:]
     // Joiner-side: continuations awaiting a full initial sync to complete, keyed by host deviceId.
     private var pendingFullSyncContinuations: [String: CheckedContinuation<Void, Error>] = [:]
@@ -358,7 +363,7 @@ public actor PeerManager {
 
     #if canImport(MultipeerConnectivity)
     private func failPendingMultipeerOperations(with error: Error) {
-        let pairContinuations = Array(pendingPairContinuations.values)
+        let pairContinuations = pendingPairContinuations.values.map(\.continuation)
         pendingPairContinuations.removeAll()
         pendingBluetoothPairingContexts.removeAll()
         let fullSyncContinuations = Array(pendingFullSyncContinuations.values)
@@ -1505,10 +1510,40 @@ public actor PeerManager {
         pendingSnapshotChanges.removeValue(forKey: peerDeviceId)
     }
 
-    func testAwaitPairingTransport(peerDeviceId: String) async throws {
-        _ = try await withCheckedThrowingContinuation { continuation in
-            pendingPairContinuations[peerDeviceId] = continuation
+    func testAwaitPairingTransport(
+        peerDeviceId: String,
+        requestNonce: String = "test-pairing-nonce"
+    ) async throws {
+        _ = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                pendingPairContinuations[peerDeviceId] = PendingBluetoothPairingAttempt(
+                    requestNonce: requestNonce,
+                    continuation: continuation
+                )
+            }
+        } onCancel: {
+            Task {
+                await self.cancelPairing(
+                    with: peerDeviceId,
+                    requestNonce: requestNonce
+                )
+            }
         }
+    }
+
+    func testResolvePairingTransport(_ response: SyncPairResponse, from peerDeviceId: String) throws {
+        handlePairResponse(
+            from: peerDeviceId,
+            payload: try JSONEncoder().encode(response)
+        )
+    }
+
+    func testTimeoutPairing(peerDeviceId: String, requestNonce: String) {
+        timeoutPairing(with: peerDeviceId, requestNonce: requestNonce)
+    }
+
+    func testPendingPairingNonce(for peerDeviceId: String) -> String? {
+        pendingPairContinuations[peerDeviceId]?.requestNonce
     }
 
     func testAwaitFullSyncTransport(peerDeviceId: String) async throws {
@@ -1641,6 +1676,7 @@ public actor PeerManager {
     internal func processBluetoothPairRequest(
         from peerDeviceId: String,
         payload: Data,
+        injectActivationFailure: Bool = false,
         deliverResponse: (_ response: SyncPairResponse) -> Bool
     ) async {
         guard let sState = serverState,
@@ -1674,16 +1710,6 @@ public actor PeerManager {
             return
         }
 
-        let previousTrust: PeerDeviceTrustSnapshot?
-        do {
-            previousTrust = try ChangeTracker.capturePeerDeviceTrust(db: db, peerId: request.deviceId)
-        } catch {
-            _ = deliverResponse(rejectionResponse())
-            logger.error("[PeerManager] Bluetooth pairing rejected — could not snapshot existing trust")
-            return
-        }
-        let previousSnapshotToken = hostedSnapshotTokens[request.deviceId]
-
         guard let pairingCode = await sState.consumePairingProof(request) else {
             _ = deliverResponse(rejectionResponse())
             logger.error("[PeerManager] Bluetooth pairing rejected — invalid or already consumed code")
@@ -1691,23 +1717,6 @@ public actor PeerManager {
         }
 
         let snapshotToken = UUID().uuidString
-        do {
-            try await sState.registerAuthorizedPeer(
-                deviceId: request.deviceId,
-                deviceName: request.deviceName,
-                platform: request.platform,
-                keyAgreementPublicKey: request.keyAgreementPublicKey ?? ""
-            )
-            hostedSnapshotTokens[request.deviceId] = snapshotToken
-        } catch {
-            try? ChangeTracker.restorePeerDeviceTrust(db: db, peerId: request.deviceId, snapshot: previousTrust)
-            restoreHostedSnapshotToken(previousSnapshotToken, for: request.deviceId)
-            try? await sState.setActivePairingCode(pairingCode)
-            _ = deliverResponse(rejectionResponse())
-            logger.error("[PeerManager] Bluetooth pairing rejected — preparation failed")
-            return
-        }
-
         let pairedAt = CoreFormatters.nowISO()
         let requestNonce = request.bluetoothRequestNonce ?? ""
         let requestProof = request.pairingProof ?? ""
@@ -1744,8 +1753,6 @@ public actor PeerManager {
                 pairedAt: pairedAt
             )
         } catch {
-            restoreHostedSnapshotToken(previousSnapshotToken, for: request.deviceId)
-            try? ChangeTracker.restorePeerDeviceTrust(db: db, peerId: request.deviceId, snapshot: previousTrust)
             try? await sState.setActivePairingCode(pairingCode)
             _ = deliverResponse(rejectionResponse())
             logger.error("[PeerManager] Bluetooth pairing rejected — response authentication failed")
@@ -1755,24 +1762,29 @@ public actor PeerManager {
         let delivered = deliverResponse(response)
 
         if delivered {
+            do {
+                try ChangeTracker.activateBluetoothPeerTrust(
+                    db: db,
+                    peerId: request.deviceId,
+                    peerName: request.deviceName,
+                    platform: request.platform,
+                    keyAgreementPublicKey: clientPublicKey,
+                    injectFailureBeforeCommit: injectActivationFailure
+                )
+                hostedSnapshotTokens[request.deviceId] = snapshotToken
+            } catch {
+                try? await sState.setActivePairingCode(pairingCode)
+                logger.fault("[PeerManager] Delivered Bluetooth response but trust activation failed closed: \(error.localizedDescription, privacy: .public)")
+                return
+            }
             // The one-time code is consumed — close the cross-company connection
             // window immediately (Copilot review on PR #1422: leaving it open
             // weakened company isolation after a successful pairing).
             setBluetoothPairingHostMode(false)
             logger.info("[PeerManager] Bluetooth pairing accepted + delivered for peer \(String(request.deviceId.prefix(8)), privacy: .public)")
         } else {
-            restoreHostedSnapshotToken(previousSnapshotToken, for: request.deviceId)
-            do {
-                try ChangeTracker.restorePeerDeviceTrust(
-                    db: db,
-                    peerId: request.deviceId,
-                    snapshot: previousTrust
-                )
-            } catch {
-                logger.fault("[PeerManager] Failed to roll back undelivered Bluetooth pairing trust: \(error.localizedDescription, privacy: .public)")
-            }
             try? await sState.setActivePairingCode(pairingCode)
-            logger.error("[PeerManager] Bluetooth pairing valid but reply undelivered — prepared trust rolled back and code restored")
+            logger.error("[PeerManager] Bluetooth pairing valid but reply undelivered — trust remained inactive and code restored")
         }
     }
 
@@ -1789,27 +1801,39 @@ public actor PeerManager {
         return manager.send(data: env, toPeer: peerDeviceId)
     }
 
-    private func restoreHostedSnapshotToken(_ token: String?, for peerDeviceId: String) {
-        if let token {
-            hostedSnapshotTokens[peerDeviceId] = token
-        } else {
-            hostedSnapshotTokens.removeValue(forKey: peerDeviceId)
-        }
-    }
 
     /// Joiner side: a pairResponse arrived; resume the waiting continuation.
     private func handlePairResponse(from peerDeviceId: String, payload: Data) {
-        guard let response = try? JSONDecoder().decode(SyncPairResponse.self, from: payload) else { return }
-        if let cont = pendingPairContinuations.removeValue(forKey: peerDeviceId) {
-            cont.resume(returning: response)
+        guard let response = try? JSONDecoder().decode(SyncPairResponse.self, from: payload),
+              let requestNonce = response.bluetoothRequestNonce,
+              let attempt = takePendingPairingAttempt(
+                for: peerDeviceId,
+                requestNonce: requestNonce
+              ) else {
+            return
         }
+        attempt.continuation.resume(returning: response)
     }
 
     /// Called by the response timeout to fail a still-pending pairing.
-    private func timeoutPairing(with peerDeviceId: String) {
-        if let cont = pendingPairContinuations.removeValue(forKey: peerDeviceId) {
-            cont.resume(throwing: MultipeerPairingError.responseTimeout)
+    private func timeoutPairing(with peerDeviceId: String, requestNonce: String) {
+        takePendingPairingAttempt(for: peerDeviceId, requestNonce: requestNonce)?
+            .continuation.resume(throwing: MultipeerPairingError.responseTimeout)
+    }
+
+    private func cancelPairing(with peerDeviceId: String, requestNonce: String) {
+        takePendingPairingAttempt(for: peerDeviceId, requestNonce: requestNonce)?
+            .continuation.resume(throwing: CancellationError())
+    }
+
+    private func takePendingPairingAttempt(
+        for peerDeviceId: String,
+        requestNonce: String
+    ) -> PendingBluetoothPairingAttempt? {
+        guard pendingPairContinuations[peerDeviceId]?.requestNonce == requestNonce else {
+            return nil
         }
+        return pendingPairContinuations.removeValue(forKey: peerDeviceId)
     }
 
     static func validateBluetoothPairingResponse(
@@ -1926,7 +1950,11 @@ public actor PeerManager {
             requestPairingProof: requestProof
         )
         pendingBluetoothPairingContexts[hostDeviceId] = pairingContext
-        defer { pendingBluetoothPairingContexts.removeValue(forKey: hostDeviceId) }
+        defer {
+            if pendingBluetoothPairingContexts[hostDeviceId]?.requestNonce == requestNonce {
+                pendingBluetoothPairingContexts.removeValue(forKey: hostDeviceId)
+            }
+        }
         let request = SyncPairRequest(
             deviceId: myDeviceId,
             deviceName: myDeviceName,
@@ -1941,17 +1969,32 @@ public actor PeerManager {
         let env = try JSONEncoder().encode(MPEnvelope(type: "pairRequest", payload: payload))
 
         // 3. Await the pairResponse (resumed by handlePairResponse), with a timeout.
-        let response: SyncPairResponse = try await withCheckedThrowingContinuation { cont in
-            // Register before sending so a fast response cannot beat the waiter.
-            pendingPairContinuations[hostDeviceId] = cont
-            guard mpManager.send(data: env, toPeer: hostDeviceId) else {
-                pendingPairContinuations.removeValue(forKey: hostDeviceId)?
-                    .resume(throwing: MultipeerPairingError.sendFailed)
-                return
+        let response: SyncPairResponse = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { cont in
+                // Register before sending so a fast response cannot beat the waiter.
+                pendingPairContinuations[hostDeviceId] = PendingBluetoothPairingAttempt(
+                    requestNonce: requestNonce,
+                    continuation: cont
+                )
+                guard mpManager.send(data: env, toPeer: hostDeviceId) else {
+                    takePendingPairingAttempt(for: hostDeviceId, requestNonce: requestNonce)?
+                        .continuation.resume(throwing: MultipeerPairingError.sendFailed)
+                    return
+                }
+                Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: 15_000_000_000)
+                    await self?.timeoutPairing(
+                        with: hostDeviceId,
+                        requestNonce: requestNonce
+                    )
+                }
             }
-            Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 15_000_000_000)
-                await self?.timeoutPairing(with: hostDeviceId)
+        } onCancel: {
+            Task {
+                await self.cancelPairing(
+                    with: hostDeviceId,
+                    requestNonce: requestNonce
+                )
             }
         }
         guard pendingBluetoothPairingContexts[hostDeviceId]?.requestNonce == requestNonce else {

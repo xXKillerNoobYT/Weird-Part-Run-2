@@ -95,6 +95,76 @@ private func authenticatedBluetoothPairingFixture(
     return (context, response)
 }
 
+private func bluetoothPairRequestPayload(
+    pairingCode: String,
+    hostDeviceId: String = "host",
+    peerDeviceId: String = "joiner",
+    peerName: String = "Joiner"
+) throws -> Data {
+    let client = SyncCrypto.generateKeyAgreementPair()
+    let nonce = SyncCrypto.bluetoothPairingRequestNonce()
+    let normalizedCode = try #require(SyncCrypto.normalizedPairingCode(pairingCode))
+    return try JSONEncoder().encode(SyncPairRequest(
+        deviceId: peerDeviceId,
+        deviceName: peerName,
+        pairingProof: SyncCrypto.bluetoothPairingProof(
+            normalizedCode: normalizedCode,
+            expectedHostDeviceId: hostDeviceId,
+            clientDeviceId: peerDeviceId,
+            clientPublicKeyB64: client.publicKey,
+            requestNonce: nonce
+        ),
+        platform: "ios",
+        bluetoothProtocolVersion: SyncCrypto.bluetoothPairingProtocolVersion,
+        bluetoothRequestNonce: nonce,
+        bluetoothExpectedHostDeviceId: hostDeviceId,
+        keyAgreementPublicKey: client.publicKey
+    ))
+}
+
+private func expectTrustSnapshot(
+    _ actual: PeerDeviceTrustSnapshot?,
+    equals expected: PeerDeviceTrustSnapshot?
+) throws {
+    let actual = try #require(actual)
+    let expected = try #require(expected)
+    #expect(actual.deviceName == expected.deviceName)
+    #expect(actual.platform == expected.platform)
+    #expect(actual.role == expected.role)
+    #expect(actual.certificate == expected.certificate)
+    #expect(actual.lastSeenAt == expected.lastSeenAt)
+    #expect(actual.lastSyncAt == expected.lastSyncAt)
+    #expect(actual.isTrusted == expected.isTrusted)
+    #expect(actual.isDeactivated == expected.isDeactivated)
+    #expect(actual.createdAt == expected.createdAt)
+}
+
+private func seedPriorTrust(
+    in db: AppDatabase,
+    peerDeviceId: String = "joiner"
+) async throws -> PeerDeviceTrustSnapshot {
+    try await db.writer.write { dbConn in
+        try dbConn.execute(
+            sql: """
+                INSERT INTO _device_registry (
+                    device_id, device_name, platform, role, certificate,
+                    last_seen_at, last_sync_at, is_trusted, is_deactivated, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+            arguments: [
+                peerDeviceId, "Prior Device", "legacy", "viewer", "prior-certificate",
+                "2026-06-01T01:02:03Z", "2026-06-02T04:05:06Z", 1, 1,
+                "2026-05-01T00:00:00Z",
+            ]
+        )
+    }
+    let snapshot = try ChangeTracker.capturePeerDeviceTrust(
+        db: db,
+        peerId: peerDeviceId
+    )
+    return try #require(snapshot)
+}
+
 @Suite("PeerManager Tests")
 struct PeerManagerTests {
 
@@ -1013,9 +1083,132 @@ struct PeerManagerTests {
         #expect(await pm.testPendingTransportOperationCount() == 0)
     }
 
+    @Test("A stale pairing timeout cannot remove a newer attempt for the same host")
+    func testStalePairingTimeoutDoesNotOwnReplacementAttempt() async throws {
+        let pm = PeerManager(db: try freshDB())
+        let firstNonce = SyncCrypto.bluetoothPairingRequestNonce()
+        let secondNonce = SyncCrypto.bluetoothPairingRequestNonce()
+        let firstTask = Task {
+            try await pm.testAwaitPairingTransport(
+                peerDeviceId: "host",
+                requestNonce: firstNonce
+            )
+        }
+        while await pm.testPendingPairingNonce(for: "host") != firstNonce {
+            await Task.yield()
+        }
+        try await pm.testResolvePairingTransport(
+            SyncPairResponse(
+                accepted: false,
+                serverDeviceId: "host",
+                companyId: "",
+                pairedAt: "",
+                bluetoothProtocolVersion: SyncCrypto.bluetoothPairingProtocolVersion,
+                bluetoothRequestNonce: firstNonce
+            ),
+            from: "host"
+        )
+        try await firstTask.value
+
+        let secondTask = Task {
+            try await pm.testAwaitPairingTransport(
+                peerDeviceId: "host",
+                requestNonce: secondNonce
+            )
+        }
+        while await pm.testPendingPairingNonce(for: "host") != secondNonce {
+            await Task.yield()
+        }
+
+        await pm.testTimeoutPairing(peerDeviceId: "host", requestNonce: firstNonce)
+        #expect(await pm.testPendingPairingNonce(for: "host") == secondNonce)
+        try await pm.testResolvePairingTransport(
+            SyncPairResponse(
+                accepted: false,
+                serverDeviceId: "host",
+                companyId: "",
+                pairedAt: "",
+                bluetoothProtocolVersion: SyncCrypto.bluetoothPairingProtocolVersion,
+                bluetoothRequestNonce: secondNonce
+            ),
+            from: "host"
+        )
+        try await secondTask.value
+        #expect(await pm.testPendingPairingNonce(for: "host") == nil)
+    }
+
+    @Test("Pairing task cancellation removes only its owned attempt")
+    func testPairingCancellationRemovesOwnedAttempt() async throws {
+        let pm = PeerManager(db: try freshDB())
+        let nonce = SyncCrypto.bluetoothPairingRequestNonce()
+        let task = Task {
+            try await pm.testAwaitPairingTransport(peerDeviceId: "host", requestNonce: nonce)
+        }
+        while await pm.testPendingPairingNonce(for: "host") != nonce {
+            await Task.yield()
+        }
+
+        task.cancel()
+        await #expect(throws: CancellationError.self) {
+            try await task.value
+        }
+        #expect(await pm.testPendingPairingNonce(for: "host") == nil)
+    }
+
+    @Test("Injected Bluetooth activation failure rolls back newly introduced trust by database readback")
+    func testBluetoothActivationFailureRollsBackNewTrustByDatabaseReadback() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+        try await pm.startPeerSync(deviceId: "host", deviceName: "Host", companyId: "company")
+        let payload = try bluetoothPairRequestPayload(pairingCode: try await pm.issuePairingCode())
+        let responses = PairResponseCollector()
+
+        #expect(try ChangeTracker.capturePeerDeviceTrust(db: db, peerId: "joiner") == nil)
+        await pm.processBluetoothPairRequest(
+            from: "joiner",
+            payload: payload,
+            injectActivationFailure: true
+        ) { response in
+            responses.append(response)
+            return true
+        }
+
+        #expect(responses.values.last?.accepted == true)
+        #expect(try ChangeTracker.capturePeerDeviceTrust(db: db, peerId: "joiner") == nil)
+        #expect(try await pm.isTrustedBluetoothPeer("joiner") == false)
+        #expect(await pm.testHostedSnapshotTokenAvailable(
+            try #require(responses.values.last?.bluetoothSnapshotToken),
+            for: "joiner"
+        ) == false)
+        await pm.stopPeerSync()
+    }
+
+    @Test("Injected Bluetooth activation failure preserves the exact prior row and token")
+    func testBluetoothActivationFailurePreservesPriorStateByDatabaseReadback() async throws {
+        let db = try freshDB()
+        let before = try await seedPriorTrust(in: db)
+        let pm = PeerManager(db: db)
+        try await pm.startPeerSync(deviceId: "host", deviceName: "Host", companyId: "company")
+        let priorToken = "prior-hosted-token"
+        await pm.testIssueHostedSnapshotToken(priorToken, for: "joiner")
+        let payload = try bluetoothPairRequestPayload(pairingCode: try await pm.issuePairingCode())
+
+        await pm.processBluetoothPairRequest(
+            from: "joiner",
+            payload: payload,
+            injectActivationFailure: true
+        ) { _ in true }
+
+        let after = try ChangeTracker.capturePeerDeviceTrust(db: db, peerId: "joiner")
+        try expectTrustSnapshot(after, equals: before)
+        #expect(await pm.testHostedSnapshotTokenAvailable(priorToken, for: "joiner"))
+        await pm.stopPeerSync()
+    }
+
     @Test("Undelivered Bluetooth pairing restores prior trust, token, and pairing code")
     func testUndeliveredBluetoothPairingRollsBack() async throws {
         let db = try freshDB()
+        let before = try await seedPriorTrust(in: db)
         let pm = PeerManager(db: db)
         try await pm.startPeerSync(deviceId: "host", deviceName: "Host", companyId: "company")
         let pairingCode = try await pm.issuePairingCode()
@@ -1047,8 +1240,11 @@ struct PeerManagerTests {
         }
 
         #expect(responses.values.last?.accepted == true)
-        #expect(try await pm.isTrustedBluetoothPeer("joiner") == false)
         #expect(await pm.testHostedSnapshotTokenAvailable(oldToken, for: "joiner"))
+        try expectTrustSnapshot(
+            ChangeTracker.capturePeerDeviceTrust(db: db, peerId: "joiner"),
+            equals: before
+        )
 
         await pm.processBluetoothPairRequest(from: "joiner", payload: payload) { response in
             responses.append(response)
@@ -1067,7 +1263,9 @@ struct PeerManagerTests {
 
     @Test("Bluetooth authenticator generation failure restores trust, token, and pairing offer")
     func testBluetoothAuthenticatorFailureRollsBackPreparation() async throws {
-        let pm = PeerManager(db: try freshDB())
+        let db = try freshDB()
+        let before = try await seedPriorTrust(in: db)
+        let pm = PeerManager(db: db)
         try await pm.startPeerSync(deviceId: "host", deviceName: "Host", companyId: "company")
         let pairingCode = try await pm.issuePairingCode()
         let normalizedCode = try #require(SyncCrypto.normalizedPairingCode(pairingCode))
@@ -1102,8 +1300,11 @@ struct PeerManagerTests {
         }
 
         #expect(responses.values.last?.accepted == false)
-        #expect(try await pm.isTrustedBluetoothPeer("joiner") == false)
         #expect(await pm.testHostedSnapshotTokenAvailable("prior-token", for: "joiner"))
+        try expectTrustSnapshot(
+            ChangeTracker.capturePeerDeviceTrust(db: db, peerId: "joiner"),
+            equals: before
+        )
 
         let validHost = SyncCrypto.generateKeyAgreementPair()
         await pm.testSetKeyAgreementIdentity(

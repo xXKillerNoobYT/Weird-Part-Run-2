@@ -1,6 +1,10 @@
 import Foundation
 import GRDB
 
+enum BluetoothPeerActivationError: Error {
+    case injectedFailureBeforeCommit
+}
+
 struct PeerDeviceTrustSnapshot: Sendable {
     let deviceName: String?
     let platform: String?
@@ -249,26 +253,67 @@ public enum ChangeTracker {
         platform: String? = nil,
         keyAgreementPublicKey: String? = nil
     ) throws {
-        let encodedKey = keyAgreementPublicKey.map { "x25519:\($0)" }
         try db.writer.write { dbConnection in
-            try dbConnection.execute(
-                sql: """
-                    INSERT INTO _device_registry (device_id, device_name, platform, certificate, last_seen_at, is_trusted)
-                    VALUES (?, ?, ?, ?, datetime('now'), CASE WHEN ? IS NOT NULL THEN 1 ELSE 0 END)
-                    ON CONFLICT(device_id)
-                    DO UPDATE SET device_name = ?,
-                                  platform = COALESCE(?, platform),
-                                  certificate = COALESCE(?, certificate),
-                                  is_trusted = CASE WHEN ? IS NOT NULL THEN 1 ELSE is_trusted END,
-                                  is_deactivated = CASE WHEN ? IS NOT NULL THEN 0 ELSE is_deactivated END,
-                                  last_seen_at = datetime('now')
-                    """,
-                arguments: [
-                    peerId, peerName, platform, encodedKey,
-                    encodedKey, peerName, platform, encodedKey, encodedKey, encodedKey,
-                ]
+            try registerPeerDevice(
+                dbConnection: dbConnection,
+                peerId: peerId,
+                peerName: peerName,
+                platform: platform,
+                keyAgreementPublicKey: keyAgreementPublicKey
             )
         }
+    }
+
+    /// Activate Bluetooth host trust inside one SQLite transaction. The injected
+    /// failure seam runs after the write but before commit so regressions can prove
+    /// that GRDB restores the exact prior row rather than relying on compensation.
+    static func activateBluetoothPeerTrust(
+        db: AppDatabase,
+        peerId: String,
+        peerName: String,
+        platform: String?,
+        keyAgreementPublicKey: String,
+        injectFailureBeforeCommit: Bool = false
+    ) throws {
+        try db.writer.write { dbConnection in
+            try registerPeerDevice(
+                dbConnection: dbConnection,
+                peerId: peerId,
+                peerName: peerName,
+                platform: platform,
+                keyAgreementPublicKey: keyAgreementPublicKey
+            )
+            if injectFailureBeforeCommit {
+                throw BluetoothPeerActivationError.injectedFailureBeforeCommit
+            }
+        }
+    }
+
+    private static func registerPeerDevice(
+        dbConnection: Database,
+        peerId: String,
+        peerName: String,
+        platform: String?,
+        keyAgreementPublicKey: String?
+    ) throws {
+        let encodedKey = keyAgreementPublicKey.map { "x25519:\($0)" }
+        try dbConnection.execute(
+            sql: """
+                INSERT INTO _device_registry (device_id, device_name, platform, certificate, last_seen_at, is_trusted)
+                VALUES (?, ?, ?, ?, datetime('now'), CASE WHEN ? IS NOT NULL THEN 1 ELSE 0 END)
+                ON CONFLICT(device_id)
+                DO UPDATE SET device_name = ?,
+                              platform = COALESCE(?, platform),
+                              certificate = COALESCE(?, certificate),
+                              is_trusted = CASE WHEN ? IS NOT NULL THEN 1 ELSE is_trusted END,
+                              is_deactivated = CASE WHEN ? IS NOT NULL THEN 0 ELSE is_deactivated END,
+                              last_seen_at = datetime('now')
+                """,
+            arguments: [
+                peerId, peerName, platform, encodedKey,
+                encodedKey, peerName, platform, encodedKey, encodedKey, encodedKey,
+            ]
+        )
     }
 
     static func capturePeerDeviceTrust(
