@@ -1,6 +1,6 @@
 # Sync Encryption and Bluetooth Snapshot Completion Integrity
 
-Status: Implemented, including transport-stop capability boundary, complete LAN pairing failure-state surfacing, and idempotent identity persistence fixes (WEI-4840, WEI-4847, WEI-4855, WEI-5179, WEI-5181, and WEI-5182; PR #1448; GitHub #385 and #1417); pending exact-head review/CI
+Status: Implemented, including transport-stop capability boundary, complete LAN/Bluetooth pairing key failure-state surfacing, and idempotent identity persistence fixes (WEI-4840, WEI-4847, WEI-4855, WEI-5179, WEI-5181, WEI-5182, and WEI-5188; PR #1448; GitHub #385 and #1417); pending exact-head review/CI
 Date: 2026-07-15
 Owner: CTO / Sync core
 Review lanes: SecurityAgent, non-author engineering review, GitHub Copilot PR reviewer
@@ -25,6 +25,7 @@ Current `main` silently downgrades negotiated LAN encryption when key derivation
 6. If the joiner's completion-time atomic apply fails, send `fullSyncApplied(succeeded:false)` before propagating the local error through the FIFO drain. The host consumes that negative acknowledgement immediately, removes the reservation, and records the failed transfer. It does not restore the old capability; an authorized retry requires a fresh pairing-issued capability.
 7. Make the protocol-critical platform identity write idempotent. If the add-first Keychain write reports `errSecDuplicateItem`, update the existing matching service/account item with the validated identity and this-device-only accessibility attributes. Any update failure remains visible as `keychainWriteFailed`; there is no ephemeral-key fallback or credential-policy weakening.
 8. Give LAN pairing one fail-closed UI transition after `.syncing` begins. Secure-identity load/persistence failures and every encrypted response verification failure (wrapper decode, key derivation, AES-GCM decrypt, response decode, or explicit rejection) must clear stale progress, publish `.error`, retain a user-readable retry message, and rethrow the original error unchanged.
+9. Validate the Bluetooth pairing response host key as base64-encoded 32-byte X25519 material before trusted-device registration, sync/company settings, or paired-device flags are persisted. Missing or malformed keys clear pairing progress, publish `.error`, and abort fail closed.
 
 ## Design
 
@@ -74,6 +75,7 @@ The existing `requestFullSyncOverMultipeer` API remains throwing. Send, decode, 
 
 - Missing/malformed/unauthorized key exchange, invalid keys, and AES-GCM failures throw; no plaintext downgrade or ciphertext-as-JSON fallback.
 - A pairing response with a missing or malformed shop key clears active progress and leaves `IOSSyncManager` in a visible `.error` state before throwing.
+- A Bluetooth pairing response with a missing, malformed, or wrong-length host key is rejected before trusted-device/settings persistence; valid 32-byte X25519 public keys preserve the existing success path.
 - Secure-identity acquisition plus encrypted pairing wrapper decode, shared-key derivation, AES-GCM decrypt, accepted-response decode, and explicit rejection all clear active progress and leave `IOSSyncManager` in a visible `.error` state while preserving the original thrown error.
 - LAN pairing never sends the one-time code in plaintext; accepted responses require the pairing-code-authenticated client/server X25519 transcript.
 - Device X25519 identity survives `PeerManager`/server restart through secure platform storage or deterministic injected test storage, never through normal sync settings.

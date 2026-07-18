@@ -635,6 +635,14 @@ final class IOSSyncManager {
             platform: "iOS"
         )
 
+        let hostKey: String
+        do {
+            hostKey = try Self.validatedBluetoothHostKey(response.serverKeyAgreementPublicKey)
+        } catch {
+            surfaceBluetoothPairingFailure(error)
+            throw error
+        }
+
         syncProgressMessage = "Registering verified device…"
         syncProgressPercent = 0.3
 
@@ -643,7 +651,7 @@ final class IOSSyncManager {
             peerId: response.serverDeviceId,
             peerName: hostName.isEmpty ? "Paired Device" : hostName,
             platform: "ios",
-            keyAgreementPublicKey: response.serverKeyAgreementPublicKey
+            keyAgreementPublicKey: hostKey
         )
         if let service = settingsService {
             try service.upsertSettingsMap([
@@ -664,6 +672,23 @@ final class IOSSyncManager {
 
         syncProgressMessage = "Paired over Bluetooth."
         syncProgressPercent = 0.4
+    }
+
+    static func validatedBluetoothHostKey(_ encodedKey: String?) throws -> String {
+        guard let encodedKey,
+              Data(base64Encoded: encodedKey)?.count == 32 else {
+            throw SyncError.pairingVerificationFailed(
+                "The Bluetooth host did not provide a valid 32-byte X25519 public key."
+            )
+        }
+        return encodedKey
+    }
+
+    func surfaceBluetoothPairingFailure(_ error: Error) {
+        syncStatus = .error
+        syncProgressMessage = nil
+        syncProgressPercent = 0
+        errorMessage = error.localizedDescription
     }
 
     /// Enable or disable Bluetooth/Multipeer sync.
