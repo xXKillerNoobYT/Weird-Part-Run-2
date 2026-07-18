@@ -869,18 +869,24 @@ struct IOSAIAssistantPanel: View {
                     assistantResponse: response.text
                 )
                 pendingFallbackSave = pendingSave
+                let fallbackPersistenceRequestID = helpHandoffReadiness.beginFallbackPersistence()
                 await persistFallbackTurn(pendingSave)
+                _ = helpHandoffReadiness.finishFallbackPersistence(fallbackPersistenceRequestID)
             }
             isProcessing = false
+            consumePendingHelpRequestIfReady()
         }
     }
 
     private func retryFallbackSave() {
         guard let pendingFallbackSave, !isProcessing else { return }
         isProcessing = true
+        let fallbackPersistenceRequestID = helpHandoffReadiness.beginFallbackPersistence()
         Task {
             await persistFallbackTurn(pendingFallbackSave)
+            _ = helpHandoffReadiness.finishFallbackPersistence(fallbackPersistenceRequestID)
             isProcessing = false
+            consumePendingHelpRequestIfReady()
         }
     }
 
@@ -959,9 +965,11 @@ struct IOSAIAssistantPanel: View {
         }
 
         query = ""
-        if isProcessing {
+        if isProcessing || pendingFallbackSave != nil {
             conversationRevision &+= 1
         }
+        pendingFallbackSave = nil
+        conversationPersistenceError = nil
         isProcessing = false
 
         let response: String
@@ -3038,6 +3046,8 @@ struct AIHelpPersistenceCompletion: Equatable, Sendable {
 struct AIHelpHandoffReadinessCoordinator {
     private(set) var isReadyForHelpHandoff = false
     private var initializationRequestID: UInt = 0
+    private var fallbackPersistenceRequestID: UInt = 0
+    private var activeFallbackPersistenceRequestID: UInt?
     private var queuedHelpRequestID: String?
 
     mutating func beginInitialization() -> UInt {
@@ -3061,8 +3071,21 @@ struct AIHelpHandoffReadinessCoordinator {
         queuedHelpRequestID = id
     }
 
+    mutating func beginFallbackPersistence() -> UInt {
+        fallbackPersistenceRequestID &+= 1
+        activeFallbackPersistenceRequestID = fallbackPersistenceRequestID
+        return fallbackPersistenceRequestID
+    }
+
+    mutating func finishFallbackPersistence(_ requestID: UInt) -> Bool {
+        guard activeFallbackPersistenceRequestID == requestID else { return false }
+        activeFallbackPersistenceRequestID = nil
+        return true
+    }
+
     mutating func consumeQueuedHelpRequest() -> String? {
-        guard isReadyForHelpHandoff else { return nil }
+        guard isReadyForHelpHandoff,
+              activeFallbackPersistenceRequestID == nil else { return nil }
         defer { queuedHelpRequestID = nil }
         return queuedHelpRequestID
     }
