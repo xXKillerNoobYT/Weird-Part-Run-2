@@ -245,7 +245,7 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
             return alertButton
         }
 
-        let matches = app.buttons.matching(identifier: name)
+        let matches = app.buttons.matching(NSPredicate(format: "identifier == %@ OR label == %@", name, name))
         for index in 0..<matches.count {
             let candidate = matches.element(boundBy: index)
             if candidate.isHittable {

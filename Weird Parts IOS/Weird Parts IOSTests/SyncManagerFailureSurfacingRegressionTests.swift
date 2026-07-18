@@ -67,6 +67,25 @@ final class SyncManagerFailureSurfacingRegressionTests: XCTestCase {
                 managerSource.contains("context: \"load unreviewed sync conflicts before marking reviewed\""),
             "Accept All must fail visibly if the conflict list cannot be read before writes start."
         )
+        XCTAssertTrue(
+            reviewSource.contains("Button(\"Accept Auto-Resolved\")") &&
+                reviewSource.contains("if !autoResolvableConflicts.isEmpty"),
+            "The bulk action should only appear when auto-resolvable conflicts remain, and its label must reflect that hard/critical rows stay pending."
+        )
+        XCTAssertFalse(
+            reviewSource.contains("Button(\"Accept All\")"),
+            "The review page should not advertise a misleading Accept All action once hard/critical conflicts require explicit human choice."
+        )
+        XCTAssertFalse(
+            reviewSource.contains("conflict.id ?? -1") || reviewSource.contains("aiResolutions[conflict.id ?? 0]"),
+            "Review state should not collapse nil-id conflicts onto shared sentinel keys."
+        )
+        XCTAssertTrue(
+            reviewSource.contains("Task { @MainActor in") &&
+                reviewSource.contains("await Task.yield()") &&
+                reviewSource.contains(".alert(\n                Text(activeAlert?.title ?? \"Sync conflict action\")"),
+            "Critical confirmations should stay on MainActor and use the Text-title alert overload for dynamic titles."
+        )
     }
 
     private static func repoRoot(file: StaticString = #filePath) -> URL {

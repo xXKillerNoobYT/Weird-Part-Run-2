@@ -823,11 +823,14 @@ final class AppCore: ObservableObject {
 
     enum UITestBootstrapError: LocalizedError {
         case partCategoryMissing
+        case fixturePartMissing(String)
 
         var errorDescription: String? {
             switch self {
             case .partCategoryMissing:
                 "UI test bootstrap failed because the required active part category fixture is missing."
+            case .fixturePartMissing(let code):
+                "UI test bootstrap failed because the required active part fixture \(code) is missing."
             }
         }
     }
@@ -962,10 +965,12 @@ final class AppCore: ObservableObject {
                 // synced column. The previous synthetic parts #2001/unit_cost
                 // pair matched neither, so choosing the local loser failed while
                 // choosing the already-applied remote winner appeared to work.
-                let conflictPartId = try Int64.fetchOne(
+                guard let conflictPartId = try Int64.fetchOne(
                     dbConn,
                     sql: "SELECT id FROM parts WHERE code = 'UITEST-QA-CONDUIT' AND deleted_at IS NULL"
-                )!
+                ) else {
+                    throw UITestBootstrapError.fixturePartMissing("UITEST-QA-CONDUIT")
+                }
                 try dbConn.execute(
                     sql: "UPDATE parts SET company_cost_price = 21.90 WHERE id = ?",
                     arguments: [conflictPartId]

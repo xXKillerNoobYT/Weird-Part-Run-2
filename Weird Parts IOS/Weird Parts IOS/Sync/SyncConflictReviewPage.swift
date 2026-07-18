@@ -19,6 +19,13 @@ struct SyncConflictReviewPage: View {
     private struct PendingCriticalResolution {
         let conflict: ConflictLogEntry
         let keepLocal: Bool
+
+        var stableConflictKey: String {
+            if let id = conflict.id {
+                return String(id)
+            }
+            return "\(conflict.tableName)-\(conflict.recordId)-\(conflict.fieldName)"
+        }
     }
 
     private enum ActiveAlert: Identifiable {
@@ -28,7 +35,7 @@ struct SyncConflictReviewPage: View {
         var id: String {
             switch self {
             case .critical(let decision):
-                return "critical-\(decision.conflict.id ?? -1)-\(decision.keepLocal)"
+                return "critical-\(decision.stableConflictKey)-\(decision.keepLocal)"
             case .actionError:
                 return "action-error"
             }
@@ -43,6 +50,10 @@ struct SyncConflictReviewPage: View {
     }
 
     private var syncManager: IOSSyncManager { appCore.syncManager }
+
+    private var autoResolvableConflicts: [ConflictLogEntry] {
+        conflicts.filter { SyncConflictClassifier.isAutoResolvable(SyncConflictClassifier.classify($0)) }
+    }
 
     var body: some View {
         NavigationStack {
@@ -66,9 +77,9 @@ struct SyncConflictReviewPage: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
                 }
-                if !conflicts.isEmpty {
+                if !autoResolvableConflicts.isEmpty {
                     ToolbarItem(placement: .primaryAction) {
-                        Button("Accept All") {
+                        Button("Accept Auto-Resolved") {
                             if syncManager.markAllConflictsReviewed() {
                                 loadConflicts()
                             } else {
@@ -79,7 +90,7 @@ struct SyncConflictReviewPage: View {
                 }
             }
             .alert(
-                activeAlert?.title ?? "Sync conflict action",
+                Text(activeAlert?.title ?? "Sync conflict action"),
                 isPresented: Binding(
                     get: { activeAlert != nil },
                     set: { if !$0 { activeAlert = nil } }
@@ -93,7 +104,8 @@ struct SyncConflictReviewPage: View {
                     }
                     Button("Confirm", role: .destructive) {
                         activeAlert = nil
-                        DispatchQueue.main.async {
+                        Task { @MainActor in
+                            await Task.yield()
                             withAnimation {
                                 resolve(decision.conflict, keepLocal: decision.keepLocal)
                             }
@@ -187,7 +199,7 @@ struct SyncConflictReviewPage: View {
 
             case .hard:
                 // Hard: show AI merge button or AI resolution if available
-                if let resolution = aiResolutions[conflict.id ?? 0] {
+                if let conflictId = conflict.id, let resolution = aiResolutions[conflictId] {
                     AIConflictResolutionView(resolution: resolution) { selectedValue in
                         withAnimation { resolveText(conflict, selectedValue: selectedValue) }
                     }

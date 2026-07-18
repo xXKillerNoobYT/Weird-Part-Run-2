@@ -212,6 +212,25 @@ final class PanelQualityInstructionBannerRegressionTests: XCTestCase {
         }
     }
 
+    func testUITestBootstrapGuardsFixturePartLookupAndScreenshotButtonsMatchLabelOrIdentifier() throws {
+        let appCoreSource = try Self.readAppSource(named: "AppCore.swift")
+        let uiTestSource = try Self.readUITestSource(named: "ConflictScreenshotCaptureUITests.swift")
+
+        XCTAssertTrue(
+            appCoreSource.contains("case fixturePartMissing(String)") &&
+                appCoreSource.contains("throw UITestBootstrapError.fixturePartMissing(\"UITEST-QA-CONDUIT\")"),
+            "UI-test fixture seeding should fail with a controlled bootstrap error instead of force-unwrapping a missing part id."
+        )
+        XCTAssertFalse(
+            appCoreSource.contains("let conflictPartId = try Int64.fetchOne"),
+            "The UITEST-QA-CONDUIT lookup must not force-unwrap."
+        )
+        XCTAssertTrue(
+            uiTestSource.contains("identifier == %@ OR label == %@"),
+            "Critical confirmation buttons should be discoverable by either accessibility identifier or visible label."
+        )
+    }
+
     @discardableResult
     private func insertConflict(
         db: AppDatabase,
@@ -268,6 +287,24 @@ final class PanelQualityInstructionBannerRegressionTests: XCTestCase {
         try String(
             contentsOf: projectRoot()
                 .appendingPathComponent("Sync")
+                .appendingPathComponent(filename),
+            encoding: .utf8
+        )
+    }
+
+    private static func readAppSource(named filename: String) throws -> String {
+        try String(
+            contentsOf: projectRoot()
+                .appendingPathComponent("App")
+                .appendingPathComponent(filename),
+            encoding: .utf8
+        )
+    }
+
+    private static func readUITestSource(named filename: String) throws -> String {
+        try String(
+            contentsOf: projectRoot(file: #filePath)
+                .appendingPathComponent("Weird Parts IOSUITests")
                 .appendingPathComponent(filename),
             encoding: .utf8
         )
