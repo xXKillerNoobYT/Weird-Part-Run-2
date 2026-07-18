@@ -35,15 +35,23 @@ The executable preservation case is a found `.job` result when `.po` is expected
 - Scan errors continue to take precedence over result feedback.
 - Not-found results remain retryable and retain their code in the message.
 - Matching found results continue through the existing duplicate-delivery gate, dismiss once, and invoke the callback once.
-- Wrong-type results remain visible as orange warnings and do not dismiss.
+- Wrong-type results remain visible as orange warnings and do not dismiss. Repeated camera delivery of the same found mismatch is suppressed until a different payload is accepted, preventing lookup and announcement churn while the code remains in frame.
+- Return-key submission and both Look Up buttons share the same manual-entry gate: blank input and submissions made while a lookup is active are ignored without clearing the typed code.
 - Cancel continues to dismiss without invoking the callback.
 - Camera support and scanner lifecycle behavior are unchanged.
+
+## Current-head review disposition
+
+- Completion ordering and duplicate suppression move to focused runtime helpers/tests. One normalized source-shape assertion remains for the actor-isolation compiler regression that requires the view call site to enter `MainActor.run`.
+- The not-found/title fallback finding is rejected as already covered by the service contract: `QRAutoFillResult.code` is non-optional, and the title derivation ends in `?? result.code`. A code-only not-found response therefore always stores both a title and result code and renders `Not found: <code>`.
+- Found results, including wrong-type results, record the last accepted found payload. Only the immediately repeated found payload is suppressed; accepting another payload clears that suppression. Not-found and failed lookups remain retryable.
 
 ## Acceptance and verification
 
 - `QRScanSheet` contains no mutable `@State typeMismatch`.
 - Visible and accessibility result copy both consume the same `QRScanFeedback.message`.
 - `QRScanSheetRegressionTests` executes the `.job`/`.po` mismatch and exact-message assertion.
+- Runtime regressions prove completion callback ordering, in-flight manual-submit rejection without input loss, matching completion deduplication, consecutive found-mismatch suppression, and not-found/failure retryability.
 - Focused regression tests pass on the local Mac.
 - `git diff --check` passes, and the committed worktree is clean.
 - Patch remains limited to `QRScanSheet.swift`, `QRScanSheetRegressionTests.swift`, and this plan.

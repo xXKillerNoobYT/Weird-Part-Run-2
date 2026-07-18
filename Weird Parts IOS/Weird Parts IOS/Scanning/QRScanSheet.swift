@@ -10,18 +10,27 @@ import VisionKit
 struct QRScanDeliveryGate {
     private(set) var activePayload: String?
     private(set) var completedPayload: String?
+    private(set) var lastFoundPayload: String?
 
     var isProcessing: Bool { activePayload != nil }
 
     mutating func claim(_ payload: String) -> Bool {
-        guard activePayload == nil, completedPayload != payload else { return false }
+        guard activePayload == nil,
+              completedPayload != payload,
+              lastFoundPayload != payload else { return false }
         activePayload = payload
+        lastFoundPayload = nil
         return true
     }
 
-    mutating func finish(_ payload: String, shouldComplete: Bool) -> Bool {
+    mutating func finish(
+        _ payload: String,
+        isFound: Bool,
+        shouldComplete: Bool
+    ) -> Bool {
         guard activePayload == payload else { return false }
         activePayload = nil
+        lastFoundPayload = isFound ? payload : nil
         guard shouldComplete, completedPayload != payload else { return false }
         completedPayload = payload
         return true
@@ -30,7 +39,23 @@ struct QRScanDeliveryGate {
     mutating func fail(_ payload: String) {
         if activePayload == payload {
             activePayload = nil
+            lastFoundPayload = nil
         }
+    }
+}
+
+enum QRScanManualSubmissionGate {
+    static func code(from rawCode: String, isProcessing: Bool) -> String? {
+        guard !isProcessing else { return nil }
+        return rawCode.normalizedRequiredText
+    }
+}
+
+@MainActor
+enum QRScanCompletionDispatcher {
+    static func deliver(dismiss: () -> Void, onResult: () -> Void) {
+        dismiss()
+        onResult()
     }
 }
 
@@ -341,7 +366,10 @@ struct QRScanSheet: View {
 
     // MARK: - Processing
     private func processManualEntry() {
-        guard let code = manualCode.normalizedRequiredText else { return }
+        guard let code = QRScanManualSubmissionGate.code(
+            from: manualCode,
+            isProcessing: isProcessing
+        ) else { return }
         Task {
             await processPayload(code)
             await MainActor.run { manualCode = "" }
@@ -391,6 +419,7 @@ struct QRScanSheet: View {
             await MainActor.run {
                 let shouldComplete = deliveryGate.finish(
                     payload,
+                    isFound: result.isFound,
                     shouldComplete: shouldAutoComplete
                 )
                 resultTitle = title
@@ -401,8 +430,10 @@ struct QRScanSheet: View {
                 // Every result callback mutates parent SwiftUI state. Keep the
                 // callback and dismissal in one MainActor transaction.
                 if shouldComplete {
-                    dismiss()
-                    onResult(result)
+                    QRScanCompletionDispatcher.deliver(
+                        dismiss: { dismiss() },
+                        onResult: { onResult(result) }
+                    )
                 }
             }
         } catch {

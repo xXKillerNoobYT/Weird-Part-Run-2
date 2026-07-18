@@ -4,36 +4,33 @@ import WiredPartCore
 
 @MainActor
 final class QRScanSheetRegressionTests: XCTestCase {
-    func testScanResultCallbackRunsInsideMainActorDismissBlock() throws {
+    func testScanResultCallbackRunsAfterDismissOnMainActor() throws {
+        var events: [String] = []
+        QRScanCompletionDispatcher.deliver(
+            dismiss: { events.append("dismiss") },
+            onResult: { events.append("result") }
+        )
+
+        XCTAssertEqual(events, ["dismiss", "result"])
+
+        // Keep one source-shape check for the actor-isolation regression: the
+        // production call site, not only the helper, must enter MainActor.run.
         let source = try Self.qrScanSheetSource()
         let normalized = normalizedSource(source)
-
         XCTAssertTrue(
-            normalized.contains("awaitMainActor.run{"),
-            "QRScanSheet should use MainActor.run for result-state and dismissal updates."
-        )
-        XCTAssertTrue(
-            normalized.contains("ifshouldComplete{dismiss()onResult(result)}"),
-            "QRScanSheet must invoke onResult(result) in the same MainActor block as dismiss()."
-        )
-        XCTAssertFalse(
-            normalized.contains("awaitMainActor.run{dismiss()}onResult(result)"),
-            "QRScanSheet must not invoke the parent state callback after leaving MainActor."
+            normalized.contains("awaitMainActor.run{letshouldComplete=deliveryGate.finish(")
+                && normalized.contains("ifshouldComplete{QRScanCompletionDispatcher.deliver("),
+            "QRScanSheet must dispatch completion from its MainActor result transaction."
         )
     }
 
-    func testDuplicateScanGuardPreventsOverlappingProcessing() throws {
-        let source = try Self.qrScanSheetSource()
-        let normalized = normalizedSource(source)
+    func testDuplicateScanGuardPreventsOverlappingProcessing() {
+        var gate = QRScanDeliveryGate()
 
-        XCTAssertTrue(
-            normalized.contains("letshouldSkip=awaitMainActor.run{guarddeliveryGate.claim(payload)else{returntrue}"),
-            "QRScanSheet should claim its processing slot on MainActor before async lookup work."
-        )
-        XCTAssertTrue(
-            normalized.contains("ifshouldSkip{return}"),
-            "Overlapping scans should return without starting another lookup."
-        )
+        XCTAssertTrue(gate.claim("PO-42"))
+        XCTAssertFalse(gate.claim("PO-42"))
+        XCTAssertFalse(gate.claim("PO-43"))
+        XCTAssertTrue(gate.isProcessing)
     }
 
     func testDeliveryGateInvokesCompletionOnceForDuplicatePayload() {
@@ -43,7 +40,7 @@ final class QRScanSheetRegressionTests: XCTestCase {
 
         for _ in 0..<2 {
             guard gate.claim(payload) else { continue }
-            if gate.finish(payload, shouldComplete: true) {
+            if gate.finish(payload, isFound: true, shouldComplete: true) {
                 callbackCount += 1
             }
         }
@@ -55,14 +52,32 @@ final class QRScanSheetRegressionTests: XCTestCase {
         XCTAssertEqual(completedPayload, payload)
     }
 
-    func testDeliveryGateReleasesMismatchAndFailureForRetry() {
+    func testDeliveryGateSuppressesConsecutiveFoundMismatchButRetriesAfterAnotherResult() {
         var gate = QRScanDeliveryGate()
 
         XCTAssertTrue(gate.claim("JOB-1"))
-        XCTAssertFalse(gate.finish("JOB-1", shouldComplete: false))
-        XCTAssertTrue(gate.claim("JOB-1"), "A wrong-type or not-found result must remain retryable.")
+        XCTAssertFalse(gate.finish("JOB-1", isFound: true, shouldComplete: false))
+        XCTAssertFalse(gate.claim("JOB-1"), "A consecutive found mismatch must be suppressed.")
+
+        XCTAssertTrue(gate.claim("MISSING-1"))
+        XCTAssertFalse(gate.finish("MISSING-1", isFound: false, shouldComplete: false))
+        XCTAssertTrue(gate.claim("MISSING-1"), "A not-found result must remain retryable.")
+        XCTAssertFalse(gate.finish("MISSING-1", isFound: false, shouldComplete: false))
+        XCTAssertTrue(gate.claim("JOB-1"), "A different accepted payload must release found suppression.")
         gate.fail("JOB-1")
         XCTAssertTrue(gate.claim("JOB-1"), "A failed lookup must release the processing slot.")
+    }
+
+    func testManualSubmissionGatePreservesInputWhileProcessing() {
+        XCTAssertNil(
+            QRScanManualSubmissionGate.code(from: "PO-42", isProcessing: true),
+            "Return-key submission must no-op while a lookup is active."
+        )
+        XCTAssertEqual(
+            QRScanManualSubmissionGate.code(from: "  PO-42  ", isProcessing: false),
+            "PO-42"
+        )
+        XCTAssertNil(QRScanManualSubmissionGate.code(from: "   ", isProcessing: false))
     }
 
     func testManualFallbackAndCameraBottomReuseOneStatusView() throws {
@@ -151,6 +166,7 @@ final class QRScanSheetRegressionTests: XCTestCase {
 
     func testNotFoundWithExpectedTypeKeepsNotFoundMessageAndIsNotMismatch() throws {
         let source = try Self.qrScanSheetSource()
+        let normalized = normalizedSource(source)
         let code = "MANUAL-404"
         let feedback = QRScanFeedback(
             isFound: false,
@@ -163,29 +179,25 @@ final class QRScanSheetRegressionTests: XCTestCase {
         XCTAssertFalse(feedback.typeMismatch)
         XCTAssertEqual(feedback.message, "Not found: MANUAL-404")
         XCTAssertTrue(
-            source.contains("let shouldAutoComplete = result.isFound\n                && (expectedType == nil || result.entityType == expectedType)"),
+            normalized.contains("letshouldAutoComplete=result.isFound&&(expectedType==nil||result.entityType==expectedType)"),
             "Only found matching results may auto-complete."
+        )
+        XCTAssertTrue(
+            normalized.contains("??result.fields[\"code\"]??result.code"),
+            "A code-only not-found result must always produce a non-nil display title."
         )
     }
 
-    func testMatchingSuccessUsesSingleMainActorCompletionPath() throws {
-        let source = try Self.qrScanSheetSource()
-        let processPayload = try Self.methodBody(named: "processPayload", in: source)
+    func testMatchingSuccessUsesSingleCompletionPath() {
+        var gate = QRScanDeliveryGate()
+        var completionCount = 0
 
-        XCTAssertTrue(
-            processPayload.contains("guard deliveryGate.claim(payload) else { return true }")
-                && processPayload.contains("if shouldSkip { return }"),
-            "QR payload processing must atomically claim the delivery gate."
-        )
-        XCTAssertTrue(
-            processPayload.contains("let shouldAutoComplete = result.isFound\n                && (expectedType == nil || result.entityType == expectedType)"),
-            "Only found results matching the expected type may auto-complete."
-        )
-        XCTAssertTrue(
-            processPayload.contains("if shouldComplete {\n                    dismiss()\n                    onResult(result)\n                }"),
-            "Matching success should dismiss and invoke the callback from one MainActor branch."
-        )
-        XCTAssertEqual(processPayload.components(separatedBy: "onResult(result)").count - 1, 1)
+        XCTAssertTrue(gate.claim("PO-42"))
+        if gate.finish("PO-42", isFound: true, shouldComplete: true) {
+            completionCount += 1
+        }
+        XCTAssertFalse(gate.claim("PO-42"))
+        XCTAssertEqual(completionCount, 1)
     }
 
     func testCancelDoesNotInvokeCallbackAndManualFieldsAreNamedQRCode() throws {
