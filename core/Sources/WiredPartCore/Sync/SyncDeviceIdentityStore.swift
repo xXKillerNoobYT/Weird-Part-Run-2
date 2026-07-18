@@ -149,9 +149,28 @@ public final class PlatformSyncDeviceIdentityStore: SyncDeviceIdentityStoring, @
         query[kSecValueData as String] = data
         query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
 
-        let status = SecItemAdd(query as CFDictionary, nil)
-        guard status == errSecSuccess else {
-            throw SyncIdentityStoreError.keychainWriteFailed(Int32(status))
+        let addStatus = SecItemAdd(query as CFDictionary, nil)
+        try Self.completeKeychainWrite(addStatus: addStatus) {
+            let attributes: [String: Any] = [
+                kSecValueData as String: data,
+                kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            ]
+            return SecItemUpdate(
+                keychainQuery(deviceId: deviceId) as CFDictionary,
+                attributes as CFDictionary
+            )
+        }
+    }
+
+    /// Completes an add-first Keychain write, replacing a matching item when one already exists.
+    /// Internal so tests can exercise the duplicate-item branch without mutating the host Keychain.
+    static func completeKeychainWrite(
+        addStatus: OSStatus,
+        updateExisting: () -> OSStatus
+    ) throws {
+        let finalStatus = addStatus == errSecDuplicateItem ? updateExisting() : addStatus
+        guard finalStatus == errSecSuccess else {
+            throw SyncIdentityStoreError.keychainWriteFailed(Int32(finalStatus))
         }
     }
     #endif

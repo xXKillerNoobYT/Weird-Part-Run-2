@@ -1,6 +1,6 @@
 # Sync Encryption and Bluetooth Snapshot Completion Integrity
 
-Status: Implemented, including transport-stop capability boundary and pairing-error-state review fixes (WEI-4840, WEI-4847, WEI-4855, and WEI-5179; PR #1448; GitHub #385 and #1417); pending exact-head review/CI
+Status: Implemented, including transport-stop capability boundary, pairing-error-state review, and idempotent identity persistence fixes (WEI-4840, WEI-4847, WEI-4855, WEI-5179, and WEI-5181; PR #1448; GitHub #385 and #1417); pending exact-head review/CI
 Date: 2026-07-15
 Owner: CTO / Sync core
 Review lanes: SecurityAgent, non-author engineering review, GitHub Copilot PR reviewer
@@ -23,6 +23,7 @@ Current `main` silently downgrades negotiated LAN encryption when key derivation
 4. Fail closed in both LAN directions: outbound sync requires successful key negotiation and AES-GCM, while the server rejects plaintext, unpaired device identities, arbitrary sender keys, and payload/header device-id mismatches. Pairing persists the peer's X25519 public key in the device registry; current trust and deactivation state are checked on every request. LAN pairing itself uses an ephemeral X25519 key and returns the accepted pairing payload only inside an AES-GCM encrypted wrapper; plaintext accepted responses are invalid.
 5. Bind Bluetooth snapshot authorization to the successful pairing session with a random capability token, in addition to requiring a trusted and non-deactivated device registry entry. Reserve the token before transfer to prevent replay/concurrent snapshot duplication. A token is restored only when snapshot batch transfer fails before completion is sent. Once completion is attempted, the token remains consumed even when completion delivery or the later durable-apply acknowledgement fails or times out, preventing replay after rows may have reached the joiner.
 6. If the joiner's completion-time atomic apply fails, send `fullSyncApplied(succeeded:false)` before propagating the local error through the FIFO drain. The host consumes that negative acknowledgement immediately, removes the reservation, and records the failed transfer. It does not restore the old capability; an authorized retry requires a fresh pairing-issued capability.
+7. Make the protocol-critical platform identity write idempotent. If the add-first Keychain write reports `errSecDuplicateItem`, update the existing matching service/account item with the validated identity and this-device-only accessibility attributes. Any update failure remains visible as `keychainWriteFailed`; there is no ephemeral-key fallback or credential-policy weakening.
 
 ## Design
 
@@ -43,6 +44,8 @@ Pairing is the only bootstrap exception to prior trust. The joiner keeps the man
 The accepted response key is derived from the X25519 shared secret with the pairing-code digest as HKDF salt and a domain-separated transcript containing both client and server X25519 public keys. The response also authenticates those identities as AES-GCM AAD. A spoof server that does not know the one-time code cannot produce a decryptable accepted response, and a captured proof cannot be replayed after the host consumes the pairing code once.
 
 Each device's own X25519 identity is persistent across `PeerManager` and LAN server restarts. Production uses platform secure storage (Keychain where available) with a SwiftPM-compatible fallback for test hosts; tests can inject deterministic in-memory identities. Private X25519 keys are never stored in normal SQLite sync settings.
+
+The Keychain writer uses add-first persistence so a clean install creates the item with the intended accessibility class. A duplicate add is completed with `SecItemUpdate` against the same class/service/account/synchronizable match query. The duplicate branch is covered through an internal status seam so SwiftPM tests can prove update success and update-error propagation without reading or mutating a developer machine's real Keychain.
 
 After pairing, `/sync/key`, `/sync/push`, and `/sync/pull` bind `X-Device-ID` and the advertised sender key to the active trusted registry record. Missing or partial encryption headers, arbitrary keys, deactivated peers, request-body device mismatches, and wrong-company requests fail before JSON decoding, sync reads, or mutations. Discovery without a pairing-bound key may refresh metadata but never creates trust or reactivates a revoked peer.
 
@@ -70,6 +73,7 @@ The existing `requestFullSyncOverMultipeer` API remains throwing. Send, decode, 
 - A pairing response with a missing or malformed shop key clears active progress and leaves `IOSSyncManager` in a visible `.error` state before throwing.
 - LAN pairing never sends the one-time code in plaintext; accepted responses require the pairing-code-authenticated client/server X25519 transcript.
 - Device X25519 identity survives `PeerManager`/server restart through secure platform storage or deterministic injected test storage, never through normal sync settings.
+- Duplicate Keychain identity writes update the existing matching item; failed updates surface the exact OSStatus through `keychainWriteFailed` rather than rotating silently or continuing with an unpersisted identity.
 - Encrypted LAN push/pull rejects exact replay before a second read or mutation, including after restart and beyond the former seven-day retention horizon; rejects cross-endpoint/direction substitution through AAD; and binds encrypted responses to the originating request id.
 - Host table enumeration, page read, row conversion, batch encoding, batch send, and completion-send failures cannot produce a successful transfer result.
 - Joiner processes FIFO batches serially and only completes after prior database application; completion-time apply failure sends a negative acknowledgement before throwing, immediately releases the host reservation, leaves the old capability consumed, and permits only a freshly paired authorized retry.
