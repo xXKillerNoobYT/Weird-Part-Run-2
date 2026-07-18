@@ -59,6 +59,8 @@ final class AIFallbackPersistenceRegressionTests: XCTestCase {
         XCTAssertTrue(persist.contains("pendingSave.conversationRevision == conversationRevision"))
         XCTAssertTrue(persist.contains("aiService.stageLocalConversation("))
         XCTAssertTrue(persist.contains("ownerUserId: ownerUserId"))
+        XCTAssertTrue(persist.contains("AIFallbackPersistenceRetryDecision.resolve("))
+        XCTAssertTrue(persist.contains("case .saved:"))
         XCTAssertTrue(persist.contains("Tap Retry Save"))
         XCTAssertTrue(assistant.contains("Button(\"Retry Save\")"))
         XCTAssertTrue(assistant.contains("frame(minHeight: 44)"))

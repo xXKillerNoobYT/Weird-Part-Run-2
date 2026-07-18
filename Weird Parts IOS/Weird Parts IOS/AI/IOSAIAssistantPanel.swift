@@ -9,6 +9,24 @@ enum AIDisplayMode: String, Sendable {
     case overlay // Floating panel, app remains navigable
 }
 
+enum AIFallbackPersistenceRetryDecision: Equatable {
+    case saved
+    case retryable
+    case discardStale
+
+    static func resolve(
+        outcome: AIConversationStagingOutcome,
+        lifecycleIsCurrent: Bool
+    ) -> Self {
+        switch outcome {
+        case .persistedAndStaged, .persistedButNotStaged:
+            return .saved
+        case .notPersisted:
+            return lifecycleIsCurrent ? .retryable : .discardStale
+        }
+    }
+}
+
 // MARK: - AI Assistant Panel
 
 /// Floating AI assistant panel accessible from any page in the app.
@@ -918,22 +936,30 @@ struct IOSAIAssistantPanel: View {
         }
 
         do {
-            let staged = try await aiService.stageLocalConversation(
+            let outcome = try await aiService.stageLocalConversation(
                 pendingSave.conversationId,
                 ownerUserId: ownerUserId,
                 userPrompt: pendingSave.userPrompt,
                 assistantResponse: pendingSave.assistantResponse,
                 in: db
             )
-            guard pendingSave.conversationId == conversationId,
-                  pendingSave.conversationRevision == conversationRevision,
-                  appCore.currentUser?.id == ownerUserId else { return }
-            guard staged else {
+            guard self.pendingFallbackSave == pendingSave else { return }
+            let lifecycleIsCurrent = pendingSave.conversationId == conversationId
+                && pendingSave.conversationRevision == conversationRevision
+                && appCore.currentUser?.id == ownerUserId
+            switch AIFallbackPersistenceRetryDecision.resolve(
+                outcome: outcome,
+                lifecycleIsCurrent: lifecycleIsCurrent
+            ) {
+            case .saved:
+                pendingFallbackSave = nil
+                conversationPersistenceError = nil
+            case .retryable:
                 conversationPersistenceError = "The conversation changed while this turn was being saved. Retry the question in the current conversation."
-                return
+            case .discardStale:
+                pendingFallbackSave = nil
+                conversationPersistenceError = nil
             }
-            pendingFallbackSave = nil
-            conversationPersistenceError = nil
         } catch {
             guard pendingSave.conversationId == conversationId,
                   pendingSave.conversationRevision == conversationRevision,

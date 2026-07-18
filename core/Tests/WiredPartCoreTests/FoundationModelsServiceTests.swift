@@ -600,7 +600,7 @@ struct FoundationModelsServiceTests {
         let env = try E2ETestHelpers.setUp()
         let service = FoundationModelsService()
 
-        let staged = try await service.stageLocalConversation(
+        let outcome = try await service.stageLocalConversation(
             "fallback-resume",
             ownerUserId: 77,
             userPrompt: "How do I update pricing?",
@@ -608,7 +608,7 @@ struct FoundationModelsServiceTests {
             in: env.db
         )
 
-        #expect(staged)
+        #expect(outcome == .persistedAndStaged)
         let reloaded = try await FoundationModelsService.loadConversation(
             "fallback-resume",
             ownerUserId: 77,
@@ -662,6 +662,64 @@ struct FoundationModelsServiceTests {
         }
         #expect(persistedCount == 0)
         #expect(await service.currentMessageHistory().isEmpty)
+    }
+
+    @Test("post-write lifecycle invalidation reports durable without replacing newer staged history")
+    func testStageLocalConversation_postWriteInvalidationDistinguishesDurablePair() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = FoundationModelsService()
+        let gate = AsyncGate()
+        let ownerUserId: Int64 = 77
+
+        #expect(try await service.stageLocalConversation(
+            "conversation-b",
+            ownerUserId: ownerUserId,
+            userPrompt: "Conversation B question",
+            assistantResponse: "Conversation B response",
+            in: env.db
+        ) == .persistedAndStaged)
+
+        let stagingTask = Task {
+            try await service.stageLocalConversation(
+                "fallback-post-write-race",
+                ownerUserId: ownerUserId,
+                userPrompt: "Visible fallback question",
+                assistantResponse: "Visible fallback response",
+                in: env.db,
+                afterPersisting: {
+                    await gate.enterAndWaitForRelease()
+                }
+            )
+        }
+
+        await gate.waitUntilEntered()
+        let visibleCurrentConversation = try await service.resumeConversation(
+            "conversation-b",
+            ownerUserId: ownerUserId,
+            from: env.db
+        )
+        await gate.release()
+
+        let outcome = try await stagingTask.value
+        let reloadedFallback = try await FoundationModelsService.loadConversation(
+            "fallback-post-write-race",
+            ownerUserId: ownerUserId,
+            from: env.db
+        )
+        let otherOwnerReload = try await FoundationModelsService.loadConversation(
+            "fallback-post-write-race",
+            ownerUserId: ownerUserId + 1,
+            from: env.db
+        )
+
+        #expect(outcome == .persistedButNotStaged)
+        #expect(reloadedFallback.map(\.role) == ["user", "assistant"])
+        #expect(reloadedFallback.map(\.content) == [
+            "Visible fallback question",
+            "Visible fallback response",
+        ])
+        #expect(otherOwnerReload.isEmpty)
+        #expect(await service.currentMessageHistory().map(\.content) == visibleCurrentConversation.map(\.content))
     }
 
     @Test("delayed Help staging does not hydrate the model transcript until staging completes")

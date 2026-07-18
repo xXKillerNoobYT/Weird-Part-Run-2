@@ -98,6 +98,17 @@ public enum AIConversationPersistenceError: LocalizedError, Sendable, Equatable 
     }
 }
 
+/// Describes how far a local user/assistant pair progressed through durable
+/// persistence and model-history staging.
+public enum AIConversationStagingOutcome: Sendable, Equatable {
+    /// The lifecycle changed before the atomic database write could commit.
+    case notPersisted
+    /// The pair is durable and the complete owner-scoped history is staged.
+    case persistedAndStaged
+    /// The pair is durable, but a newer lifecycle owns the in-memory model history.
+    case persistedButNotStaged
+}
+
 struct AIConversationScope: Hashable, Sendable {
     let conversationId: String
     let ownerUserId: Int64
@@ -666,7 +677,7 @@ public actor FoundationModelsService {
         in db: AppDatabase,
         beforePersisting: (@Sendable () async -> Void)? = nil
     ) async throws -> Bool {
-        try await stageLocalConversation(
+        let outcome = try await stageLocalConversation(
             conversationId,
             ownerUserId: ownerUserId,
             userPrompt: userPrompt,
@@ -674,21 +685,24 @@ public actor FoundationModelsService {
             in: db,
             beforePersisting: beforePersisting
         )
+        return outcome == .persistedAndStaged
     }
 
     /// Atomically persist any locally generated user/assistant pair and stage the complete
     /// owner-scoped conversation for the next Foundation Models request.
     ///
-    /// Returns `false` when Clear, New, Resume, or another lifecycle transition invalidates
-    /// the write before it can be staged. Storage errors are rethrown for recoverable UI.
+    /// The outcome distinguishes a pair that was never written from one that became durable
+    /// before Clear, New, Resume, or another lifecycle transition prevented model staging.
+    /// Storage errors are rethrown for recoverable UI.
     public func stageLocalConversation(
         _ conversationId: String,
         ownerUserId: Int64,
         userPrompt: String,
         assistantResponse: String,
         in db: AppDatabase,
-        beforePersisting: (@Sendable () async -> Void)? = nil
-    ) async throws -> Bool {
+        beforePersisting: (@Sendable () async -> Void)? = nil,
+        afterPersisting: (@Sendable () async -> Void)? = nil
+    ) async throws -> AIConversationStagingOutcome {
         let scope = try Self.validatedScope(
             conversationId: conversationId,
             ownerUserId: ownerUserId
@@ -711,7 +725,11 @@ public actor FoundationModelsService {
             expectedRevision: expectedRevision,
             to: db
         ) else {
-            return false
+            return .notPersisted
+        }
+
+        if let afterPersisting {
+            await afterPersisting()
         }
 
         let history = try await Self.loadConversation(
@@ -722,7 +740,7 @@ public actor FoundationModelsService {
         guard !Task.isCancelled,
               conversationRevisions[scope, default: 0] == expectedRevision,
               conversationLifecycleRevision == expectedLifecycleRevision else {
-            return false
+            return .persistedButNotStaged
         }
 
         #if canImport(FoundationModels)
@@ -732,7 +750,7 @@ public actor FoundationModelsService {
         activeChatSessionIdentity = nil
         hydratedConversationScope = scope
         messageHistory = history
-        return true
+        return .persistedAndStaged
     }
 
     /// Clear persisted and in-memory state as one awaitable actor operation. Incrementing

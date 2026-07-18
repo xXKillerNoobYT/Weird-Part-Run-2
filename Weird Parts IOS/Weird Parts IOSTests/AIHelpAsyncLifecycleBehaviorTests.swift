@@ -383,14 +383,14 @@ final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
 
         let generationTask = Task { @MainActor in
             await gate.enterAndWaitForRelease()
-            let staged = try await service.stageLocalConversation(
+            let outcome = try await service.stageLocalConversation(
                 conversationId,
                 ownerUserId: ownerUserId,
                 userPrompt: "Suspended model question",
                 assistantResponse: "Persisted model response",
                 in: db
             )
-            XCTAssertTrue(staged)
+            XCTAssertEqual(outcome, .persistedAndStaged)
             visibleTranscript.append(contentsOf: [
                 AIConversationMessage(conversationId: conversationId, role: "user", content: "Suspended model question"),
                 AIConversationMessage(conversationId: conversationId, role: "assistant", content: "Persisted model response"),
@@ -440,6 +440,49 @@ final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
         XCTAssertEqual(stagedModelHistory.map(\.content), visibleTranscript.map(\.content))
         XCTAssertTrue(reloaded.allSatisfy { $0.conversationId == conversationId })
         XCTAssertTrue(otherOwnerReload.isEmpty, "The completed lifecycle must remain isolated to the sending owner.")
+    }
+
+    func testPersistedButNotStagedFallbackClearsRetryInsteadOfDuplicatingDurablePair() async throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+        let service = FoundationModelsService()
+        let gate = AsyncGate()
+        let conversationId = "fallback-ui-post-write-race"
+        let ownerUserId: Int64 = 42
+
+        let persistenceTask = Task {
+            try await service.stageLocalConversation(
+                conversationId,
+                ownerUserId: ownerUserId,
+                userPrompt: "Fallback question",
+                assistantResponse: "Fallback response",
+                in: db,
+                afterPersisting: {
+                    await gate.enterAndWaitForRelease()
+                }
+            )
+        }
+
+        await gate.waitUntilEntered()
+        await service.clearConversation()
+        await gate.release()
+
+        let outcome = try await persistenceTask.value
+        let retryDecision = AIFallbackPersistenceRetryDecision.resolve(
+            outcome: outcome,
+            lifecycleIsCurrent: false
+        )
+        let reloaded = try await FoundationModelsService.loadConversation(
+            conversationId,
+            ownerUserId: ownerUserId,
+            from: db
+        )
+        let stagedHistory = await service.currentMessageHistory()
+
+        XCTAssertEqual(outcome, .persistedButNotStaged)
+        XCTAssertEqual(retryDecision, .saved)
+        XCTAssertEqual(reloaded.map(\.role), ["user", "assistant"])
+        XCTAssertEqual(reloaded.map(\.content), ["Fallback question", "Fallback response"])
+        XCTAssertTrue(stagedHistory.isEmpty)
     }
 
     func testHelpHandoffClearsFailedFallbackRetryAfterSuspension() async {
