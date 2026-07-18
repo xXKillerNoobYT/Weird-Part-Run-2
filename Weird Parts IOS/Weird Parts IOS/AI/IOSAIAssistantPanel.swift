@@ -1588,6 +1588,16 @@ struct IOSAIAssistantPanel: View {
     /// reads from the replacement scope, even when that scope reuses numeric IDs.
     private func resetConversationReadScopeIfNeeded(for prerequisites: ResumePrerequisiteToken) {
         guard activeResumePrerequisiteToken != prerequisites else { return }
+        guard prerequisites.databaseIdentity != nil,
+              (prerequisites.ownerUserId ?? 0) > 0 else {
+            helpHandoffReadiness.invalidateInitialization()
+            cancelConversationHistoryRetryTask()
+            conversationLoadTask?.cancel()
+            conversationLoadTask = nil
+            isLoadingConversationHistory = true
+            isProcessing = false
+            return
+        }
         let isReplacingMountedScope = activeResumePrerequisiteToken != nil
         activeResumePrerequisiteToken = prerequisites
         guard isReplacingMountedScope else { return }
@@ -1853,15 +1863,20 @@ struct IOSAIAssistantPanel: View {
         conversationLoadTask?.cancel()
         isLoadingConversationHistory = true
         let loadConversationId = conversationId
-        let loadOwnerUserId = appCore.aiConversationReadOwnerUserId
-        let loadDatabaseIdentity = appCore.aiConversationReadDatabase.map(AIDatabaseIdentity.init)
+        guard let loadOwnerUserId = appCore.aiConversationReadOwnerUserId,
+              loadOwnerUserId > 0,
+              let loadDatabase = appCore.aiConversationReadDatabase else {
+            conversationLoadTask = nil
+            return Task {}
+        }
+        let loadDatabaseIdentity = AIDatabaseIdentity(loadDatabase)
         let loadConversationRevision = conversationRevision
         let task = Task {
             await loadSavedMessages()
             guard !Task.isCancelled,
                   conversationId == loadConversationId,
                   appCore.aiConversationReadOwnerUserId == loadOwnerUserId,
-                  appCore.aiConversationReadDatabase.map(AIDatabaseIdentity.init) == loadDatabaseIdentity,
+                  loadDatabaseIdentity.matches(appCore.aiConversationReadDatabase),
                   conversationRevision == loadConversationRevision else { return }
             isLoadingConversationHistory = false
             conversationLoadTask = nil
