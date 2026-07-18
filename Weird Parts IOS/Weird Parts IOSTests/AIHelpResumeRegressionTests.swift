@@ -244,6 +244,9 @@ final class AIHelpResumeRegressionTests: XCTestCase {
 
         XCTAssertTrue(reset.contains("AIConversationReadScopeState("))
         XCTAssertTrue(reset.contains("scopeState.replaceScope"))
+        XCTAssertTrue(reset.contains("guard prerequisites.databaseIdentity != nil"))
+        XCTAssertTrue(reset.contains("(prerequisites.ownerUserId ?? 0) > 0"))
+        XCTAssertTrue(reset.contains("isLoadingConversationHistory = true"))
         XCTAssertTrue(reset.contains("didAttemptResume = scopeState.didAttemptResume"))
         XCTAssertTrue(reset.contains("conversationId = scopeState.conversationId"))
         XCTAssertTrue(reset.contains("messages = scopeState.messages"))
@@ -651,11 +654,24 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertTrue(inputBar.contains("isLoadingConversationHistory"))
         XCTAssertTrue(inputBar.contains("conversationHistoryReadError != nil"))
         XCTAssertTrue(beginLoad.contains("isLoadingConversationHistory = true"))
+        XCTAssertTrue(beginLoad.contains("guard let loadOwnerUserId = appCore.aiConversationReadOwnerUserId"))
+        XCTAssertTrue(beginLoad.contains("loadOwnerUserId > 0"))
+        XCTAssertTrue(beginLoad.contains("let loadDatabase = appCore.aiConversationReadDatabase"))
+        XCTAssertTrue(beginLoad.contains("return Task {}"))
         XCTAssertTrue(beginLoad.contains("await loadSavedMessages()"))
-        XCTAssertTrue(beginLoad.contains("appCore.aiConversationReadDatabase.map(AIDatabaseIdentity.init) == loadDatabaseIdentity"))
+        XCTAssertTrue(beginLoad.contains("loadDatabaseIdentity.matches(appCore.aiConversationReadDatabase)"))
         XCTAssertTrue(beginLoad.contains("conversationRevision == loadConversationRevision"))
         XCTAssertTrue(beginLoad.contains("isLoadingConversationHistory = false"))
         XCTAssertTrue(resume.contains("beginCurrentConversationLoad()"))
+
+        guard let prerequisiteGuard = beginLoad.range(of: "guard let loadOwnerUserId")?.lowerBound,
+              let loadTask = beginLoad.range(of: "let task = Task")?.lowerBound,
+              let clearLoading = beginLoad.range(of: "isLoadingConversationHistory = false")?.lowerBound else {
+            XCTFail("History loading must validate positive owner/database prerequisites before starting or completing a load.")
+            return
+        }
+        XCTAssertLessThan(prerequisiteGuard, loadTask)
+        XCTAssertLessThan(loadTask, clearLoading)
     }
 
     func testAssistantMessagesAndHistoryPreviewsRenderMarkdown() throws {

@@ -83,6 +83,15 @@ final class WEI5159AIPrerequisiteRecoveryQATests: XCTestCase {
         assertMinimumTapTarget(listRetry, named: "Retry loading saved conversations")
         capture("03-resume-prerequisite-failure-preserves-rows")
 
+        listRetry.tap()
+        XCTAssertTrue(
+            failureTitle.waitForExistence(timeout: 10),
+            "Retry while prerequisites remain unavailable must stay fail-closed and retryable."
+        )
+        XCTAssertFalse(app.staticTexts["Loading conversations…"].exists)
+        assertSavedRowsReachable()
+        capture("04-resume-retry-withheld-preserves-rows")
+
         let sheetRestore = reachableButton(named: "WEI5159 restore AI conversation prerequisites")
         assertMinimumTapTarget(sheetRestore, named: "Restore AI prerequisites in Resume")
         sheetRestore.tap()
@@ -93,7 +102,32 @@ final class WEI5159AIPrerequisiteRecoveryQATests: XCTestCase {
         retryAfterRestore.tap()
         XCTAssertTrue(waitForNonExistence(failureTitle, timeout: 10), "Retry must clear the prerequisite error after restoration.")
         assertSavedRowsReachable()
-        capture("04-resume-restore-and-retry-recovers")
+        capture("05-resume-restore-and-retry-recovers")
+
+        let sheetWithhold = reachableButton(named: "WEI5159 withhold AI conversation prerequisites")
+        sheetWithhold.tap()
+        assertQAState("WEI5159 QA prerequisites: unavailable")
+        assertSavedRowsReachable()
+
+        let preservedOlderRow = reachableButton(named: "Resume conversation: WEI-5134 older saved transcript")
+        preservedOlderRow.tap()
+        assertComposerDisabled()
+        XCTAssertFalse(
+            app.staticTexts["How can I help?"].exists,
+            "Selecting a preserved row without prerequisites must not fail open to a blank composer."
+        )
+        capture("06-resume-selection-withheld-fail-closed")
+
+        let restoreAfterSelection = hittableButton(named: "WEI5159 restore AI conversation prerequisites")
+        XCTAssertTrue(restoreAfterSelection.waitForExistence(timeout: 5))
+        restoreAfterSelection.tap()
+        assertQAState("WEI5159 QA prerequisites: available")
+        XCTAssertTrue(
+            app.staticTexts["WEI-5134 older saved transcript"].waitForExistence(timeout: 10),
+            "Restoring prerequisites must recover the selected persisted history after a fail-closed Resume selection."
+        )
+        assertComposerEnabled()
+        capture("07-resume-selection-restored-recovers")
     }
 
     private func assertComposerDisabled() {
