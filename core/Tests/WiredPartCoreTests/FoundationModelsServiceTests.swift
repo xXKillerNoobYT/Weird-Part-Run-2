@@ -595,6 +595,75 @@ struct FoundationModelsServiceTests {
         #endif
     }
 
+    @Test("local fallback persists atomically and is visible to reload and conversation list")
+    func testStageLocalConversation_persistsForResumeAndList() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = FoundationModelsService()
+
+        let staged = try await service.stageLocalConversation(
+            "fallback-resume",
+            ownerUserId: 77,
+            userPrompt: "How do I update pricing?",
+            assistantResponse: "Open Parts, then choose Pricing.",
+            in: env.db
+        )
+
+        #expect(staged)
+        let reloaded = try await FoundationModelsService.loadConversation(
+            "fallback-resume",
+            ownerUserId: 77,
+            from: env.db
+        )
+        let listed = try await FoundationModelsService.listConversations(
+            ownerUserId: 77,
+            from: env.db
+        )
+        #expect(reloaded.map(\.role) == ["user", "assistant"])
+        #expect(reloaded.map(\.content) == [
+            "How do I update pricing?",
+            "Open Parts, then choose Pricing.",
+        ])
+        #expect(listed.first?.id == "fallback-resume")
+        #expect(listed.first?.preview == "Open Parts, then choose Pricing.")
+        #expect(await service.currentMessageHistory().map(\.content) == reloaded.map(\.content))
+    }
+
+    @Test("local fallback write failure rolls back the complete visible pair")
+    func testStageLocalConversation_writeFailureIsAtomic() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = FoundationModelsService()
+        try await env.db.writer.write { db in
+            try db.execute(sql: """
+                CREATE TRIGGER reject_fallback_assistant
+                BEFORE INSERT ON ai_conversation_messages
+                WHEN NEW.role = 'assistant'
+                BEGIN
+                    SELECT RAISE(ABORT, 'forced fallback write failure');
+                END
+                """)
+        }
+
+        await #expect(throws: (any Error).self) {
+            try await service.stageLocalConversation(
+                "fallback-write-failure",
+                ownerUserId: 77,
+                userPrompt: "Visible question",
+                assistantResponse: "Visible fallback response",
+                in: env.db
+            )
+        }
+
+        let persistedCount = try await env.db.writer.read { db in
+            try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM ai_conversation_messages WHERE conversation_id = ?",
+                arguments: ["fallback-write-failure"]
+            ) ?? 0
+        }
+        #expect(persistedCount == 0)
+        #expect(await service.currentMessageHistory().isEmpty)
+    }
+
     @Test("delayed Help staging does not hydrate the model transcript until staging completes")
     func testStageHelpConversation_delayedStagingCompletesBeforeHydration() async throws {
         let env = try E2ETestHelpers.setUp()

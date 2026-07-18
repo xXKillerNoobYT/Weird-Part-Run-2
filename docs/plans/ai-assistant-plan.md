@@ -52,6 +52,17 @@ The active iOS implementation uses Apple Foundation Models and local SQLite rath
 - Model-response persistence is awaited. An actor-owned conversation revision invalidates a response that finishes after clear/delete began, preventing a delayed write from recreating cleared history.
 - The UI consumer must pass `appCore.currentUser.id`, await clear/delete, and call the service resume API before sending a follow-up in a restored thread.
 
+### Local fallback persistence contract (WEI-5214 / GitHub #1467)
+
+Every user/assistant pair rendered by the active native assistant is part of the resumable transcript, including keyword/page-help fallback responses produced when Apple Foundation Models is unavailable and responses produced after model generation fails.
+
+- A successful Foundation Models response remains responsible for its own awaited persistence; the UI must not save that pair twice.
+- A local fallback pair is saved atomically through the same actor-owned conversation lifecycle used by Help staging. The write requires the current conversation ID, a positive authenticated owner ID, and the local `AppDatabase`.
+- The pair is staged into model history only after the database transaction succeeds, so a later Foundation Models request sees the same transcript the user sees.
+- Missing database/authentication, storage errors, and lifecycle invalidation never masquerade as a saved response. The visible response remains available, an orange save warning explains that Resume will not contain the turn yet, and a 44-point **Retry Save** action retries the exact pair while it still belongs to the current owner/conversation/revision.
+- New, Resume, Clear, and logout discard any stale retry payload. A retry must never write an old visible turn into a different conversation or user's history.
+- Focused regression coverage must exercise the unavailable-model fallback path, the available-model failure-to-fallback path, atomic reload/list visibility, and a failed write that leaves no partial user row.
+
 ---
 
 ## Capabilities

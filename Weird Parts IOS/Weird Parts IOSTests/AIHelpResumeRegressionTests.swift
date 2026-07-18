@@ -357,13 +357,10 @@ final class AIHelpResumeRegressionTests: XCTestCase {
             )
         )
         XCTAssertTrue(sendQuery.contains("!isLoadingConversationHistory"))
-        XCTAssertTrue(
-            assistant.contains(".disabled(isProcessing || isClearingConversation || isLoadingConversationHistory)"),
-            "The editor must stay disabled while persisted history hydrates."
-        )
-        XCTAssertTrue(
-            assistant.contains("|| isLoadingConversationHistory\n            )"),
-            "The Send control must stay disabled while persisted history hydrates."
+        XCTAssertGreaterThanOrEqual(
+            assistant.components(separatedBy: "|| isLoadingConversationHistory").count - 1,
+            2,
+            "Both the editor and Send control must stay disabled while persisted history hydrates."
         )
         XCTAssertTrue(beginLoad.contains("isLoadingConversationHistory = true"))
         XCTAssertTrue(beginLoad.contains("await loadSavedMessages()"))

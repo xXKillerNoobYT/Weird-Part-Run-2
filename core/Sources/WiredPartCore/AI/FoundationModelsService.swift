@@ -657,11 +657,31 @@ public actor FoundationModelsService {
     }
 
     /// Persist a locally generated Help turn and stage the complete conversation for
-    /// the next Foundation Models request. This keeps Help local/read-only while making
-    /// an immediate follow-up receive the same context that is already visible in UI.
-    ///
-    /// Returns `false` when a concurrent clear invalidated the write before staging.
+    /// the next Foundation Models request.
     public func stageHelpConversation(
+        _ conversationId: String,
+        ownerUserId: Int64,
+        userPrompt: String,
+        assistantResponse: String,
+        in db: AppDatabase,
+        beforePersisting: (@Sendable () async -> Void)? = nil
+    ) async throws -> Bool {
+        try await stageLocalConversation(
+            conversationId,
+            ownerUserId: ownerUserId,
+            userPrompt: userPrompt,
+            assistantResponse: assistantResponse,
+            in: db,
+            beforePersisting: beforePersisting
+        )
+    }
+
+    /// Atomically persist any locally generated user/assistant pair and stage the complete
+    /// owner-scoped conversation for the next Foundation Models request.
+    ///
+    /// Returns `false` when Clear, New, Resume, or another lifecycle transition invalidates
+    /// the write before it can be staged. Storage errors are rethrown for recoverable UI.
+    public func stageLocalConversation(
         _ conversationId: String,
         ownerUserId: Int64,
         userPrompt: String,
@@ -676,7 +696,7 @@ public actor FoundationModelsService {
         let expectedRevision = conversationRevisions[scope, default: 0]
         conversationLifecycleRevision &+= 1
         let expectedLifecycleRevision = conversationLifecycleRevision
-        let helpTurns = [
+        let localTurns = [
             AIConversationMessage(conversationId: conversationId, role: "user", content: userPrompt),
             AIConversationMessage(conversationId: conversationId, role: "assistant", content: assistantResponse),
         ]
@@ -686,7 +706,7 @@ public actor FoundationModelsService {
         }
 
         guard try await persistMessagesIfCurrent(
-            helpTurns,
+            localTurns,
             scope: scope,
             expectedRevision: expectedRevision,
             to: db
