@@ -1,5 +1,6 @@
 import XCTest
 @testable import Weird_Parts
+import WiredPartCore
 
 /// Behavioral async-lifecycle coverage for WEI-5062 / PR #1460.
 ///
@@ -368,6 +369,79 @@ final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
         })
     }
 
+    func testHelpHandoffWaitsForSuspendedGenerationAndKeepsVisibleReloadedAndStagedHistoryEqual() async throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+        let service = FoundationModelsService()
+        let gate = AsyncGate()
+        let conversationId = "help-during-generation"
+        let ownerUserId: Int64 = 42
+        var readiness = AIHelpHandoffReadinessCoordinator()
+        let initialization = readiness.beginInitialization()
+        XCTAssertTrue(readiness.finishInitialization(initialization))
+        let sendLifecycle = readiness.beginSendLifecycle()
+        var visibleTranscript: [AIConversationMessage] = []
+
+        let generationTask = Task { @MainActor in
+            await gate.enterAndWaitForRelease()
+            let staged = try await service.stageLocalConversation(
+                conversationId,
+                ownerUserId: ownerUserId,
+                userPrompt: "Suspended model question",
+                assistantResponse: "Persisted model response",
+                in: db
+            )
+            XCTAssertTrue(staged)
+            visibleTranscript.append(contentsOf: [
+                AIConversationMessage(conversationId: conversationId, role: "user", content: "Suspended model question"),
+                AIConversationMessage(conversationId: conversationId, role: "assistant", content: "Persisted model response"),
+            ])
+            XCTAssertTrue(readiness.finishSendLifecycle(sendLifecycle))
+        }
+
+        await gate.waitUntilEntered()
+        readiness.queueHelpRequest(id: "help-arrived-during-generation")
+        XCTAssertNil(
+            readiness.consumeQueuedHelpRequest(),
+            "Help must remain queued for the complete generation and model-persistence lifecycle."
+        )
+
+        await gate.release()
+        try await generationTask.value
+        XCTAssertEqual(readiness.consumeQueuedHelpRequest(), "help-arrived-during-generation")
+
+        let helpStaged = try await service.stageHelpConversation(
+            conversationId,
+            ownerUserId: ownerUserId,
+            userPrompt: "Help question",
+            assistantResponse: "Help response",
+            in: db
+        )
+        XCTAssertTrue(helpStaged)
+        visibleTranscript.append(contentsOf: [
+            AIConversationMessage(conversationId: conversationId, role: "user", content: "Help question"),
+            AIConversationMessage(conversationId: conversationId, role: "assistant", content: "Help response"),
+        ])
+
+        let reloaded = try await FoundationModelsService.loadConversation(
+            conversationId,
+            ownerUserId: ownerUserId,
+            from: db
+        )
+        let otherOwnerReload = try await FoundationModelsService.loadConversation(
+            conversationId,
+            ownerUserId: ownerUserId + 1,
+            from: db
+        )
+        let stagedModelHistory = await service.currentMessageHistory()
+
+        XCTAssertEqual(reloaded.map(\.role), visibleTranscript.map(\.role))
+        XCTAssertEqual(reloaded.map(\.content), visibleTranscript.map(\.content))
+        XCTAssertEqual(stagedModelHistory.map(\.role), visibleTranscript.map(\.role))
+        XCTAssertEqual(stagedModelHistory.map(\.content), visibleTranscript.map(\.content))
+        XCTAssertTrue(reloaded.allSatisfy { $0.conversationId == conversationId })
+        XCTAssertTrue(otherOwnerReload.isEmpty, "The completed lifecycle must remain isolated to the sending owner.")
+    }
+
     func testHelpHandoffClearsFailedFallbackRetryAfterSuspension() async {
         let box = FallbackHelpHandoffBox(conversationId: "conversation-a", ownerUserId: 42)
         let delayedFallback = box.beginFallbackPersistence(
@@ -579,7 +653,7 @@ private final class FallbackHelpHandoffBox {
         hasPendingFallbackRetry = true
         isProcessing = true
         return DelayedFallbackPersistence(
-            requestID: readiness.beginFallbackPersistence(),
+            requestID: readiness.beginSendLifecycle(),
             userPrompt: userPrompt,
             assistantResponse: assistantResponse,
             errorDescription: errorDescription
@@ -599,7 +673,7 @@ private final class FallbackHelpHandoffBox {
                 hasPendingFallbackRetry = false
                 persistenceError = nil
             }
-            XCTAssertTrue(readiness.finishFallbackPersistence(delayedPersistence.requestID))
+            XCTAssertTrue(readiness.finishSendLifecycle(delayedPersistence.requestID))
             isProcessing = false
         }
     }

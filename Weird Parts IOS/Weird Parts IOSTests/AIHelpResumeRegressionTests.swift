@@ -206,6 +206,28 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertLessThan(waitIndex, generationIndex, "Follow-up generation must be ordered after completed Help staging.")
     }
 
+    func testHelpExclusionCoversGenerationAndBothPersistencePaths() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let sendQuery = try TestSourceSlicer.braceBalancedBody(
+            after: "private func sendQuery()",
+            in: assistant
+        )
+
+        guard let beginIndex = sendQuery.range(of: "helpHandoffReadiness.beginSendLifecycle()")?.lowerBound,
+              let generationIndex = sendQuery.range(of: "let response = await generateResponse")?.lowerBound,
+              let fallbackIndex = sendQuery.range(of: "await persistFallbackTurn(pendingSave)")?.lowerBound,
+              let finishIndex = sendQuery.range(of: "helpHandoffReadiness.finishSendLifecycle(sendLifecycleRequestID)")?.lowerBound else {
+            XCTFail("sendQuery must serialize Help around generation and persistence.")
+            return
+        }
+
+        XCTAssertLessThan(beginIndex, generationIndex)
+        XCTAssertLessThan(beginIndex, fallbackIndex)
+        XCTAssertLessThan(finishIndex, generationIndex, "The finish call must be registered in defer before generation can suspend.")
+        XCTAssertTrue(sendQuery.contains("defer {"))
+        XCTAssertFalse(sendQuery.contains("beginFallbackPersistence"))
+    }
+
     func testHelpPersistenceErrorCannotBleedAcrossLifecycleChanges() throws {
         let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
         let persist = try TestSourceSlicer.braceBalancedBody(

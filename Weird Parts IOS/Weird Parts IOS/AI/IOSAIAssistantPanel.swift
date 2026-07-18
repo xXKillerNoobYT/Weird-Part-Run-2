@@ -841,8 +841,16 @@ struct IOSAIAssistantPanel: View {
         let sendConversationId = conversationId
         let sendOwnerUserId = appCore.currentUser?.id
         let sendConversationRevision = conversationRevision
+        // Acquire the Help exclusion synchronously so a handoff delivered before the
+        // task starts cannot invalidate a response after it commits to SQLite.
+        let sendLifecycleRequestID = helpHandoffReadiness.beginSendLifecycle()
 
         Task {
+            defer {
+                _ = helpHandoffReadiness.finishSendLifecycle(sendLifecycleRequestID)
+                isProcessing = false
+                consumePendingHelpRequestIfReady()
+            }
             await pendingHelpPersistence?.value
 
             guard conversationId == sendConversationId,
@@ -851,7 +859,6 @@ struct IOSAIAssistantPanel: View {
 
             if let conversationPersistenceError {
                 messages.append(AssistantMessage(role: .assistant, content: conversationPersistenceError))
-                isProcessing = false
                 return
             }
 
@@ -869,24 +876,22 @@ struct IOSAIAssistantPanel: View {
                     assistantResponse: response.text
                 )
                 pendingFallbackSave = pendingSave
-                let fallbackPersistenceRequestID = helpHandoffReadiness.beginFallbackPersistence()
                 await persistFallbackTurn(pendingSave)
-                _ = helpHandoffReadiness.finishFallbackPersistence(fallbackPersistenceRequestID)
             }
-            isProcessing = false
-            consumePendingHelpRequestIfReady()
         }
     }
 
     private func retryFallbackSave() {
         guard let pendingFallbackSave, !isProcessing else { return }
         isProcessing = true
-        let fallbackPersistenceRequestID = helpHandoffReadiness.beginFallbackPersistence()
+        let sendLifecycleRequestID = helpHandoffReadiness.beginSendLifecycle()
         Task {
+            defer {
+                _ = helpHandoffReadiness.finishSendLifecycle(sendLifecycleRequestID)
+                isProcessing = false
+                consumePendingHelpRequestIfReady()
+            }
             await persistFallbackTurn(pendingFallbackSave)
-            _ = helpHandoffReadiness.finishFallbackPersistence(fallbackPersistenceRequestID)
-            isProcessing = false
-            consumePendingHelpRequestIfReady()
         }
     }
 
@@ -3046,8 +3051,8 @@ struct AIHelpPersistenceCompletion: Equatable, Sendable {
 struct AIHelpHandoffReadinessCoordinator {
     private(set) var isReadyForHelpHandoff = false
     private var initializationRequestID: UInt = 0
-    private var fallbackPersistenceRequestID: UInt = 0
-    private var activeFallbackPersistenceRequestID: UInt?
+    private var sendLifecycleRequestID: UInt = 0
+    private var activeSendLifecycleRequestID: UInt?
     private var queuedHelpRequestID: String?
 
     mutating func beginInitialization() -> UInt {
@@ -3071,21 +3076,21 @@ struct AIHelpHandoffReadinessCoordinator {
         queuedHelpRequestID = id
     }
 
-    mutating func beginFallbackPersistence() -> UInt {
-        fallbackPersistenceRequestID &+= 1
-        activeFallbackPersistenceRequestID = fallbackPersistenceRequestID
-        return fallbackPersistenceRequestID
+    mutating func beginSendLifecycle() -> UInt {
+        sendLifecycleRequestID &+= 1
+        activeSendLifecycleRequestID = sendLifecycleRequestID
+        return sendLifecycleRequestID
     }
 
-    mutating func finishFallbackPersistence(_ requestID: UInt) -> Bool {
-        guard activeFallbackPersistenceRequestID == requestID else { return false }
-        activeFallbackPersistenceRequestID = nil
+    mutating func finishSendLifecycle(_ requestID: UInt) -> Bool {
+        guard activeSendLifecycleRequestID == requestID else { return false }
+        activeSendLifecycleRequestID = nil
         return true
     }
 
     mutating func consumeQueuedHelpRequest() -> String? {
         guard isReadyForHelpHandoff,
-              activeFallbackPersistenceRequestID == nil else { return nil }
+              activeSendLifecycleRequestID == nil else { return nil }
         defer { queuedHelpRequestID = nil }
         return queuedHelpRequestID
     }

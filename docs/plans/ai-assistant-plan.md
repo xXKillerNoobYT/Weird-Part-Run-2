@@ -62,6 +62,7 @@ Every user/assistant pair rendered by the active native assistant is part of the
 - Missing database/authentication, storage errors, and lifecycle invalidation never masquerade as a saved response. The visible response remains available, an orange save warning explains that Resume will not contain the turn yet, and a 44-point **Retry Save** action retries the exact pair while it still belongs to the current owner/conversation/revision.
 - New, Resume, Clear, and logout discard any stale retry payload. A retry must never write an old visible turn into a different conversation or user's history.
 - A Help handoff received while fallback persistence is in flight remains queued until that write settles. Help then owns the next transcript turn and clears any fallback retry/error state invalidated by the lifecycle change, so the composer cannot remain disabled by a stale save payload.
+- The Help exclusion token begins synchronously when Send starts and remains active through Foundation Models generation, awaited model persistence, and fallback persistence. A Help tap during suspended generation stays queued until the complete pair is visible, durable, and staged, preventing hidden persisted output or a Resume transcript that differs from the visible conversation.
 - Focused regression coverage must exercise the unavailable-model fallback path, the available-model failure-to-fallback path, atomic reload/list visibility, and a failed write that leaves no partial user row.
 
 ---
