@@ -146,6 +146,21 @@ final class IOSSyncManager {
         syncReviewActionFailed(message)
     }
 
+    /// Publishes the fail-closed state for any LAN pairing failure after pairing starts.
+    /// The caller remains responsible for rethrowing the original error unchanged.
+    func surfaceShopPairingFailure(_ error: Error) {
+        syncStatus = .error
+        syncProgressMessage = nil
+        if error is SyncIdentityStoreError {
+            errorMessage = "Couldn't securely load this device's sync identity. Pairing stopped; try again."
+        } else if let syncError = error as? SyncError {
+            errorMessage = syncError.localizedDescription
+        } else {
+            errorMessage = "Pairing verification failed. Check the shop address and pairing code, then try again."
+        }
+        logger.error("[IOSSyncManager] Shop pairing failed: \(error.localizedDescription)")
+    }
+
     /// Trims a user-entered or persisted shop server address and rejects blank values.
     static func normalizedShopServerAddress(_ address: String?) -> String? {
         let trimmed = address?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -978,15 +993,21 @@ final class IOSSyncManager {
             errorMessage = SyncError.noDatabaseAvailable.localizedDescription
             throw SyncError.noDatabaseAvailable
         }
-        let pairingIdentity = try await pm.localSyncIdentity(deviceId: deviceId)
-
-        let pairResponse = try await verifyPairingCodeWithShop(
-            shopAddress: normalizedShopAddress,
-            pairingCode: normalizedPairingCode,
-            deviceId: deviceId,
-            deviceName: deviceName,
-            pairingIdentity: pairingIdentity
-        )
+        let pairingIdentity: SyncDeviceIdentity
+        let pairResponse: SyncPairResponse
+        do {
+            pairingIdentity = try await pm.localSyncIdentity(deviceId: deviceId)
+            pairResponse = try await verifyPairingCodeWithShop(
+                shopAddress: normalizedShopAddress,
+                pairingCode: normalizedPairingCode,
+                deviceId: deviceId,
+                deviceName: deviceName,
+                pairingIdentity: pairingIdentity
+            )
+        } catch {
+            surfaceShopPairingFailure(error)
+            throw error
+        }
 
         syncProgressMessage = "Registering verified device..."
         syncProgressPercent = 0.2
