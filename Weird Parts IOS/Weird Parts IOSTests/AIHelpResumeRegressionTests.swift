@@ -387,6 +387,43 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         )
     }
 
+    #if DEBUG && targetEnvironment(simulator)
+    func testSharedAIConversationFixtureTopologyDiagnosticIsTruthfulForBothModes() throws {
+        let diagnostic = AppCore.UITestBootstrapError.aiConversationFixtureInvalidTableTopology(
+            currentExists: true,
+            backupExists: true
+        )
+        XCTAssertEqual(
+            diagnostic.errorDescription,
+            "AI conversation UI-test fixture table topology is invalid (current: true, backup: true)."
+        )
+        XCTAssertFalse(
+            diagnostic.errorDescription?.contains("WEI-5134") == true,
+            "A topology error shared by WEI-5134 and WEI-5159 must not identify only one fixture mode."
+        )
+
+        let appCore = try Self.readSource("App/AppCore.swift")
+        let readFailureFixture = try TestSourceSlicer.braceBalancedBody(
+            after: "nonisolated private static func prepareWEI5134AIReadFailureFixture(",
+            in: appCore
+        )
+        let prerequisiteFixture = try TestSourceSlicer.braceBalancedBody(
+            after: "nonisolated private static func prepareWEI5159AIPrerequisiteRecoveryFixture(",
+            in: appCore
+        )
+        let transition = try TestSourceSlicer.braceBalancedBody(
+            after: "func setWEI5134AIConversationTableBroken(_ shouldBeBroken: Bool)",
+            in: appCore
+        )
+        let sharedThrow = "throw UITestBootstrapError.aiConversationFixtureInvalidTableTopology("
+
+        XCTAssertTrue(readFailureFixture.contains(sharedThrow))
+        XCTAssertTrue(prerequisiteFixture.contains(sharedThrow))
+        XCTAssertTrue(transition.contains(sharedThrow))
+        XCTAssertFalse(appCore.contains("wei5134InvalidTableTopology"))
+    }
+    #endif
+
     func testSelectingCurrentConversationAfterHydrationFailureStartsRecoveryBeforeClearingFailure() throws {
         let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
         let resume = try TestSourceSlicer.braceBalancedBody(

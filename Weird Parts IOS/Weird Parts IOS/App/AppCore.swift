@@ -836,7 +836,7 @@ final class AppCore: ObservableObject {
         #if DEBUG && targetEnvironment(simulator)
         case wei5134MissingOwner
         case wei5159MissingOwner
-        case wei5134InvalidTableTopology(currentExists: Bool, backupExists: Bool)
+        case aiConversationFixtureInvalidTableTopology(currentExists: Bool, backupExists: Bool)
         #endif
 
         var errorDescription: String? {
@@ -850,8 +850,8 @@ final class AppCore: ObservableObject {
                 "WEI-5134 UI test bootstrap requires the deterministic UITest Owner."
             case .wei5159MissingOwner:
                 "WEI-5159 UI test bootstrap requires the deterministic UITest Owner."
-            case let .wei5134InvalidTableTopology(currentExists, backupExists):
-                "WEI-5134 AI table topology is invalid (current: \(currentExists), backup: \(backupExists))."
+            case let .aiConversationFixtureInvalidTableTopology(currentExists, backupExists):
+                "AI conversation UI-test fixture table topology is invalid (current: \(currentExists), backup: \(backupExists))."
             #endif
             }
         }
@@ -1183,7 +1183,7 @@ final class AppCore: ObservableObject {
             case (false, true):
                 break
             case (true, true), (false, false):
-                throw UITestBootstrapError.wei5134InvalidTableTopology(
+                throw UITestBootstrapError.aiConversationFixtureInvalidTableTopology(
                     currentExists: currentExists,
                     backupExists: backupExists
                 )
@@ -1201,7 +1201,7 @@ final class AppCore: ObservableObject {
             let currentExists = try dbConn.tableExists(Self.wei5134AIConversationTable)
             let backupExists = try dbConn.tableExists(Self.wei5134AIConversationBackupTable)
             guard currentExists, !backupExists else {
-                throw UITestBootstrapError.wei5134InvalidTableTopology(
+                throw UITestBootstrapError.aiConversationFixtureInvalidTableTopology(
                     currentExists: currentExists,
                     backupExists: backupExists
                 )
@@ -1256,7 +1256,7 @@ final class AppCore: ObservableObject {
                     case (false, true, true), (true, false, false):
                         break
                     case (true, true, _), (false, false, _):
-                        throw UITestBootstrapError.wei5134InvalidTableTopology(
+                        throw UITestBootstrapError.aiConversationFixtureInvalidTableTopology(
                             currentExists: currentExists,
                             backupExists: backupExists
                         )
