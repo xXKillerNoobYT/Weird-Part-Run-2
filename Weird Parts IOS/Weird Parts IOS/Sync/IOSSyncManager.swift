@@ -627,16 +627,16 @@ final class IOSSyncManager {
         let myDeviceId = DeviceIdentity.current
         let myDeviceName = Self.advertisedDeviceName
 
-        let response = try await pm.pairViaMultipeer(
-            hostDeviceId: hostDeviceId,
-            myDeviceId: myDeviceId,
-            myDeviceName: myDeviceName,
-            pairingCode: normalizedCode,
-            platform: "iOS"
-        )
-
+        let response: SyncPairResponse
         let hostKey: String
         do {
+            response = try await pm.pairViaMultipeer(
+                hostDeviceId: hostDeviceId,
+                myDeviceId: myDeviceId,
+                myDeviceName: myDeviceName,
+                pairingCode: normalizedCode,
+                platform: "iOS"
+            )
             hostKey = try Self.validatedBluetoothHostKey(response.serverKeyAgreementPublicKey)
         } catch {
             surfaceBluetoothPairingFailure(error)

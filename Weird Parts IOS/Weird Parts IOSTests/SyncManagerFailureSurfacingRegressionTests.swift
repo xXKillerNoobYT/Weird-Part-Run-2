@@ -224,6 +224,31 @@ final class SyncManagerFailureSurfacingRegressionTests: XCTestCase {
         XCTAssertTrue(pairingBody.contains("surfaceBluetoothPairingFailure(error)"))
     }
 
+    func testBluetoothPairingResponseValidationSharesVisibleFailureBoundary() throws {
+        let source = try Self.readSyncManagerSource()
+        let pairingBody = try TestSourceSlicer.braceBalancedBody(
+            after: "func pairWithPeerOverBluetooth(hostDeviceId: String, hostName: String, pairingCode: String) async throws",
+            in: source
+        )
+
+        let pairCall = try XCTUnwrap(pairingBody.range(of: "try await pm.pairViaMultipeer"))
+        let validation = try XCTUnwrap(pairingBody.range(of: "validatedBluetoothHostKey"))
+        let failureCatch = try XCTUnwrap(
+            pairingBody.range(of: "} catch {", range: validation.upperBound..<pairingBody.endIndex)
+        )
+        let failureBody = pairingBody[failureCatch.lowerBound...]
+        let sharedDo = pairingBody[..<pairCall.lowerBound].range(of: "do {", options: .backwards)
+
+        XCTAssertNotNil(
+            sharedDo,
+            "Multipeer response verification can throw before returning; the transport call must share the visible failure boundary."
+        )
+        XCTAssertLessThan(pairCall.lowerBound, validation.lowerBound)
+        XCTAssertLessThan(validation.lowerBound, failureCatch.lowerBound)
+        XCTAssertTrue(failureBody.contains("surfaceBluetoothPairingFailure(error)"))
+        XCTAssertTrue(failureBody.contains("throw error"))
+    }
+
     private static func repoRoot(file: StaticString = #filePath) -> URL {
         URL(fileURLWithPath: "\(file)")
             .deletingLastPathComponent()
