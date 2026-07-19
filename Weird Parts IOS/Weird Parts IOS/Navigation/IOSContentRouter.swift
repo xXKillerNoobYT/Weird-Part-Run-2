@@ -11,6 +11,49 @@ struct IOSContentRouter: View {
 
     var body: some View {
         routedView
+            .onAppear { postRouteContext() }
+            .onChange(of: path) { _, _ in postRouteContext() }
+            .onReceive(NotificationCenter.default.publisher(for: .requestCurrentPageContext)) { _ in
+                postRouteContext()
+            }
+            .onDisappear {
+                NotificationCenter.default.post(
+                    name: .routePageInactive,
+                    object: nil,
+                    userInfo: [
+                        "path": path,
+                        "pageId": routeDescriptor?.tab.id as Any,
+                    ]
+                )
+            }
+    }
+
+    private var routeDescriptor: (module: AppModule, tab: AppTab)? {
+        for module in appModules {
+            if let tab = module.tabs.first(where: { $0.path == path }) {
+                return (module, tab)
+            }
+        }
+        return nil
+    }
+
+    /// Publish only route identity. Page-specific visible counts and filters stay
+    /// in dedicated notifications; this fallback deliberately excludes record
+    /// values, private notes, credentials, and mutation identifiers.
+    private func postRouteContext() {
+        guard let descriptor = routeDescriptor else { return }
+        let context = "Module: \(descriptor.module.label); Page: \(descriptor.tab.label); Route: \(path)"
+        NotificationCenter.default.post(
+            name: .routePageActive,
+            object: nil,
+            userInfo: [
+                "context": context,
+                "path": path,
+                "pageId": descriptor.tab.id,
+                "module": descriptor.module.label,
+                "page": descriptor.tab.label,
+            ]
+        )
     }
 
     @ViewBuilder

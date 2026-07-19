@@ -5,6 +5,7 @@ Run from the repo root with:
     python3 tests/static/test_ai_help_context_coverage.py
 """
 
+import json
 from pathlib import Path
 import re
 import unittest
@@ -12,6 +13,8 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HELP_REGISTRY = REPO_ROOT / "Weird Parts IOS/Weird Parts IOS/Shared/HelpContentRegistry.swift"
 AI_PANEL = REPO_ROOT / "Weird Parts IOS/Weird Parts IOS/AI/IOSAIAssistantPanel.swift"
+NAVIGATION = REPO_ROOT / "Weird Parts IOS/Weird Parts IOS/Navigation/NavigationConfig.swift"
+INVENTORY = REPO_ROOT / "docs/testing/ai-page-context-inventory.json"
 
 
 def swift_file(relative_path: str) -> str:
@@ -23,6 +26,8 @@ class AIHelpContextCoverageTests(unittest.TestCase):
     def setUpClass(cls):
         cls.registry = HELP_REGISTRY.read_text()
         cls.panel = AI_PANEL.read_text()
+        cls.navigation = NAVIGATION.read_text()
+        cls.inventory = json.loads(INVENTORY.read_text())
         cls.help_page_ids = set(re.findall(r'pageId: "([^"]+)"', cls.registry))
         cls.registry_notifications = dict(
             re.findall(r'"(WiredPart\.[^"]+)": "([^"]+)"', cls.registry)
@@ -42,6 +47,37 @@ class AIHelpContextCoverageTests(unittest.TestCase):
             if page_id not in self.help_page_ids
         }
         self.assertEqual({}, missing)
+
+    def test_inventory_covers_every_current_app_tab_without_gaps(self):
+        app_tabs = {
+            page_id: path
+            for page_id, path in re.findall(
+                r'AppTab\(id: "([^"]+)"[^\n]*path: "([^"]+)"',
+                self.navigation,
+            )
+        }
+        inventory_by_id = {screen["id"]: screen for screen in self.inventory["screens"]}
+
+        self.assertEqual(set(), set(app_tabs) - set(inventory_by_id))
+        self.assertNotIn("gap", {screen["disposition"] for screen in self.inventory["screens"]})
+        self.assertEqual(
+            {},
+            {
+                page_id: (inventory_by_id[page_id]["path"], path)
+                for page_id, path in app_tabs.items()
+                if inventory_by_id[page_id]["path"] != path
+            },
+        )
+
+    def test_every_inventory_exemption_has_source_and_rationale(self):
+        failures = []
+        for screen in self.inventory["screens"]:
+            source = REPO_ROOT / screen["source"]
+            if not source.is_file() or not screen["rationale"].strip():
+                failures.append(screen["id"])
+            if screen.get("helpPageId") is None and not screen.get("helpRationale", "").strip():
+                failures.append(f"{screen['id']}:help")
+        self.assertEqual([], failures)
 
     def test_help_notification_mapping_covers_active_page_tracker(self):
         missing = {
