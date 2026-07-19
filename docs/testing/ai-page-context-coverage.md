@@ -6,16 +6,17 @@ Updated: 2026-07-19
 ## Verified inventory baseline
 
 The old “87 pages” estimate is retired. The machine-checkable source of truth is
-`docs/testing/ai-page-context-inventory.json`, checked against the live `AppTab`
-declarations in `NavigationConfig.swift`.
+`docs/testing/ai-page-context-inventory.json`, checked against both the live
+`AppTab` declarations in `NavigationConfig.swift` and the explicit deep/alias
+registry in `IOSContentRouter.swift`.
 
 Current verified inventory:
 
 - 89 navigable `AppTab` destinations;
-- 111 total inventory rows after dedicated deep screens, one inherited detail,
+- 143 total inventory rows after router-owned deep/alias screens, dedicated deep screens, one inherited detail,
   one retired compatibility screen, and the non-feature placeholder are included;
 - 68 dedicated page-context rows;
-- 40 router-owned rows;
+- 72 router-owned rows;
 - 1 inherited row;
 - 1 retired row;
 - 1 not-user-facing row;
@@ -40,8 +41,11 @@ changes and responds to `requestCurrentPageContext` when the assistant opens
 after the screen's original appearance event.
 
 The assistant tracks the active route path so a late inactive event from an old
-router cannot clear a newer screen. Route and dedicated context are cleared on
-page disappearance and by the existing logout lifecycle reset. Existing
+router cannot clear a newer screen. Route identity is retained as fallback while
+dedicated deep/sheet identity takes precedence; a Help-triggered route refresh
+therefore cannot replace the visible deep screen, and its inactive event reveals
+the parent route again. Route and dedicated context are cleared on page
+disappearance and by the existing logout lifecycle reset. Existing
 page-specific search/filter/tab/data reposts remain guarded by
 `SearchablePageContextRegressionTests` and the focused freshness expectations in
 `tests/static/test_ai_help_context_coverage.py`.
@@ -70,6 +74,9 @@ python3 tests/static/test_ai_help_context_coverage.py
 The verifier fails for:
 
 - any current `AppTab` missing from the inventory;
+- any explicit router path missing from the deep/alias registry, any stale registry
+  path, or any registry page ID missing from the inventory (including a negative
+  omission regression fixture);
 - path drift or an unresolved `gap`;
 - missing source/rationale/Help-exemption evidence;
 - declaration, post, observer, inactive-clear, or Help-mapping drift on dedicated pages;

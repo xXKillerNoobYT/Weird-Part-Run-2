@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Verify the iOS screen inventory and AI/Help page-context contracts.
 
-The inventory is intentionally checked against ``appModules`` rather than a
-historical page count. A newly navigable tab therefore fails this guard until it
-has an explicit dedicated, router-owned, inherited, retired, or non-user-facing
-disposition with a source-backed rationale.
+The inventory is checked against both ``appModules`` and IOSContentRouter's
+explicit deep/alias registry rather than a historical page count. A newly
+navigable surface therefore fails until it has a source-backed disposition.
 """
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from collections import Counter
@@ -21,7 +21,10 @@ NAVIGATION = APP_SOURCE / "Navigation/NavigationConfig.swift"
 ROUTER = APP_SOURCE / "Navigation/IOSContentRouter.swift"
 ASSISTANT = APP_SOURCE / "AI/IOSAIAssistantPanel.swift"
 SUPPLIERS = APP_SOURCE / "Features/Parts/PartsSuppliersPage.swift"
-INVENTORY = ROOT / "docs/testing/ai-page-context-inventory.json"
+INVENTORY = Path(os.environ.get(
+    "AI_CONTEXT_INVENTORY_PATH",
+    ROOT / "docs/testing/ai-page-context-inventory.json",
+))
 ALLOWED_DISPOSITIONS = {
     "dedicated",
     "router-owned",
@@ -86,6 +89,58 @@ def main() -> int:
         ),
     )
 
+    routed_section = router.split("private var routedView", 1)[-1].split(
+        "private func officeRoute", 1
+    )[0]
+    routed_paths = set(re.findall(r'"(/[^"]+)"', routed_section))
+    deep_registry_section = router.split("private var deepRoutePageId", 1)[-1].split(
+        "/// Publish only route identity", 1
+    )[0]
+    deep_pairs: list[tuple[str, str]] = []
+    for case_list, page_id in re.findall(
+        r'case\s+([^:\n]+):\s*return\s+"([^"]+)"',
+        deep_registry_section,
+    ):
+        deep_pairs.extend(
+            (path, page_id) for path in re.findall(r'"(/[^"]+)"', case_list)
+        )
+    deep_path_counts = Counter(path for path, _ in deep_pairs)
+    deep_routes = dict(deep_pairs)
+    app_paths = set(app_tabs.values())
+    expected_deep_paths = routed_paths - app_paths
+    fail_section(
+        failures,
+        "duplicate paths in IOSContentRouter deep/alias registry:",
+        sorted(path for path, count in deep_path_counts.items() if count > 1),
+    )
+    fail_section(
+        failures,
+        "explicit router paths missing from deep/alias registry:",
+        sorted(expected_deep_paths - set(deep_routes)),
+    )
+    fail_section(
+        failures,
+        "stale deep/alias registry paths not present in routed switch:",
+        sorted(set(deep_routes) - expected_deep_paths),
+    )
+    fail_section(
+        failures,
+        "deep/alias registry page IDs missing from inventory:",
+        sorted(set(deep_routes.values()) - set(inventory_by_id)),
+    )
+    fail_section(
+        failures,
+        "router-owned deep rows not backed by the canonical registry:",
+        sorted(
+            f"{screen['id']}: {screen.get('path')}"
+            for screen in screens
+            if screen.get("disposition") == "router-owned"
+            and str(screen.get("path", "")).startswith("/")
+            and screen.get("path") not in app_paths
+            and deep_routes.get(screen.get("path")) != screen.get("id")
+        ),
+    )
+
     malformed: list[str] = []
     for screen in screens:
         screen_id = screen.get("id", "<missing-id>")
@@ -131,6 +186,12 @@ def main() -> int:
     )
     fail_section(failures, "declared active notifications not observed by assistant:", sorted(declared_active - observed_active))
     fail_section(failures, "declared inactive notifications not observed by assistant:", sorted(declared_inactive - observed_inactive))
+    inventory_notifications = {screen.get("notification") for screen in screens}
+    fail_section(
+        failures,
+        "dedicated page-active declarations missing from inventory:",
+        sorted(declared_active - inventory_notifications - {"routePageActive"}),
+    )
 
     declared_wire_names = {declared_by_symbol[symbol] for symbol in declared_active}
     fail_section(
@@ -224,6 +285,7 @@ def main() -> int:
 
     print(f"Inventory screens: {len(screens)}")
     print(f"Navigable AppTabs: {len(app_tabs)}")
+    print(f"Explicit deep/alias routes: {len(deep_routes)}")
     print("Inventory dispositions: " + ", ".join(
         f"{name}={count}" for name, count in sorted(Counter(screen.get("disposition") for screen in screens).items())
     ))

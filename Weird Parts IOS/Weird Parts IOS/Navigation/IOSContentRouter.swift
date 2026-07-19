@@ -9,6 +9,12 @@ struct IOSContentRouter: View {
     let path: String
     @EnvironmentObject private var appCore: AppCore
 
+    private struct RouteDescriptor {
+        let moduleLabel: String
+        let pageLabel: String
+        let pageId: String
+    }
+
     var body: some View {
         routedView
             .onAppear { postRouteContext() }
@@ -22,19 +28,110 @@ struct IOSContentRouter: View {
                     object: nil,
                     userInfo: [
                         "path": path,
-                        "pageId": routeDescriptor?.tab.id as Any,
+                        "pageId": routeDescriptor?.pageId as Any,
                     ]
                 )
             }
     }
 
-    private var routeDescriptor: (module: AppModule, tab: AppTab)? {
+    private var routeDescriptor: RouteDescriptor? {
         for module in appModules {
             if let tab = module.tabs.first(where: { $0.path == path }) {
-                return (module, tab)
+                return RouteDescriptor(
+                    moduleLabel: module.label,
+                    pageLabel: tab.label,
+                    pageId: tab.id
+                )
             }
         }
-        return nil
+        guard let pageId = deepRoutePageId else { return nil }
+        let tokens = pageId.split(separator: "-").map(String.init)
+        let moduleLabel = tokens.first?.capitalized ?? "App"
+        let pageLabel = tokens.dropFirst().map { token in
+            switch token.lowercased() {
+            case "ai": return "AI"
+            case "pdf": return "PDF"
+            case "qa": return "Q&A"
+            default: return token.capitalized
+            }
+        }.joined(separator: " ")
+        return RouteDescriptor(
+            moduleLabel: moduleLabel,
+            pageLabel: pageLabel.isEmpty ? pageId : pageLabel,
+            pageId: pageId
+        )
+    }
+
+    /// Canonical identity for every explicit router path that is not an AppTab.
+    /// The coverage verifier compares this registry with the routed switch and
+    /// inventory, so a new deep link or alias cannot silently miss AI/Help context.
+    private var deepRoutePageId: String? {
+        switch path {
+        case "/chat/messages": return "chat-channels"
+        case "/chat/qa": return "chat-questions"
+        case "/jobs/clock": return "dashboard-clock"
+        case "/warehouse/network": return "devices-network"
+        case "/trucks/inspections": return "fleet-inspections"
+        case "/trucks/maintenance": return "fleet-maintenance"
+        case "/trucks/mileage": return "fleet-mileage"
+        case "/fleet/gps", "/trucks/gps": return "fleet-tracking"
+        case "/fleet/trailer-locations": return "fleet-trailer-locations"
+        case "/trucks/trailers": return "fleet-trailers"
+        case "/fleet/truck-tools": return "fleet-truck-tools"
+        case "/trucks/fleet": return "fleet-vehicles"
+        case "/jobs/daily-reports": return "jobs-daily-reports"
+        case "/jobs/detail": return "jobs-detail"
+        case "/jobs/active": return "jobs-list"
+        case "/jobs/questionnaire": return "jobs-questionnaire"
+        case "/notebooks/list", "/notebooks/general": return "notebooks-all"
+        case "/orders/requests": return "orders-jpos"
+        case "/orders/unified-order": return "orders-staging"
+        case "/people/directory": return "people-employees"
+        case "/reports/bookkeeper": return "reports-bookkeeper"
+        case "/reports/daily-summary", "/reports/overview": return "reports-daily-summary"
+        case "/reports/labor-overview": return "reports-labor"
+        case "/reports/pre-billing": return "reports-prebilling"
+        case "/reports/profitability": return "reports-profitability"
+        case "/reports/public": return "reports-public"
+        case "/reports/spending": return "reports-spending"
+        case "/reports/timesheets": return "reports-timesheets"
+        case "/scheduling/my-schedule": return "scheduling-calendar"
+        case "/scheduling/dispatch-admin": return "scheduling-dispatch"
+        case "/settings/about": return "settings-about"
+        case "/settings/ai-config": return "settings-ai-config"
+        case "/settings/audit-log": return "settings-audit"
+        case "/settings/audit-settings": return "settings-audit-settings"
+        case "/settings/backups": return "settings-backups"
+        case "/settings/billing", "/settings/billing-pay-settings": return "settings-billing"
+        case "/settings/bluetooth": return "settings-bluetooth"
+        case "/settings/bootstrap", "/settings/bootstrap-admin": return "settings-bootstrap"
+        case "/settings/break-lunch": return "settings-breaks"
+        case "/settings/bug-report", "/settings/feedback", "/settings/report-a-bug": return "settings-bug-report"
+        case "/settings/clockout", "/settings/clock-out-questions": return "settings-clockout"
+        case "/settings/company", "/settings/company-profiles": return "settings-company"
+        case "/settings/daily-report-templates": return "settings-daily-report-templates"
+        case "/settings/device-management": return "settings-device-management"
+        case "/settings/dispatch-preferences": return "settings-dispatch-preferences"
+        case "/settings/export", "/settings/data-export": return "settings-export"
+        case "/settings/forecast-config": return "settings-forecast-config"
+        case "/settings/integrations": return "settings-integrations"
+        case "/settings/job-estimation-questions": return "settings-job-estimation-questions"
+        case "/settings/keys", "/settings/key-management": return "settings-keys"
+        case "/settings/notification-prefs": return "settings-notifications"
+        case "/settings/org-thresholds": return "settings-org-thresholds"
+        case "/settings/pdf", "/settings/pdf-settings": return "settings-pdf"
+        case "/settings/pretrip-checklists": return "settings-pretrip-checklists"
+        case "/settings/remote-sync": return "settings-remote-sync"
+        case "/settings/report-templates": return "settings-report-templates"
+        case "/settings/reset", "/settings/database-reset": return "settings-reset"
+        case "/settings/security-admin": return "settings-security"
+        case "/settings/shared-channels": return "settings-shared-channels"
+        case "/settings/supplier-bridge": return "settings-supplier-bridge"
+        case "/settings/tool-policies": return "settings-tool-policies"
+        case "/settings/updates", "/settings/update-protocol": return "settings-updates"
+        case "/tools/checkout": return "tools-checkouts"
+        default: return nil
+        }
     }
 
     /// Publish only route identity. Page-specific visible counts and filters stay
@@ -42,16 +139,16 @@ struct IOSContentRouter: View {
     /// values, private notes, credentials, and mutation identifiers.
     private func postRouteContext() {
         guard let descriptor = routeDescriptor else { return }
-        let context = "Module: \(descriptor.module.label); Page: \(descriptor.tab.label); Route: \(path)"
+        let context = "Module: \(descriptor.moduleLabel); Page: \(descriptor.pageLabel); Route: \(path)"
         NotificationCenter.default.post(
             name: .routePageActive,
             object: nil,
             userInfo: [
                 "context": context,
                 "path": path,
-                "pageId": descriptor.tab.id,
-                "module": descriptor.module.label,
-                "page": descriptor.tab.label,
+                "pageId": descriptor.pageId,
+                "module": descriptor.moduleLabel,
+                "page": descriptor.pageLabel,
             ]
         )
     }
