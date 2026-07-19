@@ -46,6 +46,14 @@ page-specific search/filter/tab/data reposts remain guarded by
 `SearchablePageContextRegressionTests` and the focused freshness expectations in
 `tests/static/test_ai_help_context_coverage.py`.
 
+The dedicated Suppliers page uses an app-layer aggregate allowlist rather than
+`PartsService.buildSupplierAIContext()`. Its context contains only total/active/
+inactive/visible counts plus search-active, filter, and sort state. Supplier
+names, record IDs, account identifiers, contact fields, delivery details,
+scores/counts tied to one record, and free-form notes are excluded. A synthetic
+sentinel boundary test and the coverage verifier prevent the full service dump
+from being reconnected to the assistant.
+
 Help remains local and read-only. Where canonical Help exists, the inventory row
 names its exact `helpPageId`; where it does not, the row records that exemption
 instead of inventing copy or silently mapping to unrelated help.
@@ -65,7 +73,8 @@ The verifier fails for:
 - path drift or an unresolved `gap`;
 - missing source/rationale/Help-exemption evidence;
 - declaration, post, observer, inactive-clear, or Help-mapping drift on dedicated pages;
-- missing router-owned active/inactive observation, current-route refresh, or logout clearing.
+- missing router-owned active/inactive observation, current-route refresh, or logout clearing;
+- Suppliers page aggregate-context or search/filter/sort freshness regressions.
 
 ## Scope boundary
 
