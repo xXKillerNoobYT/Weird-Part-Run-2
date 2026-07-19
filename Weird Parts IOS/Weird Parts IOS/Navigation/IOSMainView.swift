@@ -973,9 +973,11 @@ struct ModuleHostView: View {
                         // give automation a plain, explicitly-sized hit region.
                         .buttonStyle(.plain)
                         .contentShape(Rectangle())
-                        .accessibilityElement(children: .ignore)
                         .accessibilityIdentifier("subtab_\(tab.id)")
                         .accessibilityLabel(tab.label)
+                        .accessibilityValue(isSelected(tab) ? "Selected" : "Not selected")
+                        .accessibilityAddTraits(isSelected(tab) ? .isSelected : [])
+                        .accessibilityRemoveTraits(isSelected(tab) ? [] : .isSelected)
                         .id(tab.id)
                     }
                 }

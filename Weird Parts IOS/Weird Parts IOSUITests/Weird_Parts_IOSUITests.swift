@@ -819,11 +819,52 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             selectedLocationsSubtab.isHittable,
             "Selected off-screen Warehouse Locations sub-tab should be auto-scrolled into the narrow iPhone viewport"
         )
+        XCTAssertEqual(selectedLocationsSubtab.label, "Locations")
+        XCTAssertGreaterThanOrEqual(selectedLocationsSubtab.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(selectedLocationsSubtab.frame.height, 44)
+        XCTAssertTrue(selectedLocationsSubtab.isSelected)
+        XCTAssertEqual(selectedLocationsSubtab.value as? String, "Selected")
 
         XCTAssertTrue(
             app.buttons["Shelving"].waitForExistence(timeout: 10) ||
                 app.staticTexts["UITesting Shelf A"].waitForExistence(timeout: 10),
             "Warehouse Locations content should render after the auto-scrolled selected sub-tab is visible"
+        )
+
+        let initiallySelectedWarehouseTabs = app.buttons
+            .matching(NSPredicate(format: "identifier BEGINSWITH 'subtab_warehouse-'"))
+            .allElementsBoundByIndex
+            .filter { $0.isSelected }
+        XCTAssertEqual(
+            initiallySelectedWarehouseTabs.map(\.identifier),
+            ["subtab_warehouse-locations"],
+            "Only Locations should expose selected state for the direct route"
+        )
+
+        let inventorySubtab = app.buttons["subtab_warehouse-inventory"]
+        XCTAssertTrue(inventorySubtab.waitForExistence(timeout: 10))
+        XCTAssertTrue(inventorySubtab.isHittable)
+        inventorySubtab.tap()
+
+        XCTAssertTrue(
+            app.searchFields["Search parts..."].waitForExistence(timeout: 10) ||
+                app.staticTexts["Default Warehouse"].waitForExistence(timeout: 10),
+            "Selecting Inventory should replace Locations content with the Inventory page"
+        )
+        XCTAssertTrue(inventorySubtab.isHittable, "The newly selected Inventory chip should remain revealed")
+        XCTAssertTrue(inventorySubtab.isSelected)
+        XCTAssertEqual(inventorySubtab.value as? String, "Selected")
+        XCTAssertFalse(selectedLocationsSubtab.isSelected)
+        XCTAssertEqual(selectedLocationsSubtab.value as? String, "Not selected")
+
+        let selectedWarehouseTabsAfterTap = app.buttons
+            .matching(NSPredicate(format: "identifier BEGINSWITH 'subtab_warehouse-'"))
+            .allElementsBoundByIndex
+            .filter { $0.isSelected }
+        XCTAssertEqual(
+            selectedWarehouseTabsAfterTap.map(\.identifier),
+            ["subtab_warehouse-inventory"],
+            "Selection changes must leave exactly one warehouse chip selected"
         )
 
         let screenshot = XCUIScreen.main.screenshot()
