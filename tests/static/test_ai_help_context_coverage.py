@@ -6,8 +6,12 @@ Run from the repo root with:
 """
 
 import json
+import os
 from pathlib import Path
 import re
+import subprocess
+import sys
+import tempfile
 import unittest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -28,6 +32,7 @@ class AIHelpContextCoverageTests(unittest.TestCase):
         cls.panel = AI_PANEL.read_text()
         cls.navigation = NAVIGATION.read_text()
         cls.inventory = json.loads(INVENTORY.read_text())
+        cls.app_tab_ids = set(re.findall(r'AppTab\(id: "([^"]+)"', cls.navigation))
         cls.help_page_ids = set(re.findall(r'pageId: "([^"]+)"', cls.registry))
         cls.registry_notifications = dict(
             re.findall(r'"(WiredPart\.[^"]+)": "([^"]+)"', cls.registry)
@@ -119,7 +124,8 @@ class AIHelpContextCoverageTests(unittest.TestCase):
             "settings-app-config",
         }
         missing_help = sorted(required_page_ids - self.help_page_ids)
-        missing_tracker = sorted(required_page_ids - set(self.tracker_notifications.values()))
+        identity_page_ids = set(self.tracker_notifications.values()) | self.app_tab_ids
+        missing_tracker = sorted(required_page_ids - identity_page_ids)
         self.assertEqual([], missing_help, "missing HelpContentRegistry entries")
         self.assertEqual([], missing_tracker, "missing active page tracker mappings")
 
@@ -189,6 +195,30 @@ class AIHelpContextCoverageTests(unittest.TestCase):
         self.assertIn("enum SupplierAIPageContextBuilder", suppliers)
         self.assertIn("SupplierAIPageContextBuilder.build(", suppliers)
         self.assertNotIn("buildSupplierAIContext()", suppliers)
+
+    def test_verifier_rejects_omitted_deep_route_inventory_row(self):
+        inventory = dict(self.inventory)
+        inventory["screens"] = [
+            screen for screen in self.inventory["screens"]
+            if screen["id"] != "settings-about"
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            inventory_path = Path(directory) / "inventory.json"
+            inventory_path.write_text(json.dumps(inventory))
+            environment = os.environ.copy()
+            environment["AI_CONTEXT_INVENTORY_PATH"] = str(inventory_path)
+            result = subprocess.run(
+                [sys.executable, "scripts/verify-ai-help-context-coverage.py"],
+                cwd=REPO_ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("deep/alias registry page IDs missing from inventory", result.stderr)
+        self.assertIn("settings-about", result.stderr)
 
 
 if __name__ == "__main__":
