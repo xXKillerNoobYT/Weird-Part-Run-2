@@ -1,4 +1,5 @@
 import XCTest
+@testable import Weird_Parts
 
 /// Focused regression coverage for GitHub #86's router-owned context fallback.
 /// These source-contract tests keep every AppTab covered without requiring
@@ -40,6 +41,67 @@ final class AIPageRouteContextRegressionTests: XCTestCase {
         )
         XCTAssertTrue(clear.contains("routeContext = nil"))
         XCTAssertTrue(clear.contains("activeRoutePath = nil"))
+    }
+
+    @MainActor
+    func testSupplierContextBuilderExcludesRecordAndFreeFormFields() {
+        let excludedSentinels = [
+            "SUPPLIER_NAME_SENTINEL",
+            "CONTACT_NAME_SENTINEL",
+            "EMAIL_SENTINEL",
+            "PHONE_SENTINEL",
+            "ADDRESS_SENTINEL",
+            "WEBSITE_SENTINEL",
+            "REP_NAME_SENTINEL",
+            "REP_EMAIL_SENTINEL",
+            "REP_PHONE_SENTINEL",
+            "PRIVATE_NOTES_SENTINEL",
+            "DELIVERY_METHOD_SENTINEL",
+            "DELIVERY_DAYS_SENTINEL",
+            "ACCOUNT_NUMBER_SENTINEL",
+        ]
+        let supplier = SupplierListRow(
+            id: 987_654_321,
+            name: excludedSentinels[0],
+            contactName: excludedSentinels[1],
+            email: excludedSentinels[2],
+            phone: excludedSentinels[3],
+            address: excludedSentinels[4],
+            website: excludedSentinels[5],
+            repName: excludedSentinels[6],
+            repEmail: excludedSentinels[7],
+            repPhone: excludedSentinels[8],
+            notes: excludedSentinels[9],
+            deliveryMethod: excludedSentinels[10],
+            deliveryDays: excludedSentinels[11],
+            accountNumber: excludedSentinels[12],
+            onTimeRate: 12.34,
+            qualityScore: 23.45,
+            reliabilityScore: 34.56,
+            isActive: 1,
+            brandCount: 67_890,
+            partCount: 54_321
+        )
+
+        let context = SupplierAIPageContextBuilder.build(
+            suppliers: [supplier],
+            visibleCount: 1,
+            searchIsActive: true,
+            showingActiveOnly: true,
+            sortLabel: "Name A→Z"
+        )
+
+        for sentinel in excludedSentinels {
+            XCTAssertFalse(context.contains(sentinel), "Leaked excluded supplier field: \(sentinel)")
+        }
+        for excludedValue in ["987654321", "12.34", "23.45", "34.56", "67890", "54321"] {
+            XCTAssertFalse(context.contains(excludedValue), "Leaked record-specific supplier value: \(excludedValue)")
+        }
+        XCTAssertTrue(context.contains("Total suppliers: 1"))
+        XCTAssertTrue(context.contains("Visible suppliers: 1"))
+        XCTAssertTrue(context.contains("Search: active"))
+        XCTAssertTrue(context.contains("Filter: active suppliers"))
+        XCTAssertTrue(context.contains("Sort: Name A→Z"))
     }
 
     private static func readSource(_ relativePath: String, file: StaticString = #filePath) throws -> String {

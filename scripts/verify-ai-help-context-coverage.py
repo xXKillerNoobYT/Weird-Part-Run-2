@@ -20,6 +20,7 @@ REGISTRY = APP_SOURCE / "Shared/HelpContentRegistry.swift"
 NAVIGATION = APP_SOURCE / "Navigation/NavigationConfig.swift"
 ROUTER = APP_SOURCE / "Navigation/IOSContentRouter.swift"
 ASSISTANT = APP_SOURCE / "AI/IOSAIAssistantPanel.swift"
+SUPPLIERS = APP_SOURCE / "Features/Parts/PartsSuppliersPage.swift"
 INVENTORY = ROOT / "docs/testing/ai-page-context-inventory.json"
 ALLOWED_DISPOSITIONS = {
     "dedicated",
@@ -50,6 +51,7 @@ def main() -> int:
     navigation = read(NAVIGATION)
     router = read(ROUTER)
     assistant = read(ASSISTANT)
+    suppliers = read(SUPPLIERS)
     try:
         inventory = json.loads(read(INVENTORY))
     except json.JSONDecodeError as error:
@@ -198,6 +200,27 @@ def main() -> int:
             failures.append("assistant does not observe both router-owned active/inactive notifications")
         if "routeContext = nil" not in assistant:
             failures.append("assistant logout/page lifecycle clearing omits routeContext")
+
+    supplier_context_contract = [
+        "enum SupplierAIPageContextBuilder",
+        "SupplierAIPageContextBuilder.build(",
+        ".onChange(of: searchText)",
+        ".onChange(of: filterActive)",
+        ".onChange(of: sortOption)",
+        "Visible suppliers:",
+        "Search:",
+        "Filter:",
+        "Sort:",
+    ]
+    fail_section(
+        failures,
+        "supplier page context minimization/freshness contract missing:",
+        [snippet for snippet in supplier_context_contract if snippet not in suppliers],
+    )
+    if "buildSupplierAIContext()" in suppliers:
+        failures.append(
+            "supplier page context must not use the full service dump; keep the app-layer aggregate allowlist"
+        )
 
     print(f"Inventory screens: {len(screens)}")
     print(f"Navigable AppTabs: {len(app_tabs)}")
