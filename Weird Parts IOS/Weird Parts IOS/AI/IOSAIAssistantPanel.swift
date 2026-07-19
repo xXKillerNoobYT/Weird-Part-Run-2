@@ -113,6 +113,11 @@ struct IOSAIAssistantPanel: View {
     @State private var notebooksListContext: String?
     @State private var settingsContext: String?
 
+    /// Minimal route identity supplied by IOSContentRouter for every navigable
+    /// AppTab, including pages that do not need a dedicated data payload.
+    @State private var routeContext: String?
+    @State private var activeRoutePath: String?
+
     /// Tracks which page the user is currently on, mapped to a HelpContentRegistry page ID.
     /// Updated whenever a page-active notification fires, cleared on page-inactive.
     @State private var activePageId: String?
@@ -458,6 +463,9 @@ struct IOSAIAssistantPanel: View {
         .onChange(of: resumePrerequisiteToken) { _, _ in
             helpHandoffReadiness.invalidateInitialization()
         }
+        .onAppear {
+            NotificationCenter.default.post(name: .requestCurrentPageContext, object: nil)
+        }
         .onChange(of: pendingHelpRequestToken) { _, _ in
             consumePendingHelpRequestIfReady()
         }
@@ -550,6 +558,11 @@ struct IOSAIAssistantPanel: View {
             fleetTelematicsContext: $fleetTelematicsContext,
             fleetMyTruckContext: $fleetMyTruckContext
 
+        ))
+        .modifier(RoutePageContextObserver(
+            routeContext: $routeContext,
+            activeRoutePath: $activeRoutePath,
+            activePageId: $activePageId
         ))
         .modifier(ActivePageIdTracker(activePageId: $activePageId))
         .onReceive(NotificationCenter.default.publisher(for: .appDidLogout)) { _ in
@@ -1008,6 +1021,8 @@ struct IOSAIAssistantPanel: View {
     /// previous user's page state.
     private func clearVolatilePageContext() {
         activePageId = nil
+        routeContext = nil
+        activeRoutePath = nil
         catalogContext = nil
         pricingContext = nil
         suppliersContext = nil
@@ -1330,6 +1345,9 @@ struct IOSAIAssistantPanel: View {
         if aiAvailability == .available, let db = appCore.db {
             // Use Foundation Models with tool calling for real database access
             var navContext = buildNavigationContext(permissions: appCore.permissions)
+            if let ctx = routeContext {
+                navContext += "\n\nCurrent Route Context (READ-ONLY): \(ctx)"
+            }
             if let ctx = catalogContext {
                 navContext += "\n\nCatalog Page Context: \(ctx)"
                 navContext += " You can set catalog filters by responding with a JSON action block."
@@ -1836,6 +1854,36 @@ struct IOSAIAssistantPanel: View {
 }
 
 // MARK: - Page Context Observer Modifiers
+
+/// Receives the minimal route identity that covers every current AppTab. A path
+/// token prevents a late inactive event from an old router clearing a newer page.
+private struct RoutePageContextObserver: ViewModifier {
+    @Binding var routeContext: String?
+    @Binding var activeRoutePath: String?
+    @Binding var activePageId: String?
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .routePageActive)) { notification in
+                guard let context = notification.userInfo?["context"] as? String,
+                      let path = notification.userInfo?["path"] as? String,
+                      let pageId = notification.userInfo?["pageId"] as? String else { return }
+                routeContext = context
+                activeRoutePath = path
+                activePageId = pageId
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .routePageInactive)) { notification in
+                guard let path = notification.userInfo?["path"] as? String,
+                      path == activeRoutePath else { return }
+                let pageId = notification.userInfo?["pageId"] as? String
+                routeContext = nil
+                activeRoutePath = nil
+                if activePageId == pageId {
+                    activePageId = nil
+                }
+            }
+    }
+}
 
 /// Groups the original 5 Parts page notification observers to keep chatBody type-checker happy.
 private struct PartsPageContextObservers: ViewModifier {

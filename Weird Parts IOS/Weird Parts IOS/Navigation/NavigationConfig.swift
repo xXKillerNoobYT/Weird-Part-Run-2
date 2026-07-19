@@ -233,6 +233,19 @@ extension Notification.Name {
     /// Posted by `PageHelpSheet` to request the assistant with visible, read-only help context.
     static let askAIAboutHelp = Notification.Name("WiredPart.askAIAboutHelp")
 
+    /// Posted by `IOSContentRouter` whenever the visible app route changes.
+    /// The payload is limited to page ID, route, module label, tab label, and a
+    /// human-readable read-only context string.
+    static let routePageActive = Notification.Name("WiredPart.routePageActive")
+
+    /// Posted when the matching routed page disappears so cached route context
+    /// cannot bleed into the next screen or user session.
+    static let routePageInactive = Notification.Name("WiredPart.routePageInactive")
+
+    /// Posted by the assistant when it mounts after the current page's original
+    /// appearance notification. The visible router responds with fresh context.
+    static let requestCurrentPageContext = Notification.Name("WiredPart.requestCurrentPageContext")
+
     /// Posted when the Pricing page appears, with current context for AI.
     static let pricingPageActive = Notification.Name("WiredPart.pricingPageActive")
 
