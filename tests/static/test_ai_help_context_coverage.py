@@ -125,6 +125,11 @@ class AIHelpContextCoverageTests(unittest.TestCase):
 
     def test_known_stale_context_pages_repost_on_filter_search_tab_or_form_changes(self):
         freshness_expectations = {
+            "Weird Parts IOS/Weird Parts IOS/Features/Parts/PartsSuppliersPage.swift": [
+                "onChange(of: searchText)",
+                "onChange(of: filterActive)",
+                "onChange(of: sortOption)",
+            ],
             "Weird Parts IOS/Weird Parts IOS/Features/Jobs/IOSQuestionnairePage.swift": [
                 "onChange(of: answers)",
                 "onChange(of: dailyReportText)",
@@ -176,6 +181,14 @@ class AIHelpContextCoverageTests(unittest.TestCase):
             if absent:
                 missing[path] = absent
         self.assertEqual({}, missing)
+
+    def test_supplier_page_uses_aggregate_context_builder_not_full_service_dump(self):
+        suppliers = swift_file(
+            "Weird Parts IOS/Weird Parts IOS/Features/Parts/PartsSuppliersPage.swift"
+        )
+        self.assertIn("enum SupplierAIPageContextBuilder", suppliers)
+        self.assertIn("SupplierAIPageContextBuilder.build(", suppliers)
+        self.assertNotIn("buildSupplierAIContext()", suppliers)
 
 
 if __name__ == "__main__":

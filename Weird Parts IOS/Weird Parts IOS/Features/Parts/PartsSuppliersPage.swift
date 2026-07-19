@@ -97,6 +97,8 @@ struct PartsSuppliersPage: View {
         }
         .searchable(text: $searchText, prompt: "Search suppliers...")
         .onChange(of: searchText) { _, _ in postSuppliersContext() }
+        .onChange(of: filterActive) { _, _ in postSuppliersContext() }
+        .onChange(of: sortOption) { _, _ in postSuppliersContext() }
         .refreshable { await loadData() }
         .toolbar {
             ToolbarItem(placement: .automatic) {
@@ -423,6 +425,7 @@ struct PartsSuppliersPage: View {
             }
             suppliers = rows
             isLoading = false
+            postSuppliersContext()
         } catch {
             loadError = userFriendlyError(error, context: "load suppliers")
             isLoading = false
@@ -432,21 +435,17 @@ struct PartsSuppliersPage: View {
     // MARK: - AI Context
 
     private func postSuppliersContext() {
-        guard let service = appCore.partsService else {
-            loadError = "Parts service not available"
-            return
-        }
-        let context: String
-        do {
-            context = try service.buildSupplierAIContext()
-        } catch {
-            context = "" // AI context non-critical; panel will work without it
-        }
-        let searchableContext = context + " Supplier page search text is \(searchText.isEmpty ? "empty" : "active"); visible suppliers: \(filteredSuppliers.count) of \(suppliers.count)."
+        let context = SupplierAIPageContextBuilder.build(
+            suppliers: suppliers,
+            visibleCount: filteredSuppliers.count,
+            searchIsActive: !searchText.isEmpty,
+            showingActiveOnly: filterActive == true,
+            sortLabel: sortOption.rawValue
+        )
         NotificationCenter.default.post(
             name: .suppliersPageActive,
             object: nil,
-            userInfo: ["context": searchableContext]
+            userInfo: ["context": context]
         )
     }
 
@@ -491,6 +490,33 @@ struct SupplierListRow: Identifiable, Sendable {
     let isActive: Int
     let brandCount: Int
     let partCount: Int
+}
+
+/// Builds the Suppliers page's minimal, read-only assistant context.
+///
+/// This boundary deliberately accepts the rendered rows but emits only aggregate
+/// and visible-control state. Supplier names, account identifiers, contact data,
+/// delivery details, free-form notes, and record IDs must never enter model context.
+enum SupplierAIPageContextBuilder {
+    static func build(
+        suppliers: [SupplierListRow],
+        visibleCount: Int,
+        searchIsActive: Bool,
+        showingActiveOnly: Bool,
+        sortLabel: String
+    ) -> String {
+        let activeCount = suppliers.lazy.filter { $0.isActive == 1 }.count
+        return """
+        SUPPLIER PAGE SUMMARY (READ-ONLY):
+        Total suppliers: \(suppliers.count)
+        Active suppliers: \(activeCount)
+        Inactive suppliers: \(suppliers.count - activeCount)
+        Visible suppliers: \(visibleCount)
+        Search: \(searchIsActive ? "active" : "empty")
+        Filter: \(showingActiveOnly ? "active suppliers" : "all suppliers")
+        Sort: \(sortLabel)
+        """
+    }
 }
 
 // MARK: - Supplier Form Sheet
