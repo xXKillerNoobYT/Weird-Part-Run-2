@@ -94,6 +94,19 @@ The PR must not refactor the assistant architecture, add preference/proactive be
 5. **CTO merge issue**
    - Created after the PR URL exists; blocked on implementation, QA, security, and all three review issues, then placed in the priority/age merge chain.
 
+## Review-driven closure decisions
+
+- `IOSContentRouter` owns a deterministic registry for every explicit deep or
+  compatibility-alias path that is not an `AppTab`. The verifier compares that
+  registry with the routed switch and inventory in both directions, and a
+  negative omission test proves a missing deep-screen row fails the gate.
+- Route identity is fallback state, separate from dedicated deep/sheet identity.
+  A Help-triggered parent-route refresh cannot replace a visible dedicated page;
+  once that page posts inactive, the retained parent identity becomes current.
+- The Suppliers page uses only aggregate counts and visible search/filter/sort
+  state. Record IDs, names, contacts, account data, notes, delivery fields, and
+  record-level scores/counts remain outside the assistant payload.
+
 ## Acceptance criteria
 
 - A machine-checkable inventory covers every current user-facing iOS route/screen and contains no unresolved `gap` rows.

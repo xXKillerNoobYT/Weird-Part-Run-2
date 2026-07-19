@@ -34,6 +34,8 @@ final class AIPageRouteContextRegressionTests: XCTestCase {
         XCTAssertTrue(assistant.contains("publisher(for: .routePageInactive)"))
         XCTAssertTrue(assistant.contains("path == activeRoutePath"))
         XCTAssertTrue(assistant.contains("Current Route Context (READ-ONLY)"))
+        XCTAssertTrue(assistant.contains("routePageId: $routePageId"))
+        XCTAssertTrue(assistant.contains("activePageId: $dedicatedPageId"))
 
         let clear = try TestSourceSlicer.braceBalancedBody(
             after: "private func clearVolatilePageContext()",
@@ -41,6 +43,42 @@ final class AIPageRouteContextRegressionTests: XCTestCase {
         )
         XCTAssertTrue(clear.contains("routeContext = nil"))
         XCTAssertTrue(clear.contains("activeRoutePath = nil"))
+        XCTAssertTrue(clear.contains("routePageId = nil"))
+        XCTAssertTrue(clear.contains("dedicatedPageId = nil"))
+    }
+
+    @MainActor
+    func testDedicatedIdentitySurvivesRouteRefreshThenFallsBackToParent() {
+        var routePageId: String? = "jobs-list"
+        var dedicatedPageId: String? = "jobs-detail"
+
+        XCTAssertEqual(
+            "jobs-detail",
+            AIPageIdentityResolver.resolve(
+                dedicatedPageId: dedicatedPageId,
+                routePageId: routePageId
+            )
+        )
+
+        // Opening Help requests a route refresh while the deep screen remains visible.
+        routePageId = "jobs-list"
+        XCTAssertEqual(
+            "jobs-detail",
+            AIPageIdentityResolver.resolve(
+                dedicatedPageId: dedicatedPageId,
+                routePageId: routePageId
+            )
+        )
+
+        // Once the dedicated screen posts inactive, the retained parent route wins.
+        dedicatedPageId = nil
+        XCTAssertEqual(
+            "jobs-list",
+            AIPageIdentityResolver.resolve(
+                dedicatedPageId: dedicatedPageId,
+                routePageId: routePageId
+            )
+        )
     }
 
     @MainActor
