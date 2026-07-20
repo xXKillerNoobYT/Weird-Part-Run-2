@@ -52,9 +52,10 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
             NSPredicate(format: "label == %@", "Conversation turn was not saved")
         ).firstMatch
         let warningBody = app.descendants(matching: .any).matching(
-            NSPredicate(format: "label == %@", "Simulated storage write failure. Tap Retry Save to try again.")
+            NSPredicate(format: "label == %@", "Simulated storage write failure for UI verification.")
         ).firstMatch
         let retry = app.buttons["Retry saving conversation turn"]
+        let dismiss = app.buttons["Dismiss conversation save warning"]
 
         XCTAssertTrue(warningTitle.waitForExistence(timeout: 10), "Save warning should render at \(context).")
         XCTAssertTrue(warningBody.waitForExistence(timeout: 5), "Save warning detail should remain untruncated at \(context).")
@@ -63,9 +64,11 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(retry.frame.width, 44, "Retry Save width must be at least 44pt at \(context).")
         XCTAssertGreaterThanOrEqual(retry.frame.height, 44, "Retry Save height must be at least 44pt at \(context).")
 
+        let viewport = app.windows.firstMatch
+        XCTAssertTrue(viewport.waitForExistence(timeout: 5), "The visible app window should exist at \(context).")
         for element in [warningTitle, warningBody, retry] {
             XCTAssertTrue(
-                app.frame.contains(element.frame),
+                viewport.frame.contains(element.frame),
                 "\(element.label) must remain inside the visible app frame at \(context)."
             )
         }
@@ -74,11 +77,21 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
         attachment.name = "Retry Save warning - \(context)"
         attachment.lifetime = .keepAlways
         add(attachment)
+
+        let clearingAction = name.contains("AX5") ? dismiss : retry
+        XCTAssertTrue(clearingAction.waitForExistence(timeout: 5), "The warning clear action should exist at \(context).")
+        XCTAssertTrue(clearingAction.isHittable, "The warning clear action should be hittable at \(context).")
+        clearingAction.tap()
+        XCTAssertTrue(
+            warningTitle.waitForNonExistence(timeout: 5),
+            "Retry Save and Dismiss should both clear the simulated warning deterministically."
+        )
     }
 
     @MainActor
     private func logInIfNeeded() throws {
-        if app.buttons["aiAssistantButton"].waitForExistence(timeout: 5) { return }
+        let assistantButton = app.buttons["aiAssistantButton"]
+        if assistantButton.waitForExistence(timeout: 5), assistantButton.isHittable { return }
 
         let ownerRow = app.buttons.matching(
             NSPredicate(format: "identifier BEGINSWITH 'loginUserRow_'")
@@ -100,8 +113,8 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
 
         let deadline = Date().addingTimeInterval(25)
         while Date() < deadline {
-            let skip = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Skip'")) .firstMatch
-            let gotIt = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Got It'")) .firstMatch
+            let skip = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Skip'")).firstMatch
+            let gotIt = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Got It'")).firstMatch
             if gotIt.exists {
                 if gotIt.isHittable {
                     gotIt.tap()

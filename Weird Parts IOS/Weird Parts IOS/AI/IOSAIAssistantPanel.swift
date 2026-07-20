@@ -91,6 +91,8 @@ struct IOSAIAssistantPanel: View {
     @State private var clearConversationRetryId: String?
     @State private var conversationPersistenceError: String?
     @State private var pendingFallbackSave: PendingFallbackSave?
+    @State private var isUITestingFallbackSaveWarningVisible = ProcessInfo.processInfo.arguments.contains("-UITesting")
+        && ProcessInfo.processInfo.arguments.contains("-UITestingAIFallbackSaveWarning")
     @State private var aiAvailability: AIAvailability = .notSupported
     @State private var catalogContext: String?
     @State private var pricingContext: String?
@@ -194,10 +196,8 @@ struct IOSAIAssistantPanel: View {
     }
 
     private var uiTestingFallbackSaveError: String? {
-        let arguments = ProcessInfo.processInfo.arguments
-        guard arguments.contains("-UITesting"),
-              arguments.contains("-UITestingAIFallbackSaveWarning") else { return nil }
-        return "Simulated storage write failure. Tap Retry Save to try again."
+        guard isUITestingFallbackSaveWarningVisible else { return nil }
+        return "Simulated storage write failure for UI verification."
     }
 
     private var hasFallbackSaveWarning: Bool {
@@ -768,9 +768,8 @@ struct IOSAIAssistantPanel: View {
                 } label: {
                     Text("Retry Save")
                         .font(.caption)
-                        .frame(minWidth: 44, minHeight: 44)
-                        .contentShape(Rectangle())
                 }
+                .dsMinTapTarget()
                 .disabled(isProcessing)
                 .accessibilityLabel("Retry saving conversation turn")
             }
@@ -779,9 +778,8 @@ struct IOSAIAssistantPanel: View {
             } label: {
                 Text("Dismiss")
                     .font(.caption)
-                    .frame(minWidth: 44, minHeight: 44)
-                    .contentShape(Rectangle())
             }
+            .dsMinTapTarget()
             .disabled(isProcessing)
             .accessibilityLabel("Dismiss conversation save warning")
         }
@@ -948,11 +946,6 @@ struct IOSAIAssistantPanel: View {
                   appCore.currentUser?.id == sendOwnerUserId,
                   conversationRevision == sendConversationRevision else { return }
 
-            if let conversationPersistenceError {
-                messages.append(AssistantMessage(role: .assistant, content: conversationPersistenceError))
-                return
-            }
-
             let response = await generateResponse(for: trimmed)
             guard conversationId == sendConversationId,
                   appCore.currentUser?.id == sendOwnerUserId,
@@ -973,7 +966,13 @@ struct IOSAIAssistantPanel: View {
     }
 
     private func retryFallbackSave() {
-        guard let pendingFallbackSave, !isProcessing else { return }
+        guard !isProcessing else { return }
+        guard let pendingFallbackSave else {
+            guard uiTestingFallbackSaveError != nil else { return }
+            isUITestingFallbackSaveWarningVisible = false
+            consumePendingHelpRequestIfReady()
+            return
+        }
         isProcessing = true
         let sendLifecycleRequestID = helpHandoffReadiness.beginSendLifecycle()
         Task {
@@ -990,6 +989,8 @@ struct IOSAIAssistantPanel: View {
         guard !isProcessing else { return }
         pendingFallbackSave = nil
         conversationPersistenceError = nil
+        isUITestingFallbackSaveWarningVisible = false
+        consumePendingHelpRequestIfReady()
     }
 
     private func persistFallbackTurn(_ pendingSave: PendingFallbackSave) async {
@@ -1072,6 +1073,7 @@ struct IOSAIAssistantPanel: View {
             )
             self.pendingHelpRequest = nil
         }
+        guard pendingFallbackSave == nil else { return }
         guard helpHandoffReadiness.consumeQueuedHelpRequest() != nil,
               let request = queuedHelpRequest else { return }
         queuedHelpRequest = nil
@@ -1080,7 +1082,9 @@ struct IOSAIAssistantPanel: View {
 
     /// Seeds a read-only help turn locally. No model or network response is required.
     private func handleHelpHandoff(_ userInfo: [AnyHashable: Any]) {
-        guard !isClearingConversation else {
+        guard !isClearingConversation,
+              !isProcessing,
+              pendingFallbackSave == nil else {
             queuedHelpRequest = userInfo
             helpHandoffReadiness.queueHelpRequest(
                 id: userInfo["requestID"] as? String ?? UUID().uuidString
@@ -1097,12 +1101,7 @@ struct IOSAIAssistantPanel: View {
         }
 
         query = ""
-        if isProcessing || pendingFallbackSave != nil {
-            conversationRevision &+= 1
-        }
-        pendingFallbackSave = nil
         conversationPersistenceError = nil
-        isProcessing = false
 
         let response: String
         if let pageId, let entry = HelpContentRegistry.helpFor(pageId) {

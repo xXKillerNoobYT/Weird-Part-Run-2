@@ -101,7 +101,8 @@ public enum AIConversationPersistenceError: LocalizedError, Sendable, Equatable 
 /// Describes how far a local user/assistant pair progressed through durable
 /// persistence and model-history staging.
 public enum AIConversationStagingOutcome: Sendable, Equatable {
-    /// The lifecycle changed before the atomic database write could commit.
+    /// The pair is not durable. The write was skipped before commit, or a stale
+    /// write committed during actor reentrancy and was then removed atomically.
     case notPersisted
     /// The pair is durable and the complete owner-scoped history is staged.
     case persistedAndStaged

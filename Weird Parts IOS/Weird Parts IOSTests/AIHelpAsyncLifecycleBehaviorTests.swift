@@ -186,7 +186,7 @@ final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
         XCTAssertFalse(box.messages.contains { $0.content.contains("stale Help A") })
     }
 
-    func testCurrentHelpFailureStillSurfacesBeforeSending() async {
+    func testCurrentHelpFailureRemainsAWarningWithoutBlockingOrReplacingTheNextResponse() async {
         let box = CoordinatorBox(conversationId: "help-a")
         let delayedHelpA = box.beginHelpCompletion(
             staged: false,
@@ -207,7 +207,7 @@ final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
         )
         XCTAssertEqual(box.messages.map(\.content), [
             "Follow-up question",
-            "This Help conversation is visible now but could not be saved: current Help persistence failure",
+            "Generated response for help-a",
         ])
     }
 
@@ -505,7 +505,11 @@ final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
 
         XCTAssertTrue(box.hasPendingFallbackRetry)
         XCTAssertNotNil(box.persistenceError)
-        XCTAssertTrue(box.consumeQueuedHelpHandoff())
+        XCTAssertFalse(
+            box.consumeQueuedHelpHandoff(),
+            "Queued Help must wait while the failed fallback pair remains recoverable."
+        )
+        XCTAssertTrue(box.dismissFallbackWarningAndConsumeQueuedHelp())
         XCTAssertTrue(box.isComposerUsable)
         XCTAssertFalse(box.hasPendingFallbackRetry)
         XCTAssertNil(box.persistenceError)
@@ -660,11 +664,7 @@ private final class CoordinatorBox {
 
     func sendInCurrentConversation(_ text: String = "Conversation B question") {
         messages.append(AssistantMessage(role: .user, content: text))
-        if let conversationPersistenceError {
-            messages.append(AssistantMessage(role: .assistant, content: conversationPersistenceError))
-        } else {
-            messages.append(AssistantMessage(role: .assistant, content: "Generated response for \(coordinator.conversationId)"))
-        }
+        messages.append(AssistantMessage(role: .assistant, content: "Generated response for \(coordinator.conversationId)"))
     }
 
     func beginConversationListLoad(
@@ -775,7 +775,8 @@ private final class FallbackHelpHandoffBox {
 
     @discardableResult
     func consumeQueuedHelpHandoff() -> Bool {
-        guard readiness.consumeQueuedHelpRequest() != nil,
+        guard !hasPendingFallbackRetry,
+              readiness.consumeQueuedHelpRequest() != nil,
               let queuedHelp else { return false }
         self.queuedHelp = nil
         hasPendingFallbackRetry = false
@@ -784,6 +785,14 @@ private final class FallbackHelpHandoffBox {
         visibleTranscript.append(contentsOf: helpTurns)
         persistedTranscript.append(contentsOf: helpTurns)
         return true
+    }
+
+    @discardableResult
+    func dismissFallbackWarningAndConsumeQueuedHelp() -> Bool {
+        guard !isProcessing else { return false }
+        hasPendingFallbackRetry = false
+        persistenceError = nil
+        return consumeQueuedHelpHandoff()
     }
 
     private func ownedTurns(_ userPrompt: String, _ assistantResponse: String) -> [OwnedTurn] {

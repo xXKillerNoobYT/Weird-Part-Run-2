@@ -90,23 +90,27 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertFalse(handoff.contains("chatWithTools"), "Help handoff must remain local and read-only.")
     }
 
-    func testHelpHandoffInvalidatesAnInFlightSendBeforeSeedingHelp() throws {
+    func testHelpHandoffWaitsForAnInFlightSendBeforeSeedingHelp() throws {
         let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
         let handoff = try TestSourceSlicer.braceBalancedBody(
             after: "private func handleHelpHandoff(_ userInfo: [AnyHashable: Any])",
             in: assistant
         )
+        XCTAssertTrue(handoff.contains("!isProcessing"))
+        XCTAssertTrue(handoff.contains("pendingFallbackSave == nil"))
+        XCTAssertTrue(handoff.contains("helpHandoffReadiness.queueHelpRequest("))
+        XCTAssertFalse(handoff.contains("isProcessing = false"))
 
-        guard let processingGuard = handoff.range(of: "if isProcessing")?.lowerBound,
-              let revisionChange = handoff.range(of: "conversationRevision &+= 1")?.lowerBound,
-              let processingReset = handoff.range(of: "isProcessing = false")?.lowerBound,
-              let helpAppend = handoff.range(of: "messages.append(AssistantMessage(role: .user")?.lowerBound else {
-            XCTFail("Help handoff must invalidate a pending send before replacing its processing state.")
+        let send = try TestSourceSlicer.braceBalancedBody(
+            after: "private func sendQuery()",
+            in: assistant
+        )
+        guard let finish = send.range(of: "helpHandoffReadiness.finishSendLifecycle(sendLifecycleRequestID)")?.lowerBound,
+              let consume = send.range(of: "consumePendingHelpRequestIfReady()")?.lowerBound else {
+            XCTFail("Send completion must release its lifecycle before consuming queued Help.")
             return
         }
-        XCTAssertLessThan(processingGuard, revisionChange)
-        XCTAssertLessThan(revisionChange, processingReset)
-        XCTAssertLessThan(processingReset, helpAppend)
+        XCTAssertLessThan(finish, consume)
     }
 
     func testResumeControlsUseExistingPersistenceHelpersAndSafeEmptyState() throws {
@@ -197,7 +201,10 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertTrue(sendQuery.contains("await pendingHelpPersistence?.value"))
         XCTAssertTrue(sendQuery.contains("conversationId == sendConversationId"))
         XCTAssertTrue(sendQuery.contains("appCore.currentUser?.id == sendOwnerUserId"))
-        XCTAssertTrue(sendQuery.contains("if let conversationPersistenceError"))
+        XCTAssertFalse(
+            sendQuery.contains("if let conversationPersistenceError"),
+            "A best-effort Help persistence warning must not replace the generated follow-up response."
+        )
         guard let waitIndex = sendQuery.range(of: "await pendingHelpPersistence?.value")?.lowerBound,
               let generationIndex = sendQuery.range(of: "let response = await generateResponse")?.lowerBound else {
             XCTFail("sendQuery must contain both the Help-staging wait and response generation.")

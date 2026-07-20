@@ -64,8 +64,11 @@ final class AIFallbackPersistenceRegressionTests: XCTestCase {
         XCTAssertTrue(persist.contains("case .saved:"))
         XCTAssertTrue(persist.contains("Tap Retry Save"))
         XCTAssertTrue(assistant.contains("Text(\"Retry Save\")"))
-        XCTAssertTrue(assistant.contains("frame(minWidth: 44, minHeight: 44)"))
-        XCTAssertTrue(assistant.contains("contentShape(Rectangle())"))
+        XCTAssertGreaterThanOrEqual(
+            assistant.components(separatedBy: ".dsMinTapTarget()").count - 1,
+            2,
+            "Retry Save and Dismiss must use the shared minimum tap-target helper."
+        )
         XCTAssertTrue(assistant.contains("accessibilityLabel(\"Retry saving conversation turn\")"))
         XCTAssertTrue(assistant.contains("|| pendingFallbackSave != nil"))
     }
@@ -110,6 +113,37 @@ final class AIFallbackPersistenceRegressionTests: XCTestCase {
             dismiss.contains("guard !isProcessing else { return }"),
             "The action handler must preserve the exact retry payload even if dismissal is invoked programmatically."
         )
+        XCTAssertTrue(dismiss.contains("isUITestingFallbackSaveWarningVisible = false"))
+        XCTAssertTrue(dismiss.contains("consumePendingHelpRequestIfReady()"))
+
+        let retry = try TestSourceSlicer.braceBalancedBody(
+            after: "private func retryFallbackSave()",
+            in: assistant
+        )
+        XCTAssertTrue(retry.contains("isUITestingFallbackSaveWarningVisible = false"))
+        XCTAssertTrue(retry.contains("consumePendingHelpRequestIfReady()"))
+    }
+
+    func testQueuedHelpWaitsForFallbackResolutionAndPersistenceWarningsDoNotReplaceResponses() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let consumeHelp = try TestSourceSlicer.braceBalancedBody(
+            after: "private func consumePendingHelpRequestIfReady()",
+            in: assistant
+        )
+        XCTAssertTrue(
+            consumeHelp.contains("guard pendingFallbackSave == nil else { return }"),
+            "Help must remain queued until the exact fallback retry payload is saved or dismissed."
+        )
+
+        let send = try TestSourceSlicer.braceBalancedBody(
+            after: "private func sendQuery()",
+            in: assistant
+        )
+        XCTAssertFalse(
+            send.contains("if let conversationPersistenceError"),
+            "A status-only persistence warning must not become assistant output or block generation."
+        )
+        XCTAssertTrue(send.contains("let response = await generateResponse(for: trimmed)"))
     }
 
     @MainActor
