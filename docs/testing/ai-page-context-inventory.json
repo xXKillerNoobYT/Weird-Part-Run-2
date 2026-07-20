@@ -1574,6 +1574,160 @@
       "helpRationale": "No canonical Help entry is currently exposed for this route."
     },
     {
+      "id": "fleet-vehicle-detail",
+      "label": "Vehicle Detail",
+      "path": "navigation:vehicle-detail",
+      "disposition": "inherited",
+      "source": "Weird Parts IOS/Weird Parts IOS/Features/Fleet/IOSVehicleDetailPage.swift",
+      "rationale": "Vehicle Detail is reached from Vehicles and intentionally inherits the parent fleet context until it owns a dedicated page lifecycle; its visible detail Help copy is passed by the Help handoff.",
+      "notification": null,
+      "helpPageId": null,
+      "helpRationale": "The detail page exposes local Vehicle Detail Help content through PageHelpSheet; no separate canonical registry entry exists."
+    },
+    {
+      "id": "tools-detail",
+      "label": "Tool Detail",
+      "path": "navigation:tool-detail",
+      "disposition": "inherited",
+      "source": "Weird Parts IOS/Weird Parts IOS/Features/Tools/IOSToolDetailPage.swift",
+      "rationale": "Tool Detail is reached from Tool Registry or Tool Admin and intentionally inherits the containing tools context until it owns a dedicated page lifecycle; its visible detail Help copy is passed by the Help handoff.",
+      "notification": null,
+      "helpPageId": null,
+      "helpRationale": "The detail page exposes local Tool Detail Help content through PageHelpSheet; no separate canonical registry entry exists."
+    },
+    {
+      "id": "people-customer-detail",
+      "label": "Customer Detail",
+      "path": "navigation:customer-detail",
+      "disposition": "inherited",
+      "source": "Weird Parts IOS/Weird Parts IOS/Features/People/IOSCustomerDetailPage.swift",
+      "rationale": "Customer Detail is reached from Customers and intentionally inherits the parent People context until it owns a dedicated page lifecycle; its visible detail Help copy is passed by the Help handoff.",
+      "notification": null,
+      "helpPageId": null,
+      "helpRationale": "The detail page exposes local Customer Detail Help content through PageHelpSheet; no separate canonical registry entry exists."
+    },
+    {
+      "id": "fleet-trailer-detail",
+      "label": "Trailer Detail",
+      "path": "navigation-or-sheet:trailer-detail",
+      "disposition": "inherited",
+      "source": "Weird Parts IOS/Weird Parts IOS/Features/Fleet/IOSTrailerDetailPage.swift",
+      "rationale": "Trailer Detail is reached from Trailers or My Truck by navigation and sheet presentations and intentionally inherits the containing fleet context until it owns a dedicated page lifecycle; its visible detail Help copy is passed by the Help handoff.",
+      "notification": null,
+      "helpPageId": null,
+      "helpRationale": "The detail page exposes local Trailer Detail Help content through PageHelpSheet; no separate canonical registry entry exists."
+    },
+    {
+      "id": "people-contractor-detail",
+      "label": "Contractor Detail",
+      "path": "navigation:contractor-detail",
+      "disposition": "inherited",
+      "source": "Weird Parts IOS/Weird Parts IOS/Features/People/IOSContractorDetailPage.swift",
+      "rationale": "Contractor Detail is reached from Contractors and intentionally inherits the parent People context until it owns a dedicated page lifecycle; its visible detail Help copy is passed by the Help handoff.",
+      "notification": null,
+      "helpPageId": null,
+      "helpRationale": "The detail page exposes local Contractor Detail Help content through PageHelpSheet; no separate canonical registry entry exists."
+    },
+    {
+      "id": "people-contact-detail",
+      "label": "Contact Detail",
+      "path": "navigation:contact-detail",
+      "disposition": "inherited",
+      "source": "Weird Parts IOS/Weird Parts IOS/Features/People/IOSContactDetailPage.swift",
+      "rationale": "Contact Detail is reached from Contacts and intentionally inherits the parent People context until it owns a dedicated page lifecycle; its visible detail Help copy is passed by the Help handoff.",
+      "notification": null,
+      "helpPageId": null,
+      "helpRationale": "The detail page exposes local Contact Detail Help content through PageHelpSheet; no separate canonical registry entry exists."
+    },
+    {
+      "id": "people-team-detail",
+      "label": "Team Detail",
+      "path": "navigation:team-detail",
+      "disposition": "inherited",
+      "source": "Weird Parts IOS/Weird Parts IOS/Features/People/IOSTeamDetailPage.swift",
+      "rationale": "Team Detail is reached from Teams and intentionally inherits the parent People context until it owns a dedicated page lifecycle; its visible detail Help copy is passed by the Help handoff.",
+      "notification": null,
+      "helpPageId": null,
+      "helpRationale": "The detail page exposes local Team Detail Help content through PageHelpSheet; no separate canonical registry entry exists."
+    },
+    {
+      "id": "notebooks-detail",
+      "label": "Notebook Detail",
+      "path": "navigation:notebook-detail",
+      "disposition": "inherited",
+      "source": "Weird Parts IOS/Weird Parts IOS/Features/Notebooks/IOSNotebookDetailPage.swift",
+      "rationale": "Notebook Detail is reached from the notebook lists and intentionally inherits the containing Notebooks context until it owns a dedicated page lifecycle; its visible detail Help copy is passed by the Help handoff.",
+      "notification": null,
+      "helpPageId": null,
+      "helpRationale": "The detail page exposes local Notebook Detail Help content through PageHelpSheet; no separate canonical registry entry exists."
+    },
+    {
+      "id": "chat-message-thread",
+      "label": "Message Thread",
+      "path": "navigation:message-thread",
+      "disposition": "inherited",
+      "source": "Weird Parts IOS/Weird Parts IOS/Features/Chat/IOSMessageThreadView.swift",
+      "rationale": "Message Thread is reached from Channels or Job Detail and intentionally inherits the containing chat/job context until it owns a dedicated page lifecycle; its visible Help copy is passed by the Help handoff.",
+      "notification": null,
+      "helpPageId": null,
+      "helpRationale": "The thread exposes local Help content through PageHelpSheet; no separate canonical registry entry exists."
+    },
+    {
+      "id": "dashboard-kpi-category-parts",
+      "label": "Dashboard Category Parts Detail",
+      "path": "navigation:dashboard-category-parts",
+      "disposition": "inherited",
+      "source": "Weird Parts IOS/Weird Parts IOS/Features/Dashboard/DashboardKPIDetailSheets.swift",
+      "rationale": "The KPI drill-down is nested under Dashboard and intentionally inherits Dashboard context; it is a read-only category breakdown without its own Help surface.",
+      "notification": null,
+      "helpPageId": null,
+      "helpRationale": "No page-specific Help surface is exposed for this nested dashboard drill-down."
+    },
+    {
+      "id": "dashboard-kpi-location-stock",
+      "label": "Dashboard Location Stock Detail",
+      "path": "navigation:dashboard-location-stock",
+      "disposition": "inherited",
+      "source": "Weird Parts IOS/Weird Parts IOS/Features/Dashboard/DashboardKPIDetailSheets.swift",
+      "rationale": "The KPI drill-down is nested under Dashboard and intentionally inherits Dashboard context; it is a read-only location breakdown without its own Help surface.",
+      "notification": null,
+      "helpPageId": null,
+      "helpRationale": "No page-specific Help surface is exposed for this nested dashboard drill-down."
+    },
+    {
+      "id": "dashboard-kpi-job",
+      "label": "Dashboard Job KPI Detail",
+      "path": "navigation:dashboard-job-kpi",
+      "disposition": "inherited",
+      "source": "Weird Parts IOS/Weird Parts IOS/Features/Dashboard/DashboardKPIDetailSheets.swift",
+      "rationale": "The KPI drill-down is nested under Dashboard and intentionally inherits Dashboard context; it is a read-only job summary without its own Help surface.",
+      "notification": null,
+      "helpPageId": null,
+      "helpRationale": "No page-specific Help surface is exposed for this nested dashboard drill-down."
+    },
+    {
+      "id": "dashboard-kpi-po",
+      "label": "Dashboard Purchase Order KPI Detail",
+      "path": "navigation:dashboard-po-kpi",
+      "disposition": "inherited",
+      "source": "Weird Parts IOS/Weird Parts IOS/Features/Dashboard/DashboardKPIDetailSheets.swift",
+      "rationale": "The KPI drill-down is nested under Dashboard and intentionally inherits Dashboard context; it is a read-only purchase-order summary without its own Help surface.",
+      "notification": null,
+      "helpPageId": null,
+      "helpRationale": "No page-specific Help surface is exposed for this nested dashboard drill-down."
+    },
+    {
+      "id": "dashboard-kpi-low-stock",
+      "label": "Dashboard Low Stock Detail",
+      "path": "navigation:dashboard-low-stock",
+      "disposition": "inherited",
+      "source": "Weird Parts IOS/Weird Parts IOS/Features/Dashboard/DashboardKPIDetailSheets.swift",
+      "rationale": "The KPI drill-down is nested under Dashboard and intentionally inherits Dashboard context; it is a read-only stock summary without its own Help surface.",
+      "notification": null,
+      "helpPageId": null,
+      "helpRationale": "No page-specific Help surface is exposed for this nested dashboard drill-down."
+    },
+    {
       "id": "route-placeholder",
       "label": "Coming Soon Placeholder",
       "path": "unmatched:*",
@@ -1584,5 +1738,218 @@
       "helpPageId": null,
       "helpRationale": "No Help mapping because this is not a supported feature screen."
     }
-  ]
+  ],
+  "nonRouterAudit": {
+    "scope": "Concrete non-router detail/page destinations reached by NavigationLink or navigationDestination, plus top-level sheet/fullScreenCover screen presentations. AppTab/deep-router destinations remain governed by NavigationConfig and IOSContentRouter. Transient create/edit/action forms, Help presentation infrastructure, and camera/system pickers are recorded as explicit exemptions rather than independent AI pages.",
+    "destinations": [
+      {
+        "destination": "IOSVehicleDetailPage",
+        "presentation": "NavigationLink",
+        "source": "Weird Parts IOS/Weird Parts IOS/Features/Fleet/IOSVehiclesPage.swift",
+        "expectedOccurrences": 2,
+        "screenId": "fleet-vehicle-detail",
+        "rationale": "Row and context-menu links reach the same inherited Vehicle Detail screen."
+      },
+      {
+        "destination": "IOSToolDetailPage",
+        "presentation": "NavigationLink",
+        "source": "Weird Parts IOS/Weird Parts IOS/Features/Tools/IOSToolRegistryPage.swift",
+        "expectedOccurrences": 1,
+        "screenId": "tools-detail",
+        "rationale": "Tool Registry reaches the inherited Tool Detail screen."
+      },
+      {
+        "destination": "IOSToolDetailPage",
+        "presentation": "NavigationLink",
+        "source": "Weird Parts IOS/Weird Parts IOS/Features/Tools/IOSToolAdminPage.swift",
+        "expectedOccurrences": 1,
+        "screenId": "tools-detail",
+        "rationale": "Tool Admin reaches the same inherited Tool Detail screen."
+      },
+      {
+        "destination": "IOSCustomerDetailPage",
+        "presentation": "NavigationLink",
+        "source": "Weird Parts IOS/Weird Parts IOS/Features/People/IOSCustomersPage.swift",
+        "expectedOccurrences": 1,
+        "screenId": "people-customer-detail",
+        "rationale": "Customers reaches the inherited Customer Detail screen."
+      },
+      {
+        "destination": "IOSTrailerDetailPage",
+        "presentation": "NavigationLink/sheet",
+        "source": "Weird Parts IOS/Weird Parts IOS/Features/Fleet/IOSTrailersPage.swift",
+        "expectedOccurrences": 2,
+        "screenId": "fleet-trailer-detail",
+        "rationale": "Trailers reaches the same inherited detail by row navigation and context-menu sheet."
+      },
+      {
+        "destination": "IOSTrailerDetailPage",
+        "presentation": "NavigationLink/sheet",
+        "source": "Weird Parts IOS/Weird Parts IOS/Features/Fleet/IOSMyTruckPage.swift",
+        "expectedOccurrences": 2,
+        "screenId": "fleet-trailer-detail",
+        "rationale": "My Truck reaches the same inherited trailer detail by navigation and sheet."
+      },
+      {
+        "destination": "IOSContractorDetailPage",
+        "presentation": "NavigationLink",
+        "source": "Weird Parts IOS/Weird Parts IOS/Features/People/IOSContractorsPage.swift",
+        "expectedOccurrences": 1,
+        "screenId": "people-contractor-detail",
+        "rationale": "Contractors reaches the inherited Contractor Detail screen."
+      },
+      {
+        "destination": "IOSContactDetailPage",
+        "presentation": "navigationDestination",
+        "source": "Weird Parts IOS/Weird Parts IOS/Features/People/IOSContactsPage.swift",
+        "expectedOccurrences": 1,
+        "screenId": "people-contact-detail",
+        "rationale": "Contacts resolves its typed navigation destination to Contact Detail."
+      },
+      {
+        "destination": "IOSTeamDetailPage",
+        "presentation": "navigationDestination",
+        "source": "Weird Parts IOS/Weird Parts IOS/Features/People/IOSTeamsPage.swift",
+        "expectedOccurrences": 1,
+        "screenId": "people-team-detail",
+        "rationale": "Teams resolves its typed navigation destination to Team Detail."
+      },
+      {
+        "destination": "IOSEmployeeDetailPage",
+        "presentation": "NavigationLink",
+        "source": "Weird Parts IOS/Weird Parts IOS/Features/People/IOSEmployeesPage.swift",
+        "expectedOccurrences": 1,
+        "screenId": "people-employee-detail",
+        "rationale": "Employees reaches the previously inventoried inherited Employee Detail screen."
+      },
+      {
+        "destination": "IOSEmployeeDetailPage",
+        "presentation": "NavigationLink",
+        "source": "Weird Parts IOS/Weird Parts IOS/Features/People/IOSHatsPage.swift",
+        "expectedOccurrences": 1,
+        "screenId": "people-employee-detail",
+        "rationale": "Hat membership reaches the same inherited Employee Detail screen."
+      },
+      {
+        "destination": "IOSNotebookDetailPage",
+        "presentation": "NavigationLink",
+        "source": "Weird Parts IOS/Weird Parts IOS/Features/Notebooks/IOSNotebooksListPage.swift",
+        "expectedOccurrences": 1,
+        "screenId": "notebooks-detail",
+        "rationale": "The all-notebooks list reaches the inherited Notebook Detail screen."
+      },
+      {
+        "destination": "IOSNotebookDetailPage",
+        "presentation": "NavigationLink",
+        "source": "Weird Parts IOS/Weird Parts IOS/Features/Notebooks/IOSJobNotebooksPage.swift",
+        "expectedOccurrences": 1,
+        "screenId": "notebooks-detail",
+        "rationale": "The job-notebooks list reaches the same inherited Notebook Detail screen."
+      },
+      {
+        "destination": "IOSMessageThreadView",
+        "presentation": "NavigationLink",
+        "source": "Weird Parts IOS/Weird Parts IOS/Features/Chat/IOSChannelsPage.swift",
+        "expectedOccurrences": 1,
+        "screenId": "chat-message-thread",
+        "rationale": "Channels reaches the inherited Message Thread screen."
+      },
+      {
+        "destination": "IOSMessageThreadView",
+        "presentation": "NavigationLink",
+        "source": "Weird Parts IOS/Weird Parts IOS/Features/Jobs/IOSJobDetailTabView.swift",
+        "expectedOccurrences": 1,
+        "screenId": "chat-message-thread",
+        "rationale": "Job Detail reaches the same inherited Message Thread screen."
+      },
+      {
+        "destination": "CategoryPartsListView",
+        "presentation": "navigationDestination",
+        "source": "Weird Parts IOS/Weird Parts IOS/Features/Dashboard/DashboardKPIDetailSheets.swift",
+        "expectedOccurrences": 1,
+        "screenId": "dashboard-kpi-category-parts",
+        "rationale": "Dashboard category KPI navigation reaches a nested read-only detail."
+      },
+      {
+        "destination": "LocationTypeStockView",
+        "presentation": "navigationDestination",
+        "source": "Weird Parts IOS/Weird Parts IOS/Features/Dashboard/DashboardKPIDetailSheets.swift",
+        "expectedOccurrences": 1,
+        "screenId": "dashboard-kpi-location-stock",
+        "rationale": "Dashboard location KPI navigation reaches a nested read-only detail."
+      },
+      {
+        "destination": "JobKPIDetailView",
+        "presentation": "navigationDestination",
+        "source": "Weird Parts IOS/Weird Parts IOS/Features/Dashboard/DashboardKPIDetailSheets.swift",
+        "expectedOccurrences": 1,
+        "screenId": "dashboard-kpi-job",
+        "rationale": "Dashboard job KPI navigation reaches a nested read-only detail."
+      },
+      {
+        "destination": "POKPIDetailView",
+        "presentation": "navigationDestination",
+        "source": "Weird Parts IOS/Weird Parts IOS/Features/Dashboard/DashboardKPIDetailSheets.swift",
+        "expectedOccurrences": 1,
+        "screenId": "dashboard-kpi-po",
+        "rationale": "Dashboard purchase-order KPI navigation reaches a nested read-only detail."
+      },
+      {
+        "destination": "LowStockPartDetailView",
+        "presentation": "navigationDestination",
+        "source": "Weird Parts IOS/Weird Parts IOS/Features/Dashboard/DashboardKPIDetailSheets.swift",
+        "expectedOccurrences": 1,
+        "screenId": "dashboard-kpi-low-stock",
+        "rationale": "Dashboard low-stock KPI navigation reaches a nested read-only detail."
+      },
+      {
+        "destination": "ReportABugPage",
+        "presentation": "sheet",
+        "source": "Weird Parts IOS/Weird Parts IOS/App/WiredPartIOSApp.swift",
+        "expectedOccurrences": 1,
+        "screenId": null,
+        "rationale": "Startup error reporting is an unauthenticated recovery workflow, not an AI page-context destination."
+      },
+      {
+        "destination": "ReportABugPage",
+        "presentation": "sheet",
+        "source": "Weird Parts IOS/Weird Parts IOS/AI/IOSAIAssistantPanel.swift",
+        "expectedOccurrences": 1,
+        "screenId": null,
+        "rationale": "Bug reporting is a transient assistant workflow and intentionally retains the assistant context."
+      },
+      {
+        "destination": "SyncConflictReviewPage",
+        "presentation": "sheet",
+        "source": "Weird Parts IOS/Weird Parts IOS/Navigation/IOSMainView.swift",
+        "expectedOccurrences": 1,
+        "screenId": null,
+        "rationale": "Conflict review is a transient root workflow and intentionally retains the current containing-page context."
+      },
+      {
+        "destination": "TabBarEditorView",
+        "presentation": "sheet",
+        "source": "Weird Parts IOS/Weird Parts IOS/Navigation/IOSMainView.swift",
+        "expectedOccurrences": 2,
+        "screenId": null,
+        "rationale": "Tab editing is navigation-shell configuration, not a business page context."
+      },
+      {
+        "destination": "UserMenuSheet",
+        "presentation": "sheet",
+        "source": "Weird Parts IOS/Weird Parts IOS/Navigation/IOSMainView.swift",
+        "expectedOccurrences": 2,
+        "screenId": null,
+        "rationale": "The user menu is navigation-shell presentation and intentionally retains the underlying page context."
+      },
+      {
+        "destination": "CameraCapture",
+        "presentation": "fullScreenCover",
+        "source": "Weird Parts IOS/Weird Parts IOS/Scanning/IOSCameraMatchView.swift",
+        "expectedOccurrences": 1,
+        "screenId": null,
+        "rationale": "CameraCapture is a transient system capture surface without Help or independent AI context."
+      }
+    ]
+  }
 }
