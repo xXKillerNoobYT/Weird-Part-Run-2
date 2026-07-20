@@ -1,9 +1,4 @@
 import Foundation
-#if canImport(Darwin)
-import Darwin
-#elseif canImport(Glibc)
-import Glibc
-#endif
 import Testing
 import GRDB
 @testable import WiredPartCore
@@ -11,9 +6,12 @@ import GRDB
 @Suite("JobEstimationService Tests", .serialized)
 struct JobEstimationServiceTests {
 
-    private func freshEnv() throws -> (E2ETestHelpers.TestEnvironment, JobEstimationService) {
+    private func freshEnv(
+        calendar: Calendar = .current,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) throws -> (E2ETestHelpers.TestEnvironment, JobEstimationService) {
         let env = try E2ETestHelpers.setUp()
-        let estimation = JobEstimationService(db: env.db)
+        let estimation = JobEstimationService(db: env.db, calendar: calendar, now: now)
         return (env, estimation)
     }
 
@@ -376,13 +374,17 @@ struct JobEstimationServiceTests {
 
     @Test("Monthly capacity groups UTC-split labor by local work date")
     func testMonthlyCapacityUsesLocalClockInDateBucket() throws {
-        try withMountainTimeZone {
-            let (env, est) = try freshEnv()
+            let fixedNow = try Date("2026-07-20T12:00:00Z", strategy: .iso8601)
+            let (env, est) = try freshEnv(calendar: Self.denverCalendar, now: { fixedNow })
             let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-CAP-LOCAL", name: "Local Capacity")
             let utcFormatter = Self.utcTimestampFormatter
 
-            let firstClockIn = utcFormatter.string(from: try Self.localToday(hour: 16, minute: 30))
-            let secondClockIn = utcFormatter.string(from: try Self.localToday(hour: 18, minute: 30))
+            let firstClockIn = utcFormatter.string(from: try Self.localToday(
+                hour: 16, minute: 30, referenceDate: fixedNow
+            ))
+            let secondClockIn = utcFormatter.string(from: try Self.localToday(
+                hour: 18, minute: 30, referenceDate: fixedNow
+            ))
 
             try env.db.writer.write { db in
                 try db.execute(sql: "DELETE FROM labor_entries")
@@ -403,10 +405,38 @@ struct JobEstimationServiceTests {
             }
 
             let capacity = try est.calculateMonthlyCapacity()
-            let expected = Double(workerCount * Self.weekdaysInCurrentMonth())
+            let expected = Double(workerCount * Self.weekdaysInCurrentMonth(referenceDate: fixedNow))
 
             #expect(abs(capacity - expected) < 0.001)
+    }
+
+    @Test("Monthly capacity includes date-only labor on the first historical local day")
+    func testMonthlyCapacityIncludesDateOnlyHistoryBoundary() throws {
+        let fixedNow = try Date("2026-07-20T12:00:00Z", strategy: .iso8601)
+        let (env, est) = try freshEnv(calendar: Self.denverCalendar, now: { fixedNow })
+        let jobId = try E2ETestHelpers.seedJob(
+            env,
+            jobNumber: "J-CAP-DATE-ONLY",
+            name: "Date-Only Capacity"
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: "DELETE FROM labor_entries")
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, '2026-01-20', '2026-01-20', 4.0, 0.0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, jobId])
         }
+        let workerCount = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM users WHERE deleted_at IS NULL") ?? 1
+        }
+
+        let capacity = try est.calculateMonthlyCapacity()
+        let expected = 0.5 * Double(
+            workerCount * Self.weekdaysInCurrentMonth(referenceDate: fixedNow)
+        )
+
+        #expect(abs(capacity - expected) < 0.001)
     }
 
     @Test("Historical average query")
@@ -424,19 +454,17 @@ struct JobEstimationServiceTests {
         return formatter
     }()
 
-    private static func localToday(hour: Int, minute: Int) throws -> Date {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = try #require(TimeZone(identifier: "America/Denver"))
-        var components = calendar.dateComponents([.year, .month, .day], from: Date())
+    private static func localToday(hour: Int, minute: Int, referenceDate: Date) throws -> Date {
+        var components = denverCalendar.dateComponents([.year, .month, .day], from: referenceDate)
         components.hour = hour
         components.minute = minute
         components.second = 0
-        return try #require(calendar.date(from: components))
+        return try #require(denverCalendar.date(from: components))
     }
 
-    private static func weekdaysInCurrentMonth() -> Int {
-        let calendar = Calendar.current
-        let now = Date()
+    private static func weekdaysInCurrentMonth(referenceDate: Date) -> Int {
+        let calendar = denverCalendar
+        let now = referenceDate
         let range = calendar.range(of: .day, in: .month, for: now) ?? 1..<31
         return range.reduce(0) { count, day in
             var components = calendar.dateComponents([.year, .month], from: now)
@@ -447,22 +475,12 @@ struct JobEstimationServiceTests {
         }
     }
 
-    private func withMountainTimeZone<T>(_ body: () throws -> T) rethrows -> T {
-        #if canImport(Darwin) || canImport(Glibc)
-        let originalTZ = getenv("TZ").map { String(cString: $0) }
-        setenv("TZ", "America/Denver", 1)
-        tzset()
-        defer {
-            if let originalTZ {
-                setenv("TZ", originalTZ, 1)
-            } else {
-                unsetenv("TZ")
-            }
-            tzset()
-        }
-        #endif
-        return try body()
-    }
+    private static let denverCalendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Denver")!
+        return calendar
+    }()
+
 
     @Test("Regression: getHistoricalAverage finds jobs with status 'completed' (not 'complete')")
     func testHistoricalAverage_findsCompletedJobs() throws {
