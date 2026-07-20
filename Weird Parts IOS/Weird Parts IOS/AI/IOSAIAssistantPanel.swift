@@ -117,6 +117,7 @@ struct IOSAIAssistantPanel: View {
     /// AppTab, including pages that do not need a dedicated data payload.
     @State private var routeContext: String?
     @State private var activeRoutePath: String?
+    @State private var activeRouteInstanceId: String?
 
     /// Route identity is the fallback. A dedicated deep/sheet screen wins while
     /// it is active, so a route refresh cannot replace the visible Help target.
@@ -570,6 +571,7 @@ struct IOSAIAssistantPanel: View {
         .modifier(RoutePageContextObserver(
             routeContext: $routeContext,
             activeRoutePath: $activeRoutePath,
+            activeRouteInstanceId: $activeRouteInstanceId,
             routePageId: $routePageId
         ))
         .modifier(ActivePageIdTracker(activePageId: $dedicatedPageId))
@@ -1036,6 +1038,7 @@ struct IOSAIAssistantPanel: View {
         routePageId = nil
         routeContext = nil
         activeRoutePath = nil
+        activeRouteInstanceId = nil
         catalogContext = nil
         pricingContext = nil
         suppliersContext = nil
@@ -1877,12 +1880,14 @@ enum AIPageIdentityResolver {
 struct AIRoutePageContextState: Equatable {
     var routeContext: String?
     var activeRoutePath: String?
+    var activeRouteInstanceId: String?
     var routePageId: String?
 
-    mutating func deactivate(matchingPath path: String) {
-        guard path == activeRoutePath else { return }
+    mutating func deactivate(matchingPath path: String, instanceId: String) {
+        guard path == activeRoutePath, instanceId == activeRouteInstanceId else { return }
         routeContext = nil
         activeRoutePath = nil
+        activeRouteInstanceId = nil
         routePageId = nil
     }
 }
@@ -1892,6 +1897,7 @@ struct AIRoutePageContextState: Equatable {
 private struct RoutePageContextObserver: ViewModifier {
     @Binding var routeContext: String?
     @Binding var activeRoutePath: String?
+    @Binding var activeRouteInstanceId: String?
     @Binding var routePageId: String?
 
     func body(content: Content) -> some View {
@@ -1899,21 +1905,26 @@ private struct RoutePageContextObserver: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .routePageActive)) { notification in
                 guard let context = notification.userInfo?["context"] as? String,
                       let path = notification.userInfo?["path"] as? String,
+                      let instanceId = notification.userInfo?["instanceId"] as? String,
                       let pageId = notification.userInfo?["pageId"] as? String else { return }
                 routeContext = context
                 activeRoutePath = path
+                activeRouteInstanceId = instanceId
                 routePageId = pageId
             }
             .onReceive(NotificationCenter.default.publisher(for: .routePageInactive)) { notification in
-                guard let path = notification.userInfo?["path"] as? String else { return }
+                guard let path = notification.userInfo?["path"] as? String,
+                      let instanceId = notification.userInfo?["instanceId"] as? String else { return }
                 var state = AIRoutePageContextState(
                     routeContext: routeContext,
                     activeRoutePath: activeRoutePath,
+                    activeRouteInstanceId: activeRouteInstanceId,
                     routePageId: routePageId
                 )
-                state.deactivate(matchingPath: path)
+                state.deactivate(matchingPath: path, instanceId: instanceId)
                 routeContext = state.routeContext
                 activeRoutePath = state.activeRoutePath
+                activeRouteInstanceId = state.activeRouteInstanceId
                 routePageId = state.routePageId
             }
     }
