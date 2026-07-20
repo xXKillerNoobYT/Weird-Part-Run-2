@@ -545,9 +545,7 @@ struct IOSClockPage: View {
                         pendingClockOutEntryId = entry.id
                         showClockOutConfirmation = true
                     } label: {
-                        Label("Clock Out", systemImage: "stop.circle.fill")
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                        clockActionLabel("Clock Out", systemImage: "stop.circle.fill")
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
@@ -570,9 +568,7 @@ struct IOSClockPage: View {
                     Button {
                         switchJob(entryId: entry.id)
                     } label: {
-                        Label("Switch Job", systemImage: "arrow.triangle.swap")
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                        clockActionLabel("Switch Job", systemImage: "arrow.triangle.swap")
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
@@ -598,10 +594,12 @@ struct IOSClockPage: View {
                     Button {
                         Task { await endCurrentBreak() }
                     } label: {
-                        Label(activeBreakRecord?.breakType == "lunch_unpaid" ? "Resume Work" : "End \(activeBreakRecord?.breakType == "break" ? "Break" : "Lunch")",
-                              systemImage: "checkmark.circle.fill")
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                        clockActionLabel(
+                            activeBreakRecord?.breakType == "lunch_unpaid"
+                                ? "Resume Work"
+                                : "End \(activeBreakRecord?.breakType == "break" ? "Break" : "Lunch")",
+                            systemImage: "checkmark.circle.fill"
+                        )
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.orange)
@@ -611,21 +609,42 @@ struct IOSClockPage: View {
                     Button {
                         activeSheet = .breakStatePicker
                     } label: {
-                        Label(
+                        clockActionLabel(
                             activityStatus == "supply_run" ? "Break / Lunch / End Supply Run" : "Break / Lunch / Supply Run",
                             systemImage: activityStatus == "supply_run" ? "checkmark.circle" : "timer"
                         )
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(activityStatus == "supply_run" ? .green : .orange)
                     .controlSize(.large)
-                    .accessibilityLabel("Open break, lunch, and supply run state picker")
-                    .accessibilityHint("Choose paid break, paid lunch, unpaid lunch, or supply run with duration options.")
+                    .accessibilityLabel(
+                        activityStatus == "supply_run"
+                            ? "Open break, lunch, and end supply run options"
+                            : "Open break, lunch, and supply run options"
+                    )
+                    .accessibilityValue(activityStatus == "supply_run" ? "Supply run active" : "Working")
+                    .accessibilityHint("Choose paid break, paid lunch, unpaid lunch, or supply run options.")
+                    .accessibilityIdentifier("clockPage_statePicker")
                 }
             }
             .padding(.vertical, 4)
+        }
+    }
+
+    @ViewBuilder
+    private func clockActionLabel(_ title: String, systemImage: String) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(spacing: 8) {
+                Image(systemName: systemImage)
+                    .accessibilityHidden(true)
+                Text(title)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+        } else {
+            Label(title, systemImage: systemImage)
+                .frame(maxWidth: .infinity, minHeight: 44)
         }
     }
 
@@ -663,7 +682,7 @@ struct IOSClockPage: View {
     // MARK: - Active Supply Run Card
 
     private func activeSupplyRunCard(startedAt: Date) -> some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
+        TimelineView(.periodic(from: startedAt, by: 60)) { context in
             let duration = formatDuration(max(0, context.date.timeIntervalSince(startedAt)))
 
             VStack(alignment: .leading, spacing: 8) {
@@ -705,7 +724,8 @@ struct IOSClockPage: View {
             .padding(10)
             .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Supply Run Active. Started \(formatClockTime(startedAt)). Duration \(duration). You stay clocked in and billable while this supply run is active.")
+            .accessibilityLabel("Supply Run Active")
+            .accessibilityValue("Started \(formatClockTime(startedAt)). Duration \(duration). Billable while active.")
             .accessibilityIdentifier("clock-active-supply-run-card")
         }
     }

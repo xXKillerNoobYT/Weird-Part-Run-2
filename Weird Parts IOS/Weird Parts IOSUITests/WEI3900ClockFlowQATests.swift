@@ -63,21 +63,89 @@ final class WEI3900ClockFlowQATests: XCTestCase {
     func testActiveSupplyRunDurationAdvancesWithoutLeavingClockPage() throws {
         app.launchArguments.append("-UITestingActiveSupplyRunNearMinute")
         app.launch()
-        RunLoop.current.run(until: Date().addingTimeInterval(8))
+        allowLocationIfPrompted()
 
         XCTAssertTrue(waitForClockPage())
-        let card = app.descendants(matching: .any)["clock-active-supply-run-card"]
+        // SwiftUI exports the combined card identifier on a container whose
+        // XCUI element type varies by OS/runtime; keep this stable-identifier
+        // query type-agnostic and assert singularity below.
+        let cards = app.descendants(matching: .any).matching(identifier: "clock-active-supply-run-card")
+        let card = cards.firstMatch
         for _ in 0..<6 where !card.exists {
             app.swipeUp()
             RunLoop.current.run(until: Date().addingTimeInterval(0.25))
         }
         XCTAssertTrue(card.waitForExistence(timeout: 10), "The deterministic active Supply Run should show one canonical card.")
-        XCTAssertTrue(card.label.contains("Duration 0h 0m"), "The active Supply Run should begin inside its first minute.")
+        XCTAssertEqual(cards.count, 1)
+        XCTAssertEqual(card.label, "Supply Run Active")
+
+        let initialValue = try XCTUnwrap(card.value as? String)
+        let initialMinutes = try XCTUnwrap(durationMinutes(in: initialValue))
 
         XCTAssertTrue(
-            waitUntil(timeout: 30) { card.label.contains("Duration 0h 1m") },
-            "The foreground card accessibility label must advance to 0h 1m without leaving or re-entering the Clock page. Last label: \(card.label)"
+            waitUntil(timeout: 70) {
+                guard let value = card.value as? String,
+                      let minutes = durationMinutes(in: value) else { return false }
+                return value != initialValue && minutes > initialMinutes
+            },
+            "The foreground card accessibility value must advance from its observed duration without leaving or re-entering the Clock page. Initial: \(initialValue). Last: \(String(describing: card.value))"
         )
+    }
+
+    /// GitHub #1450 / #1456: AX5 must preserve the active Supply Run state,
+    /// complete accessibility semantics, and 44pt primary controls.
+    @MainActor
+    func testActiveSupplyRunAX5LayoutAndAccessibilityState() throws {
+        app.launchArguments += [
+            "-UITestingActiveSupplyRunNearMinute",
+            "-UIPreferredContentSizeCategoryName",
+            UIContentSizeCategory.accessibilityExtraExtraExtraLarge.rawValue,
+        ]
+        app.launch()
+        allowLocationIfPrompted()
+
+        XCTAssertTrue(waitForClockPage())
+        let cards = app.descendants(matching: .any).matching(identifier: "clock-active-supply-run-card")
+        let card = cards.firstMatch
+        for _ in 0..<8 where !card.exists {
+            app.swipeUp()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        }
+
+        XCTAssertTrue(card.waitForExistence(timeout: 10))
+        XCTAssertEqual(cards.count, 1)
+        XCTAssertEqual(card.label, "Supply Run Active")
+        let value = try XCTUnwrap(card.value as? String)
+        XCTAssertTrue(value.contains("Started "))
+        XCTAssertNotNil(durationMinutes(in: value))
+        XCTAssertTrue(value.contains("Billable while active"))
+        XCTAssertFalse(app.staticTexts["Location Required"].exists)
+        XCTAssertFalse(app.staticTexts["Location Access Denied"].exists)
+
+        for identifier in ["clockPage_clockOut", "clockPage_switchJob", "clockPage_statePicker"] {
+            let button = app.buttons[identifier]
+            for _ in 0..<10 where !button.isHittable || button.frame.maxY > app.frame.maxY - 120 {
+                app.swipeUp()
+                RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+            }
+            XCTAssertTrue(button.exists, "\(identifier) should remain reachable at AX5")
+            XCTAssertGreaterThanOrEqual(button.frame.width, 44, "\(identifier) width")
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44, "\(identifier) height")
+            XCTAssertLessThanOrEqual(
+                button.frame.maxY,
+                app.frame.maxY - 100,
+                "\(identifier) must scroll fully above persistent bottom navigation"
+            )
+        }
+
+        let statePicker = app.buttons["clockPage_statePicker"]
+        XCTAssertEqual(statePicker.label, "Open break, lunch, and end supply run options")
+        XCTAssertEqual(statePicker.value as? String, "Supply run active")
+
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Supply Run AX5"
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     private func waitForClockPage(timeout: TimeInterval = 25) -> Bool {
@@ -199,6 +267,17 @@ final class WEI3900ClockFlowQATests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.2))
         } while Date() < deadline
         return false
+    }
+
+    private func durationMinutes(in accessibilityValue: String) -> Int? {
+        let expression = try? NSRegularExpression(pattern: #"Duration (\d+)h (\d+)m"#)
+        let range = NSRange(accessibilityValue.startIndex..., in: accessibilityValue)
+        guard let match = expression?.firstMatch(in: accessibilityValue, range: range),
+              let hoursRange = Range(match.range(at: 1), in: accessibilityValue),
+              let minutesRange = Range(match.range(at: 2), in: accessibilityValue),
+              let hours = Int(accessibilityValue[hoursRange]),
+              let minutes = Int(accessibilityValue[minutesRange]) else { return nil }
+        return hours * 60 + minutes
     }
 
     private func makeVisibleAndTap(_ element: XCUIElement) {

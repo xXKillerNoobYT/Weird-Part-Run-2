@@ -457,6 +457,10 @@ struct IOSMainView: View {
             Divider()
             fullSidebarActions
         }
+        // Full-sidebar navigation is persistent chrome. Keep it readable and
+        // operable at AX sizes without letting its visual text consume the
+        // entire split-view width; accessibility labels retain full names.
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .background(DS.Background.page)
     }
 
@@ -626,7 +630,9 @@ struct IOSMainView: View {
     private var fullSidebarActions: some View {
         VStack(spacing: DS.Space.xxs) {
             Button {
-                activeSidebarSheet = .aiAssistant
+                if aiDisplayMode == .sheet {
+                    activeSidebarSheet = .aiAssistant
+                }
                 showAIAssistant = true
             } label: {
                 sidebarActionRow(icon: "sparkles", label: "AI Assistant")
@@ -720,7 +726,9 @@ struct IOSMainView: View {
                 // Edit & Logout
                 Section {
                     Button {
-                        activeRootSheet = .aiAssistant
+                        if aiDisplayMode == .sheet {
+                            activeRootSheet = .aiAssistant
+                        }
                         showAIAssistant = true
                     } label: {
                         Label("AI Assistant", systemImage: "sparkles")
@@ -1065,10 +1073,10 @@ struct ModuleHostView: View {
                 .dsStyle(.detail)
                 .fontWeight(selected ? .semibold : .regular)
         }
-        // Keep the horizontally scrolling navigation usable at AX sizes. The
-        // full tab name remains its accessibility label; only the compact visual
-        // chip is capped so a selected chip cannot cover its neighbors (#1456).
-        .dynamicTypeSize(...DynamicTypeSize.large)
+        // Keep the horizontally scrolling navigation usable at AX sizes without
+        // shrinking the standard XL/XXL choices. The full tab name remains its
+        // accessibility label; only accessibility categories are capped (#1456).
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .padding(.horizontal, chipH)
         .padding(.vertical, DS.Space.sm)
         .frame(minWidth: 44, minHeight: 44)

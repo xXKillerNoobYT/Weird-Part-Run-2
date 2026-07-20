@@ -39,7 +39,7 @@ final class ClockSupplyRunCardRegressionTests: XCTestCase {
         XCTAssertTrue(card.contains("Text(\"Started\")"))
         XCTAssertTrue(card.contains("Text(\"Duration\")"))
         XCTAssertTrue(
-            card.contains("TimelineView(.periodic(from: .now, by: 1))"),
+            card.contains("TimelineView(.periodic("),
             "The active card must own a foreground timeline so its duration keeps advancing after the state-picker sheet dismisses."
         )
         XCTAssertTrue(card.contains("formatDuration(max(0, context.date.timeIntervalSince(startedAt)))"))
@@ -49,7 +49,8 @@ final class ClockSupplyRunCardRegressionTests: XCTestCase {
         )
         XCTAssertTrue(card.contains("You stay clocked in and billable while this supply run is active."))
         XCTAssertTrue(card.contains(".accessibilityElement(children: .combine)"))
-        XCTAssertTrue(card.contains(".accessibilityLabel("))
+        XCTAssertTrue(card.contains(".accessibilityLabel(\"Supply Run Active\")"))
+        XCTAssertTrue(card.contains(".accessibilityValue("))
         XCTAssertTrue(
             card.contains(".dynamicTypeSize(...DynamicTypeSize.xxxLarge)"),
             "The compact evidence card must stay fully visible at AX5 instead of growing beyond the phone viewport."
@@ -72,10 +73,13 @@ final class ClockSupplyRunCardRegressionTests: XCTestCase {
         XCTAssertTrue(source.contains("@Environment(\\.dynamicTypeSize) private var dynamicTypeSize"))
         XCTAssertTrue(section.contains("AnyLayout(VStackLayout(spacing: 12))"))
         XCTAssertTrue(section.contains("AnyLayout(HStackLayout(spacing: 12))"))
+        XCTAssertTrue(section.contains("clockActionLabel(\"Clock Out\""))
+        XCTAssertTrue(source.contains("if dynamicTypeSize.isAccessibilitySize"))
+        XCTAssertTrue(source.contains(".fixedSize(horizontal: false, vertical: true)"))
         XCTAssertGreaterThanOrEqual(
-            Self.occurrenceCount(of: ".frame(maxWidth: .infinity, minHeight: 44)", in: section),
-            4,
-            "Clock actions must retain explicit 44pt minimum targets after AX layout changes."
+            Self.occurrenceCount(of: ".frame(maxWidth: .infinity, minHeight: 44)", in: source),
+            2,
+            "Adaptive Clock labels must retain explicit 44pt minimum targets."
         )
         XCTAssertTrue(
             source.contains(".frame(height: dynamicTypeSize.isAccessibilitySize ? 104 : 76)"),
@@ -93,7 +97,7 @@ final class ClockSupplyRunCardRegressionTests: XCTestCase {
         let chip = try Self.section(
             named: "private func subTabChip",
             in: source,
-            endingBefore: "\n}"
+            endingBefore: "\n        .foregroundStyle(selected ? .white : .primary)\n    }"
         )
 
         XCTAssertFalse(
@@ -102,11 +106,12 @@ final class ClockSupplyRunCardRegressionTests: XCTestCase {
         )
         XCTAssertTrue(assistant.contains(".frame(width: 52, height: 52)"))
         XCTAssertTrue(
-            chip.contains(".dynamicTypeSize(...DynamicTypeSize.large)"),
-            "Sub-tab visuals must remain compact enough to avoid covering adjacent tabs at AX5."
+            chip.contains(".dynamicTypeSize(...DynamicTypeSize.xxxLarge)"),
+            "Sub-tab visuals must honor standard large text while remaining compact at accessibility sizes."
         )
         XCTAssertTrue(chip.contains(".frame(minWidth: 44, minHeight: 44)"))
         XCTAssertTrue(source.contains("!dynamicTypeSize.isAccessibilitySize"))
+        XCTAssertTrue(source.contains("Full-sidebar navigation is persistent chrome"))
         XCTAssertTrue(source.contains(".accessibilityIdentifier(\"moreAIAssistantButton\")"))
         XCTAssertTrue(source.contains(".accessibilityIdentifier(\"sidebarAIAssistantButton\")"))
     }

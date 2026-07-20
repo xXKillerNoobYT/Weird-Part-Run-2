@@ -994,8 +994,9 @@ final class AppCore: ObservableObject {
                 )!
 
                 if ProcessInfo.processInfo.arguments.contains("-UITestingActiveSupplyRunNearMinute") {
-                    let clockIn = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-300))
-                    let supplyRunStart = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-30))
+                    let now = Date()
+                    let clockIn = CoreFormatters.dateTimeSpaceUTC.string(from: now.addingTimeInterval(-300))
+                    let supplyRunStart = CoreFormatters.iso8601.string(from: now.addingTimeInterval(-20))
                     try dbConn.execute(
                         sql: "DELETE FROM labor_entries WHERE user_id = ? AND status = 'clocked_in' AND clock_out IS NULL",
                         arguments: [userId]
