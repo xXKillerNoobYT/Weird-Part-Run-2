@@ -83,8 +83,10 @@ final class ClockSupplyRunCardRegressionTests: XCTestCase {
         )
         XCTAssertTrue(
             source.contains(".frame(height: dynamicTypeSize.isAccessibilitySize ? 104 : 76)"),
-            "Clock scroll content must clear the floating assistant and persistent tab bar."
+            "AX layouts need enough scroll clearance above the floating bottom navigation."
         )
+        XCTAssertTrue(source.contains(".listRowSeparator(.hidden)"))
+        XCTAssertTrue(source.contains(".listRowInsets(EdgeInsets())"))
     }
 
     func testAX5NavigationChromeDoesNotExpandAcrossClockContent() throws {

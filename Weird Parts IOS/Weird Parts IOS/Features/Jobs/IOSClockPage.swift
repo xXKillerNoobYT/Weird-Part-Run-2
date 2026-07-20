@@ -485,6 +485,8 @@ struct IOSClockPage: View {
                 Color.clear
                     .frame(height: dynamicTypeSize.isAccessibilitySize ? 104 : 76)
                     .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets())
                     .accessibilityHidden(true)
             }
             .accessibilityIdentifier("clockPage_root")
