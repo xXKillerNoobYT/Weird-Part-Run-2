@@ -18,6 +18,7 @@ struct PartsOCRImportPreviewTests {
     @Test("previewPartsImportDigitalPDF extracts text-layer tables with page evidence")
     func previewPartsImportDigitalPDFExtractsTablesWithEvidence() throws {
         let env = try E2ETestHelpers.setUp()
+        let before = try env.parts.getImportExportStats()
 
         let preview = try env.parts.previewPartsImportDigitalPDF(pages: [
             .init(pageNumber: 7, text: """
@@ -28,6 +29,7 @@ struct PartsOCRImportPreviewTests {
             Terms net 30
             """)
         ])
+        let after = try env.parts.getImportExportStats()
 
         let table = try #require(preview.tables.first)
         #expect(table.id == "pdf-p7-t1")
@@ -46,6 +48,24 @@ struct PartsOCRImportPreviewTests {
         #expect(table.rows.first { $0.columns.first == "PDF-1" }?.rowNumber == breaker.sourceEvidence.rowNumber)
         #expect(breaker.sourceEvidence.text?.contains("Digital PDF Breaker") == true)
         #expect(breaker.sourceSnippet.contains("Digital PDF Breaker"))
+        #expect(preview.isCommitAllowed == false)
+        #expect(after.totalParts == before.totalParts)
+        #expect(try env.parts.findPartByCode("PDF-1") == nil)
+    }
+
+    @Test("previewPartsImportDigitalPDF preserves exact normalized source lines in table evidence")
+    func previewPartsImportDigitalPDFPreservesExactSourceLinesInTableEvidence() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let preview = try env.parts.previewPartsImportDigitalPDF(pages: [
+            .init(pageNumber: 4, text: """
+            Code\tName\tCategory
+            PDF-EXACT\tExact   Source\tElectrical
+            """)
+        ])
+
+        let table = try #require(preview.tables.first)
+        #expect(table.evidence.first?.text == "Code\tName\tCategory PDF-EXACT\tExact   Source\tElectrical")
     }
 
     @Test("previewPartsImportDigitalPDF preserves source rows across chunks")
@@ -119,6 +139,24 @@ struct PartsOCRImportPreviewTests {
         )) {
             _ = try env.parts.previewPartsImportOCR(chunks: [], candidates: [])
         }
+    }
+
+    @Test("previewPartsImportOCR chunks safely when the public line limit is Int.max")
+    func previewPartsImportOCRChunksSafelyWithMaximumLineLimit() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let preview = try env.parts.previewPartsImportOCR(
+            pages: [
+                .init(pageNumber: 1, text: """
+                Code | Name | Category
+                MAX-1 | Maximum Chunk Limit | Wire
+                """)
+            ],
+            chunkLineLimit: .max
+        )
+
+        #expect(preview.chunks.count == 1)
+        #expect(preview.candidates.first?.code == "MAX-1")
     }
 
     @Test("previewPartsImportOCR rejects malformed confidence and threshold values")
@@ -243,6 +281,43 @@ struct PartsOCRImportPreviewTests {
         #expect(preview.isCommitAllowed == false)
         #expect(after.totalParts == before.totalParts)
         #expect(try env.parts.findPartByCode("LOW-1") == nil)
+    }
+
+    @Test("previewPartsImportOCR uses an exact default threshold and stable quarantine reason")
+    func previewPartsImportOCRUsesExactThresholdAndStableQuarantineReason() throws {
+        let env = try E2ETestHelpers.setUp()
+        let candidate = bridgeCandidate(confidence: 0.69999999)
+
+        let preview = try env.parts.previewPartsImportOCR(chunks: [], candidates: [candidate])
+
+        let quarantined = try #require(preview.quarantinedCandidates.first)
+        #expect(quarantined.quarantineReason == "OCR confidence 0.70 is below import preview threshold 0.70.")
+        #expect(preview.reviewReadyCandidates.isEmpty)
+    }
+
+    @Test("previewPartsImportOCR preserves an upstream quarantine reason")
+    func previewPartsImportOCRPreservesExistingQuarantine() throws {
+        let env = try E2ETestHelpers.setUp()
+        let candidate = PartsService.PartsOCRImportCandidate(
+            rowNumber: 1,
+            chunkId: "ocr-upstream",
+            pageNumber: 2,
+            sourceSnippet: "UPSTREAM-1 | Upstream Quarantine | Wire",
+            confidence: 0.20,
+            isQuarantined: true,
+            quarantineReason: "Upstream parser rejected an ambiguous row.",
+            name: "Upstream Quarantine",
+            code: "UPSTREAM-1",
+            category: "Wire",
+            brand: nil,
+            fields: [:]
+        )
+
+        let preview = try env.parts.previewPartsImportOCR(chunks: [], candidates: [candidate])
+
+        let quarantined = try #require(preview.quarantinedCandidates.first)
+        #expect(quarantined.quarantineReason == "Upstream parser rejected an ambiguous row.")
+        #expect(preview.reviewReadyCandidates.isEmpty)
     }
 
     @Test("previewPartsImportOCR chunks extracted page text with page evidence")

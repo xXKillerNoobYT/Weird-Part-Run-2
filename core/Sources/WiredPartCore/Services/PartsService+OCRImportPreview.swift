@@ -18,7 +18,7 @@ extension PartsService {
         }
     }
 
-    /// Small evidence chunk from extracted OCR text.
+    /// Small evidence chunk from extracted OCR or digital-PDF text.
     public struct PartsOCRImportChunk: Sendable, Identifiable {
         public let id: String
         public let sourceKind: PartsImportSourceKind
@@ -45,7 +45,7 @@ extension PartsService {
         }
     }
 
-    /// Proposed import row detected from OCR text. It is intentionally not a
+    /// Proposed import row detected from OCR or digital-PDF text. It is intentionally not a
     /// commit-ready CSV row: every field carries source evidence for human/AI review.
     public struct PartsOCRImportCandidate: Sendable {
         public let rowNumber: Int
@@ -209,7 +209,7 @@ extension PartsService {
         chunks: [PartsOCRImportChunk],
         candidates: [PartsOCRImportCandidate],
         errors: [PartsOCRImportError] = [],
-        quarantineThreshold: Double = Double(OCRConfidence.medium)
+        quarantineThreshold: Double = 0.70
     ) throws -> PartsOCRImportPreview {
         guard !chunks.isEmpty || !candidates.isEmpty else {
             throw PartsError.invalidInput("OCR import preview requires at least one chunk or candidate.")
@@ -257,7 +257,8 @@ extension PartsService {
             var chunkNumber = 1
             var startIndex = 0
             while startIndex < lines.count {
-                let endIndex = min(startIndex + chunkLineLimit, lines.count)
+                let remainingLineCount = lines.count - startIndex
+                let endIndex = startIndex + min(chunkLineLimit, remainingLineCount)
                 let chunkLines = Array(lines[startIndex..<endIndex])
                 let text = chunkLines.joined(separator: "\n")
                 let id = "p\(page.pageNumber)-c\(chunkNumber)"
@@ -409,8 +410,7 @@ extension PartsService {
 
                 if !rows.isEmpty {
                     let id = "pdf-p\(page.pageNumber)-t\(tableNumber)"
-                    let sourceText = ([lines[index]] + rows.map { $0.columns.joined(separator: " | ") })
-                        .joined(separator: "\n")
+                    let sourceText = lines[index..<rowIndex].joined(separator: "\n")
                     tables.append(PartsImportExtractedTable(
                         id: id,
                         sourceKind: .digitalPDFText,
@@ -438,7 +438,11 @@ extension PartsService {
         _ candidate: PartsOCRImportCandidate,
         threshold: Double
     ) -> PartsOCRImportCandidate {
-        guard candidate.sourceKind == .ocr, candidate.confidence < threshold else { return candidate }
+        guard candidate.sourceKind == .ocr,
+              !candidate.isQuarantined,
+              candidate.confidence < threshold else { return candidate }
+        let formattedConfidence = formatOCRConfidence(candidate.confidence)
+        let formattedThreshold = formatOCRConfidence(threshold)
         return PartsOCRImportCandidate(
             rowNumber: candidate.rowNumber,
             chunkId: candidate.chunkId,
@@ -448,13 +452,17 @@ extension PartsService {
             sourceEvidence: candidate.sourceEvidence,
             confidence: candidate.confidence,
             isQuarantined: true,
-            quarantineReason: "OCR confidence \(candidate.confidence) is below import preview threshold \(threshold).",
+            quarantineReason: "OCR confidence \(formattedConfidence) is below import preview threshold \(formattedThreshold).",
             name: candidate.name,
             code: candidate.code,
             category: candidate.category,
             brand: candidate.brand,
             fields: candidate.fields
         )
+    }
+
+    private func formatOCRConfidence(_ value: Double) -> String {
+        String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), value)
     }
 
     private struct OCRPartsHeader {
