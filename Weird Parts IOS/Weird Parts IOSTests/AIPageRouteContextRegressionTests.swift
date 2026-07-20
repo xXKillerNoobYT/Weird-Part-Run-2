@@ -15,8 +15,11 @@ final class AIPageRouteContextRegressionTests: XCTestCase {
         XCTAssertTrue(router.contains(".onAppear { postRouteContext() }"))
         XCTAssertTrue(router.contains(".onChange(of: path)"))
         XCTAssertTrue(router.contains("publisher(for: .requestCurrentPageContext)"))
+        XCTAssertTrue(router.contains(".onDisappear { postRouteInactive() }"))
         XCTAssertTrue(router.contains("name: .routePageInactive"))
         XCTAssertTrue(router.contains("guard let descriptor = routeDescriptor else { return }"))
+        XCTAssertTrue(router.contains("\"pageId\": descriptor.pageId"))
+        XCTAssertFalse(router.contains("routeDescriptor?.pageId as Any"))
 
         for allowedKey in ["\"context\"", "\"path\"", "\"pageId\"", "\"module\"", "\"page\""] {
             XCTAssertTrue(router.contains(allowedKey))
