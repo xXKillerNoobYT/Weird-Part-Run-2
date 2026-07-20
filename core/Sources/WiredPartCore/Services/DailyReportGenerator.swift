@@ -104,8 +104,12 @@ public final class DailyReportGenerator: Sendable {
                     CAST((julianday(COALESCE(ended_at, ?)) - julianday(started_at)) * 1440 AS INTEGER)
                 ), 0)
                 FROM break_records
-                WHERE user_id = ? AND date(started_at) = ? AND deleted_at IS NULL
-                """, arguments: [reportTimestamp, userId, dateStr]) ?? 0
+                WHERE user_id = ?
+                  AND \(day.exactDayPredicate("started_at"))
+                  AND deleted_at IS NULL
+                """, arguments: [
+                    reportTimestamp, userId, dateStr, day.utcStart, day.utcEnd
+                ]) ?? 0
 
             let totalHours = max(0, (totalMinutes - Double(totalBreakMinutes))) / 60.0
 
