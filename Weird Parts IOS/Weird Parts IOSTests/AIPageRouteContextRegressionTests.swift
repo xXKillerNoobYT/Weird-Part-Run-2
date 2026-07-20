@@ -17,7 +17,12 @@ final class AIPageRouteContextRegressionTests: XCTestCase {
         XCTAssertTrue(router.contains("publisher(for: .requestCurrentPageContext)"))
         XCTAssertTrue(router.contains(".onDisappear { postRouteInactive() }"))
         XCTAssertTrue(router.contains("name: .routePageInactive"))
-        XCTAssertTrue(router.contains("guard let descriptor = routeDescriptor else { return }"))
+        let postActive = try TestSourceSlicer.braceBalancedBody(
+            after: "private func postRouteContext()",
+            in: router
+        )
+        XCTAssertTrue(postActive.contains("postRouteInactive()"))
+        XCTAssertFalse(postActive.contains("guard let descriptor = routeDescriptor else { return }"))
         XCTAssertTrue(router.contains("\"pageId\": descriptor.pageId"))
         XCTAssertFalse(router.contains("routeDescriptor?.pageId as Any"))
 
@@ -40,6 +45,13 @@ final class AIPageRouteContextRegressionTests: XCTestCase {
         XCTAssertTrue(assistant.contains("routePageId: $routePageId"))
         XCTAssertTrue(assistant.contains("activePageId: $dedicatedPageId"))
 
+        let inactive = try TestSourceSlicer.braceBalancedBody(
+            after: ".onReceive(NotificationCenter.default.publisher(for: .routePageInactive))",
+            in: assistant
+        )
+        XCTAssertTrue(inactive.contains("state.deactivate(matchingPath: path)"))
+        XCTAssertFalse(inactive.contains("routePageId == pageId"))
+
         let clear = try TestSourceSlicer.braceBalancedBody(
             after: "private func clearVolatilePageContext()",
             in: assistant
@@ -48,6 +60,39 @@ final class AIPageRouteContextRegressionTests: XCTestCase {
         XCTAssertTrue(clear.contains("activeRoutePath = nil"))
         XCTAssertTrue(clear.contains("routePageId = nil"))
         XCTAssertTrue(clear.contains("dedicatedPageId = nil"))
+    }
+
+    @MainActor
+    func testKnownRouteTransitionToUnregisteredPathDeactivatesPublishedIdentity() {
+        var lifecycle = AIRouteContextLifecycle()
+        lifecycle.activate(path: "/jobs/list", pageId: "jobs-list")
+
+        XCTAssertEqual(
+            AIRouteIdentity(path: "/jobs/list", pageId: "jobs-list"),
+            lifecycle.deactivate()
+        )
+        XCTAssertNil(lifecycle.publishedIdentity)
+        XCTAssertNil(lifecycle.deactivate(), "A placeholder must not emit duplicate inactive events")
+    }
+
+    @MainActor
+    func testMatchingInactiveClearsStaleHelpPageIdButOldInactiveIsIgnored() {
+        let staleHelpState = AIRoutePageContextState(
+            routeContext: "Module: Jobs; Page: Jobs; Route: /jobs/list",
+            activeRoutePath: "/jobs/list",
+            routePageId: "jobs-detail"
+        )
+
+        var matching = staleHelpState
+        matching.deactivate(matchingPath: "/jobs/list")
+        XCTAssertEqual(
+            AIRoutePageContextState(routeContext: nil, activeRoutePath: nil, routePageId: nil),
+            matching
+        )
+
+        var newerRoute = staleHelpState
+        newerRoute.deactivate(matchingPath: "/orders/purchase-orders")
+        XCTAssertEqual(staleHelpState, newerRoute)
     }
 
     @MainActor

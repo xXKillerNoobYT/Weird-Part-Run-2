@@ -1,6 +1,24 @@
 import SwiftUI
 import WiredPartCore
 
+struct AIRouteIdentity: Equatable {
+    let path: String
+    let pageId: String
+}
+
+struct AIRouteContextLifecycle {
+    private(set) var publishedIdentity: AIRouteIdentity?
+
+    mutating func activate(path: String, pageId: String) {
+        publishedIdentity = AIRouteIdentity(path: path, pageId: pageId)
+    }
+
+    mutating func deactivate() -> AIRouteIdentity? {
+        defer { publishedIdentity = nil }
+        return publishedIdentity
+    }
+}
+
 /// Routes a URL-style path to the appropriate native view.
 ///
 /// Paths that have fully implemented native views are routed directly.
@@ -14,6 +32,11 @@ struct IOSContentRouter: View {
         let pageLabel: String
         let pageId: String
     }
+
+    /// The last route identity actually published to the assistant. Keeping this
+    /// separate from the current path lets an unregistered/placeholder path
+    /// deactivate the prior registered route instead of silently retaining it.
+    @State private var routeContextLifecycle = AIRouteContextLifecycle()
 
     var body: some View {
         routedView
@@ -129,7 +152,11 @@ struct IOSContentRouter: View {
     /// in dedicated notifications; this fallback deliberately excludes record
     /// values, private notes, credentials, and mutation identifiers.
     private func postRouteContext() {
-        guard let descriptor = routeDescriptor else { return }
+        guard let descriptor = routeDescriptor else {
+            postRouteInactive()
+            return
+        }
+        routeContextLifecycle.activate(path: path, pageId: descriptor.pageId)
         let context = "Module: \(descriptor.moduleLabel); Page: \(descriptor.pageLabel); Route: \(path)"
         NotificationCenter.default.post(
             name: .routePageActive,
@@ -145,13 +172,13 @@ struct IOSContentRouter: View {
     }
 
     private func postRouteInactive() {
-        guard let descriptor = routeDescriptor else { return }
+        guard let identity = routeContextLifecycle.deactivate() else { return }
         NotificationCenter.default.post(
             name: .routePageInactive,
             object: nil,
             userInfo: [
-                "path": path,
-                "pageId": descriptor.pageId,
+                "path": identity.path,
+                "pageId": identity.pageId,
             ]
         )
     }

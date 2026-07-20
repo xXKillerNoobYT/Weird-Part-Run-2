@@ -1874,6 +1874,19 @@ enum AIPageIdentityResolver {
     }
 }
 
+struct AIRoutePageContextState: Equatable {
+    var routeContext: String?
+    var activeRoutePath: String?
+    var routePageId: String?
+
+    mutating func deactivate(matchingPath path: String) {
+        guard path == activeRoutePath else { return }
+        routeContext = nil
+        activeRoutePath = nil
+        routePageId = nil
+    }
+}
+
 /// Receives the minimal route identity that covers every current route. A path
 /// token prevents a late inactive event from an old router clearing a newer page.
 private struct RoutePageContextObserver: ViewModifier {
@@ -1892,14 +1905,16 @@ private struct RoutePageContextObserver: ViewModifier {
                 routePageId = pageId
             }
             .onReceive(NotificationCenter.default.publisher(for: .routePageInactive)) { notification in
-                guard let path = notification.userInfo?["path"] as? String,
-                      path == activeRoutePath else { return }
-                let pageId = notification.userInfo?["pageId"] as? String
-                routeContext = nil
-                activeRoutePath = nil
-                if routePageId == pageId {
-                    routePageId = nil
-                }
+                guard let path = notification.userInfo?["path"] as? String else { return }
+                var state = AIRoutePageContextState(
+                    routeContext: routeContext,
+                    activeRoutePath: activeRoutePath,
+                    routePageId: routePageId
+                )
+                state.deactivate(matchingPath: path)
+                routeContext = state.routeContext
+                activeRoutePath = state.activeRoutePath
+                routePageId = state.routePageId
             }
     }
 }
