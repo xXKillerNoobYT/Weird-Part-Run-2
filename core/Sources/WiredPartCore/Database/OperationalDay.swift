@@ -13,7 +13,12 @@ struct OperationalDay: Sendable {
         calendar: Calendar = .current,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
-        self.calendar = calendar
+        // Persisted date-only values and SQLite timestamps use the proleptic
+        // Gregorian calendar. Preserve the injected/device time zone while
+        // avoiding user calendar preferences changing SQL boundary values.
+        var gregorianCalendar = Calendar(identifier: .gregorian)
+        gregorianCalendar.timeZone = calendar.timeZone
+        self.calendar = gregorianCalendar
         self.now = now
     }
 
@@ -62,7 +67,7 @@ struct OperationalDay: Sendable {
     }
 
     func utcTimestamp(_ date: Date) -> String {
-        Self.formatUTCTimestamp(date)
+        CoreFormatters.dateTimeSpaceUTC.string(from: date)
     }
 
     private func date(from value: String) -> Date? {
@@ -76,14 +81,6 @@ struct OperationalDay: Sendable {
         return calendar.date(from: DateComponents(year: year, month: month, day: day))
     }
 
-    private static func formatUTCTimestamp(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        return formatter.string(from: date)
-    }
 }
 
 struct OperationalDayInterval: Sendable {
