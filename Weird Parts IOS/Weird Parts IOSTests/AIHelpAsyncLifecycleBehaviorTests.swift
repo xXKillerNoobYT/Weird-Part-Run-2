@@ -697,6 +697,38 @@ final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
         XCTAssertEqual(coordinator.savedConversations, lastKnownRows, "Prerequisite failures must preserve last-known rows.")
     }
 
+    func testWithdrawingPrerequisitesCancelsListLoadAndRejectsItsLateCompletion() {
+        let lastKnownRows = [
+            IOSAIAssistantPanel.SavedConversation(
+                id: "conversation-a",
+                lastMessageAt: "2026-07-16 10:00:00",
+                preview: "last known preview"
+            ),
+        ]
+        var coordinator = AIAssistantLifecycleCoordinator(
+            conversationId: "conversation-a",
+            ownerUserId: 101,
+            savedConversations: lastKnownRows
+        )
+        let inFlight = coordinator.beginConversationListLoad()
+        let inFlightRequestID = coordinator.conversationListRequestID
+
+        coordinator.cancelConversationListLoad()
+
+        XCTAssertFalse(coordinator.isLoadingConversations, "Withdrawing prerequisites must stop the Resume spinner.")
+        XCTAssertEqual(coordinator.savedConversations, lastKnownRows, "Cancellation must preserve the last-good list.")
+        XCTAssertNotEqual(coordinator.conversationListRequestID, inFlightRequestID)
+        XCTAssertFalse(
+            coordinator.finishConversationListLoad(
+                lifecycle: inFlight,
+                requestID: inFlightRequestID,
+                rows: []
+            ),
+            "A completion from the retired request must not clear preserved rows or mutate current state."
+        )
+        XCTAssertEqual(coordinator.savedConversations, lastKnownRows)
+    }
+
     func testMissingInitializationPrerequisitesStayFailClosedUntilLaterAttemptSucceeds() {
         XCTAssertTrue(
             AIAssistantInitializationLoadingPolicy.keepsLoading(

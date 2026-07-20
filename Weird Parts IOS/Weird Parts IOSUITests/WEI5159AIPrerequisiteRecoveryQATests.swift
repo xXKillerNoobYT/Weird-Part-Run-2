@@ -10,6 +10,7 @@ final class WEI5159AIPrerequisiteRecoveryQATests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
+        executionTimeAllowance = 180
         XCUIDevice.shared.orientation = .portrait
         app = XCUIApplication()
         app.launchEnvironment["WEIRD_PARTS_UI_TEST_PIN"] = "8396"
@@ -37,6 +38,7 @@ final class WEI5159AIPrerequisiteRecoveryQATests: XCTestCase {
         assertQAState("WEI5159 QA prerequisites: unavailable")
         let restore = hittableButton(named: "WEI5159 restore AI conversation prerequisites")
         XCTAssertTrue(restore.waitForExistence(timeout: 5))
+        XCTAssertTrue(restore.isEnabled, "Restore must expose an enabled AX state while prerequisites are unavailable.")
         assertMinimumTapTarget(restore, named: "Restore AI prerequisites")
         assertComposerDisabled()
         XCTAssertFalse(
@@ -59,7 +61,7 @@ final class WEI5159AIPrerequisiteRecoveryQATests: XCTestCase {
         resume.tap()
         assertSinglePrerequisiteQAControlSurface()
         assertSavedRowsReachable()
-        let closeResume = hittableButton(named: "Close")
+        let closeResume = app.navigationBars["Resume Conversation"].buttons["Close"]
         XCTAssertTrue(closeResume.waitForExistence(timeout: 5), "Resume must expose a reachable Close control.")
         closeResume.tap()
 
@@ -80,6 +82,7 @@ final class WEI5159AIPrerequisiteRecoveryQATests: XCTestCase {
         assertSavedRowsReachable()
 
         let listRetry = reachableButton(named: "Retry loading saved conversations")
+        XCTAssertTrue(listRetry.isEnabled, "Retry must expose an enabled AX state after prerequisite failure.")
         assertMinimumTapTarget(listRetry, named: "Retry loading saved conversations")
         capture("03-resume-prerequisite-failure-preserves-rows")
 
@@ -93,6 +96,7 @@ final class WEI5159AIPrerequisiteRecoveryQATests: XCTestCase {
         capture("04-resume-retry-withheld-preserves-rows")
 
         let sheetRestore = reachableButton(named: "WEI5159 restore AI conversation prerequisites")
+        XCTAssertTrue(sheetRestore.isEnabled, "Restore must remain enabled and reachable from the failed Resume state.")
         assertMinimumTapTarget(sheetRestore, named: "Restore AI prerequisites in Resume")
         sheetRestore.tap()
         assertQAState("WEI5159 QA prerequisites: available")
@@ -166,11 +170,11 @@ final class WEI5159AIPrerequisiteRecoveryQATests: XCTestCase {
             "Resume conversation: WEI-5134 older saved transcript",
         ] {
             let row = app.buttons[label]
-            for _ in 0..<4 where !row.waitForExistence(timeout: 1) {
+            for _ in 0..<4 where !row.exists {
                 scrollResumeSheet(up: true)
                 scrollCount += 1
             }
-            XCTAssertTrue(row.waitForExistence(timeout: 5), "Last-known row must remain reachable: \(label)")
+            XCTAssertTrue(row.waitForExistence(timeout: 2), "Last-known row must remain reachable: \(label)")
         }
         for _ in 0..<scrollCount {
             scrollResumeSheet(up: false)
@@ -179,10 +183,10 @@ final class WEI5159AIPrerequisiteRecoveryQATests: XCTestCase {
 
     private func reachableButton(named label: String) -> XCUIElement {
         let button = app.buttons[label]
-        for _ in 0..<4 where !button.waitForExistence(timeout: 1) || !button.isHittable {
+        for _ in 0..<4 where !button.exists || !button.isHittable {
             scrollResumeSheet(up: false)
         }
-        XCTAssertTrue(button.waitForExistence(timeout: 5), "Expected reachable button: \(label)")
+        XCTAssertTrue(button.waitForExistence(timeout: 2), "Expected reachable button: \(label)")
         return button
     }
 

@@ -258,6 +258,10 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertTrue(reset.contains("conversationHistoryReadError = nil"))
         XCTAssertTrue(reset.contains("showConversationPicker = false"))
         XCTAssertTrue(reset.contains("isLoadingConversationHistory = true"))
+        XCTAssertTrue(
+            reset.contains("cancelConversationListLoad(clearError: false)"),
+            "Withdrawing prerequisites must retire an in-flight Resume load without discarding its retryable error."
+        )
     }
 
     func testResumeListFailurePreservesRowsAndDoesNotRenderEmptyCopy() throws {
@@ -283,6 +287,40 @@ final class AIHelpResumeRegressionTests: XCTestCase {
             return
         }
         XCTAssertLessThan(errorBranch, emptyBranch)
+    }
+
+    func testResumeRetryKeepsErrorUntilAReplacementReadSucceeds() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let present = try TestSourceSlicer.braceBalancedBody(
+            after: "private func presentConversationPicker()",
+            in: assistant
+        )
+        let load = try TestSourceSlicer.braceBalancedBody(
+            after: "private func loadConversationList(requestID: UInt) async",
+            in: assistant
+        )
+
+        XCTAssertFalse(
+            present.contains("conversationListReadError = nil"),
+            "Starting Retry must retain the last error behind the loading UI so prerequisite withdrawal can reveal Retry again."
+        )
+        XCTAssertTrue(load.contains("conversationListReadError = nil"), "Only a matching successful list read may clear the error.")
+    }
+
+    func testConversationLifecycleUsesReadScopedOwnerAndFailureIconIsDecorative() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let lifecycle = try TestSourceSlicer.braceBalancedBody(
+            after: "private func currentLifecycleCoordinator()",
+            in: assistant
+        )
+        let failure = try TestSourceSlicer.braceBalancedBody(
+            after: "private func conversationListReadFailure(message: String)",
+            in: assistant
+        )
+
+        XCTAssertTrue(lifecycle.contains("ownerUserId: appCore.aiConversationReadOwnerUserId"))
+        XCTAssertFalse(lifecycle.contains("ownerUserId: appCore.currentUser?.id"))
+        XCTAssertTrue(failure.contains(".accessibilityHidden(true)"), "The warning symbol must not duplicate the readable failure copy in VoiceOver.")
     }
 
     func testReadFailureRetryControlsExpose44PointAccessibleHitRegions() throws {

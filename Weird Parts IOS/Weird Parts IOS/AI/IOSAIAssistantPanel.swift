@@ -534,6 +534,7 @@ struct IOSAIAssistantPanel: View {
                     Image(systemName: "exclamationmark.triangle")
                         .font(.title2)
                         .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
 
                     Text("Saved Conversations Could Not Be Loaded")
                         .font(.headline)
@@ -1559,7 +1560,7 @@ struct IOSAIAssistantPanel: View {
     private func currentLifecycleCoordinator() -> AIAssistantLifecycleCoordinator<SavedConversation> {
         AIAssistantLifecycleCoordinator(
             conversationId: conversationId,
-            ownerUserId: appCore.currentUser?.id,
+            ownerUserId: appCore.aiConversationReadOwnerUserId,
             conversationRevision: conversationRevision,
             conversationPersistenceError: conversationPersistenceError,
             savedConversations: savedConversations,
@@ -1571,8 +1572,11 @@ struct IOSAIAssistantPanel: View {
     private func cancelConversationListLoad(clearError: Bool = true) {
         conversationListTask?.cancel()
         conversationListTask = nil
-        conversationListRequestID &+= 1
-        isLoadingConversations = false
+        var lifecycleCoordinator = currentLifecycleCoordinator()
+        lifecycleCoordinator.cancelConversationListLoad()
+        conversationListRequestID = lifecycleCoordinator.conversationListRequestID
+        isLoadingConversations = lifecycleCoordinator.isLoadingConversations
+        savedConversations = lifecycleCoordinator.savedConversations
         if clearError {
             conversationListReadError = nil
         }
@@ -1594,6 +1598,7 @@ struct IOSAIAssistantPanel: View {
             cancelConversationHistoryRetryTask()
             conversationLoadTask?.cancel()
             conversationLoadTask = nil
+            cancelConversationListLoad(clearError: false)
             isLoadingConversationHistory = true
             isProcessing = false
             return
@@ -2050,7 +2055,6 @@ struct IOSAIAssistantPanel: View {
 
     private func presentConversationPicker() {
         showConversationPicker = true
-        conversationListReadError = nil
         conversationListTask?.cancel()
         conversationListRequestID &+= 1
         let requestID = conversationListRequestID
@@ -3970,6 +3974,11 @@ struct AIAssistantLifecycleCoordinator<Row: Sendable> {
         }
         isLoadingConversations = true
         return snapshot()
+    }
+
+    mutating func cancelConversationListLoad() {
+        conversationListRequestID &+= 1
+        isLoadingConversations = false
     }
 
     mutating func finishConversationListPrerequisiteFailure(requestID: UInt) -> Bool {
