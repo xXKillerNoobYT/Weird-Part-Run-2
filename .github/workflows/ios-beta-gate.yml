@@ -1,0 +1,71 @@
+name: iOS Beta Gate
+
+on:
+  pull_request:
+    branches: ["main"]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+
+# The gate is intentionally same-repository only because it runs trusted code on
+# WPR2's private Mac runners. Fork PRs remain fail-closed and require an owner-
+# approved validation path before merge.
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-beta-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  ios-beta-gate:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    name: iOS Beta Gate (${{ matrix.name }})
+    runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: iPhone
+            device_class: iphone
+          - name: iPad
+            device_class: ipad
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+      IOS_RUNTIME_VERSION: "26.5"
+      MINIMUM_FREE_GIB: "60"
+      SIMULATOR_BOOT_TIMEOUT_SECONDS: "900"
+      XCODE_PHASE_TIMEOUT_SECONDS: "3000"
+
+    steps:
+      - name: Checkout exact pull-request head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          clean: true
+
+      - name: Run exact-head Xcode build and tests
+        run: bash scripts/ci/run-ios-beta-gate.sh "${{ matrix.device_class }}"
+
+      - name: Remove run-owned simulator after interruption
+        if: always()
+        shell: bash
+        run: |
+          metadata="artifacts/ios-beta-gate-${{ matrix.device_class }}/metadata.txt"
+          simulator_id=""
+          if [[ -f "$metadata" ]]; then
+            simulator_id="$(awk -F= '$1 == "simulator_id" {print $2}' "$metadata")"
+          fi
+          if [[ -n "$simulator_id" ]]; then
+            xcrun simctl shutdown "$simulator_id" >/dev/null 2>&1 || true
+            xcrun simctl delete "$simulator_id" >/dev/null 2>&1 || true
+          fi
+
+      - name: Upload Xcode evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-beta-gate-${{ matrix.device_class }}-${{ github.event.pull_request.head.sha }}
+          path: artifacts/ios-beta-gate-${{ matrix.device_class }}/
+          if-no-files-found: error
+          retention-days: 7
