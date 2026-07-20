@@ -1,0 +1,44 @@
+name: iOS + iPad Beta Gate
+
+on:
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+# Keep a newer commit from queueing behind an obsolete test matrix on the
+# single trusted Mac runner.
+concurrency:
+  group: ios-ipad-beta-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ios-ipad-beta-gate:
+    name: iOS + iPad Beta Gate
+    # Never execute untrusted fork code on the self-hosted Mac. For fork PRs,
+    # this required context is absent and branch protection fails closed.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
+    timeout-minutes: 180
+    env:
+      WPR2_MIN_FREE_GIB: "60"
+      WPR2_IOS_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-26-5
+      WPR2_CI_ARTIFACT_ROOT: ${{ runner.temp }}/wpr2-ios-ipad-beta-gate
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+
+      - name: Run full iPhone and iPad test matrix
+        shell: bash
+        run: scripts/run-ios-ipad-beta-gate.sh
+
+      - name: Upload Xcode result bundles and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipad-beta-gate-${{ github.sha }}
+          path: ${{ runner.temp }}/wpr2-ios-ipad-beta-gate
+          if-no-files-found: error
+          retention-days: 14
