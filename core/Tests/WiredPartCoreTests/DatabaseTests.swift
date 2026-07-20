@@ -244,7 +244,7 @@ struct DatabaseTests {
                         )
                     )
                     """,
-                adapter: ColumnMapping(["detail": "detail"])
+                adapter: RangeRowAdapter(3..<4)
             )
         }
         try await FoundationModelsService.saveMessage(
