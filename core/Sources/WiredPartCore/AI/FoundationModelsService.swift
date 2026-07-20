@@ -829,18 +829,35 @@ public actor FoundationModelsService {
         guard ownerUserId > 0 else {
             throw AIConversationPersistenceError.missingAuthenticatedUser
         }
+        guard !messages.isEmpty else { return }
         try await db.writer.write { dbConn in
+            var nextRecencyOrder = try Int64.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT COALESCE(
+                        MAX(COALESCE(NULLIF(recency_order, 0), rowid)),
+                        0
+                    )
+                    FROM ai_conversation_messages
+                    """
+            ) ?? 0
             for msg in messages {
+                nextRecencyOrder += 1
                 try dbConn.execute(
                     sql: """
                         INSERT INTO ai_conversation_messages
                             (id, conversation_id, owner_user_id, role, content, created_at, recency_order)
-                        VALUES (
-                            ?, ?, ?, ?, ?, ?,
-                            (SELECT COALESCE(MAX(recency_order), 0) + 1 FROM ai_conversation_messages)
-                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                         """,
-                    arguments: [msg.id, msg.conversationId, ownerUserId, msg.role, msg.content, msg.createdAt]
+                    arguments: [
+                        msg.id,
+                        msg.conversationId,
+                        ownerUserId,
+                        msg.role,
+                        msg.content,
+                        msg.createdAt,
+                        nextRecencyOrder,
+                    ]
                 )
             }
         }
@@ -860,7 +877,9 @@ public actor FoundationModelsService {
                     SELECT id, conversation_id, role, content, created_at
                     FROM ai_conversation_messages
                     WHERE conversation_id = ? AND owner_user_id = ?
-                    ORDER BY created_at ASC, recency_order ASC
+                    ORDER BY created_at ASC,
+                             COALESCE(NULLIF(recency_order, 0), rowid) ASC,
+                             rowid ASC
                     """,
                 arguments: [conversationId, ownerUserId]
             )
@@ -937,10 +956,12 @@ public actor FoundationModelsService {
                         SELECT conversation_id,
                                created_at,
                                content,
-                               recency_order,
+                               COALESCE(NULLIF(recency_order, 0), rowid) AS effective_recency_order,
                                ROW_NUMBER() OVER (
                                    PARTITION BY conversation_id
-                                   ORDER BY created_at DESC, recency_order DESC
+                                   ORDER BY created_at DESC,
+                                            COALESCE(NULLIF(recency_order, 0), rowid) DESC,
+                                            rowid DESC
                                ) AS message_rank
                         FROM ai_conversation_messages
                         WHERE owner_user_id = ?
@@ -950,7 +971,7 @@ public actor FoundationModelsService {
                            content AS preview
                     FROM ranked_messages
                     WHERE message_rank = 1
-                    ORDER BY last_message_at DESC, recency_order DESC
+                    ORDER BY last_message_at DESC, effective_recency_order DESC
                     """,
                 arguments: [ownerUserId]
             )
@@ -982,7 +1003,9 @@ public actor FoundationModelsService {
                     SELECT conversation_id
                     FROM ai_conversation_messages
                     WHERE owner_user_id = ?
-                    ORDER BY created_at DESC, recency_order DESC
+                    ORDER BY created_at DESC,
+                             COALESCE(NULLIF(recency_order, 0), rowid) DESC,
+                             rowid DESC
                     LIMIT 1
                     """,
                 arguments: [ownerUserId]

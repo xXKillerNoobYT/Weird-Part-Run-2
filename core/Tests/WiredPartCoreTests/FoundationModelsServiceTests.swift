@@ -327,7 +327,7 @@ struct FoundationModelsServiceTests {
     @Test("equal timestamps use save order for resume, list order, and previews")
     func testConversationRecency_equalTimestampsUsesSaveOrderWithinOwner() async throws {
         let env = try E2ETestHelpers.setUp()
-        let tiedTimestamp = "2026-07-17 10:00:00"
+        let tiedTimestamp = "2026-07-17T10:00:00Z"
         let ownerMessages = [
             AIConversationMessage(id: "tie-a-1", conversationId: "tie-conv-A", role: "user", content: "A first", createdAt: tiedTimestamp),
             AIConversationMessage(id: "tie-a-2", conversationId: "tie-conv-A", role: "assistant", content: "A actual latest preview", createdAt: tiedTimestamp),
