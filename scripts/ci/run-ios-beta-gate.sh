@@ -38,8 +38,11 @@ runner_temp="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
 runtime_version="${IOS_RUNTIME_VERSION:-26.5}"
 runtime_id="com.apple.CoreSimulator.SimRuntime.iOS-${runtime_version//./-}"
 minimum_free_gib="${MINIMUM_FREE_GIB:-60}"
-simulator_boot_timeout_seconds="${SIMULATOR_BOOT_TIMEOUT_SECONDS:-900}"
-xcode_phase_timeout_seconds="${XCODE_PHASE_TIMEOUT_SECONDS:-3000}"
+simulator_boot_command_timeout_seconds="${SIMULATOR_BOOT_COMMAND_TIMEOUT_SECONDS:-120}"
+simulator_boot_timeout_seconds="${SIMULATOR_BOOT_TIMEOUT_SECONDS:-600}"
+xcode_phase_timeout_seconds="${XCODE_PHASE_TIMEOUT_SECONDS:-2400}"
+job_timeout_seconds="${JOB_TIMEOUT_SECONDS:-7200}"
+cleanup_upload_margin_seconds="${CLEANUP_UPLOAD_MARGIN_SECONDS:-1200}"
 artifact_dir="$workspace/artifacts/ios-beta-gate-$device_key"
 metadata_file="$artifact_dir/metadata.txt"
 derived_data=""
@@ -67,6 +70,26 @@ fail() {
   exit 1
 }
 
+for timeout_value in \
+  "$simulator_boot_command_timeout_seconds" \
+  "$simulator_boot_timeout_seconds" \
+  "$xcode_phase_timeout_seconds" \
+  "$job_timeout_seconds" \
+  "$cleanup_upload_margin_seconds"; do
+  [[ "$timeout_value" =~ ^[0-9]+$ ]] && (( timeout_value > 0 )) || \
+    fail "all timeout budgets must be positive integer seconds"
+done
+(( cleanup_upload_margin_seconds < job_timeout_seconds )) || \
+  fail "cleanup/upload margin must be smaller than the job timeout"
+internal_budget_seconds=$((
+  simulator_boot_command_timeout_seconds +
+  simulator_boot_timeout_seconds +
+  (2 * xcode_phase_timeout_seconds)
+))
+available_internal_budget_seconds=$((job_timeout_seconds - cleanup_upload_margin_seconds))
+(( internal_budget_seconds <= available_internal_budget_seconds )) || \
+  fail "internal timeout budget ${internal_budget_seconds}s exceeds ${available_internal_budget_seconds}s after reserving cleanup/upload margin"
+
 actual_sha="$(git -C "$workspace" rev-parse HEAD)" || fail "cannot resolve repository HEAD"
 {
   echo "gate=$gate_name"
@@ -78,6 +101,12 @@ actual_sha="$(git -C "$workspace" rev-parse HEAD)" || fail "cannot resolve repos
   echo "runtime=$runtime_id"
   echo "device_type=$device_type"
   echo "minimum_free_gib=$minimum_free_gib"
+  echo "simulator_boot_command_timeout_seconds=$simulator_boot_command_timeout_seconds"
+  echo "simulator_boot_timeout_seconds=$simulator_boot_timeout_seconds"
+  echo "xcode_phase_timeout_seconds=$xcode_phase_timeout_seconds"
+  echo "job_timeout_seconds=$job_timeout_seconds"
+  echo "cleanup_upload_margin_seconds=$cleanup_upload_margin_seconds"
+  echo "internal_budget_seconds=$internal_budget_seconds"
   xcodebuild -version | tr '\n' ' '
   echo
 } > "$metadata_file"
@@ -106,7 +135,7 @@ simulator_name="WPR2-CI-${gate_name}-${GITHUB_RUN_ID:-manual}-${GITHUB_RUN_ATTEM
 simulator_id="$(xcrun simctl create "$simulator_name" "$device_type" "$runtime_id")" || fail "cannot create $gate_name simulator"
 echo "simulator_id=$simulator_id" >> "$metadata_file"
 
-/usr/bin/perl -e 'alarm shift; exec @ARGV' "$simulator_boot_timeout_seconds" \
+/usr/bin/perl -e 'alarm shift; exec @ARGV' "$simulator_boot_command_timeout_seconds" \
   xcrun simctl boot "$simulator_id" \
   2>&1 | tee -a "$artifact_dir/gate.log"
 boot_command_status=("${PIPESTATUS[@]}")

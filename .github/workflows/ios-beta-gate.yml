@@ -5,9 +5,10 @@ on:
     branches: ["main"]
     types: [opened, synchronize, reopened, ready_for_review]
 
-# The gate is intentionally same-repository only because it runs trusted code on
-# WPR2's private Mac runners. Fork PRs remain fail-closed and require an owner-
-# approved validation path before merge.
+# Trusted heads run on WPR2's private Mac runners. Fork heads run only on a
+# GitHub-hosted runner and deliberately fail the same required contexts before
+# checkout, so untrusted code never reaches the Mac and a skipped job cannot be
+# mistaken for successful device evidence.
 permissions:
   contents: read
 
@@ -17,9 +18,8 @@ concurrency:
 
 jobs:
   ios-beta-gate:
-    if: github.event.pull_request.head.repo.full_name == github.repository
     name: iOS Beta Gate (${{ matrix.name }})
-    runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.full_name == github.repository && '["self-hosted","macOS","ARM64","xcode","ios","local-mac"]' || '["ubuntu-latest"]') }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -33,22 +33,37 @@ jobs:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
       IOS_RUNTIME_VERSION: "26.5"
       MINIMUM_FREE_GIB: "60"
-      SIMULATOR_BOOT_TIMEOUT_SECONDS: "900"
-      XCODE_PHASE_TIMEOUT_SECONDS: "3000"
+      SIMULATOR_BOOT_COMMAND_TIMEOUT_SECONDS: "120"
+      SIMULATOR_BOOT_TIMEOUT_SECONDS: "600"
+      XCODE_PHASE_TIMEOUT_SECONDS: "2400"
+      JOB_TIMEOUT_SECONDS: "7200"
+      CLEANUP_UPLOAD_MARGIN_SECONDS: "1200"
 
     steps:
+      - name: Reject untrusted fork without using the Mac runner
+        if: github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "::error::Fork pull requests cannot execute untrusted code on WPR2's self-hosted Mac runners. A trusted maintainer must reproduce the head in a same-repository branch before either required device context can pass."
+          exit 1
+
       - name: Checkout exact pull-request head
+        if: github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 1
           clean: true
 
+      - name: Validate fail-closed beta-gate source policy
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        run: python3 scripts/ci/validate-ios-beta-gate-source.py
+
       - name: Run exact-head Xcode build and tests
+        if: github.event.pull_request.head.repo.full_name == github.repository
         run: bash scripts/ci/run-ios-beta-gate.sh "${{ matrix.device_class }}"
 
       - name: Remove run-owned simulator after interruption
-        if: always()
+        if: always() && github.event.pull_request.head.repo.full_name == github.repository
         shell: bash
         run: |
           metadata="artifacts/ios-beta-gate-${{ matrix.device_class }}/metadata.txt"
@@ -62,7 +77,7 @@ jobs:
           fi
 
       - name: Upload Xcode evidence
-        if: always()
+        if: always() && github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/upload-artifact@v4
         with:
           name: ios-beta-gate-${{ matrix.device_class }}-${{ github.event.pull_request.head.sha }}

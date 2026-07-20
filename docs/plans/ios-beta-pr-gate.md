@@ -23,7 +23,7 @@ Each matrix entry runs on the repo's self-hosted Mac labels:
 
 `[self-hosted, macOS, ARM64, xcode, ios, local-mac]`
 
-The workflow is limited to trusted same-repository pull requests targeting `main`. A pull request head update cancels stale in-flight work. Each lane checks out `github.event.pull_request.head.sha` explicitly and verifies `HEAD` equals that SHA before invoking Xcode.
+Trusted same-repository pull requests targeting `main` run on the self-hosted Mac. Fork pull requests route the same stable iPhone/iPad contexts to `ubuntu-latest`, fail explicitly before checkout, and never execute untrusted code on the Mac. This prevents GitHub's skipped-job success semantics from satisfying either required context. A pull request head update cancels stale in-flight work. Each trusted lane checks out `github.event.pull_request.head.sha` explicitly and verifies `HEAD` equals that SHA before invoking Xcode.
 
 ### Deterministic runner
 
@@ -32,11 +32,11 @@ Add `scripts/ci/run-ios-beta-gate.sh` as the execution layer. It:
 1. Records expected SHA, actual SHA, runner, Xcode, runtime, and device-class metadata.
 2. Requires at least 60 GiB free on the volume backing `RUNNER_TEMP`; insufficient capacity fails before Xcode.
 3. Verifies the requested iOS runtime and simulator device type exist.
-4. Creates a run-owned temporary simulator and DerivedData directory; simulator boot is bounded at 15 minutes so runtime failures return control for cleanup/evidence upload.
+4. Creates a run-owned temporary simulator and DerivedData directory; the boot command is bounded at 2 minutes and boot readiness at 10 minutes so runtime failures return control for cleanup/evidence upload.
 5. Runs all app/core unit and regression tests from `WiredPart-iOS`, excluding the broad UI-test target from that phase.
 6. Runs the bounded `WiredPart-iOS-Stage9-Smokes` deterministic UI plan on the same simulator; this includes the maintained viewport harness without invoking manual screenshot catalogs.
 7. Writes an `.xcresult`, Xcode log, and machine-readable summary for both phases in every lane.
-8. Bounds each Xcode phase at 50 minutes so the script can package partial evidence before the 120-minute job timeout.
+8. Bounds each Xcode phase at 40 minutes. A source-validated runtime assertion caps the two Xcode phases plus simulator boot at 92 minutes, reserving 20 minutes of the 120-minute job envelope for result packaging, cleanup, and artifact upload.
 9. Fails if Xcode fails or times out, the result bundle is missing, zero tests execute, any test fails, or any executed test is skipped.
 10. Shuts down/deletes the run-owned simulator and removes DerivedData on exit; an `always()` cleanup step repeats simulator removal after an interrupted script.
 
@@ -67,6 +67,7 @@ Runner unavailability, simulator-runtime drift, disk pressure, or GitHub Actions
 ## Acceptance criteria
 
 - A same-repository PR to `main` produces distinct phone and tablet checks at its exact head SHA.
+- A fork PR produces the same two required contexts as explicit failures on `ubuntu-latest`; it cannot run on the self-hosted Mac or pass through skipped-job semantics.
 - Both checks execute non-empty unit/regression and deterministic UI-smoke phases with zero failures and zero unexpected skips.
 - Insufficient disk, absent runtime/device type, Xcode failure, missing/invalid result, timeout, cancellation, or runner outage cannot report success.
 - `.xcresult`, log, summary, and provenance metadata are available on both success and failure.
