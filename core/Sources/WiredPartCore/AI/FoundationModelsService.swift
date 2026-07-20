@@ -834,11 +834,26 @@ public actor FoundationModelsService {
             var nextRecencyOrder = try Int64.fetchOne(
                 dbConn,
                 sql: """
-                    SELECT COALESCE(
-                        MAX(COALESCE(NULLIF(recency_order, 0), rowid)),
-                        0
+                    SELECT MAX(
+                        COALESCE(
+                            (
+                                SELECT MAX(recency_order)
+                                FROM ai_conversation_messages
+                                WHERE recency_order IS NOT NULL
+                                  AND recency_order <> 0
+                                  AND recency_order > 0
+                            ),
+                            0
+                        ),
+                        COALESCE(
+                            (
+                                SELECT MAX(rowid)
+                                FROM ai_conversation_messages
+                                WHERE recency_order IS NULL OR recency_order = 0
+                            ),
+                            0
+                        )
                     )
-                    FROM ai_conversation_messages
                     """
             ) ?? 0
             for msg in messages {

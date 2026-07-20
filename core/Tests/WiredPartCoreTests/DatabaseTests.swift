@@ -218,6 +218,35 @@ struct DatabaseTests {
 
         // Reopening applies no destructive repair and records the actual latest schema.
         let reopened = try AppDatabase(queue)
+        let allocationQueryPlan = try await queue.read { db in
+            try String.fetchAll(
+                db,
+                sql: """
+                    EXPLAIN QUERY PLAN
+                    SELECT MAX(
+                        COALESCE(
+                            (
+                                SELECT MAX(recency_order)
+                                FROM ai_conversation_messages
+                                WHERE recency_order IS NOT NULL
+                                  AND recency_order <> 0
+                                  AND recency_order > 0
+                            ),
+                            0
+                        ),
+                        COALESCE(
+                            (
+                                SELECT MAX(rowid)
+                                FROM ai_conversation_messages
+                                WHERE recency_order IS NULL OR recency_order = 0
+                            ),
+                            0
+                        )
+                    )
+                    """,
+                adapter: ColumnMapping(["detail": "detail"])
+            )
+        }
         try await FoundationModelsService.saveMessage(
             AIConversationMessage(
                 id: "current-writer",
@@ -253,6 +282,7 @@ struct DatabaseTests {
         #expect(storedRecency.null == nil)
         #expect(storedRecency.current == 5)
         #expect(storedRecency.schema == "114")
+        #expect(allocationQueryPlan.contains { $0.contains("USING COVERING INDEX idx_ai_conv_msgs_recency_order") })
         #expect(loaded.map(\.id) == ["legacy-1", "legacy-2", "rollback-zero", "rollback-null", "current-writer"])
     }
 
