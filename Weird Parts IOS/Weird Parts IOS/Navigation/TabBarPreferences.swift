@@ -72,8 +72,8 @@ final class TabBarPreferences: ObservableObject {
             tabOrder = []
         }
 
-        // Focused UI verification must be able to exercise the regular-width
-        // sidebar deterministically, regardless of preferences left by an
+        // Focused UI verification must be able to exercise the full-sidebar
+        // layout deterministically, regardless of preferences left by an
         // earlier simulator or Catalyst run.
         let launchArguments = ProcessInfo.processInfo.arguments
         if launchArguments.contains("-UITesting"), launchArguments.contains("-UITestingFullSidebar") {

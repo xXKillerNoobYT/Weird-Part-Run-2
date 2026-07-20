@@ -264,11 +264,11 @@ final class WarehouseWizardProgressAccessibilityTests: XCTestCase {
             sidebarSource.contains(".accessibilityLabel(tab.label)") && fullSidebarSource.contains(".accessibilityLabel(tab.label)"),
             "Sidebar module navigation needs the same readable labels as top tabs for VoiceOver and UI tests."
         )
-        for source in [sidebarSource, fullSidebarSource] {
+        for sidebarVariantSource in [sidebarSource, fullSidebarSource] {
             XCTAssertTrue(
-                source.contains(".accessibilityValue(isSelected ? \"Selected\" : \"Not selected\")") &&
-                    source.contains(".accessibilityAddTraits(isSelected ? .isSelected : [])") &&
-                    source.contains(".accessibilityRemoveTraits(isSelected ? [] : .isSelected)"),
+                sidebarVariantSource.contains(".accessibilityValue(isSelected ? \"Selected\" : \"Not selected\")") &&
+                    sidebarVariantSource.contains(".accessibilityAddTraits(isSelected ? .isSelected : [])") &&
+                    sidebarVariantSource.contains(".accessibilityRemoveTraits(isSelected ? [] : .isSelected)"),
                 "Each sidebar must explicitly add selected state only to the active native Button and remove it from every inactive Button."
             )
         }
@@ -278,7 +278,7 @@ final class WarehouseWizardProgressAccessibilityTests: XCTestCase {
         )
         XCTAssertTrue(
             moduleSidebarRowSource.contains(".frame(minHeight: 44)") && fullSidebarSource.contains(".frame(minHeight: 44)"),
-            "Regular-width sidebar subtab Buttons need a minimum 44pt accessibility target."
+            "Module-sidebar and full-sidebar subtab Buttons need a minimum 44pt accessibility target."
         )
     }
 
