@@ -477,7 +477,7 @@ struct JobEstimationServiceTests {
 
     private static let denverCalendar: Calendar = {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "America/Denver")!
+        calendar.timeZone = TimeZone(identifier: "America/Denver") ?? .gmt
         return calendar
     }()
 

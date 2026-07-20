@@ -256,13 +256,13 @@ struct DailyReportGeneratorTests {
 
     private static let mountainCalendar: Calendar = {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "America/Denver")!
+        calendar.timeZone = TimeZone(identifier: "America/Denver") ?? .gmt
         return calendar
     }()
 
     private static let honoluluCalendar: Calendar = {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "Pacific/Honolulu")!
+        calendar.timeZone = TimeZone(identifier: "Pacific/Honolulu") ?? .gmt
         return calendar
     }()
 }
