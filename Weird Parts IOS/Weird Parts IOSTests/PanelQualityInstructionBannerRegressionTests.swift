@@ -84,6 +84,11 @@ final class PanelQualityInstructionBannerRegressionTests: XCTestCase {
             "Pointer overlays must stay hidden from VoiceOver so each choice remains one focus stop."
         )
         XCTAssertGreaterThanOrEqual(
+            choiceSource.components(separatedBy: "#if targetEnvironment(macCatalyst)").count - 1,
+            2,
+            "Pointer activation overlays must compile only for Catalyst so iOS keeps standard Button touch handling."
+        )
+        XCTAssertGreaterThanOrEqual(
             choiceSource.components(separatedBy: ".accessibilityAction").count - 1,
             2,
             "Both choices need an explicit default VoiceOver action that presents the same confirmation."
@@ -145,7 +150,7 @@ final class PanelQualityInstructionBannerRegressionTests: XCTestCase {
         try insertConflict(db: db, fieldName: "description", localValue: "Local notes", remoteValue: "Remote notes")
         try insertConflict(db: db, fieldName: "company_markup_percent", localValue: "18", remoteValue: "24")
 
-        XCTAssertTrue(manager.markAllConflictsReviewed())
+        XCTAssertTrue(manager.markAutoResolvableConflictsReviewed())
 
         let pending = try ConflictResolver.getUnreviewedConflicts(db: db)
         XCTAssertEqual(Set(pending.map(\.fieldName)), ["description", "company_markup_percent"])
@@ -221,9 +226,13 @@ final class PanelQualityInstructionBannerRegressionTests: XCTestCase {
                 appCoreSource.contains("throw UITestBootstrapError.fixturePartMissing(\"UITEST-QA-CONDUIT\")"),
             "UI-test fixture seeding should fail with a controlled bootstrap error instead of force-unwrapping a missing part id."
         )
-        XCTAssertFalse(
-            appCoreSource.contains("let conflictPartId = try Int64.fetchOne"),
-            "The UITEST-QA-CONDUIT lookup must not force-unwrap."
+        XCTAssertTrue(
+            appCoreSource.contains("code = 'UITEST-QA-CONDUIT' AND is_active = 1 AND deleted_at IS NULL"),
+            "The UI-test fixture lookup must reject both inactive and soft-deleted parts."
+        )
+        XCTAssertTrue(
+            appCoreSource.contains("guard let conflictPartId = try Int64.fetchOne"),
+            "The UITEST-QA-CONDUIT lookup must use a guarded optional fetch."
         )
         XCTAssertTrue(
             uiTestSource.contains("identifier == %@ OR label == %@"),
@@ -304,6 +313,7 @@ final class PanelQualityInstructionBannerRegressionTests: XCTestCase {
     private static func readUITestSource(named filename: String) throws -> String {
         try String(
             contentsOf: projectRoot(file: #filePath)
+                .deletingLastPathComponent()
                 .appendingPathComponent("Weird Parts IOSUITests")
                 .appendingPathComponent(filename),
             encoding: .utf8

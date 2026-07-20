@@ -17,6 +17,7 @@ struct PanelScheduleBuilder: View {
     // Print PDF button, so the iPad popover presentation of
     // UIPrintInteractionController has a source to point at.
     @State private var exportMenuAnchorRect: CGRect = .zero
+    private let moveModeBannerHorizontalReservation = DS.Space.sm * 6
 
     private enum ActiveSheet: Identifiable {
         case circuitEditor
@@ -49,7 +50,7 @@ struct PanelScheduleBuilder: View {
                     )
                     // Reserve both the explicit banner margin and the compact root's
                     // inherited horizontal inset before fixing the banner width.
-                    .frame(width: max(geometry.size.width - (DS.Space.sm * 6), 0), alignment: .leading)
+                    .frame(width: max(geometry.size.width - moveModeBannerHorizontalReservation, 0), alignment: .leading)
                     .padding(.horizontal, DS.Space.sm)
                     .padding(.top, DS.Space.sm)
                     .transition(.move(edge: .top).combined(with: .opacity))

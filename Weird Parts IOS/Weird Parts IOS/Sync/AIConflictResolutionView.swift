@@ -216,6 +216,7 @@ struct CriticalConflictView: View {
                         .accessibilityHint("Selects the local value for confirmation.")
                         .accessibilityIdentifier("syncConflictUseLocalValue")
                         .accessibilityAction { onResolveLocal() }
+#if targetEnvironment(macCatalyst)
                         // Catalyst can route pointer activation to the expanded
                         // accessibility wrapper without firing Button.action.
                         // Keep this overlay hidden from AX so there is still one
@@ -226,6 +227,7 @@ struct CriticalConflictView: View {
                                 .onTapGesture { onResolveLocal() }
                                 .accessibilityHidden(true)
                         }
+#endif
                 }
                 .frame(maxWidth: .infinity)
 
@@ -256,6 +258,7 @@ struct CriticalConflictView: View {
                         .accessibilityHint("Selects the remote value for confirmation.")
                         .accessibilityIdentifier("syncConflictUseRemoteValue")
                         .accessibilityAction { onResolveRemote() }
+#if targetEnvironment(macCatalyst)
                         // Match the local choice's Catalyst pointer fallback.
                         .overlay {
                             Color.clear
@@ -263,6 +266,7 @@ struct CriticalConflictView: View {
                                 .onTapGesture { onResolveRemote() }
                                 .accessibilityHidden(true)
                         }
+#endif
                 }
                 .frame(maxWidth: .infinity)
             }

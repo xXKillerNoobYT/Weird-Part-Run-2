@@ -934,7 +934,7 @@ final class IOSSyncManager {
     /// Hard and critical conflicts deliberately remain pending because dismissing
     /// them without an explicit side would silently preserve the prior LWW winner.
     @discardableResult
-    func markAllConflictsReviewed() -> Bool {
+    func markAutoResolvableConflictsReviewed() -> Bool {
         guard let db else {
             syncReviewActionFailed("Sync conflicts could not be marked reviewed because the database is unavailable.")
             return false
@@ -946,7 +946,7 @@ final class IOSSyncManager {
             syncReadFailed(
                 error,
                 context: "load unreviewed sync conflicts before marking reviewed",
-                logMessage: "unreviewed conflict load failed before markAllConflictsReviewed"
+                logMessage: "unreviewed conflict load failed before markAutoResolvableConflictsReviewed"
             )
             return false
         }

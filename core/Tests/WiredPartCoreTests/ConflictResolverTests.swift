@@ -494,6 +494,13 @@ struct ConflictResolverTests {
         let statsAfter = try ConflictResolver.getConflictStats(db: db)
         #expect(statsAfter.total == 1)
         #expect(statsAfter.unreviewed == 0)
+
+        #expect(throws: ConflictResolver.ConflictReviewError.self) {
+            try ConflictResolver.markConflictReviewed(db: db, conflictId: unreviewed[0].id!)
+        }
+        #expect(throws: ConflictResolver.ConflictReviewError.self) {
+            try ConflictResolver.markConflictReviewed(db: db, conflictId: Int64.max)
+        }
     }
 
     // MARK: - applyConflictResolution (manual review must actually apply the choice)
@@ -581,6 +588,61 @@ struct ConflictResolverTests {
         #expect(try ConflictResolver.getUnreviewedConflicts(db: db).isEmpty)
     }
 
+    @Test("Already-reviewed critical conflicts fail without side effects")
+    func testApplyResolutionRejectsAlreadyReviewedConflictBeforeWrite() throws {
+        let db = try freshDB()
+        let userId = try insertUser(db: db, email: "winner@remote.com")
+        try insertConflict(db: db, recordId: userId, winner: "remote")
+        try db.writer.write { try $0.execute(sql: "DELETE FROM _change_log") }
+        let conflict = try ConflictResolver.getUnreviewedConflicts(db: db)[0]
+        try ConflictResolver.markConflictReviewed(db: db, conflictId: conflict.id!)
+
+        #expect(throws: ConflictResolver.ConflictReviewError.self) {
+            try ConflictResolver.applyConflictResolution(db: db, conflict: conflict, choice: .keepLocal)
+        }
+
+        let state = try db.writer.read { dbConn in
+            let email = try String.fetchOne(dbConn, sql: "SELECT email FROM users WHERE id = ?", arguments: [userId])
+            let changes = try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM _change_log") ?? -1
+            return (email, changes)
+        }
+        #expect(state.0 == "winner@remote.com")
+        #expect(state.1 == 0)
+    }
+
+    @Test("Critical resolution guard cleanup failure rolls back the chosen value")
+    func testApplyResolutionCleanupFailureRollsBack() throws {
+        let db = try freshDB()
+        let userId = try insertUser(db: db, email: "winner@remote.com")
+        try insertConflict(db: db, recordId: userId, winner: "remote")
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: "DELETE FROM _change_log")
+            try dbConn.execute(sql: """
+                CREATE TRIGGER reject_critical_sync_guard_cleanup
+                BEFORE DELETE ON _sync_apply_guard
+                BEGIN
+                    SELECT RAISE(ABORT, 'forced critical sync guard cleanup failure');
+                END
+                """)
+        }
+        let conflict = try ConflictResolver.getUnreviewedConflicts(db: db)[0]
+
+        #expect(throws: (any Error).self) {
+            try ConflictResolver.applyConflictResolution(db: db, conflict: conflict, choice: .keepLocal)
+        }
+
+        let state = try db.writer.read { dbConn in
+            let email = try String.fetchOne(dbConn, sql: "SELECT email FROM users WHERE id = ?", arguments: [userId])
+            let changes = try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM _change_log") ?? -1
+            let guardRows = try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM _sync_apply_guard") ?? -1
+            return (email, changes, guardRows)
+        }
+        #expect(state.0 == "winner@remote.com")
+        #expect(state.1 == 0)
+        #expect(state.2 == 0)
+        #expect(try ConflictResolver.getUnreviewedConflicts(db: db).count == 1)
+    }
+
     @Test("applyConflictResolution rejects deletion conflicts with a clear error")
     func testApplyResolutionRejectsDeletionConflicts() throws {
         let db = try freshDB()
@@ -644,12 +706,11 @@ struct ConflictResolverTests {
         return (db, jobId, conflict)
     }
 
-    @Test("AI merge, either device edit, and manual text persist and are audited")
+    @Test("AI merge, losing device edit, and manual text persist and are audited")
     func testApplyTextConflictResolutionPersistsEverySelectionKind() throws {
         let selections = [
             "AI merge": "Device A edit plus Device B edit",
             "device A": "Device A edit",
-            "device B": "Device B edit",
             "manual": "Reviewer's exact rewrite",
         ]
 
@@ -723,6 +784,73 @@ struct ConflictResolverTests {
         }
         #expect(state.0 == "Device B edit")
         #expect(state.1 == 0)
+        #expect(try ConflictResolver.getUnreviewedConflicts(db: fixture.db).count == 1)
+    }
+
+    @Test("Selecting the live text winner is review-only")
+    func testApplyTextConflictResolutionKeepingWinnerIsReviewOnly() throws {
+        let fixture = try textConflictDatabase()
+
+        try ConflictResolver.applyTextConflictResolution(
+            db: fixture.db,
+            conflict: fixture.conflict,
+            selectedValue: "Device B edit"
+        )
+
+        let state = try fixture.db.writer.read { dbConn in
+            let notes = try String.fetchOne(
+                dbConn,
+                sql: "SELECT notes FROM jobs WHERE id = ?",
+                arguments: [fixture.jobId]
+            )
+            let updatedAt = try String.fetchOne(
+                dbConn,
+                sql: "SELECT updated_at FROM jobs WHERE id = ?",
+                arguments: [fixture.jobId]
+            )
+            let changes = try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM _change_log") ?? -1
+            return (notes, updatedAt, changes)
+        }
+        #expect(state.0 == "Device B edit")
+        #expect(state.1 == "2000-01-01T00:00:00Z")
+        #expect(state.2 == 0)
+        #expect(try ConflictResolver.getUnreviewedConflicts(db: fixture.db).isEmpty)
+    }
+
+    @Test("Sync guard cleanup failure rolls back text resolution")
+    func testApplyTextConflictResolutionCleanupFailureRollsBack() throws {
+        let fixture = try textConflictDatabase()
+        try fixture.db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                CREATE TRIGGER reject_sync_guard_cleanup
+                BEFORE DELETE ON _sync_apply_guard
+                BEGIN
+                    SELECT RAISE(ABORT, 'forced sync guard cleanup failure');
+                END
+                """)
+        }
+
+        #expect(throws: (any Error).self) {
+            try ConflictResolver.applyTextConflictResolution(
+                db: fixture.db,
+                conflict: fixture.conflict,
+                selectedValue: "Must roll back"
+            )
+        }
+
+        let state = try fixture.db.writer.read { dbConn in
+            let notes = try String.fetchOne(
+                dbConn,
+                sql: "SELECT notes FROM jobs WHERE id = ?",
+                arguments: [fixture.jobId]
+            )
+            let changes = try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM _change_log") ?? -1
+            let guardRows = try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM _sync_apply_guard") ?? -1
+            return (notes, changes, guardRows)
+        }
+        #expect(state.0 == "Device B edit")
+        #expect(state.1 == 0)
+        #expect(state.2 == 0)
         #expect(try ConflictResolver.getUnreviewedConflicts(db: fixture.db).count == 1)
     }
 
@@ -803,6 +931,34 @@ struct ConflictResolverTests {
         }
         #expect(state.0 == "Reviewer restored text")
         #expect(state.1 == 1)
+        #expect(try ConflictResolver.getUnreviewedConflicts(db: fixture.db).isEmpty)
+    }
+
+    @Test("Selecting the persisted NULL text winner is review-only")
+    func testApplyTextConflictResolutionKeepingNullWinnerIsReviewOnly() throws {
+        let fixture = try textConflictDatabase()
+        try fixture.db.writer.write { dbConn in
+            try dbConn.execute(sql: "UPDATE jobs SET notes = NULL WHERE id = ?", arguments: [fixture.jobId])
+            try dbConn.execute(sql: "UPDATE _conflict_log SET remote_value = NULL WHERE id = ?", arguments: [fixture.conflict.id])
+            try dbConn.execute(sql: "DELETE FROM _change_log")
+        }
+        let conflict = try ConflictResolver.getUnreviewedConflicts(db: fixture.db)[0]
+
+        try ConflictResolver.applyTextConflictResolution(
+            db: fixture.db,
+            conflict: conflict,
+            selectedValue: "(NULL)"
+        )
+
+        let state = try fixture.db.writer.read { dbConn in
+            let notes = try String.fetchOne(dbConn, sql: "SELECT notes FROM jobs WHERE id = ?", arguments: [fixture.jobId])
+            let updatedAt = try String.fetchOne(dbConn, sql: "SELECT updated_at FROM jobs WHERE id = ?", arguments: [fixture.jobId])
+            let changes = try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM _change_log") ?? -1
+            return (notes, updatedAt, changes)
+        }
+        #expect(state.0 == nil)
+        #expect(state.1 == "2000-01-01T00:00:00Z")
+        #expect(state.2 == 0)
         #expect(try ConflictResolver.getUnreviewedConflicts(db: fixture.db).isEmpty)
     }
 

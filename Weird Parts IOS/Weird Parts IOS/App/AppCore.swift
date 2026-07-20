@@ -967,7 +967,7 @@ final class AppCore: ObservableObject {
                 // choosing the already-applied remote winner appeared to work.
                 guard let conflictPartId = try Int64.fetchOne(
                     dbConn,
-                    sql: "SELECT id FROM parts WHERE code = 'UITEST-QA-CONDUIT' AND deleted_at IS NULL"
+                    sql: "SELECT id FROM parts WHERE code = 'UITEST-QA-CONDUIT' AND is_active = 1 AND deleted_at IS NULL"
                 ) else {
                     throw UITestBootstrapError.fixturePartMissing("UITEST-QA-CONDUIT")
                 }

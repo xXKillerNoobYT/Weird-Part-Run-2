@@ -19,8 +19,8 @@ enum ConflictSeverity {
 enum SyncConflictClassifier {
 
     /// Persisted/synced financial and stock fields that always require an
-    /// explicit local/remote decision. Keep schema names here; legacy aliases
-    /// remain below for conflict rows created by older app versions.
+    /// explicit local/remote decision. This set includes current schema names and
+    /// legacy aliases retained for conflict rows created by older app versions.
     private static let criticalFields: Set<String> = [
         "qty", "stock", "cost", "price", "total", "budget",
         "forecast_adu_30", "min_stock", "target_stock", "max_stock",

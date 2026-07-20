@@ -36,8 +36,8 @@ struct SyncConflictReviewPage: View {
             switch self {
             case .critical(let decision):
                 return "critical-\(decision.stableConflictKey)-\(decision.keepLocal)"
-            case .actionError:
-                return "action-error"
+            case .actionError(let message):
+                return "action-error-\(message)"
             }
         }
 
@@ -80,7 +80,7 @@ struct SyncConflictReviewPage: View {
                 if !autoResolvableConflicts.isEmpty {
                     ToolbarItem(placement: .primaryAction) {
                         Button("Accept Auto-Resolved") {
-                            if syncManager.markAllConflictsReviewed() {
+                            if syncManager.markAutoResolvableConflictsReviewed() {
                                 loadConflicts()
                             } else {
                                 presentActionError(syncManager.errorMessage ?? "Sync conflicts could not be marked reviewed.")
@@ -156,8 +156,8 @@ struct SyncConflictReviewPage: View {
             // Group conflicts by table + record
             ForEach(groupedConflicts, id: \.key) { group in
                 Section(group.key) {
-                    ForEach(group.conflicts, id: \.id) { conflict in
-                        conflictRow(conflict)
+                    ForEach(group.conflicts, id: \.key) { row in
+                        conflictRow(row.conflict)
                     }
                 }
             }
@@ -187,15 +187,19 @@ struct SyncConflictReviewPage: View {
                 // Critical: side-by-side human decision. These APPLY the chosen
                 // value (writing back the LWW loser when picked, change-logged so
                 // the decision syncs) — they are not review-only dismissals.
-                CriticalConflictView(
-                    conflict: conflict,
-                    onResolveLocal: {
-                        requestCriticalResolution(conflict, keepLocal: true)
-                    },
-                    onResolveRemote: {
-                        requestCriticalResolution(conflict, keepLocal: false)
-                    }
-                )
+                if conflict.id != nil {
+                    CriticalConflictView(
+                        conflict: conflict,
+                        onResolveLocal: {
+                            requestCriticalResolution(conflict, keepLocal: true)
+                        },
+                        onResolveRemote: {
+                            requestCriticalResolution(conflict, keepLocal: false)
+                        }
+                    )
+                } else {
+                    unavailableConflictContent(conflict)
+                }
 
             case .hard:
                 // Hard: show AI merge button or AI resolution if available
@@ -207,16 +211,18 @@ struct SyncConflictReviewPage: View {
                     // Standard view with AI merge button
                     standardConflictContent(conflict)
 
-                    Button {
-                        Task { await requestAIMerge(conflict) }
-                    } label: {
-                        Label("AI Merge", systemImage: "sparkles")
+                    if conflict.id != nil {
+                        Button {
+                            Task { await requestAIMerge(conflict) }
+                        } label: {
+                            Label("AI Merge", systemImage: "sparkles")
+                        }
+                        .font(.caption)
+                        .buttonStyle(.bordered)
+                        .tint(.purple)
+                        .dsMinTapTarget()
+                        .disabled(isRequestingAI)
                     }
-                    .font(.caption)
-                    .buttonStyle(.bordered)
-                    .tint(.purple)
-                    .dsMinTapTarget()
-                    .disabled(isRequestingAI)
                 }
 
             default:
@@ -257,15 +263,45 @@ struct SyncConflictReviewPage: View {
                     .foregroundStyle(.tertiary)
             }
 
-            // Accept button
-            Button("Accept") {
-                withAnimation { markReviewed(conflict) }
+            if conflict.id != nil {
+                Button("Accept") {
+                    withAnimation { markReviewed(conflict) }
+                }
+                .font(.caption)
+                .buttonStyle(.borderedProminent)
+                .tint(.green)
+                .dsMinTapTarget()
+            } else {
+                unavailableConflictLabel
             }
-            .font(.caption)
-            .buttonStyle(.borderedProminent)
-            .tint(.green)
-            .dsMinTapTarget()
         }
+    }
+
+    private func unavailableConflictContent(_ conflict: ConflictLogEntry) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                valueBox(
+                    label: "This device",
+                    value: conflict.localValue ?? "(empty)",
+                    isWinner: conflict.winner == "local",
+                    color: .blue
+                )
+                valueBox(
+                    label: "Remote",
+                    value: conflict.remoteValue ?? "(empty)",
+                    isWinner: conflict.winner == "remote",
+                    color: .purple
+                )
+            }
+            unavailableConflictLabel
+        }
+    }
+
+    private var unavailableConflictLabel: some View {
+        Label("Unavailable — conflict id is missing", systemImage: "exclamationmark.triangle")
+            .font(.caption)
+            .foregroundStyle(.red)
+            .accessibilityIdentifier("syncConflictActionUnavailable")
     }
 
     // MARK: - Value Box
@@ -332,14 +368,26 @@ struct SyncConflictReviewPage: View {
         Set(conflicts.map { "\($0.tableName):\($0.recordId)" }).count
     }
 
+    private struct ConflictRow {
+        let key: String
+        let conflict: ConflictLogEntry
+    }
+
     private struct ConflictGroup {
         let key: String
-        let conflicts: [ConflictLogEntry]
+        let conflicts: [ConflictRow]
     }
 
     private var groupedConflicts: [ConflictGroup] {
         let dict = Dictionary(grouping: conflicts) { "\($0.tableName) #\($0.recordId)" }
-        return dict.map { ConflictGroup(key: $0.key, conflicts: $0.value) }
+        return dict.map { key, conflicts in
+            let rows = conflicts.enumerated().map { index, conflict in
+                let rowKey = conflict.id.map { "id-\($0)" }
+                    ?? "missing-\(index)-\(conflict.tableName)-\(conflict.recordId)-\(conflict.fieldName)-\(conflict.localTs)-\(conflict.remoteTs)"
+                return ConflictRow(key: rowKey, conflict: conflict)
+            }
+            return ConflictGroup(key: key, conflicts: rows)
+        }
             .sorted { $0.key < $1.key }
     }
 
@@ -357,6 +405,12 @@ struct SyncConflictReviewPage: View {
     /// Apply the reviewer's chosen side (writing the value when it differs from
     /// the LWW winner), then drop the row from the list on success.
     private func requestCriticalResolution(_ conflict: ConflictLogEntry, keepLocal: Bool) {
+        guard conflict.id != nil else {
+            let message = "This sync conflict cannot be resolved because its conflict id is missing. Reload conflicts and try again."
+            presentActionError(message)
+            syncManager.surfaceConflictReviewActionFailure(message)
+            return
+        }
         activeAlert = .critical(PendingCriticalResolution(
             conflict: conflict,
             keepLocal: keepLocal

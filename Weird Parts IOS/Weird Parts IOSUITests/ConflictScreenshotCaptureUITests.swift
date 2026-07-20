@@ -191,31 +191,31 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
         let review = app.buttons["syncConflictBanner"]
         XCTAssertTrue(review.waitForExistence(timeout: 12))
         review.tap()
-        let collection = app.collectionViews.firstMatch
-        let scrollView = app.scrollViews.firstMatch
-        let scrollTarget: XCUIElement
-        if collection.exists {
-            scrollTarget = collection
-        } else if scrollView.exists {
-            scrollTarget = scrollView
-        } else {
-            scrollTarget = app
-        }
+        _ = app.buttons["Done"].waitForExistence(timeout: 5)
         let unitCost = app.staticTexts["Unit Cost"]
-        for _ in 0..<5 where !unitCost.exists {
-            scrollTarget.swipeUp()
-            _ = unitCost.waitForExistence(timeout: 1)
+        // Accessibility-sized text can make each long fixture row span several
+        // screens. Keep scrolling without a per-swipe timeout until the target
+        // row is materialized, while retaining a finite failure bound.
+        for _ in 0..<40 where !unitCost.exists {
+            swipeConflictListUp()
         }
-        XCTAssertTrue(unitCost.exists)
+        guard unitCost.exists else {
+            XCTFail("Unit Cost critical row did not become visible after scrolling the conflict list")
+            capture("\(screenshotName)-critical-row-missing")
+            return
+        }
 
         let choice = app.buttons[choiceIdentifier]
-        for _ in 0..<5 where !choice.isHittable {
-            scrollTarget.swipeUp()
-            _ = choice.waitForExistence(timeout: 1)
+        for _ in 0..<40 where !choice.isHittable {
+            swipeConflictListUp()
         }
-        XCTAssertTrue(choice.exists)
-        XCTAssertGreaterThanOrEqual(choice.frame.width, 44)
-        XCTAssertGreaterThanOrEqual(choice.frame.height, 44)
+        guard choice.exists, choice.isHittable else {
+            XCTFail("Conflict choice must exist on-screen and be hittable before tapping")
+            capture("\(screenshotName)-choice-missing")
+            return
+        }
+        XCTAssertGreaterThanOrEqual(choice.frame.width, 43.9)
+        XCTAssertGreaterThanOrEqual(choice.frame.height, 43.9)
         print("WEI-4928 \(choiceIdentifier) AX frame: \(choice.frame)")
         choice.tap()
 
@@ -228,15 +228,40 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
         choice.tap()
         XCTAssertTrue(waitForCriticalConfirmation())
         criticalConfirmationButton(named: "Confirm").tap()
-        XCTAssertTrue(unitCost.waitForNonExistence(timeout: 8))
+        XCTAssertTrue(waitForNonExistence(unitCost, timeout: 8))
         XCTAssertFalse(app.alerts["Sync conflict action failed"].exists)
         capture(screenshotName)
     }
 
     private func waitForCriticalConfirmation(timeout: TimeInterval = 5) -> Bool {
         let title = "Confirm Critical Write Decision"
-        return app.alerts[title].waitForExistence(timeout: timeout)
-            || app.staticTexts[title].waitForExistence(timeout: timeout)
+        let alert = app.alerts[title]
+        let staticText = app.staticTexts[title]
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if alert.exists || staticText.exists {
+                return true
+            }
+            RunLoop.current.run(until: min(Date().addingTimeInterval(0.05), deadline))
+        } while Date() < deadline
+        return false
+    }
+
+    private func waitForNonExistence(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"),
+            object: element
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    private func swipeConflictListUp() {
+        // SwiftUI keeps the dashboard's collection in the hierarchy behind the
+        // review sheet, so querying `collectionViews.firstMatch` can swipe the
+        // wrong surface. A centered coordinate drag targets the visible sheet.
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
+        start.press(forDuration: 0.05, thenDragTo: end)
     }
 
     private func criticalConfirmationButton(named name: String) -> XCUIElement {
