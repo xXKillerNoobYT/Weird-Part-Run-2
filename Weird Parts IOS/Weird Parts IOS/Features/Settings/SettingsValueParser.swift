@@ -61,7 +61,7 @@ struct SettingsValueParser {
 }
 
 nonisolated struct SettingsHydrationError: LocalizedError, Equatable, Sendable {
-    struct InvalidEntry: Equatable, Sendable {
+    nonisolated struct InvalidEntry: Equatable, Sendable {
         let key: String
         let value: String
         let expectedType: String

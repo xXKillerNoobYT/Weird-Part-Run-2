@@ -7,15 +7,17 @@ import UIKit
 import VisionKit
 #endif
 
-struct QRScanDeliveryGate {
+nonisolated struct QRScanDeliveryGate: Sendable {
     private(set) var activePayload: String?
     private(set) var completedPayload: String?
     private(set) var lastFoundPayload: String?
+    private(set) var isCancelled = false
 
     var isProcessing: Bool { activePayload != nil }
 
     mutating func claim(_ payload: String) -> Bool {
-        guard activePayload == nil,
+        guard !isCancelled,
+              activePayload == nil,
               completedPayload != payload,
               lastFoundPayload != payload else { return false }
         activePayload = payload
@@ -28,7 +30,7 @@ struct QRScanDeliveryGate {
         isFound: Bool,
         shouldComplete: Bool
     ) -> Bool {
-        guard activePayload == payload else { return false }
+        guard !isCancelled, activePayload == payload else { return false }
         activePayload = nil
         lastFoundPayload = isFound ? payload : nil
         guard shouldComplete, completedPayload != payload else { return false }
@@ -42,9 +44,15 @@ struct QRScanDeliveryGate {
             lastFoundPayload = nil
         }
     }
+
+    mutating func cancel() {
+        isCancelled = true
+        activePayload = nil
+        lastFoundPayload = nil
+    }
 }
 
-enum QRScanManualSubmissionGate {
+nonisolated enum QRScanManualSubmissionGate: Sendable {
     static func code(from rawCode: String, isProcessing: Bool) -> String? {
         guard !isProcessing else { return nil }
         return rawCode.normalizedRequiredText
@@ -59,7 +67,7 @@ enum QRScanCompletionDispatcher {
     }
 }
 
-struct QRScanFeedback {
+nonisolated struct QRScanFeedback: Sendable {
     let typeMismatch: Bool
     let message: String
 
@@ -70,9 +78,9 @@ struct QRScanFeedback {
         title: String,
         code: String
     ) {
-        if isFound, let entityType, let expectedType, entityType != expectedType {
+        if isFound, let expectedType, entityType != expectedType {
             typeMismatch = true
-            message = "Expected \(expectedType.rawValue), got \(entityType.rawValue)"
+            message = "Expected \(expectedType.rawValue), got \(entityType?.rawValue ?? "external")"
         } else {
             typeMismatch = false
             message = isFound ? "Found: \(title)" : "Not found: \(code)"
@@ -148,7 +156,7 @@ struct QRScanSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { cancelAndDismiss() }
                 }
             }
             .onAppear {
@@ -157,6 +165,7 @@ struct QRScanSheet: View {
                 }
             }
             .onDisappear {
+                deliveryGate.cancel()
                 scanner?.stopScanning()
             }
             .onChange(of: statusAccessibilityLabel) { _, status in
@@ -365,6 +374,12 @@ struct QRScanSheet: View {
     }
 
     // MARK: - Processing
+    private func cancelAndDismiss() {
+        deliveryGate.cancel()
+        scanner?.stopScanning()
+        dismiss()
+    }
+
     private func processManualEntry() {
         guard let code = QRScanManualSubmissionGate.code(
             from: manualCode,

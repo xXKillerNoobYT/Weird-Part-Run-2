@@ -45,6 +45,12 @@ The executable preservation case is a found `.job` result when `.po` is expected
 - Completion ordering and duplicate suppression move to focused runtime helpers/tests. One normalized source-shape assertion remains for the actor-isolation compiler regression that requires the view call site to enter `MainActor.run`.
 - The not-found/title fallback finding is rejected as already covered by the service contract: `QRAutoFillResult.code` is non-optional, and the title derivation ends in `?? result.code`. A code-only not-found response therefore always stores both a title and result code and renders `Not found: <code>`.
 - Found results, including wrong-type results, record the last accepted found payload. Only the immediately repeated found payload is suppressed; accepting another payload clears that suppression. Not-found and failed lookups remain retryable.
+- A found external catalog result has no `entityType`. When a caller requires a specific type, the feedback treats that nil type as a mismatch (`Expected <type>, got external`) so warning presentation and auto-completion use the same rule.
+- The delivery gate owns a terminal cancellation state. Cancel and sheet disappearance enter that state before dismissal cleanup; an in-flight lookup can release no completion after cancellation, and later scanner events cannot claim the gate. The gate, manual-submission helper, feedback helper, and nested settings hydration entry are explicitly nonisolated/Sendable where appropriate so detached executor checks cannot recreate the MainActor crash class.
+
+## Portable source-contract fixture
+
+The remaining source-shape assertions must execute on a physical iPhone/iPad without trying to open the build machine's checkout path embedded by `#filePath`. The iOS test target therefore has a deterministic build phase that copies the current production `QRScanSheet.swift` from `$(SRCROOT)` into the test bundle as `QRScanSheetSource.txt`. `QRScanSheetRegressionTests` reads only that bundle resource. This keeps the fixture synchronized with the exact compiled checkout while avoiding any developer- or worktree-specific absolute path at test runtime.
 
 ## Acceptance and verification
 
@@ -52,6 +58,8 @@ The executable preservation case is a found `.job` result when `.po` is expected
 - Visible and accessibility result copy both consume the same `QRScanFeedback.message`.
 - `QRScanSheetRegressionTests` executes the `.job`/`.po` mismatch and exact-message assertion.
 - Runtime regressions prove completion callback ordering, in-flight manual-submit rejection without input loss, matching completion deduplication, consecutive found-mismatch suppression, and not-found/failure retryability.
+- Runtime regressions prove a cancel/disappear transition suppresses an already-claimed result callback and detached execution can use the pure QR helpers plus settings hydration error descriptions safely.
+- The focused iOS test bundle contains `QRScanSheetSource.txt`, and the 14-test QR/MainActor suite passes on physical iPad without checkout-path failures.
 - Focused regression tests pass on the local Mac.
 - `git diff --check` passes, and the committed worktree is clean.
-- Patch remains limited to `QRScanSheet.swift`, `QRScanSheetRegressionTests.swift`, and this plan.
+- Patch remains limited to the scanner, focused regression/isolation tests, settings nested error isolation, the test-target fixture build phase, and this plan.

@@ -149,6 +149,15 @@ final class QRScanSheetRegressionTests: XCTestCase {
         XCTAssertLessThan(mismatchRange.lowerBound, resultRange.lowerBound)
         XCTAssertTrue(feedback.typeMismatch)
         XCTAssertEqual(feedback.message, "Expected po, got job")
+        let externalFeedback = QRScanFeedback(
+            isFound: true,
+            entityType: nil,
+            expectedType: .po,
+            title: "External catalog match",
+            code: "EXT-42"
+        )
+        XCTAssertTrue(externalFeedback.typeMismatch)
+        XCTAssertEqual(externalFeedback.message, "Expected po, got external")
         XCTAssertFalse(
             source.contains("@State private var typeMismatch"),
             "Mismatch classification must be derived from the current result rather than stored independently."
@@ -201,10 +210,20 @@ final class QRScanSheetRegressionTests: XCTestCase {
     }
 
     func testCancelDoesNotInvokeCallbackAndManualFieldsAreNamedQRCode() throws {
+        var gate = QRScanDeliveryGate()
+        var callbackCount = 0
+        XCTAssertTrue(gate.claim("PO-42"))
+        gate.cancel()
+        if gate.finish("PO-42", isFound: true, shouldComplete: true) {
+            callbackCount += 1
+        }
+        XCTAssertEqual(callbackCount, 0, "A result already in flight must not complete after dismissal.")
+        XCTAssertFalse(gate.claim("PO-43"), "Dismissed sheets must reject later scanner deliveries.")
+
         let source = try Self.qrScanSheetSource()
         let toolbar = try Self.braceBalancedBody(after: ".toolbar", in: source)
 
-        XCTAssertTrue(toolbar.contains("Button(\"Cancel\") { dismiss() }"))
+        XCTAssertTrue(toolbar.contains("Button(\"Cancel\") { cancelAndDismiss() }"))
         XCTAssertFalse(toolbar.contains("onResult"))
         XCTAssertEqual(
             source.components(separatedBy: ".accessibilityLabel(\"QR code\")").count - 1,
@@ -217,13 +236,15 @@ final class QRScanSheetRegressionTests: XCTestCase {
         source.replacingOccurrences(of: #"\s+"#, with: "", options: .regularExpression)
     }
 
-    private static func qrScanSheetSource(file: StaticString = #filePath) throws -> String {
-        let sourceURL = URL(fileURLWithPath: "\(file)")
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("Weird Parts IOS")
-            .appendingPathComponent("Scanning")
-            .appendingPathComponent("QRScanSheet.swift")
+    private static func qrScanSheetSource() throws -> String {
+        guard let sourceURL = Bundle(for: QRScanSheetRegressionTests.self)
+            .url(forResource: "QRScanSheetSource", withExtension: "txt") else {
+            throw NSError(
+                domain: "QRScanSheetRegressionTests",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "QRScanSheetSource.txt is missing from the test bundle."]
+            )
+        }
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 
