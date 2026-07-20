@@ -22,7 +22,18 @@ case "$1" in
 esac
 
 expected_sha="${EXPECTED_SHA:-}"
-workspace="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel)}"
+if [[ -n "${GITHUB_WORKSPACE:-}" ]]; then
+  workspace="$GITHUB_WORKSPACE"
+else
+  workspace="$(git rev-parse --show-toplevel 2>/dev/null)" || {
+    echo "ERROR: cannot resolve the repository root" >&2
+    exit 1
+  }
+fi
+[[ -n "$workspace" && -d "$workspace" ]] || {
+  echo "ERROR: repository root is not a directory: $workspace" >&2
+  exit 1
+}
 runner_temp="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
 runtime_version="${IOS_RUNTIME_VERSION:-26.5}"
 runtime_id="com.apple.CoreSimulator.SimRuntime.iOS-${runtime_version//./-}"
@@ -95,7 +106,12 @@ simulator_name="WPR2-CI-${gate_name}-${GITHUB_RUN_ID:-manual}-${GITHUB_RUN_ATTEM
 simulator_id="$(xcrun simctl create "$simulator_name" "$device_type" "$runtime_id")" || fail "cannot create $gate_name simulator"
 echo "simulator_id=$simulator_id" >> "$metadata_file"
 
-xcrun simctl boot "$simulator_id" || fail "cannot boot $gate_name simulator"
+/usr/bin/perl -e 'alarm shift; exec @ARGV' "$simulator_boot_timeout_seconds" \
+  xcrun simctl boot "$simulator_id" \
+  2>&1 | tee -a "$artifact_dir/gate.log"
+boot_command_status=("${PIPESTATUS[@]}")
+[[ "${boot_command_status[0]}" == "0" ]] || fail "cannot boot $gate_name simulator before the timeout"
+[[ "${boot_command_status[1]}" == "0" ]] || fail "$gate_name simulator boot-command log could not be preserved"
 /usr/bin/perl -e 'alarm shift; exec @ARGV' "$simulator_boot_timeout_seconds" \
   xcrun simctl bootstatus "$simulator_id" -b \
   2>&1 | tee -a "$artifact_dir/gate.log"
@@ -159,6 +175,7 @@ validate_phase() {
   local passed
   local failed
   local skipped
+  local summary_status=0
 
   [[ -f "$status_file" ]] || fail "missing Xcode status for $phase"
   [[ -f "$tee_status_file" ]] || fail "missing log-preservation status for $phase"
@@ -169,13 +186,14 @@ validate_phase() {
     phase_failure=1
     return
   fi
-  if ! xcrun xcresulttool get test-results summary --path "$result_bundle" --compact > "$summary_json"; then
-    echo "ERROR: $phase xcresult summary could not be read" | tee -a "$artifact_dir/gate.log" >&2
+  xcrun xcresulttool get test-results summary --path "$result_bundle" --compact > "$summary_json" || summary_status=$?
+  ditto -c -k --sequesterRsrc --keepParent "$result_bundle" "$archive" || fail "$phase xcresult archive could not be created"
+  rm -rf "$result_bundle"
+  if (( summary_status != 0 )); then
+    echo "ERROR: $phase xcresult summary could not be read; raw result was preserved in $archive" | tee -a "$artifact_dir/gate.log" >&2
     phase_failure=1
     return
   fi
-  ditto -c -k --sequesterRsrc --keepParent "$result_bundle" "$archive" || fail "$phase xcresult archive could not be created"
-  rm -rf "$result_bundle"
 
   result="$(jq -r '.result // "unknown"' "$summary_json")" || fail "cannot read $phase result"
   total="$(jq -r '.totalTestCount // 0' "$summary_json")" || fail "cannot read $phase test count"
