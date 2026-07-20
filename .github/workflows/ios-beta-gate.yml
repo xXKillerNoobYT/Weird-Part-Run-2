@@ -3,7 +3,7 @@ name: iOS Beta Gate
 on:
   pull_request:
     branches: ["main"]
-    types: [opened, synchronize, reopened, ready_for_review, edited]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 # The gate is intentionally same-repository only because it runs trusted code on
 # WPR2's private Mac runners. Fork PRs remain fail-closed and require an owner-
