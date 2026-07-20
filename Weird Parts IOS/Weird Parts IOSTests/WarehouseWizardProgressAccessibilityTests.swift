@@ -238,18 +238,23 @@ final class WarehouseWizardProgressAccessibilityTests: XCTestCase {
         let fullSidebarTail = source[fullSidebarStart.lowerBound...]
         let fullSidebarEnd = fullSidebarTail.range(of: "private var fullSidebarActions")?.lowerBound ?? fullSidebarTail.endIndex
         let fullSidebarSource = String(fullSidebarTail[..<fullSidebarEnd])
+        let moduleSidebarRowSource = try Self.section(
+            from: "private func sidebarRow",
+            through: "// MARK: - Top Tabs Capsule Picker",
+            in: source
+        )
 
-        XCTAssertTrue(
+        XCTAssertFalse(
             sidebarSource.contains(".accessibilityElement(children: .ignore)"),
-            "Sidebar module navigation should expose the button itself as the automation target instead of its child label/icon."
+            "Module sidebar subtabs must not create an outer Other wrapper around the native Button."
         )
         XCTAssertTrue(
             sidebarSource.contains(".accessibilityIdentifier(\"subtab_\\(tab.id)\")"),
             "iPad/sidebar module navigation must expose the same stable subtab_<id> identifiers as the horizontal sub-tab picker."
         )
-        XCTAssertTrue(
+        XCTAssertFalse(
             fullSidebarSource.contains(".accessibilityElement(children: .ignore)"),
-            "Full-sidebar module navigation should expose the button itself as the automation target instead of its child label/icon."
+            "Full-sidebar subtabs must not create an outer Other wrapper around the native Button."
         )
         XCTAssertTrue(
             fullSidebarSource.contains(".accessibilityIdentifier(\"subtab_\\(tab.id)\")"),
@@ -259,9 +264,21 @@ final class WarehouseWizardProgressAccessibilityTests: XCTestCase {
             sidebarSource.contains(".accessibilityLabel(tab.label)") && fullSidebarSource.contains(".accessibilityLabel(tab.label)"),
             "Sidebar module navigation needs the same readable labels as top tabs for VoiceOver and UI tests."
         )
+        for source in [sidebarSource, fullSidebarSource] {
+            XCTAssertTrue(
+                source.contains(".accessibilityValue(isSelected ? \"Selected\" : \"Not selected\")") &&
+                    source.contains(".accessibilityAddTraits(isSelected ? .isSelected : [])") &&
+                    source.contains(".accessibilityRemoveTraits(isSelected ? [] : .isSelected)"),
+                "Each sidebar must explicitly add selected state only to the active native Button and remove it from every inactive Button."
+            )
+        }
         XCTAssertTrue(
             sidebarSource.contains(".contentShape(Rectangle())") && fullSidebarSource.contains(".contentShape(Rectangle())"),
             "Sidebar module navigation needs an explicit tappable hit region for user-like tests."
+        )
+        XCTAssertTrue(
+            moduleSidebarRowSource.contains(".frame(minHeight: 44)") && fullSidebarSource.contains(".frame(minHeight: 44)"),
+            "Regular-width sidebar subtab Buttons need a minimum 44pt accessibility target."
         )
     }
 
@@ -283,6 +300,13 @@ final class WarehouseWizardProgressAccessibilityTests: XCTestCase {
         let afterStart = source[start.lowerBound...]
         let end = afterStart.range(of: "]")?.upperBound ?? afterStart.endIndex
         return String(afterStart[..<end])
+    }
+
+    private static func section(from startNeedle: String, through endNeedle: String, in source: String) throws -> String {
+        let start = try XCTUnwrap(source.range(of: startNeedle))
+        let tail = source[start.lowerBound...]
+        let end = try XCTUnwrap(tail.range(of: endNeedle))
+        return String(tail[..<end.lowerBound])
     }
 
     private static func braceBalancedBody(after anchor: String, in source: String) throws -> String {

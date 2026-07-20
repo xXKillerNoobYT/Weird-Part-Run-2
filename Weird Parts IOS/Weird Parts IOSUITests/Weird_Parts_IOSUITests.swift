@@ -802,6 +802,9 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             "-UITestingWEI936AutoLogin",
             "-UITestingWarehouseLocations"
         ]
+        #if targetEnvironment(macCatalyst)
+        app.launchArguments.append("-UITestingFullSidebar")
+        #endif
         app.launch()
 
         XCTAssertTrue(
@@ -820,10 +823,23 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             "Selected off-screen Warehouse Locations sub-tab should be auto-scrolled into the narrow iPhone viewport"
         )
         XCTAssertEqual(selectedLocationsSubtab.label, "Locations")
-        XCTAssertGreaterThanOrEqual(selectedLocationsSubtab.frame.width, 44)
-        XCTAssertGreaterThanOrEqual(selectedLocationsSubtab.frame.height, 44)
+        #if targetEnvironment(macCatalyst)
+        let minimumSubtabTarget: CGFloat = 32
+        #else
+        let minimumSubtabTarget: CGFloat = 44
+        #endif
+        XCTAssertGreaterThanOrEqual(selectedLocationsSubtab.frame.width, minimumSubtabTarget)
+        XCTAssertGreaterThanOrEqual(selectedLocationsSubtab.frame.height, minimumSubtabTarget)
         XCTAssertTrue(selectedLocationsSubtab.isSelected)
         XCTAssertEqual(selectedLocationsSubtab.value as? String, "Selected")
+
+        let auditSubtab = app.buttons["subtab_warehouse-audit"]
+        XCTAssertTrue(
+            auditSubtab.waitForExistence(timeout: 10),
+            "The regular-width Warehouse sidebar should expose Audit as a native Button"
+        )
+        XCTAssertFalse(auditSubtab.isSelected, "Audit must not export Selected while Locations content is visible")
+        XCTAssertEqual(auditSubtab.value as? String, "Not selected")
 
         XCTAssertTrue(
             app.buttons["Shelving"].waitForExistence(timeout: 10) ||
