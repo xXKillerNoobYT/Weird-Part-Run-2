@@ -26,7 +26,7 @@ final class AIPageRouteContextRegressionTests: XCTestCase {
         XCTAssertTrue(router.contains("\"pageId\": descriptor.pageId"))
         XCTAssertFalse(router.contains("routeDescriptor?.pageId as Any"))
 
-        for allowedKey in ["\"context\"", "\"path\"", "\"pageId\"", "\"module\"", "\"page\""] {
+        for allowedKey in ["\"context\"", "\"path\"", "\"pageId\"", "\"instanceId\"", "\"module\"", "\"page\""] {
             XCTAssertTrue(router.contains(allowedKey))
         }
         for forbiddenTerm in ["password", "token", "privateNotes", "mutationId", "rawDump"] {
@@ -49,7 +49,7 @@ final class AIPageRouteContextRegressionTests: XCTestCase {
             after: ".onReceive(NotificationCenter.default.publisher(for: .routePageInactive))",
             in: assistant
         )
-        XCTAssertTrue(inactive.contains("state.deactivate(matchingPath: path)"))
+        XCTAssertTrue(inactive.contains("state.deactivate(matchingPath: path, instanceId: instanceId)"))
         XCTAssertFalse(inactive.contains("routePageId == pageId"))
 
         let clear = try TestSourceSlicer.braceBalancedBody(
@@ -65,10 +65,10 @@ final class AIPageRouteContextRegressionTests: XCTestCase {
     @MainActor
     func testKnownRouteTransitionToUnregisteredPathDeactivatesPublishedIdentity() {
         var lifecycle = AIRouteContextLifecycle()
-        lifecycle.activate(path: "/jobs/list", pageId: "jobs-list")
+        lifecycle.activate(path: "/jobs/list", pageId: "jobs-list", instanceId: "router-a")
 
         XCTAssertEqual(
-            AIRouteIdentity(path: "/jobs/list", pageId: "jobs-list"),
+            AIRouteIdentity(path: "/jobs/list", pageId: "jobs-list", instanceId: "router-a"),
             lifecycle.deactivate()
         )
         XCTAssertNil(lifecycle.publishedIdentity)
@@ -80,18 +80,24 @@ final class AIPageRouteContextRegressionTests: XCTestCase {
         let staleHelpState = AIRoutePageContextState(
             routeContext: "Module: Jobs; Page: Jobs; Route: /jobs/list",
             activeRoutePath: "/jobs/list",
+            activeRouteInstanceId: "router-current",
             routePageId: "jobs-detail"
         )
 
         var matching = staleHelpState
-        matching.deactivate(matchingPath: "/jobs/list")
+        matching.deactivate(matchingPath: "/jobs/list", instanceId: "router-current")
         XCTAssertEqual(
-            AIRoutePageContextState(routeContext: nil, activeRoutePath: nil, routePageId: nil),
+            AIRoutePageContextState(
+                routeContext: nil,
+                activeRoutePath: nil,
+                activeRouteInstanceId: nil,
+                routePageId: nil
+            ),
             matching
         )
 
         var newerRoute = staleHelpState
-        newerRoute.deactivate(matchingPath: "/orders/purchase-orders")
+        newerRoute.deactivate(matchingPath: "/jobs/list", instanceId: "router-old")
         XCTAssertEqual(staleHelpState, newerRoute)
     }
 

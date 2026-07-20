@@ -128,7 +128,8 @@ The PR must not refactor the assistant architecture, add preference/proactive be
   values are never boxed into notification `userInfo`.
 - A matching inactive route clears route context, path, and route-derived page ID
   as one state transition, even when Help temporarily changed the page ID. The
-  path token still rejects a late inactive event from an older router.
+  per-router instance token rejects a late inactive event from an older router,
+  including when SwiftUI recreates a router for the same path.
 
 ## Acceptance criteria
 
