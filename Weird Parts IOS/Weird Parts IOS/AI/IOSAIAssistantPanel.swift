@@ -1892,8 +1892,9 @@ struct AIRoutePageContextState: Equatable {
     }
 }
 
-/// Receives the minimal route identity that covers every current route. A path
-/// token prevents a late inactive event from an old router clearing a newer page.
+/// Receives the minimal route identity that covers every current route. A
+/// per-router instance token prevents a late inactive event from an old router
+/// clearing a newer page.
 private struct RoutePageContextObserver: ViewModifier {
     @Binding var routeContext: String?
     @Binding var activeRoutePath: String?
