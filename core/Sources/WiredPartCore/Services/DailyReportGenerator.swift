@@ -62,6 +62,7 @@ public final class DailyReportGenerator: Sendable {
         let reportDate = date ?? operationalDay.now()
         let day = operationalDay.interval(containing: reportDate)
         let dateStr = day.localStartDate
+        let reportTimestamp = operationalDay.utcTimestamp(reportDate)
 
         do { return try db.writer.read { dbConn in
             let userName = try String.fetchOne(dbConn, sql: """
@@ -100,11 +101,11 @@ public final class DailyReportGenerator: Sendable {
             // Get break minutes from break_records table
             totalBreakMinutes = try Int.fetchOne(dbConn, sql: """
                 SELECT COALESCE(SUM(
-                    CAST((julianday(COALESCE(ended_at, datetime('now'))) - julianday(started_at)) * 1440 AS INTEGER)
+                    CAST((julianday(COALESCE(ended_at, ?)) - julianday(started_at)) * 1440 AS INTEGER)
                 ), 0)
                 FROM break_records
                 WHERE user_id = ? AND date(started_at) = ? AND deleted_at IS NULL
-                """, arguments: [userId, dateStr]) ?? 0
+                """, arguments: [reportTimestamp, userId, dateStr]) ?? 0
 
             let totalHours = max(0, (totalMinutes - Double(totalBreakMinutes))) / 60.0
 
@@ -205,14 +206,16 @@ public final class DailyReportGenerator: Sendable {
 
     /// Get today's jobs for a user to determine primary job.
     public func getTodaysJobs(userId: Int64, date: Date? = nil) throws -> [(jobId: Int64, jobName: String, hours: Double)] {
-        let day = operationalDay.interval(containing: date ?? operationalDay.now())
+        let reportDate = date ?? operationalDay.now()
+        let day = operationalDay.interval(containing: reportDate)
+        let reportTimestamp = operationalDay.utcTimestamp(reportDate)
         do {
             return try db.writer.read { dbConn in
                 let rows = try Row.fetchAll(dbConn, sql: """
                     SELECT le.job_id,
                            COALESCE(j.job_name, j.job_number, 'Unknown') as job_name,
                            SUM(
-                               (julianday(COALESCE(le.clock_out, datetime('now'))) - julianday(le.clock_in)) * 24
+                               (julianday(COALESCE(le.clock_out, ?)) - julianday(le.clock_in)) * 24
                            ) as total_hours
                     FROM labor_entries le
                     LEFT JOIN jobs j ON j.id = le.job_id AND j.deleted_at IS NULL
@@ -221,7 +224,7 @@ public final class DailyReportGenerator: Sendable {
                     GROUP BY le.job_id
                     ORDER BY total_hours DESC
                     """, arguments: [
-                        userId, day.localStartDate, day.utcStart, day.utcEnd
+                        reportTimestamp, userId, day.localStartDate, day.utcStart, day.utcEnd
                     ])
                 return rows.map { row in
                     (
