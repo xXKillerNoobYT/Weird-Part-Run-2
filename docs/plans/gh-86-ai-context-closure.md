@@ -106,6 +106,22 @@ The PR must not refactor the assistant architecture, add preference/proactive be
 - The Suppliers page uses only aggregate counts and visible search/filter/sort
   state. Record IDs, names, contacts, account data, notes, delivery fields, and
   record-level scores/counts remain outside the assistant payload.
+- The inventory separately records non-router destinations reached through
+  concrete `NavigationLink`, `navigationDestination`, `sheet`, and
+  `fullScreenCover` presentations. This bounded registry covers screen-like
+  detail/page destinations and records explicit exemptions for transient form,
+  camera, Help, and navigation-shell presentations; it does not claim that
+  every modal implementation component is an independent AI page.
+- Vehicle, Tool, Customer, Trailer, Contractor, Contact, Team, Notebook, and
+  Message Thread detail destinations intentionally inherit their containing
+  page context until they post a dedicated lifecycle. Their own visible Help
+  copy is still passed through the existing Help → Ask AI fallback. The
+  inventory names each inherited destination so this tradeoff is explicit
+  rather than hidden by an AppTab/router-only completeness count.
+- The verifier checks every bounded registry entry against a real source
+  presentation and an inventory row (or a documented scope exemption). Static
+  regression coverage removes a non-router Vehicle Detail row and must observe
+  verifier failure, preventing the reviewed omission class from recurring.
 
 ## Acceptance criteria
 

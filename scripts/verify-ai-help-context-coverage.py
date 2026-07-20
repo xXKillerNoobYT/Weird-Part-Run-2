@@ -141,6 +141,63 @@ def main() -> int:
         ),
     )
 
+    non_router_audit = inventory.get("nonRouterAudit", {})
+    non_router_scope = non_router_audit.get("scope")
+    non_router_destinations = non_router_audit.get("destinations", [])
+    non_router_failures: list[str] = []
+    if not isinstance(non_router_scope, str) or not non_router_scope.strip():
+        non_router_failures.append("missing bounded audit scope")
+    if not isinstance(non_router_destinations, list) or not non_router_destinations:
+        non_router_failures.append("missing canonical non-router destinations")
+        non_router_destinations = []
+    destination_keys: list[tuple[object, object]] = []
+    for destination in non_router_destinations:
+        destination_type = destination.get("destination")
+        source = destination.get("source")
+        expected_occurrences = destination.get("expectedOccurrences")
+        screen_id = destination.get("screenId")
+        rationale = destination.get("rationale")
+        destination_keys.append((source, destination_type))
+        label = f"{source}: {destination_type}"
+        if not isinstance(destination_type, str) or not destination_type.strip():
+            non_router_failures.append(f"{label}: missing destination type")
+            continue
+        if not isinstance(source, str) or not source.strip() or not (ROOT / source).is_file():
+            non_router_failures.append(f"{label}: missing/unreadable presentation source")
+            continue
+        if not isinstance(expected_occurrences, int) or expected_occurrences < 1:
+            non_router_failures.append(f"{label}: expectedOccurrences must be a positive integer")
+        else:
+            actual_occurrences = read(ROOT / source).count(f"{destination_type}(")
+            if actual_occurrences != expected_occurrences:
+                non_router_failures.append(
+                    f"{label}: expected {expected_occurrences} presentation occurrence(s), found {actual_occurrences}"
+                )
+        if not isinstance(rationale, str) or not rationale.strip():
+            non_router_failures.append(f"{label}: missing disposition rationale")
+        if screen_id is not None:
+            if screen_id not in inventory_by_id:
+                non_router_failures.append(
+                    f"{label}: inventory screen {screen_id!r} is missing"
+                )
+            elif inventory_by_id[screen_id].get("disposition") not in {"dedicated", "inherited"}:
+                non_router_failures.append(
+                    f"{label}: inventory screen {screen_id!r} must be dedicated or inherited"
+                )
+    duplicate_destination_keys = sorted(
+        f"{source}: {destination}"
+        for (source, destination), count in Counter(destination_keys).items()
+        if count > 1
+    )
+    non_router_failures.extend(
+        f"duplicate canonical destination {key}" for key in duplicate_destination_keys
+    )
+    fail_section(
+        failures,
+        "non-router destination registry failures:",
+        non_router_failures,
+    )
+
     malformed: list[str] = []
     for screen in screens:
         screen_id = screen.get("id", "<missing-id>")
@@ -286,6 +343,7 @@ def main() -> int:
     print(f"Inventory screens: {len(screens)}")
     print(f"Navigable AppTabs: {len(app_tabs)}")
     print(f"Explicit deep/alias routes: {len(deep_routes)}")
+    print(f"Canonical non-router destinations: {len(non_router_destinations)}")
     print("Inventory dispositions: " + ", ".join(
         f"{name}={count}" for name, count in sorted(Counter(screen.get("disposition") for screen in screens).items())
     ))

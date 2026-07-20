@@ -8,16 +8,19 @@ Updated: 2026-07-19
 The old “87 pages” estimate is retired. The machine-checkable source of truth is
 `docs/testing/ai-page-context-inventory.json`, checked against both the live
 `AppTab` declarations in `NavigationConfig.swift` and the explicit deep/alias
-registry in `IOSContentRouter.swift`.
+registry in `IOSContentRouter.swift`. A bounded canonical non-router registry
+also source-checks concrete detail/page presentations reached through
+`NavigationLink`, `navigationDestination`, `sheet`, and `fullScreenCover`.
 
 Current verified inventory:
 
 - 89 navigable `AppTab` destinations;
-- 143 total inventory rows after router-owned deep/alias screens, dedicated deep screens, one inherited detail,
+- 157 total inventory rows after router-owned deep/alias screens, dedicated deep screens, 15 explicit inherited details/drill-downs,
   one retired compatibility screen, and the non-feature placeholder are included;
+- 26 canonical non-router source presentations, including documented transient/shell exemptions;
 - 68 dedicated page-context rows;
 - 72 router-owned rows;
-- 1 inherited row;
+- 15 inherited rows;
 - 1 retired row;
 - 1 not-user-facing row;
 - 0 unresolved `gap` rows.
@@ -60,7 +63,9 @@ from being reconnected to the assistant.
 
 Help remains local and read-only. Where canonical Help exists, the inventory row
 names its exact `helpPageId`; where it does not, the row records that exemption
-instead of inventing copy or silently mapping to unrelated help.
+instead of inventing copy or silently mapping to unrelated help. Non-router
+details with local PageHelpSheet copy intentionally inherit their containing
+page identity today; Help → Ask AI still passes their visible detail copy.
 
 ## Permanent checks
 
@@ -77,6 +82,9 @@ The verifier fails for:
 - any explicit router path missing from the deep/alias registry, any stale registry
   path, or any registry page ID missing from the inventory (including a negative
   omission regression fixture);
+- any canonical non-router destination whose presenting source/occurrence count
+  drifts, whose disposition rationale is missing, or whose screen row is omitted
+  (including a negative Vehicle Detail omission regression fixture);
 - path drift or an unresolved `gap`;
 - missing source/rationale/Help-exemption evidence;
 - declaration, post, observer, inactive-clear, or Help-mapping drift on dedicated pages;

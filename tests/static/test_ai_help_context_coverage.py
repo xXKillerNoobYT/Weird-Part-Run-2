@@ -196,6 +196,47 @@ class AIHelpContextCoverageTests(unittest.TestCase):
         self.assertIn("SupplierAIPageContextBuilder.build(", suppliers)
         self.assertNotIn("buildSupplierAIContext()", suppliers)
 
+    def test_reviewed_non_router_details_have_canonical_inventory_rows(self):
+        required = {
+            "fleet-vehicle-detail": "IOSVehicleDetailPage",
+            "tools-detail": "IOSToolDetailPage",
+            "people-customer-detail": "IOSCustomerDetailPage",
+            "fleet-trailer-detail": "IOSTrailerDetailPage",
+            "people-contractor-detail": "IOSContractorDetailPage",
+        }
+        inventory_ids = {screen["id"] for screen in self.inventory["screens"]}
+        canonical_destinations = {
+            destination["destination"]
+            for destination in self.inventory["nonRouterAudit"]["destinations"]
+        }
+
+        self.assertEqual(set(), set(required) - inventory_ids)
+        self.assertEqual(set(), set(required.values()) - canonical_destinations)
+
+    def test_verifier_rejects_omitted_non_router_detail_inventory_row(self):
+        inventory = dict(self.inventory)
+        inventory["screens"] = [
+            screen for screen in self.inventory["screens"]
+            if screen["id"] != "fleet-vehicle-detail"
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            inventory_path = Path(directory) / "inventory.json"
+            inventory_path.write_text(json.dumps(inventory))
+            environment = os.environ.copy()
+            environment["AI_CONTEXT_INVENTORY_PATH"] = str(inventory_path)
+            result = subprocess.run(
+                [sys.executable, "scripts/verify-ai-help-context-coverage.py"],
+                cwd=REPO_ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("non-router destination registry failures", result.stderr)
+        self.assertIn("fleet-vehicle-detail", result.stderr)
+
     def test_verifier_rejects_omitted_deep_route_inventory_row(self):
         inventory = dict(self.inventory)
         inventory["screens"] = [
