@@ -1099,7 +1099,7 @@ public final class PeopleService: Sendable {
                 userId: actorUserId,
                 permissionKey: "manage_people"
             )
-            guard !name.isBlankRequiredText else {
+            guard let normalizedName = name.normalizedRequiredText else {
                 throw PeopleError.requiredFieldEmpty("name")
             }
             try dbConn.execute(
@@ -1107,7 +1107,7 @@ public final class PeopleService: Sendable {
                     INSERT INTO employee_teams (name, description, created_by, updated_by)
                     VALUES (?, ?, ?, ?)
                     """,
-                arguments: [name, description, actorUserId, actorUserId]
+                arguments: [normalizedName, description, actorUserId, actorUserId]
             )
             return dbConn.lastInsertedRowID
         }
@@ -1306,7 +1306,7 @@ public final class PeopleService: Sendable {
                 userId: actorUserId,
                 permissionKey: "manage_people"
             )
-            guard !name.isBlankRequiredText else {
+            guard let normalizedName = name.normalizedRequiredText else {
                 throw PeopleError.requiredFieldEmpty("name")
             }
             try dbConn.execute(
@@ -1315,7 +1315,7 @@ public final class PeopleService: Sendable {
                     SET name = ?, description = ?, updated_by = ?, updated_at = datetime('now')
                     WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                     """,
-                arguments: [name, description, actorUserId, teamId]
+                arguments: [normalizedName, description, actorUserId, teamId]
             )
         }
     }

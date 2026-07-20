@@ -1101,6 +1101,33 @@ struct PeopleServiceTests {
         #expect(count == 0, "Blank-name teams must produce zero rows in the DB")
     }
 
+    @Test("createTeam normalizes names before enforcing uniqueness")
+    func testCreateTeam_normalizesNameBeforeUniqueness() throws {
+        let env = try E2ETestHelpers.setUp()
+        let teamId = try env.people.createTeam(
+            name: "  Trimmed Team\n",
+            description: nil,
+            actorUserId: env.adminUserId
+        )
+
+        let team = try #require(try env.people.getTeamDetail(teamId: teamId))
+        #expect(team.name == "Trimmed Team")
+        #expect(throws: (any Error).self) {
+            try env.people.createTeam(
+                name: "Trimmed Team  ",
+                description: nil,
+                actorUserId: env.adminUserId
+            )
+        }
+        let matchingNames = try env.db.writer.read { db in
+            try String.fetchAll(
+                db,
+                sql: "SELECT name FROM employee_teams WHERE name LIKE '%Trimmed Team%'"
+            )
+        }
+        #expect(matchingNames == ["Trimmed Team"])
+    }
+
     @Test("createContractor rejects blank companyName")
     func testCreateContractor_rejectsBlankCompanyName() throws {
         let env = try E2ETestHelpers.setUp()
@@ -1375,6 +1402,31 @@ struct PeopleServiceTests {
         #expect(throws: PeopleService.PeopleError.requiredFieldEmpty("name")) {
             try env.people.updateTeam(teamId: teamId, name: "  ", description: nil, actorUserId: env.adminUserId)
         }
+    }
+
+    @Test("updateTeam normalizes names before enforcing uniqueness")
+    func testUpdateTeam_normalizesNameBeforeUniqueness() throws {
+        let env = try E2ETestHelpers.setUp()
+        let teamId = try env.people.createTeam(name: "Original Team", actorUserId: env.adminUserId)
+        _ = try env.people.createTeam(name: "Existing Team", actorUserId: env.adminUserId)
+
+        try env.people.updateTeam(
+            teamId: teamId,
+            name: "\n Renamed Team  ",
+            description: nil,
+            actorUserId: env.adminUserId
+        )
+        #expect(try env.people.getTeamDetail(teamId: teamId)?.name == "Renamed Team")
+
+        #expect(throws: (any Error).self) {
+            try env.people.updateTeam(
+                teamId: teamId,
+                name: " Existing Team\t",
+                description: nil,
+                actorUserId: env.adminUserId
+            )
+        }
+        #expect(try env.people.getTeamDetail(teamId: teamId)?.name == "Renamed Team")
     }
 
     @Test("createPaymentRecord and recordPayment reject invalid amount and blank date")
