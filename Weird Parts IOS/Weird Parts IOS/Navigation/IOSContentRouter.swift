@@ -22,16 +22,7 @@ struct IOSContentRouter: View {
             .onReceive(NotificationCenter.default.publisher(for: .requestCurrentPageContext)) { _ in
                 postRouteContext()
             }
-            .onDisappear {
-                NotificationCenter.default.post(
-                    name: .routePageInactive,
-                    object: nil,
-                    userInfo: [
-                        "path": path,
-                        "pageId": routeDescriptor?.pageId as Any,
-                    ]
-                )
-            }
+            .onDisappear { postRouteInactive() }
     }
 
     private var routeDescriptor: RouteDescriptor? {
@@ -149,6 +140,18 @@ struct IOSContentRouter: View {
                 "pageId": descriptor.pageId,
                 "module": descriptor.moduleLabel,
                 "page": descriptor.pageLabel,
+            ]
+        )
+    }
+
+    private func postRouteInactive() {
+        guard let descriptor = routeDescriptor else { return }
+        NotificationCenter.default.post(
+            name: .routePageInactive,
+            object: nil,
+            userInfo: [
+                "path": path,
+                "pageId": descriptor.pageId,
             ]
         )
     }
