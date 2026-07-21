@@ -1,0 +1,830 @@
+{
+  "schemaVersion": 1,
+  "description": "Checkout-hosted replacements for XCTest source-contract assertions. Device tests must not read repository sources via #filePath or String(contentsOf:).",
+  "entries": [
+    {
+      "id": "navigation-no-bare-text-destinations",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/NavigationPlaceholderRegressionTests.swift:visibleNavigationLinksDoNotUseBareTextDestinations",
+      "target": "Weird Parts IOS/Weird Parts IOS/App/WiredPartIOSApp.swift",
+      "invariant": "Visible NavigationLink destinations in product Swift sources must not be bare Text placeholders unless explicitly allowlisted.",
+      "replacement": "directory_scan checkout-hosted source policy",
+      "executableCoverage": "Navigation behavior remains covered by executable UI and smoke tests; this is a static placeholder policy.",
+      "rule": {
+        "directory_scan": [
+          {
+            "directory": "Weird Parts IOS/Weird Parts IOS",
+            "pattern": "*.swift",
+            "not_matches_regex": "NavigationLink\\s*\\{\\s*Text\\s*\\(\\s*\\\"[^\\\"]*\\\"\\s*\\)(?:\\s*\\.\\w+\\s*(?:\\((?:[^()]|\\([^()]*\\))*\\))?)*\\s*\\}|NavigationLink\\s*\\(\\s*destination\\s*:\\s*Text\\s*\\(\\s*\\\"[^\\\"]*\\\"\\s*\\)",
+            "allowlist": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "onboarding-welcome-ax5-layout",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/OnboardingAX5LayoutRegressionTests.swift:testInitialGetStartedScreenWrapsAndScrollsAtAccessibilitySizes",
+      "target": "Weird Parts IOS/Weird Parts IOS/Auth/OnboardingWelcomeView.swift",
+      "invariant": "Initial Get Started layout reads Dynamic Type, scrolls, top-aligns wrapped rows, removes AX line clamps, and preserves wrapped vertical height.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Onboarding UI remains covered by visual/device evidence; this entry preserves static AX5 layout wiring.",
+      "rule": {
+        "contains": [
+          "@Environment(\\.dynamicTypeSize) private var dynamicTypeSize",
+          "ScrollView {",
+          "HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center",
+          ".lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)",
+          ".fixedSize(horizontal: false, vertical: true)"
+        ]
+      }
+    },
+    {
+      "id": "new-user-welcome-ax5-layout",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/OnboardingAX5LayoutRegressionTests.swift:testWelcomeOverlayUsesScrollableWrappedAccessibilityRows",
+      "target": "Weird Parts IOS/Weird Parts IOS/Auth/NewUserWelcomeView.swift",
+      "invariant": "Welcome overlay reads Dynamic Type, scrolls, and removes restrictive AX line clamps.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Onboarding UI remains covered by visual/device evidence; this entry preserves static AX5 layout wiring.",
+      "rule": {
+        "contains": [
+          "@Environment(\\.dynamicTypeSize) private var dynamicTypeSize",
+          "ScrollView {",
+          ".lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)"
+        ]
+      }
+    },
+    {
+      "id": "module-tour-ax5-pagination-layout",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/OnboardingAX5LayoutRegressionTests.swift:testModuleTourAllowsAccessibilityPageContentToGrowAwayFromPagination",
+      "target": "Weird Parts IOS/Weird Parts IOS/Auth/ModuleTourView.swift",
+      "invariant": "Module tour grows AX page content, hides AX page dots, avoids centering spacers, reserves bottom padding, and removes description clamps.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Module tour UI remains covered by visual/device evidence; this entry preserves static AX5 layout wiring.",
+      "rule": {
+        "contains": [
+          ".frame(height: dynamicTypeSize.isAccessibilitySize ? 430 : 220)",
+          "if !dynamicTypeSize.isAccessibilitySize",
+          ".padding(.bottom, dynamicTypeSize.isAccessibilitySize ? 56 : 24)",
+          ".tabViewStyle(.page(indexDisplayMode: dynamicTypeSize.isAccessibilitySize ? .never : .always))",
+          ".lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 3)"
+        ]
+      }
+    },
+    {
+      "id": "onboarding-banner-ax5-layout",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/OnboardingAX5LayoutRegressionTests.swift:testActiveOnboardingBannerRowsWrapAtAccessibilitySizes",
+      "target": "Weird Parts IOS/Weird Parts IOS/Shared/OnboardingBanner.swift",
+      "invariant": "Onboarding banner reads Dynamic Type, top-aligns wrapped rows, and removes AX line clamps.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Onboarding banner UI remains covered by visual/device evidence; this entry preserves static AX5 layout wiring.",
+      "rule": {
+        "contains": [
+          "@Environment(\\.dynamicTypeSize) private var dynamicTypeSize",
+          "HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center",
+          ".lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 3)"
+        ]
+      }
+    },
+    {
+      "id": "post-login-walkthrough-ax5-layout",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/OnboardingAX5LayoutRegressionTests.swift:testPostLoginWalkthroughAdaptsToAccessibilityDynamicType",
+      "target": "Weird Parts IOS/Weird Parts IOS/Auth/OnboardingWalkthroughView.swift",
+      "invariant": "Post-login walkthrough reads Dynamic Type, makes welcome content scrollable in its section, top-aligns feature rows, preserves wrapped copy height, and stacks footer buttons.",
+      "replacement": "contains/section checkout-hosted source policy",
+      "executableCoverage": "Walkthrough UI remains covered by visual/device evidence; this entry preserves static AX5 layout wiring.",
+      "rule": {
+        "contains": [
+          "@Environment(\\.dynamicTypeSize) private var dynamicTypeSize",
+          "HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center, spacing: 12)",
+          ".fixedSize(horizontal: false, vertical: true)",
+          "navigationFooterButtons(module: module, fullWidth: true)"
+        ],
+        "sections": [
+          {
+            "start": "private var welcomeScreen: some View {",
+            "end": "// MARK: - Step View",
+            "contains": [
+              "ScrollView {",
+              ".frame(minHeight: proxy.size.height)",
+              "if !dynamicTypeSize.isAccessibilitySize {"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "not-started-fixture-suppresses-module-tour",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/OnboardingAX5LayoutRegressionTests.swift:testNotStartedFixtureSuppressesModuleTourForChecklistEvidence",
+      "target": "Weird Parts IOS/Weird Parts IOS/App/AppCore.swift",
+      "invariant": "The not-started UI testing fixture explicitly suppresses the module tour before checklist evidence capture.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Launch fixtures remain covered by UI evidence; this entry preserves static fixture wiring.",
+      "rule": {
+        "contains": [
+          "if args.contains(\"-UITestingWEI936NotStarted\")",
+          "UserDefaults.standard.set(true, forKey: \"hasSeenModuleTour\")"
+        ]
+      }
+    },
+    {
+      "id": "orders-audited-pages-context-menus",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/OrdersCraftAdoptionContractTests.swift:testEveryAuditedOrdersPageOffersAContextMenu",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Orders/IOSJPOsPage.swift",
+      "invariant": "Every audited Orders page keeps a context-menu second input path to row actions.",
+      "replacement": "contains checkout-hosted source policy split by audited source target",
+      "executableCoverage": "Orders workflows remain covered by executable service and UI tests; this entry preserves static adoption contracts.",
+      "rule": {
+        "contains": [".contextMenu"]
+      }
+    },
+    {
+      "id": "orders-audited-pages-context-menus-more",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/OrdersCraftAdoptionContractTests.swift:testEveryAuditedOrdersPageOffersAContextMenu",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Orders/IOSPurchaseOrdersPage.swift",
+      "invariant": "The remaining audited Orders pages keep context-menu second input paths to row actions.",
+      "replacement": "contains checkout-hosted source policy split by audited source target",
+      "executableCoverage": "Orders workflows remain covered by executable service and UI tests; this entry preserves static adoption contracts.",
+      "rule": {
+        "contains": [".contextMenu"]
+      }
+    },
+    {
+      "id": "orders-context-menu-pages-bulk",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/OrdersCraftAdoptionContractTests.swift:testEveryAuditedOrdersPageOffersAContextMenu",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Orders/IOSReturnsPage.swift",
+      "invariant": "All remaining audited Orders pages keep a context-menu second input path.",
+      "replacement": "directory_count checkout-hosted source policy",
+      "executableCoverage": "Orders workflows remain covered by executable service and UI tests; this entry preserves static adoption contracts.",
+      "rule": {
+        "contains": [".contextMenu"],
+        "directory_count": [
+          {
+            "directory": "Weird Parts IOS/Weird Parts IOS/Features/Orders",
+            "pattern": "*.swift",
+            "contains": ".contextMenu",
+            "min": 9
+          }
+        ]
+      }
+    },
+    {
+      "id": "orders-returns-context-menu",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/OrdersCraftAdoptionContractTests.swift:testEveryAuditedOrdersPageOffersAContextMenu",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Orders/IOSReturnsPage.swift",
+      "invariant": "IOSReturnsPage keeps a context-menu second input path to row actions.",
+      "replacement": "contains checkout-hosted source policy split by audited source target",
+      "executableCoverage": "Orders workflows remain covered by executable service and UI tests; this entry preserves static adoption contracts.",
+      "rule": {"contains": [".contextMenu"]}
+    },
+    {
+      "id": "orders-wishlist-context-menu",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/OrdersCraftAdoptionContractTests.swift:testEveryAuditedOrdersPageOffersAContextMenu",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Orders/IOSWishlistPage.swift",
+      "invariant": "IOSWishlistPage keeps a context-menu second input path to row actions.",
+      "replacement": "contains checkout-hosted source policy split by audited source target",
+      "executableCoverage": "Orders workflows remain covered by executable service and UI tests; this entry preserves static adoption contracts.",
+      "rule": {"contains": [".contextMenu"]}
+    },
+    {
+      "id": "orders-procurement-context-menu",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/OrdersCraftAdoptionContractTests.swift:testEveryAuditedOrdersPageOffersAContextMenu",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Orders/IOSProcurementPage.swift",
+      "invariant": "IOSProcurementPage keeps a context-menu second input path to row actions.",
+      "replacement": "contains checkout-hosted source policy split by audited source target",
+      "executableCoverage": "Orders workflows remain covered by executable service and UI tests; this entry preserves static adoption contracts.",
+      "rule": {"contains": [".contextMenu"]}
+    },
+    {
+      "id": "orders-staging-context-menu",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/OrdersCraftAdoptionContractTests.swift:testEveryAuditedOrdersPageOffersAContextMenu",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Orders/IOSOrderStagingPage.swift",
+      "invariant": "IOSOrderStagingPage keeps a context-menu second input path to row actions.",
+      "replacement": "contains checkout-hosted source policy split by audited source target",
+      "executableCoverage": "Orders workflows remain covered by executable service and UI tests; this entry preserves static adoption contracts.",
+      "rule": {"contains": [".contextMenu"]}
+    },
+    {
+      "id": "orders-parts-management-context-menu",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/OrdersCraftAdoptionContractTests.swift:testEveryAuditedOrdersPageOffersAContextMenu",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Orders/IOSPartsOrderManagementPage.swift",
+      "invariant": "IOSPartsOrderManagementPage keeps a context-menu second input path to row actions.",
+      "replacement": "contains checkout-hosted source policy split by audited source target",
+      "executableCoverage": "Orders workflows remain covered by executable service and UI tests; this entry preserves static adoption contracts.",
+      "rule": {"contains": [".contextMenu"]}
+    },
+    {
+      "id": "orders-jpo-detail-context-menu",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/OrdersCraftAdoptionContractTests.swift:testEveryAuditedOrdersPageOffersAContextMenu",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Orders/IOSJPODetailPage.swift",
+      "invariant": "IOSJPODetailPage keeps a context-menu second input path to row actions.",
+      "replacement": "contains checkout-hosted source policy split by audited source target",
+      "executableCoverage": "Orders workflows remain covered by executable service and UI tests; this entry preserves static adoption contracts.",
+      "rule": {"contains": [".contextMenu"]}
+    },
+    {
+      "id": "orders-po-detail-context-menu",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/OrdersCraftAdoptionContractTests.swift:testEveryAuditedOrdersPageOffersAContextMenu",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Orders/IOSPODetailPage.swift",
+      "invariant": "IOSPODetailPage keeps a context-menu second input path to row actions.",
+      "replacement": "contains checkout-hosted source policy split by audited source target",
+      "executableCoverage": "Orders workflows remain covered by executable service and UI tests; this entry preserves static adoption contracts.",
+      "rule": {"contains": [".contextMenu"]}
+    },
+    {
+      "id": "orders-area-accessibility-id-floor",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/OrdersCraftAdoptionContractTests.swift:testOrdersAreaUsesStableAccessibilityIdentifiers",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Orders/IOSPurchaseOrdersPage.swift",
+      "invariant": "At least eight Orders source files keep stable orders-prefixed accessibility identifiers.",
+      "replacement": "directory_count checkout-hosted source policy",
+      "executableCoverage": "Orders UI addressability remains covered by UI tests; this entry preserves static adoption floors.",
+      "rule": {
+        "directory_count": [
+          {
+            "directory": "Weird Parts IOS/Weird Parts IOS/Features/Orders",
+            "pattern": "*.swift",
+            "contains": "\"orders-",
+            "min": 8
+          }
+        ]
+      }
+    },
+    {
+      "id": "orders-area-row-accessibility-floor",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/OrdersCraftAdoptionContractTests.swift:testOrdersAreaUsesTheSharedRowAccessibilityKit",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Orders/IOSPurchaseOrdersPage.swift",
+      "invariant": "At least eight Orders source files keep the shared rowAccessibility kit.",
+      "replacement": "directory_count checkout-hosted source policy",
+      "executableCoverage": "Orders accessibility remains covered by UI tests; this entry preserves static adoption floors.",
+      "rule": {
+        "directory_count": [
+          {
+            "directory": "Weird Parts IOS/Weird Parts IOS/Features/Orders",
+            "pattern": "*.swift",
+            "contains": ".rowAccessibility(",
+            "min": 8
+          }
+        ]
+      }
+    },
+    {
+      "id": "orders-create-return-session-error",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/OrdersSessionUnavailableRegressionTests.swift:testOrdersMutationsSurfaceVisibleErrorWhenCurrentUserIsUnavailable",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Orders/CreateReturnSheet.swift",
+      "invariant": "Create Return shows a visible error instead of silently returning when current user is unavailable.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Orders service behavior remains covered by executable tests; this entry preserves missing-session UI policy.",
+      "rule": {
+        "contains": ["saveError = \"User session unavailable. Sign in again.\""],
+        "not_contains": ["guard let userId = appCore.currentUser?.id else { return }"]
+      }
+    },
+    {
+      "id": "orders-purchase-list-session-error",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/OrdersSessionUnavailableRegressionTests.swift:testOrdersMutationsSurfaceVisibleErrorWhenCurrentUserIsUnavailable",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Orders/IOSPurchaseOrdersPage.swift",
+      "invariant": "PO list cancel/delete shows a visible action message instead of silently returning when current user is unavailable.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Orders service behavior remains covered by executable tests; this entry preserves missing-session UI policy.",
+      "rule": {
+        "contains": ["actionMessage = \"User session unavailable. Sign in again.\""],
+        "not_contains": ["guard let userId = appCore.currentUser?.id else { return }"]
+      }
+    },
+    {
+      "id": "orders-po-detail-session-note-and-status-policy",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/OrdersSessionUnavailableRegressionTests.swift:testOrdersMutationsSurfaceVisibleErrorWhenCurrentUserIsUnavailable;testPONoteWritesRequireRealCurrentUserAuthor;testSubmittedPODetailDoesNotExposeDirectMarkOrderedAction",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Orders/IOSPODetailPage.swift",
+      "invariant": "PO detail surfaces missing-session errors, requires real note authors, and does not expose a direct submitted to ordered action.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "PO status and note behavior remains covered by executable service tests; this entry preserves static UI call-site policy.",
+      "rule": {
+        "contains": [
+          "actionMessage = \"User session unavailable. Sign in again.\"",
+          "guard let author = currentPONoteAuthor() else",
+          "guard appCore.currentUser?.id != nil else { return nil }",
+          "displayName.trimmingCharacters(in: .whitespacesAndNewlines)",
+          "activeSheet = .sendToSupplier"
+        ],
+        "not_contains": [
+          "guard let userId = appCore.currentUser?.id else { return }",
+          "appCore.currentUser?.displayName ?? \"System\"",
+          "appCore.currentUser?.displayName ?? \"Unknown\"",
+          "Mark Ordered",
+          "transitionPO(to: \"ordered\")"
+        ]
+      }
+    },
+    {
+      "id": "orders-po-send-grouped-attachments-and-confirmation",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/OrdersSessionUnavailableRegressionTests.swift:testGroupedPOSendDoesNotSilentlyDropSiblingAttachments;testPOSendConfirmationDismissesBeforeParentRefresh;testGroupedPOSendToggleOffCannotConfirmSiblingPOs;testMailComposerOnlyRevealsConfirmSentAfterSentResult;testSupplierEmailElevatesRelatedJobContext",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Orders/POSendToSupplierSheet.swift",
+      "invariant": "PO send sheet surfaces grouped attachment failures, dismisses before parent refresh, clears grouped stale state, gates mail confirmation on sent result, and includes related-job context.",
+      "replacement": "contains/not_contains/order/section checkout-hosted source policy",
+      "executableCoverage": "PO send behavior remains covered by executable service and UI tests; this entry preserves static send-sheet policy.",
+      "rule": {
+        "contains": [
+          "selected sibling purchase orders could not be prepared",
+          "Share sheet could not prepare every selected PO attachment",
+          "groupEnabled && siblingPOsError != nil",
+          "if groupEnabled, let siblingPOsError",
+          "isSaving = false\n                    dismiss()\n                    onConfirmedSent()",
+          "guard groupEnabled else { return [po.id] }",
+          "clearSiblingPOState()\n                if on {\n                    fetchSiblingPOs()",
+          "private var includedSiblingPOs: [OrdersService.POListItem]",
+          "guard groupEnabled else { return [] }",
+          ") { result in\n                handleMailComposerFinished(result)",
+          "private func handleMailComposerFinished(_ result: MFMailComposeResult)",
+          "case .sent:\n            withAnimation { showConfirmSent = true }",
+          "case .cancelled, .saved:\n            break",
+          "case .failed:\n            mailError =",
+          ".alert(\"Mail Error\"",
+          "get: { mailError != nil }, set: { if !$0 { mailError = nil } }",
+          "extension OrdersService.PODetail",
+          "var supplierRelatedJobSummary: String?",
+          "line.jobName?.trimmingCharacters(in: .whitespacesAndNewlines)",
+          "return jobNames.joined(separator: \", \")",
+          "let isGroupedSend = groupEnabled && !includedSiblingIds.isEmpty",
+          "let jobSuffix = isGroupedSend ? \"\" : (po.supplierRelatedJobSummary.map { \" — Job: \\($0)\" } ?? \"\")",
+          "if !isGroupedSend, let relatedJobSummary = po.supplierRelatedJobSummary",
+          "lines.append(\"Re: \\(relatedJobSummary)\")"
+        ],
+        "not_contains": [
+          "(try? svc.listSendablePOs",
+          "try? appCore.ordersService?.getPODetail",
+          "try? data.write(to: url)",
+          "isSaving = false\n                    onConfirmedSent()\n                    dismiss()",
+          "primary always included\n        [po.id] + Array(includedSiblingIds)",
+          "siblingPOs where includedSiblingIds.contains",
+          ") { _ in\n                showMailComposer = false\n                withAnimation { showConfirmSent = true }"
+        ],
+        "sections": [
+          {
+            "start": "private func clearSiblingPOState() {",
+            "end": "    }",
+            "contains": [
+              "siblingPOs = []",
+              "includedSiblingIds = []",
+              "siblingPDFs = [:]",
+              "siblingPOsError = nil",
+              "siblingPOsLoading = false"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "orders-po-send-guard-count",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/OrdersSessionUnavailableRegressionTests.swift:testGroupedPOSendToggleOffCannotConfirmSiblingPOs",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Orders/POSendToSupplierSheet.swift",
+      "invariant": "At least three grouped-send paths guard against stale completions after grouped sending is disabled.",
+      "replacement": "regex_not_contains plus count-compatible source policy",
+      "executableCoverage": "Grouped send behavior remains covered by executable service and UI tests; this entry preserves stale-state static guards.",
+      "rule": {
+        "occurrences": [
+          {
+            "contains": "guard groupEnabled else { return }",
+            "min": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "orders-po-pdf-related-job-summary",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/OrdersSessionUnavailableRegressionTests.swift:testSupplierEmailElevatesRelatedJobContext",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Orders/POPDFGenerator.swift",
+      "invariant": "Supplier PDF metadata includes Related Job(s) when PO lines are job-linked.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "PDF rendering remains covered by executable tests; this entry preserves static metadata wiring.",
+      "rule": {
+        "contains": [
+          "po.supplierRelatedJobSummary",
+          "if let relatedJobSummary = po.supplierRelatedJobSummary { metaRow(\"Related Job(s):\", relatedJobSummary) }"
+        ]
+      }
+    },
+    {
+      "id": "orders-jpo-suggestion-quantity-validation",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/OrdersSessionUnavailableRegressionTests.swift:testJPOSuggestionQuantitiesAreValidatedBeforeCartMutation",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Orders/IOSJPOCreationPage.swift",
+      "invariant": "JPO creation validates search, suggestion, AI, confirmation, and submit quantities before cart mutation and never coerces malformed AI quantities to one.",
+      "replacement": "contains/regex_not_contains checkout-hosted source policy",
+      "executableCoverage": "Order creation behavior remains covered by executable service tests; this entry preserves static validation call-site policy.",
+      "rule": {
+        "contains": [
+          "private static func cartQuantityValidationMessage(for quantity: Int) -> String?",
+          "quantity > 0 ? nil : \"Quantity must be at least 1.\"",
+          "guard validateCartQuantity(quantity) else { return }",
+          "guard validateCartQuantity(suggestedQty) else { return }",
+          ".disabled(confirmQty <= 0)",
+          "confirmValidationMessage = Self.cartQuantityValidationMessage(for: confirmQty)",
+          "guard let qty = Int(parts[2].trimmingCharacters(in: .whitespacesAndNewlines)), qty > 0 else",
+          "return nil",
+          "cartItems.first(where: { $0.quantity <= 0 })",
+          "throw OrdersService.OrdersError.invalidQuantity(invalidLine.quantity)"
+        ],
+        "regex_not_contains": ["Int\\(parts\\[2\\][^\\n]*\\?\\?\\s*1"]
+      }
+    },
+    {
+      "id": "panel-schedule-builder-accessibility-and-normalization",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/PanelScheduleBuilderAccessibilityTests.swift:testCircuitCellsExposeMinimumTargetAndEditorAccessibility;testSaveNormalizesHiddenCircuitsAfterPanelShrink;testSpareCircuitSavesNormalizeHiddenActiveMetadata;testCircuitBackgroundKeepsBreakerSafetyColorReachableAlongsideClassification;testPanelLegendIncludesSafetyRelevantBreakerEntries",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Notebooks/PanelScheduleBuilder.swift",
+      "invariant": "Panel schedule builder keeps 44pt accessible circuit rows, normalizes hidden/spare metadata before save, preserves breaker safety color before classification color, and keeps safety legend entries.",
+      "replacement": "contains/not_contains/ordered checkout-hosted source policy",
+      "executableCoverage": "Panel schedule PDF rendering and model behavior remain covered by executable tests; this entry preserves static SwiftUI accessibility and persistence wiring.",
+      "rule": {
+        "contains": [
+          ".frame(minHeight: 44)",
+          ".frame(width: 4)",
+          ".fixedSize(horizontal: false, vertical: true)",
+          ".contentShape(Rectangle())",
+          "openCircuitEditor(spaceNumber: spaceNumber, circuit: circuit)",
+          ".accessibilityLabel(circuitAccessibilityLabel(spaceNumber: spaceNumber, circuit: circuit))",
+          ".accessibilityValue(circuitAccessibilityValue(circuit))",
+          "Opens the editor for circuit \\(spaceNumber).",
+          "Moves the selected circuit here.",
+          ".accessibilityIdentifier(\"panel-schedule-circuit-\\(spaceNumber)\")",
+          "private func circuitAccessibilityLabel(spaceNumber: Int, circuit: CircuitEntry?) -> String",
+          "\"Circuit \\(spaceNumber), \\(circuitDisplayName(circuit))\"",
+          "private func circuitAccessibilityValue(_ circuit: CircuitEntry?) -> String",
+          "Spare circuit, no breaker assigned",
+          "\\(amps) amp",
+          "\\(circuit.breakerType.rawValue) breaker",
+          "fed from \\(fedFrom)",
+          "let normalized = schedule.normalizedForPersistence()",
+          "schedule = normalized",
+          "onSave(normalized)",
+          "schedule.circuitsOutsideTotalSpaces",
+          "Saving will remove",
+          "showHiddenCircuitPruneConfirmation",
+          "Remove Hidden Circuits?",
+          "Remove & Save",
+          "let normalized = circuit.normalizedForPersistence()",
+          "candidate.circuits[index] = normalized",
+          "candidate.circuits.append(normalized)",
+          "onSave(circuit.normalizedForPersistence())",
+          "private func circuitBackground(_ circuit: CircuitEntry?) -> Color",
+          "case .gfci, .afci, .dualFunction: return .green.opacity(0.1)",
+          "legendDot(.green, \"GFI/AFI\")",
+          "legendDot(.yellow, \"Spare\")"
+        ],
+        "not_contains": [
+          ".frame(height: 36)",
+          ".accessibilityElement(children: .ignore)"
+        ],
+        "ordered": [
+          ["switch circuit.breakerType {", "switch circuit.classification {"]
+        ]
+      }
+    },
+    {
+      "id": "parts-brands-post-create-and-refresh",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/PartsBrandsPageRegressionTests.swift:testNewBrandAddSuppliersActionPresentsSupplierPickerInsteadOfOnlyDismissing;testBrandDetailRefreshesDisplayedBrandAfterEditAndSupplierSave",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Parts/PartsBrandsPage.swift",
+      "invariant": "Parts brands post-create supplier linking opens the supplier picker and brand detail refreshes displayed data after edit/supplier saves.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Parts service behavior remains covered by executable tests; this entry preserves static sheet routing and refresh wiring.",
+      "rule": {
+        "contains": [
+          "case addBrandSuppliers(Int64)",
+          "BrandSupplierPickerSheet(brandId: brandId)",
+          "onAddSuppliers?(brandId)",
+          "presentAddSuppliersPicker(for: brandId)",
+          "if activeSheet == nil",
+          "activeSheet = .addBrandSuppliers(brandId)",
+          "@State private var displayedBrand: BrandListRow",
+          "refreshDisplayedBrand()",
+          "displayedBrand = BrandListRow(",
+          "await refreshDisplayedBrand()",
+          "await onUpdate()"
+        ],
+        "not_contains": ["LabeledContent(\"Name\", value: brand.name)"]
+      }
+    },
+    {
+      "id": "parts-suppliers-post-create-brand-picker",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/PartsBrandsPageRegressionTests.swift:testNewSupplierCreationCanPromptForBrandPickerAfterSave",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Parts/PartsSuppliersPage.swift",
+      "invariant": "New supplier save can prompt for brand picker, show no-brand rows, and link selected brands without relying on initial create-time brand ids.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Parts supplier service behavior remains covered by executable tests; this entry preserves static sheet routing and prompt wiring.",
+      "rule": {
+        "contains": [
+          "case addSupplierBrands(Int64)",
+          "SupplierBrandPickerSheet(supplierId: supplierId)",
+          "onAddBrands?(supplierId)",
+          "presentAddBrandsPicker(for: supplierId)",
+          ".alert(\"Add Brands?\", isPresented: $showAddBrandsPrompt)",
+          "supplier.brandCount == 0",
+          "Label(\"No brands\", systemImage: \"exclamationmark.triangle.fill\")",
+          "try service.addBrandSupplier("
+        ],
+        "not_contains": ["initialBrandIds: selectedBrandIdsForNewSupplier"]
+      }
+    },
+    {
+      "id": "weekly-review-dirty-dismiss-safety",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/PartsBrandsPageRegressionTests.swift:testWeeklyReviewSheetUsesDirtyDismissSafetyAndBaselineCapture",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Jobs/IOSWeeklyReviewSheet.swift",
+      "invariant": "Weekly review sheet tracks dirty state, uses dismiss safety while dirty/saving, confirms cancel, and captures baseline state after load/save.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Weekly review behavior remains covered by UI and service tests; this entry preserves static dismiss-safety wiring.",
+      "rule": {
+        "contains": [
+          "@State private var showDiscardConfirmation = false",
+          "private var isDirty: Bool",
+          ".dismissSafety(",
+          "isDirty: isDirty",
+          "isSaving: isSubmitting",
+          "DismissSafety.cancelOrConfirm(",
+          "captureInitialState()",
+          "private func captureInitialState()"
+        ]
+      }
+    },
+    {
+      "id": "tools-trade-response-dirty-dismiss-safety",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/PartsBrandsPageRegressionTests.swift:testTradeResponseSheetUsesDirtyDismissSafety",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Tools/IOSToolDetailPage.swift",
+      "invariant": "Trade response sheet tracks dirty state and routes cancel/dismiss through shared dismiss safety.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Tools behavior remains covered by UI/service tests; this entry preserves static dismiss-safety wiring.",
+      "rule": {
+        "contains": [
+          "struct TradeResponseSheet: View {",
+          "@State private var showDiscardConfirmation = false",
+          "private var isDirty: Bool",
+          ".dismissSafety(",
+          "showDiscardConfirmation: $showDiscardConfirmation",
+          "DismissSafety.cancelOrConfirm("
+        ]
+      }
+    },
+    {
+      "id": "job-material-pull-selected-source",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/PartsBrandsPageRegressionTests.swift:testJobMaterialPullUsesSelectedSourceInsteadOfWarehouseOneDefault",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Jobs/IOSJobDetailPage.swift",
+      "invariant": "Job material pull tracks and passes selected external positive-stock source locations instead of hard-coding warehouse one.",
+      "replacement": "contains/not_contains/section checkout-hosted source policy",
+      "executableCoverage": "Jobs material pull behavior remains covered by service tests; this entry preserves static source-selection wiring.",
+      "rule": {
+        "contains": [
+          "@State private var selectedPullSource: WarehouseService.LedgerLocationSummary?",
+          "loadPullSourceLocations(for: part)",
+          "pullMaterialSourceLocationTypes: Set<String>",
+          "\"warehouse\"",
+          "\"truck\"",
+          "\"trailer\"",
+          "\"shop\"",
+          "pullSourceLocations = ledger?.locations.filter(Self.isPullMaterialSourceLocation)",
+          "ForEach(pullSourceLocations.indices, id: \\.self)",
+          "DispatchQueue.global(qos: .userInitiated).async",
+          "DispatchQueue.main.async",
+          "guard selectedPullPart?.id == requestedPartId else { return }",
+          "location.qty > 0 && pullMaterialSourceLocationTypes.contains(location.locationType.lowercased())",
+          "fromLocationType: source.locationType",
+          "fromLocationId: source.locationId"
+        ],
+        "not_contains": [
+          "pullSourceLocations = ledger?.locations.filter { $0.qty > 0 }",
+          "fromLocationType: \"warehouse\",\n                    fromLocationId: 1",
+          "Source: Warehouse 1"
+        ],
+        "sections": [
+          {
+            "start": "pullMaterialSourceLocationTypes: Set<String>",
+            "end": "]",
+            "not_contains": [
+              "\"pulled\"",
+              "\"job\""
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "parts-catalog-quick-edit-dismiss-before-refresh",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/PartsCatalogPageRegressionTests.swift:testCompactPartEditDismissesBeforeParentRefresh",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Parts/PartsCatalogPage.swift",
+      "invariant": "QuickEditSheet save dismisses the compact edit sheet before awaiting parent catalog refresh.",
+      "replacement": "section/order checkout-hosted source policy",
+      "executableCoverage": "Parts catalog edit behavior remains covered by UI/service tests; this entry preserves static ordering policy.",
+      "rule": {
+        "sections": [
+          {
+            "start": "private struct QuickEditSheet",
+            "end": "// MARK: - Part Form Sheet",
+            "contains": ["private func save() async"],
+            "ordered": [["dismiss()", "await onSave()"]]
+          }
+        ]
+      }
+    },
+    {
+      "id": "parts-companions-session-and-cancellation",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/PartsCompanionsPageSessionRegressionTests.swift:testCompanionPollsDoNotFallBackToSyntheticUserZero",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Parts/PartsCompanionsPage.swift",
+      "invariant": "Companion polls fail closed for missing sessions, never synthesize user zero, use SwiftUI task cancellation, and guard housekeeping before service writes.",
+      "replacement": "contains/not_contains/ordered checkout-hosted source policy",
+      "executableCoverage": "Companion service behavior remains covered by executable tests; this entry preserves static session and cancellation wiring.",
+      "rule": {
+        "contains": [
+          "private var currentUserId: Int64?",
+          "guard let userId = loadContext.userId else",
+          "loadError = \"User session unavailable. Sign in again.\"",
+          "try service.getActivePolls(userId: userId, isAdmin: loadContext.isAdmin)",
+          "try service.getLastWeekResults(userId: userId)",
+          ".task(id: LoadDataTaskID(userId: currentUserId, reloadToken: reloadToken))",
+          "await loadDataAndMarkViewed()",
+          "private func retryLoadData()",
+          "reloadToken += 1",
+          "markCompanionsViewedIfReady()",
+          "currentUserId != nil",
+          "loadError == nil",
+          "guard !Task.isCancelled, currentUserId != nil, loadError == nil else { return }",
+          "guard !Task.isCancelled else { return }",
+          "guard currentUserId == userId else { return }",
+          "guard currentUserId == loadContext.userId else { return }"
+        ],
+        "not_contains": [
+          "appCore.currentUser?.id ?? 0",
+          "@MainActor\n    private func loadData() async"
+        ],
+        "ordered": [
+          ["guard !Task.isCancelled else { return }", "try service.closeExpiredPolls()"],
+          ["try service.closeExpiredPolls()", "try service.purgeExpiredRules()"],
+          ["guard let userId = loadContext.userId else", "let rules = try service.listCompanionRulesHierarchy()"]
+        ]
+      }
+    },
+    {
+      "id": "parts-forecasting-stock-target-validation",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/PartsForecastingPageRegressionTests.swift:testForecastStockTargetsRejectMalformedTextInsteadOfDefaultingToZero",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Parts/PartsForecastingPage.swift",
+      "invariant": "Forecast stock targets parse through a whole-number validator, surface field-specific errors, trim newlines, require non-negative values, and never coerce malformed input to zero.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Parts forecasting behavior remains covered by service tests; this entry preserves static validation wiring.",
+      "rule": {
+        "contains": [
+          "guard let min = parseStockTarget(editMinStock, fieldName: \"Min\") else { return }",
+          "guard let target = parseStockTarget(editTargetStock, fieldName: \"Target\") else { return }",
+          "guard let max = parseStockTarget(editMaxStock, fieldName: \"Max\") else { return }",
+          "editError = \"\\(fieldName) stock must be a whole number\"",
+          "trimmingCharacters(in: .whitespacesAndNewlines)",
+          "value >= 0"
+        ],
+        "not_contains": [
+          "Int(editMinStock) ?? 0",
+          "Int(editTargetStock) ?? 0",
+          "Int(editMaxStock) ?? 0"
+        ]
+      }
+    },
+    {
+      "id": "peer-browser-targeted-sync-ui",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/PeerBrowserTargetedSyncRegressionTests.swift:testRowLevelPeerSyncTargetsSelectedPeerInsteadOfGlobalSyncNow;testPeerBrowserOnlyShowsManualSyncForSyncablePeers;testMultipeerConnectingStateStaysAlignedWithBrowserBranches",
+      "target": "Weird Parts IOS/Weird Parts IOS/Sync/IOSPeerBrowser.swift",
+      "invariant": "Peer browser row sync targets selected syncable peers, avoids global fan-out, and keeps connecting/waiting/connected/unavailable branches distinct.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Sync behavior remains covered by executable tests; this entry preserves static peer-row wiring.",
+      "rule": {
+        "contains": [
+          "if peer.isManuallySyncable",
+          "syncManager.syncWithPeer(peerDeviceId: peer.id)",
+          "Text(\"Waiting\")",
+          "peer.state == \"connecting\"",
+          "else if peer.state == \"connected\"",
+          "Text(\"Unavailable\")"
+        ],
+        "not_contains": [
+          "Task { await syncManager.syncNow() }",
+          "peer.state == \"found\" || peer.state == \"multipeer\" || peer.state == \"lan\""
+        ]
+      }
+    },
+    {
+      "id": "ios-sync-manager-selected-peer-sync",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/PeerBrowserTargetedSyncRegressionTests.swift:testIOSSyncManagerProvidesSelectedPeerSyncWithoutGlobalFanOut;testPeerBrowserOnlyShowsManualSyncForSyncablePeers;testMultipeerConnectingStateStaysAlignedWithBrowserBranches",
+      "target": "Weird Parts IOS/Weird Parts IOS/Sync/IOSSyncManager.swift",
+      "invariant": "IOSSyncManager exposes selected-peer sync without global fan-out, derives manual syncability from transport/state/address, and preserves connecting display state.",
+      "replacement": "contains/section/not_contains checkout-hosted source policy",
+      "executableCoverage": "Sync behavior remains covered by executable tests; this entry preserves static manager wiring.",
+      "rule": {
+        "contains": [
+          "func syncWithPeer(peerDeviceId: String) async",
+          "pm.syncWithPeer(deviceId: peerDeviceId)",
+          "errorMessage = \"\\(failureReason) for \\(peerLabel)\"",
+          "let isManuallySyncable: Bool",
+          "isManuallySyncablePeer(",
+          "if transport == \"multipeer\"",
+          "return multipeerState == \"connected\"",
+          "return transport == \"lan\" && address != nil",
+          "isManuallySyncable: Self.isManuallySyncablePeer(",
+          "case \"connecting\": return \"connecting\"",
+          "state: Self.multipeerDisplayState(peer.state.rawValue)",
+          "? Self.multipeerDisplayState(peer.multipeerState)",
+          "peer.state == \"multipeer\" || peer.state == \"connecting\""
+        ],
+        "sections": [
+          {
+            "start": "func syncWithPeer(peerDeviceId: String) async",
+            "end": "func ",
+            "not_contains": [
+              "syncWithAllPeers()",
+              "manualSync("
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "bluetooth-page-targeted-sync",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/PeerBrowserTargetedSyncRegressionTests.swift:testBluetoothPageRowsUseTargetedSyncAndConnectingState",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Settings/BluetoothPage.swift",
+      "invariant": "Bluetooth page rows gate Sync on peer capability, target selected peer, avoid global syncNow, and expose accessible connecting state.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Sync behavior remains covered by executable tests; this entry preserves static Bluetooth peer-row wiring.",
+      "rule": {
+        "contains": [
+          "if peer.isManuallySyncable",
+          "syncManager.syncWithPeer(peerDeviceId: peer.id)",
+          "case \"connecting\": return \"Connecting\"",
+          "else if peer.state == \"connected\"",
+          "accessibilityLabel(\"Status: Connecting\")"
+        ],
+        "not_contains": ["Task { await syncManager.syncNow() }"]
+      }
+    },
+    {
+      "id": "report-builder-date-range-validation",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/ReportBuilderDateRangeRegressionTests.swift:testDatePickersAreRangeConstrained;testGenerateIsBlockedForInvertedRanges;testInvertedRangeShowsVisibleValidationLabel",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Reports/ReportBuilderView.swift",
+      "invariant": "Report Builder constrains date pickers, blocks inverted ranges at day granularity, and shows a visible accessible validation label.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Report generation behavior remains covered by service tests; this entry preserves static date-range UI policy.",
+      "rule": {
+        "contains": [
+          "DatePicker(\"Start Date\", selection: $startDate, in: startPickerLimit, displayedComponents: .date)",
+          "DatePicker(\"End Date\", selection: $endDate, in: endPickerLimit, displayedComponents: .date)",
+          "Calendar.current.startOfDay(for: startDate) <= Calendar.current.startOfDay(for: endDate)",
+          ".disabled(isGenerating || !hasValidDateRange)",
+          "guard hasValidDateRange else {",
+          "Label(\"Start date must be on or before the end date.\", systemImage: \"exclamationmark.triangle\")",
+          ".accessibilityIdentifier(\"reportBuilderDateRangeError\")",
+          "if !hasValidDateRange {"
+        ]
+      }
+    },
+    {
+      "id": "report-export-filtered-rows-labor",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/ReportExportFilteredRowsRegressionTests.swift:testLaborOverviewExportsFilteredRows;testExportBehaviorIsDocumentedInHelpCopy",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Reports/IOSLaborOverviewPage.swift",
+      "invariant": "Labor Overview exports filtered timesheet rows and documents that exports match visible filtered rows.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Report export behavior remains covered by executable tests; this entry preserves static export-row selection.",
+      "rule": {
+        "contains": ["rows: filteredTimesheetRows.map", "(\"Exporting\","],
+        "not_contains": ["rows: timesheetRows.map"]
+      }
+    },
+    {
+      "id": "report-export-filtered-rows-daily-summary",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/ReportExportFilteredRowsRegressionTests.swift:testDailySummaryExportsFilteredRows;testExportBehaviorIsDocumentedInHelpCopy",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Reports/IOSDailyReportsSummaryPage.swift",
+      "invariant": "Daily Summary exports filtered rows and documents that exports match visible filtered rows.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Report export behavior remains covered by executable tests; this entry preserves static export-row selection.",
+      "rule": {
+        "contains": ["rows: filteredRows.map", "(\"Exporting\","],
+        "not_contains": ["rows: rows.map"]
+      }
+    },
+    {
+      "id": "report-export-filtered-rows-timesheets",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/ReportExportFilteredRowsRegressionTests.swift:testTimesheetsExportsFilteredSegments;testExportBehaviorIsDocumentedInHelpCopy",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Reports/IOSTimesheetsPage.swift",
+      "invariant": "Timesheets exports filtered segments, keeps the filteredSegments helper, and documents that exports match visible filtered rows.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Report export behavior remains covered by executable tests; this entry preserves static export-row selection.",
+      "rule": {
+        "contains": [
+          "rows: filteredSegments.map",
+          "private var filteredSegments: [ReportsService.TimesheetSegmentRow]",
+          "(\"Exporting\","
+        ],
+        "not_contains": ["rows: segments.map"]
+      }
+    },
+    {
+      "id": "report-export-filtered-rows-profitability",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/ReportExportFilteredRowsRegressionTests.swift:testProfitabilityExportsFilteredRows;testExportBehaviorIsDocumentedInHelpCopy",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Reports/IOSProfitabilityPage.swift",
+      "invariant": "Profitability exports filtered rows and documents that exports match visible filtered rows.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Report export behavior remains covered by executable tests; this entry preserves static export-row selection.",
+      "rule": {
+        "contains": ["rows: filteredRows.map", "(\"Exporting\","],
+        "not_contains": ["rows: rows.map"]
+      }
+    }
+  ]
+}
