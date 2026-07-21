@@ -889,24 +889,33 @@ final class AppCore: ObservableObject {
             }
             try db.writer.write { dbConn in
                 try dbConn.execute(sql: """
-                    INSERT OR IGNORE INTO hats (name, description, level, is_builtin)
+                    INSERT INTO hats (name, description, level, is_builtin)
                     VALUES ('UITest People Viewer', 'UI-test-only view_people role', 0, 0)
+                    ON CONFLICT(name) DO UPDATE SET
+                        description = excluded.description,
+                        level = 0,
+                        is_builtin = 0
                     """)
                 guard let viewerHatId = try Int64.fetchOne(
                     dbConn,
                     sql: "SELECT id FROM hats WHERE name = 'UITest People Viewer'"
                 ) else { return }
                 try dbConn.execute(
-                    sql: "INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key) VALUES (?, 'view_people')",
+                    sql: "DELETE FROM hat_permissions WHERE hat_id = ?",
                     arguments: [viewerHatId]
                 )
-                // Strip any hat assignments that are NOT the UITest People Viewer hat so the
-                // view-only persona stays deterministic even when running with -UITestingPreserveDatabase.
                 try dbConn.execute(
-                    sql: "DELETE FROM user_hats WHERE user_id = ? AND hat_id != ?",
-                    arguments: [viewerUserId, viewerHatId]
+                    sql: "INSERT INTO hat_permissions (hat_id, permission_key) VALUES (?, 'view_people')",
+                    arguments: [viewerHatId]
                 )
-                // UPSERT so a soft-deleted or inactive row is restored rather than silently ignored.
+                try dbConn.execute(
+                    sql: """
+                        UPDATE user_hats
+                        SET is_active = 0, deleted_at = datetime('now')
+                        WHERE user_id = ? AND deleted_at IS NULL
+                        """,
+                    arguments: [viewerUserId]
+                )
                 try dbConn.execute(sql: """
                     INSERT INTO user_hats (user_id, hat_id, is_active, deleted_at)
                     VALUES (?, ?, 1, NULL)
