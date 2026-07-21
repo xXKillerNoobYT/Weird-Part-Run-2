@@ -76,9 +76,10 @@ struct IOSTeamDetailPage: View {
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
-                        .frame(minWidth: 44, minHeight: 44)
-                        .contentShape(Rectangle())
                 }
+                // ToolbarItem exports the Button's frame, not the Image label's frame.
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
                 .accessibilityLabel("Help")
             }
         }
