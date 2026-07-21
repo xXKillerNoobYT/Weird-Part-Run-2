@@ -21,6 +21,7 @@ RULE_KEYS = {
     "contains", "not_contains", "ordered", "regex", "regex_not_contains", "count",
     "sections", "scoped", "directory_count", "directory_scan", "occurrences",
 }
+SCOPED_WRAPPER_KEYS = {"start", "end", "rule"}
 SECTION_METADATA_KEYS = {"start", "end", "startRegex", "endRegex"}
 CHECKOUT_READ_PATTERNS = ("#filePath", "StaticString", "String(contentsOfFile:")
 COHORT_TEST_DIRECTORY = Path("Weird Parts IOS/Weird Parts IOSTests")
@@ -59,6 +60,19 @@ def validate_rule_keys(identifier: str, rule: Any, label: str = "rule") -> list[
         ]
     if not set(rule).intersection(RULE_KEYS):
         return [f"{identifier}: {label} must declare at least one supported rule key"]
+    return []
+
+
+def validate_scoped_wrapper_keys(identifier: str, spec: Any, index: int) -> list[str]:
+    label = f"scoped[{index}]"
+    if not isinstance(spec, dict):
+        return [f"{identifier}: {label} must be an object"]
+    unknown = sorted(set(spec).difference(SCOPED_WRAPPER_KEYS))
+    if unknown:
+        return [
+            f"{identifier}: {label} contains unsupported key(s): {', '.join(unknown)}; "
+            f"supported keys: {', '.join(sorted(SCOPED_WRAPPER_KEYS))}"
+        ]
     return []
 
 
@@ -212,8 +226,13 @@ def validate_rule(repo_root: Path, identifier: str, source: str, rule: Any, labe
             }
             if section_rule:
                 errors.extend(validate_rule(repo_root, identifier, section, section_rule, f"section[{index}]"))
-    for spec in rule.get("scoped", []):
-        if not isinstance(spec, dict) or not isinstance(spec.get("start"), str) or not isinstance(spec.get("end"), str):
+    for index, spec in enumerate(rule.get("scoped", [])):
+        scoped_key_errors = validate_scoped_wrapper_keys(identifier, spec, index)
+        if scoped_key_errors:
+            errors.extend(scoped_key_errors)
+            continue
+        assert isinstance(spec, dict)
+        if not isinstance(spec.get("start"), str) or not isinstance(spec.get("end"), str):
             raise ValueError(f"{identifier}: scoped entries require string start and end markers")
         start = source.find(spec["start"])
         end = source.find(spec["end"], start + len(spec["start"])) if start >= 0 else -1
@@ -285,7 +304,7 @@ def self_test() -> int:
         (root / "Sources").mkdir()
         (root / "Sources" / "App.swift").write_text("let safe = true\nfunc save() {\n dismiss()\n await onSave()\n}\nlet token = 42\n", encoding="utf-8")
         (root / "Sources" / "Other.swift").write_text("rowAccessibility()\n", encoding="utf-8")
-        manifest = {"schemaVersion": 1, "entries": [{"id": "self-test", "testSource": "Tests/SelfTest.swift:testInvariant", "target": "Sources/App.swift", "invariant": "Safe source contract remains true.", "replacement": "checkout-hosted validator", "executableCoverage": "not applicable: static source policy", "rule": {"contains": ["let safe = true"], "not_contains": ["unsafe = true"], "ordered": [["dismiss()", "await onSave()"]], "regex_not_contains": [r"token\s*=\s*0"], "sections": [{"start": "func save()", "contains": ["dismiss()"], "not_contains": ["unsafe"]}], "directory_count": [{"directory": "Sources", "pattern": "*.swift", "contains": "rowAccessibility()", "min": 1}], "directory_scan": [{"directory": "Sources", "pattern": "*.swift", "not_matches_regex": r"NavigationLink\s*\{\s*Text\s*\(", "allowlist": []}], "occurrences": [{"contains": "let", "min": 2}]}}]}
+        manifest = {"schemaVersion": 1, "entries": [{"id": "self-test", "testSource": "Tests/SelfTest.swift:testInvariant", "target": "Sources/App.swift", "invariant": "Safe source contract remains true.", "replacement": "checkout-hosted validator", "executableCoverage": "not applicable: static source policy", "rule": {"contains": ["let safe = true"], "not_contains": ["unsafe = true"], "ordered": [["dismiss()", "await onSave()"]], "regex_not_contains": [r"token\s*=\s*0"], "sections": [{"start": "func save()", "contains": ["dismiss()"], "not_contains": ["unsafe"]}], "scoped": [{"start": "func save()", "end": "await onSave()", "rule": {"contains": ["dismiss()"]}}], "directory_count": [{"directory": "Sources", "pattern": "*.swift", "contains": "rowAccessibility()", "min": 1}], "directory_scan": [{"directory": "Sources", "pattern": "*.swift", "not_matches_regex": r"NavigationLink\s*\{\s*Text\s*\(", "allowlist": []}], "occurrences": [{"contains": "let", "min": 2}]}}]}
         manifest_path = root / "docs" / "testing" / "xctest-source-policy-manifest.json"
         manifest_path.parent.mkdir(parents=True)
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
@@ -313,6 +332,28 @@ def self_test() -> int:
             or "supported keys:" not in nested_diagnostic
         ):
             print("self-test did not reject the nested misspelled rule key with an actionable error", file=sys.stderr)
+            return 1
+        scoped_wrapper_typo_manifest = json.loads(json.dumps(manifest))
+        scoped_wrapper_typo_manifest["entries"][0]["rule"]["scoped"] = [{
+            "start": "missing scoped start",
+            "end": "missing scoped end",
+            "rule": {"contains": ["dismiss()"]},
+            "contians": ["dismiss()"],
+        }]
+        (root / "scoped-wrapper-typo-manifest.json").write_text(
+            json.dumps(scoped_wrapper_typo_manifest), encoding="utf-8"
+        )
+        scoped_wrapper_typo_errors = io.StringIO()
+        with contextlib.redirect_stderr(scoped_wrapper_typo_errors):
+            scoped_wrapper_typo_status = validate(root, root / "scoped-wrapper-typo-manifest.json")
+        scoped_wrapper_diagnostic = scoped_wrapper_typo_errors.getvalue()
+        if (
+            scoped_wrapper_typo_status != 1
+            or "self-test: scoped[0] contains unsupported key(s): contians" not in scoped_wrapper_diagnostic
+            or "supported keys: end, rule, start" not in scoped_wrapper_diagnostic
+            or "scoped markers must both exist" in scoped_wrapper_diagnostic
+        ):
+            print("self-test did not reject the scoped-wrapper misspelled key with an actionable error", file=sys.stderr)
             return 1
         outside_checkout = root / "outside-checkout"
         outside_checkout.mkdir()
