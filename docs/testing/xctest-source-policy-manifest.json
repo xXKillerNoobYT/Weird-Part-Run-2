@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "description": "Checkout-hosted replacements for XCTest source-contract assertions. Device tests must not read repository sources via #filePath or String(contentsOf:).",
+  "entries": [
+    {
+      "id": "ai-assistant-optional-session-id",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/AIAssistantPanelSessionRegressionTests.swift:testAssistantPanelDoesNotFallBackToSyntheticUserZero",
+      "target": "Weird Parts IOS/Weird Parts IOS/AI/IOSAIAssistantPanel.swift",
+      "invariant": "The assistant panel forwards an optional current user ID and never substitutes synthetic user 0.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Core companion-poll and voting behavior remains covered by executable service tests; this is a static call-site policy.",
+      "rule": {
+        "contains": ["userId: appCore.currentUser?.id,"],
+        "not_contains": ["appCore.currentUser?.id ?? 0"]
+      }
+    },
+    {
+      "id": "camera-match-availability-before-capture",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/CameraMatchAvailabilityRegressionTests.swift:testCameraButtonGuardsAvailabilityBeforePresentingCapture",
+      "target": "Weird Parts IOS/Weird Parts IOS/Scanning/IOSCameraMatchView.swift",
+      "invariant": "Camera capture checks availability, disables the unavailable action, and gives a Photos fallback before presenting capture.",
+      "replacement": "contains/not_contains/order checkout-hosted source policy",
+      "executableCoverage": "Camera behavior is device-specific and is exercised by UI/device validation; this entry preserves the static wiring contract.",
+      "rule": {
+        "contains": ["UIImagePickerController.isSourceTypeAvailable(.camera)", "guard isCameraAvailable else {", ".disabled(!isCameraAvailable)", "Camera is not available on this device. Use Photos instead."],
+        "ordered": [["guard isCameraAvailable else {", "showCamera = true"]]
+      }
+    },
+    {
+      "id": "camera-match-picker-fallback",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/CameraMatchAvailabilityRegressionTests.swift:testCameraCaptureNeverForcesCameraSourceWithoutAvailabilityCheck",
+      "target": "Weird Parts IOS/Weird Parts IOS/Scanning/IOSCameraMatchView.swift",
+      "invariant": "The camera picker assigns .camera only after an availability check and falls back to the photo library.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Camera capture behavior is device-specific and is exercised by UI/device validation; this entry preserves the static wiring contract.",
+      "rule": {
+        "contains": ["if UIImagePickerController.isSourceTypeAvailable(.camera)", "picker.sourceType = .camera", "picker.sourceType = .photoLibrary"]
+      }
+    },
+    {
+      "id": "cart-placement-shelf-location",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/CartPlacementShelfLocationRegressionTests.swift:testCartPlacementWritesShelfLocationNotNotes",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Warehouse/CartManager.swift",
+      "invariant": "Cart placement writes dedicated shelf location metadata rather than user notes.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Cart placement persistence behavior remains covered by executable warehouse/core service tests; this entry protects the UI call-site contract.",
+      "rule": {
+        "contains": ["try service.updatePart(id: partId, shelfLocation: location)"],
+        "not_contains": ["updatePart(id: partId, notes:", "notes: \"Location:"]
+      }
+    },
+    {
+      "id": "cart-placement-user-guidance-and-trimming",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/CartPlacementShelfLocationRegressionTests.swift:testCartPlacementStatesMetadataScopeInUI;testCartPlacementTrimsLocationBeforeSaving",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Warehouse/CartManager.swift",
+      "invariant": "Cart placement explains its metadata-only scope and rejects whitespace-only locations.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Cart placement persistence behavior remains covered by executable warehouse/core service tests; this entry protects static copy and validation wiring.",
+      "rule": {
+        "contains": ["Placing updates each part's recorded shelf location.", "use Guided Movement", "Bins are marked placed for reference only.", ".trimmingCharacters(in: .whitespacesAndNewlines)", "!location.isEmpty"],
+        "not_contains": ["in: .whitespaces)"]
+      }
+    }
+  ]
+}
