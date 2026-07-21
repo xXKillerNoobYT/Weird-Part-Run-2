@@ -56,7 +56,7 @@ public final class PeopleService: Sendable {
     // MARK: - Error Types
     // =========================================================================
 
-    public enum PeopleError: Error, Sendable, Equatable {
+    public enum PeopleError: Error, LocalizedError, Sendable, Equatable {
         case employeeNotFound(Int64)
         case customerNotFound(Int64)
         case contactNotFound(Int64)
@@ -68,6 +68,22 @@ public final class PeopleService: Sendable {
         case hatNotFound(Int64)
         case invalidScore(Double)
         case invalidAmount(Double)
+
+        public var errorDescription: String? {
+            switch self {
+            case .employeeNotFound(let id): "Employee #\(id) not found"
+            case .customerNotFound(let id): "Customer #\(id) not found"
+            case .contactNotFound(let id): "Contact #\(id) not found"
+            case .contractorNotFound(let id): "Contractor #\(id) not found"
+            case .userNotFound(let id): "User #\(id) not found"
+            case .teamNotFound(let id): "Team #\(id) not found"
+            case .cannotDeleteBuiltinHat: "Built-in hats cannot be deleted"
+            case .requiredFieldEmpty(let field): "Required field '\(field)' cannot be empty"
+            case .hatNotFound(let id): "Hat #\(id) not found"
+            case .invalidScore(let score): "Invalid score: \(score)"
+            case .invalidAmount(let amount): "Invalid amount: \(amount)"
+            }
+        }
     }
 
     // =========================================================================

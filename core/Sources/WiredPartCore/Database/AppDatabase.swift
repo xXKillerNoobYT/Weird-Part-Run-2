@@ -13,8 +13,8 @@ public final class AppDatabase: Sendable {
         var path: String?
     }
 
-    /// The total number of registered migrations. Update when adding new migrations.
-    /// Migrations are 000-113.
+    /// The identifier of the latest registered migration (not a count — migration numbers
+    /// may have gaps or be registered together). Update this value when adding new migrations.
     public static let schemaVersion = 113
 
     /// Initialize with an existing database writer and run all migrations.

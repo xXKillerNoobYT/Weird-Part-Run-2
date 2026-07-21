@@ -900,9 +900,19 @@ final class AppCore: ObservableObject {
                     sql: "INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key) VALUES (?, 'view_people')",
                     arguments: [viewerHatId]
                 )
+                // Strip any hat assignments that are NOT the UITest People Viewer hat so the
+                // view-only persona stays deterministic even when running with -UITestingPreserveDatabase.
+                try dbConn.execute(
+                    sql: "DELETE FROM user_hats WHERE user_id = ? AND hat_id != ?",
+                    arguments: [viewerUserId, viewerHatId]
+                )
+                // UPSERT so a soft-deleted or inactive row is restored rather than silently ignored.
                 try dbConn.execute(sql: """
-                    INSERT OR IGNORE INTO user_hats (user_id, hat_id, is_active)
-                    VALUES (?, ?, 1)
+                    INSERT INTO user_hats (user_id, hat_id, is_active, deleted_at)
+                    VALUES (?, ?, 1, NULL)
+                    ON CONFLICT(user_id, hat_id) DO UPDATE SET
+                        is_active = 1,
+                        deleted_at = NULL
                     """, arguments: [viewerUserId, viewerHatId])
 
                 try dbConn.execute(sql: """
