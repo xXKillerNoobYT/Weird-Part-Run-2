@@ -901,8 +901,19 @@ final class AppCore: ObservableObject {
                     arguments: [viewerHatId]
                 )
                 try dbConn.execute(sql: """
-                    INSERT OR IGNORE INTO user_hats (user_id, hat_id, is_active)
-                    VALUES (?, ?, 1)
+                    UPDATE user_hats
+                    SET is_active = 0,
+                        deleted_at = COALESCE(deleted_at, datetime('now'))
+                    WHERE user_id = ?
+                      AND hat_id != ?
+                      AND (is_active = 1 OR deleted_at IS NULL)
+                    """, arguments: [viewerUserId, viewerHatId])
+                try dbConn.execute(sql: """
+                    INSERT INTO user_hats (user_id, hat_id, is_active, deleted_at)
+                    VALUES (?, ?, 1, NULL)
+                    ON CONFLICT(user_id, hat_id) DO UPDATE SET
+                        is_active = 1,
+                        deleted_at = NULL
                     """, arguments: [viewerUserId, viewerHatId])
 
                 try dbConn.execute(sql: """

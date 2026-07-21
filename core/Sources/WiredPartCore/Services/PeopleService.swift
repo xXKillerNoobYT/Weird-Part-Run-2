@@ -1102,12 +1102,13 @@ public final class PeopleService: Sendable {
             guard let normalizedName = name.normalizedRequiredText else {
                 throw PeopleError.requiredFieldEmpty("name")
             }
+            let normalizedDescription = description.normalizedOptionalText
             try dbConn.execute(
                 sql: """
                     INSERT INTO employee_teams (name, description, created_by, updated_by)
                     VALUES (?, ?, ?, ?)
                     """,
-                arguments: [normalizedName, description, actorUserId, actorUserId]
+                arguments: [normalizedName, normalizedDescription, actorUserId, actorUserId]
             )
             return dbConn.lastInsertedRowID
         }
@@ -1309,13 +1310,14 @@ public final class PeopleService: Sendable {
             guard let normalizedName = name.normalizedRequiredText else {
                 throw PeopleError.requiredFieldEmpty("name")
             }
+            let normalizedDescription = description.normalizedOptionalText
             try dbConn.execute(
                 sql: """
                     UPDATE employee_teams
                     SET name = ?, description = ?, updated_by = ?, updated_at = datetime('now')
                     WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                     """,
-                arguments: [normalizedName, description, actorUserId, teamId]
+                arguments: [normalizedName, normalizedDescription, actorUserId, teamId]
             )
         }
     }
