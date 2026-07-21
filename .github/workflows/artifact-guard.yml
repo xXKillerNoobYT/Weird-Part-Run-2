@@ -42,6 +42,9 @@ jobs:
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         run: python3 scripts/guard-tracked-artifacts.py --self-test
 
+      - name: Validate checkout-hosted XCTest source policies
+        run: python3 scripts/validate-xctest-source-policy.py
+
       - name: Fail on tracked local runtime artifacts
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         run: python3 scripts/guard-tracked-artifacts.py
