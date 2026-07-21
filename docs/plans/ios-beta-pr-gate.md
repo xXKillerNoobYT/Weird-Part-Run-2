@@ -36,7 +36,7 @@ Add `scripts/ci/run-ios-beta-gate.sh` as the execution layer. It:
 5. Runs all app/core unit and regression tests from `WiredPart-iOS`, excluding the broad UI-test target from that phase.
 6. Runs the bounded `WiredPart-iOS-Stage9-Smokes` deterministic UI plan on the same simulator; this includes the maintained viewport harness without invoking manual screenshot catalogs.
 7. Writes an `.xcresult`, Xcode log, and machine-readable summary for both phases in every lane.
-8. Bounds each Xcode phase at 40 minutes. A source-validated runtime assertion budgets a possible recovery boot as well as the initial boot, reserving 18 minutes of the 120-minute job envelope for result packaging, cleanup, and artifact upload.
+8. Bounds unit/regression Xcode work at 40 minutes and the deterministic UI-smoke plan at 15 minutes. If—and only if—the UI-test runner exits during its known pre-test bootstrap termination (`Early unexpected exit` plus signal `term`, Xcode status 65), the gate preserves the first attempt's log/status/raw `.xcresult` and retries that same smoke plan once with the same 15-minute bound. Product assertion failures, timeouts, skipped tests, and other Xcode failures stay red without retry. A source-validated runtime assertion budgets a possible recovery boot plus both bounded UI-smoke attempts, reserving 18 minutes of the 120-minute job envelope for result packaging, cleanup, and artifact upload.
 9. Fails if Xcode fails or times out, the result bundle is missing, zero tests execute, any test fails, or any executed test is skipped.
 10. Shuts down/deletes the run-owned simulator and removes DerivedData on exit; an `always()` cleanup step repeats simulator removal after an interrupted script.
 
@@ -77,7 +77,7 @@ Runner unavailability, simulator-runtime drift, disk pressure, or GitHub Actions
 ## Validation
 
 - Shell syntax: `bash -n scripts/ci/run-ios-beta-gate.sh`
-- Recovery decision regression: `IOS_BETA_GATE_SELF_TEST=1 bash scripts/ci/run-ios-beta-gate.sh ipad`
+- Recovery decision regression (CoreLocation and exact UI-test bootstrap signature only): `IOS_BETA_GATE_SELF_TEST=1 bash scripts/ci/run-ios-beta-gate.sh ipad`
 - Workflow parse: Ruby/Psych or `actionlint` when available
 - Source assertions: trusted-PR guard, exact SHA checkout, two device contexts, local runner labels, artifact upload under `if: always()`
 - Local runner canary: execute one phone and one tablet lane with the current repository SHA and inspect `xcresulttool` summaries
