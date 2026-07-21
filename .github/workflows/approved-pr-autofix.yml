@@ -5,12 +5,11 @@ name: Approved PR Autofix
 # It processes one PR per run and uses bounded Codex fix attempts to avoid loops.
 
 on:
-  pull_request_review:
-    types: [submitted]
-  check_suite:
-    types: [completed]
+  # Evaluate from trusted default-branch workflow code rather than executing
+  # privileged work from review/check events, which can be emitted by external
+  # actors and otherwise become zero-job `action_required` queues.
   schedule:
-    - cron: "17 * * * *"
+    - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
       pr_number:
@@ -44,6 +43,9 @@ jobs:
       APPROVED_PR_AUTOFIX_BASE: main
       APPROVED_PR_AUTOFIX_MAX_PRS: "20"
       APPROVED_PR_AUTOFIX_MAX_ATTEMPTS: "3"
+      # Only first-party PR authors explicitly entrusted by Isaac are eligible.
+      APPROVED_PR_AUTOFIX_TRUSTED_PR_AUTHORS: "xXKillerNoobYT"
+      APPROVED_PR_AUTOFIX_REQUIRE_APPROVAL: "0"
       APPROVED_PR_AUTOFIX_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true && '1' || '0' }}
       APPROVED_PR_AUTOFIX_PR_NUMBER: ${{ inputs.pr_number }}
       APPROVED_PR_AUTOFIX_MODEL: gpt-5.5

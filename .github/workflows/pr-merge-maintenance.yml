@@ -2,8 +2,7 @@ name: PR Merge Maintenance
 
 # Fires:
 #   - When a push lands on main (a merge just happened → rebase the next PR)
-#   - When a check suite completes on any PR branch (scan finished → maybe merge now)
-#   - Hourly schedule as a safety net
+#   - Every 15 minutes from trusted default-branch workflow code
 #   - Manual dispatch for one-off runs / debugging
 #
 # ONE PR per run: rebase → wait for scan → fix if failing → merge → triggers next.
@@ -11,10 +10,8 @@ name: PR Merge Maintenance
 on:
   push:
     branches: [main]
-  check_suite:
-    types: [completed]
   schedule:
-    - cron: "0 * * * *"
+    - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -46,6 +43,8 @@ jobs:
       # until the owner creates the fine-grained PAT (Contents + PRs, R/W).
       GH_TOKEN: ${{ secrets.PR_MAINTENANCE_PAT || github.token }}
       PR_MAINTENANCE_BASE: main
+      PR_MAINTENANCE_TRUSTED_PR_AUTHORS: "xXKillerNoobYT"
+      PR_MAINTENANCE_REQUIRE_COPILOT_REVIEW: "0"
       PR_MAINTENANCE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true && '1' || '0' }}
 
     steps:
