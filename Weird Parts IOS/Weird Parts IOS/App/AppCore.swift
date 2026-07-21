@@ -126,8 +126,6 @@ final class AppCore: ObservableObject {
                     let keyHex = try Self.deviceBootstrapKeyHex()
                     try AppDatabase.migratePlaintextDBIfNeeded(atPath: path, keyHex: keyHex)
                     database = try AppDatabase.openEncryptedDatabase(atPath: path, keyHex: keyHex)
-                    // Remove the .unencrypted.bak file after it has been retained for 7 days.
-                    AppDatabase.cleanupStaleUnencryptedBackup(atPath: path)
                 } catch {
                     #if DEBUG && targetEnvironment(simulator)
                     if Self.shouldResetLocalDatabaseAfterCipherOpenFailure(error) {

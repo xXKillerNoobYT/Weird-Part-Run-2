@@ -26,7 +26,8 @@ struct AppDatabaseCipherTests {
         let fm = FileManager.default
         for p in paths {
             for suffix in ["", "-wal", "-shm", ".encrypted-tmp", ".encrypted-tmp-wal",
-                           ".encrypted-tmp-shm", ".unencrypted.bak"] {
+                           ".encrypted-tmp-shm", ".unencrypted.bak", ".unencrypted.bak-wal",
+                           ".unencrypted.bak-shm"] {
                 try? fm.removeItem(atPath: p + suffix)
             }
         }
@@ -164,7 +165,28 @@ struct AppDatabaseCipherTests {
         let keyHex = CipherKeyManager.deriveKey(pin: "2222", salt: salt)
         try AppDatabase.migratePlaintextDBIfNeeded(atPath: path, keyHex: keyHex)
 
-        // 3. Verify data is present in the encrypted DB.
+        // 3. The plaintext rollback database and its sidecars must be gone once
+        // the promoted canonical DB has passed encrypted recovery.
+        let fm = FileManager.default
+        for suffix in ["", "-wal", "-shm"] {
+            #expect(!fm.fileExists(atPath: path + ".unencrypted.bak" + suffix),
+                    "Plaintext rollback artifact must be removed after encrypted recovery: \(suffix)")
+        }
+
+        // 4. The migrated canonical DB must reject an unkeyed SQLite read.
+        var unkeyedReadFailed = false
+        do {
+            let unkeyedPool = try DatabaseQueue(path: path)
+            defer { try? unkeyedPool.close() }
+            try unkeyedPool.read { db in
+                _ = try Row.fetchOne(db, sql: "SELECT 1 FROM sqlite_master LIMIT 1")
+            }
+        } catch {
+            unkeyedReadFailed = true
+        }
+        #expect(unkeyedReadFailed, "Migrated canonical DB must not be readable without its SQLCipher key")
+
+        // 5. Verify the same populated fixture is present with the correct key.
         let encDB = try AppDatabase.openEncryptedDatabase(atPath: path, keyHex: keyHex)
         let testValue: String? = try encDB.writer.read { db in
             try String.fetchOne(db, sql: "SELECT value FROM settings WHERE key = 'cipher_migration_test'")
