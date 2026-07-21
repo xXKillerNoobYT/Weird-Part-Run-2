@@ -27,6 +27,15 @@ final class IOSTeamsViewOnlyUITests: XCTestCase {
             "A view_people-only user must not receive the create-team accessibility element"
         )
 
+        let teamsHelp = app.buttons["Help"].firstMatch
+        assertMinimumHitTarget(teamsHelp, named: "Teams Help")
+        teamsHelp.tap()
+        XCTAssertTrue(
+            app.navigationBars["Teams Help"].waitForExistence(timeout: 10),
+            "The view_people-only user should be able to open Teams Help"
+        )
+        app.buttons["Done"].tap()
+
         let fixtureTeam = app.staticTexts["UITest Read Only Team"].firstMatch
         XCTAssertTrue(fixtureTeam.waitForExistence(timeout: 10))
         fixtureTeam.tap()
@@ -40,6 +49,15 @@ final class IOSTeamsViewOnlyUITests: XCTestCase {
             "Edit, add-member, and delete actions must be absent for view_people-only users"
         )
 
+        let teamDetailHelp = app.buttons["Help"].firstMatch
+        assertMinimumHitTarget(teamDetailHelp, named: "Team Detail Help")
+        teamDetailHelp.tap()
+        XCTAssertTrue(
+            app.navigationBars["Team Detail Help"].waitForExistence(timeout: 10),
+            "The view_people-only user should be able to open Team Detail Help"
+        )
+        app.buttons["Done"].tap()
+
         let viewerMember = app.staticTexts["UITest People Viewer"].firstMatch
         XCTAssertTrue(viewerMember.waitForExistence(timeout: 10))
         viewerMember.swipeLeft()
@@ -47,5 +65,13 @@ final class IOSTeamsViewOnlyUITests: XCTestCase {
             app.buttons["Remove"].exists,
             "The remove-member swipe action must not enter the accessibility tree"
         )
+    }
+
+    @MainActor
+    private func assertMinimumHitTarget(_ element: XCUIElement, named name: String) {
+        XCTAssertTrue(element.waitForExistence(timeout: 10), "\(name) should be present")
+        XCTAssertTrue(element.isHittable, "\(name) should be hittable")
+        XCTAssertGreaterThanOrEqual(element.frame.width, 44, "\(name) should be at least 44pt wide")
+        XCTAssertGreaterThanOrEqual(element.frame.height, 44, "\(name) should be at least 44pt tall")
     }
 }
