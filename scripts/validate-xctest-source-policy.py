@@ -17,6 +17,8 @@ from typing import Any
 
 
 REQUIRED_RULE_KEYS = {"contains", "not_contains", "ordered"}
+CHECKOUT_READ_PATTERNS = ("#filePath", "StaticString", "String(contentsOfFile:")
+COHORT_TEST_DIRECTORY = Path("Weird Parts IOS/Weird Parts IOSTests")
 
 
 def load_manifest(path: Path) -> dict[str, Any]:
@@ -47,6 +49,8 @@ def validate_entry(repo_root: Path, entry: dict[str, Any]) -> list[str]:
         return [f"{identifier}: rule must declare contains, not_contains, or ordered"]
 
     target = repo_root / entry["target"]
+    if not target.is_file():
+        return [f"{identifier}: target must be a readable source file: {entry['target']}"]
     try:
         source = target.read_text(encoding="utf-8")
     except FileNotFoundError:
@@ -68,6 +72,20 @@ def validate_entry(repo_root: Path, entry: dict[str, Any]) -> list[str]:
     return errors
 
 
+def validate_checkout_reads(repo_root: Path) -> list[str]:
+    """Fail if A-M XCTest source-policy tests still depend on the checkout."""
+    directory = repo_root / COHORT_TEST_DIRECTORY
+    errors: list[str] = []
+    for test_source in sorted(directory.glob("[A-M]*.swift")):
+        source = test_source.read_text(encoding="utf-8")
+        for pattern in CHECKOUT_READ_PATTERNS:
+            if pattern in source:
+                errors.append(
+                    f"{test_source.relative_to(repo_root)}: runtime checkout read remains ({pattern})"
+                )
+    return errors
+
+
 def validate(repo_root: Path, manifest_path: Path) -> int:
     try:
         manifest = load_manifest(manifest_path)
@@ -76,6 +94,7 @@ def validate(repo_root: Path, manifest_path: Path) -> int:
         return 2
 
     errors = [error for entry in manifest["entries"] for error in validate_entry(repo_root, entry)]
+    errors.extend(validate_checkout_reads(repo_root))
     if errors:
         print("XCTest source-policy validation failed:", file=sys.stderr)
         for error in errors:
