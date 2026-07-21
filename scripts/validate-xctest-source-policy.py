@@ -21,6 +21,7 @@ RULE_KEYS = {
     "contains", "not_contains", "ordered", "regex", "regex_not_contains", "count",
     "sections", "scoped", "directory_count", "directory_scan", "occurrences",
 }
+SECTION_METADATA_KEYS = {"start", "end", "startRegex", "endRegex"}
 CHECKOUT_READ_PATTERNS = ("#filePath", "StaticString", "String(contentsOfFile:")
 COHORT_TEST_DIRECTORY = Path("Weird Parts IOS/Weird Parts IOSTests")
 
@@ -206,7 +207,9 @@ def validate_rule(repo_root: Path, identifier: str, source: str, rule: Any, labe
         section, section_errors = section_slice(source, spec, identifier)
         errors.extend(section_errors)
         if not section_errors:
-            section_rule = {key: value for key, value in spec.items() if key in RULE_KEYS}
+            section_rule = {
+                key: value for key, value in spec.items() if key not in SECTION_METADATA_KEYS
+            }
             if section_rule:
                 errors.extend(validate_rule(repo_root, identifier, section, section_rule, f"section[{index}]"))
     for spec in rule.get("scoped", []):
@@ -296,6 +299,20 @@ def self_test() -> int:
             typo_status = validate(root, root / "typo-manifest.json")
         if typo_status != 1 or "unsupported key(s): contians" not in typo_errors.getvalue():
             print("self-test did not reject the misspelled rule key with an actionable error", file=sys.stderr)
+            return 1
+        nested_typo_manifest = json.loads(json.dumps(manifest))
+        nested_typo_manifest["entries"][0]["rule"]["sections"][0]["contians"] = ["dismiss()"]
+        (root / "nested-typo-manifest.json").write_text(json.dumps(nested_typo_manifest), encoding="utf-8")
+        nested_typo_errors = io.StringIO()
+        with contextlib.redirect_stderr(nested_typo_errors):
+            nested_typo_status = validate(root, root / "nested-typo-manifest.json")
+        nested_diagnostic = nested_typo_errors.getvalue()
+        if (
+            nested_typo_status != 1
+            or "section[0] rule contains unsupported key(s): contians" not in nested_diagnostic
+            or "supported keys:" not in nested_diagnostic
+        ):
+            print("self-test did not reject the nested misspelled rule key with an actionable error", file=sys.stderr)
             return 1
         outside_checkout = root / "outside-checkout"
         outside_checkout.mkdir()
