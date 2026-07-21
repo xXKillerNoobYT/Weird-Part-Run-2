@@ -4,7 +4,7 @@
 >
 > **Owner:** CTO
 >
-> **Tracking:** Paperclip [WEI-5356](/WEI/issues/WEI-5356), parent [WEI-5318](/WEI/issues/WEI-5318); GitHub [#1480](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/1480)
+> **Tracking:** Paperclip WEI-5356, parent WEI-5318; GitHub [#1480](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/1480)
 >
 > **Decision date:** 2026-07-20
 
@@ -45,7 +45,7 @@ The automated jobs use isolated iOS simulators. “Real build/test” means a re
 - `main` branch protection has `strict: true`, requires conversation resolution, and currently requires only `Analyze (swift)`.
 - `.github/workflows/codeql.yml` implements the PR version of `Analyze (swift)` as an explicit echo-only recovery/compatibility job. It does not build or test the app and must not be described as device or security evidence.
 - `.github/workflows/artifact-guard.yml` runs `Tracked artifact guard` on PRs but the context is not currently required.
-- No committed workflow runs `xcodebuild` for PRs.
+- No committed workflow runs `xcodebuild test` as a PR gate (the `Approved PR Autofix` workflow calls `xcodebuild -version` but is not a test gate).
 - Two repository runners are online and idle: `IA-Mac-WPR2` and `IA-Mac-WPR2-2`.
 - Verified labels on both runners: `self-hosted`, `macOS`, `ARM64`, `xcode`, `ios`, `local-mac`.
 - Xcode is 26.6 (build 17F113); iOS 26.5 is available.
@@ -97,7 +97,7 @@ Branch protection remains `strict: true`, so GitHub also requires the PR to be c
 Each job creates a disposable simulator under a unique name derived from `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`, and device class, using the newest available iOS runtime reported by `simctl`.
 
 - iPhone device type: `com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro`.
-- iPad device type: prefer `com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M5-12GB`; permit a documented fallback to another installed 13-inch iPad Pro/Air type only when the preferred type is unavailable.
+- iPad device type: use `com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch` (generic 13-inch iPad Pro; discover the exact available identifier at runtime via `simctl list devicetypes`); fall back to another installed 13-inch iPad Pro/Air type only when no 13-inch Pro type is found.
 - iPad validation must record the selected 13-inch type and destination in the job summary; a compact iPad Mini is not an acceptable regular-width substitute.
 - Each job boots and waits for its simulator, runs tests by UDID, and deletes only the simulator it created in an `always()` cleanup step.
 - DerivedData, result bundles, and transient logs live below `$RUNNER_TEMP/wpr2-beta-gate/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/<device>/`, never in the repository.
@@ -166,7 +166,7 @@ No required context is removed as part of this work. `CodeQL` remains a scope-re
 
 ## 6. Paperclip PR-disposition integration
 
-Update the company workflow `workflows/wpr2-github-pr-disposition.md` after the GitHub gate is proven. For every same-repository PR to `main`, the `merge now` predicate must additionally require:
+Update the Paperclip company workflow `wpr2-github-pr-disposition` (a Paperclip-internal workflow, not a file in this repository) after the GitHub gate is proven. For every same-repository PR to `main`, the `merge now` predicate must additionally require:
 
 - Both device check runs are `completed/success` on the exact current head SHA.
 - `Tracked artifact guard` and every GitHub-required context are `completed/success` on that SHA.
