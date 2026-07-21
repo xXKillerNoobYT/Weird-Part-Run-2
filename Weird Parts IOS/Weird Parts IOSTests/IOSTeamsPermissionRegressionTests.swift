@@ -100,16 +100,22 @@ final class IOSTeamsPermissionRegressionTests: XCTestCase {
         XCTAssertTrue(addMember.contains("userFriendlyError(error, context: \"add team member\")"))
     }
 
-    func testPreservedUITestFixturesRestoreTeamAndMembershipState() throws {
+    func testPreservedUITestFixturesRestoreViewOnlyHatTeamAndMembershipState() throws {
         let source = try Self.readAppSource("AppCore.swift")
         let fixtureBody = try TestSourceSlicer.braceBalancedBody(
             after: "if ProcessInfo.processInfo.arguments.contains(\"-UITestingTeamsViewOnly\")",
             in: source
         )
 
-        XCTAssertTrue(fixtureBody.contains("ON CONFLICT(name) DO UPDATE SET"))
-        XCTAssertTrue(fixtureBody.contains("is_active = 1"))
+        XCTAssertTrue(fixtureBody.contains("UPDATE user_hats"))
+        XCTAssertTrue(fixtureBody.contains("WHERE user_id = ?"))
+        XCTAssertTrue(fixtureBody.contains("AND hat_id != ?"))
+        XCTAssertTrue(fixtureBody.contains("SET is_active = 0,"))
+        XCTAssertTrue(fixtureBody.contains("deleted_at = COALESCE(deleted_at, datetime('now'))"))
+        XCTAssertTrue(fixtureBody.contains("ON CONFLICT(user_id, hat_id) DO UPDATE SET"))
+        XCTAssertTrue(fixtureBody.contains("is_active = 1,"))
         XCTAssertTrue(fixtureBody.contains("deleted_at = NULL"))
+        XCTAssertTrue(fixtureBody.contains("ON CONFLICT(name) DO UPDATE SET"))
         XCTAssertTrue(fixtureBody.contains("ON CONFLICT(team_id, user_id) DO UPDATE SET"))
         XCTAssertTrue(fixtureBody.contains("removed_by = NULL"))
     }

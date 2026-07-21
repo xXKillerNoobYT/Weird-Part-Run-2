@@ -203,6 +203,55 @@ struct PeopleServiceTests {
         #expect(available.count >= 1)
     }
 
+    @Test("Team descriptions normalize at create and update service boundaries")
+    func testTeamDescriptionsNormalizeAtServiceBoundaries() throws {
+        let env = try E2ETestHelpers.setUp()
+        let teamId = try env.people.createTeam(
+            name: "Description Team",
+            description: "\n  Created description  \t",
+            actorUserId: env.adminUserId
+        )
+
+        let createdDescription = try env.db.writer.read { db in
+            try String.fetchOne(
+                db,
+                sql: "SELECT description FROM employee_teams WHERE id = ?",
+                arguments: [teamId]
+            )
+        }
+        #expect(createdDescription == "Created description")
+
+        try env.people.updateTeam(
+            teamId: teamId,
+            name: "Description Team",
+            description: " \n\t ",
+            actorUserId: env.adminUserId
+        )
+        let blankUpdatedDescription = try env.db.writer.read { db in
+            try String.fetchOne(
+                db,
+                sql: "SELECT description FROM employee_teams WHERE id = ?",
+                arguments: [teamId]
+            )
+        }
+        #expect(blankUpdatedDescription == nil)
+
+        try env.people.updateTeam(
+            teamId: teamId,
+            name: "Description Team",
+            description: "\n  Updated description  ",
+            actorUserId: env.adminUserId
+        )
+        let updatedDescription = try env.db.writer.read { db in
+            try String.fetchOne(
+                db,
+                sql: "SELECT description FROM employee_teams WHERE id = ?",
+                arguments: [teamId]
+            )
+        }
+        #expect(updatedDescription == "Updated description")
+    }
+
     @Test("Adding a member rejects inactive teams")
     func testAddTeamMemberRejectsInactiveTeam() throws {
         let env = try E2ETestHelpers.setUp()
