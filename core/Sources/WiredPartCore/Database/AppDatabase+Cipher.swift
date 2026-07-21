@@ -277,6 +277,21 @@ extension AppDatabase {
         try removePlaintextRollbackArtifacts(atPath: bakPath)
     }
 
+    /// Executes the production encrypted-open path for a release upgrade.
+    ///
+    /// Legacy `pre-migration-*` files are removed only after the canonical database
+    /// has migrated and opened with its SQLCipher key, so successful recovery never
+    /// retains a durable readable copy of the pre-encryption database.
+    public static func openEncryptedDatabaseAfterReleaseMigration(
+        atPath path: String,
+        keyHex: String
+    ) throws -> AppDatabase {
+        try migratePlaintextDBIfNeeded(atPath: path, keyHex: keyHex)
+        let database = try openEncryptedDatabase(atPath: path, keyHex: keyHex)
+        try removeLegacyPreMigrationPlaintextArtifacts(atPath: path)
+        return database
+    }
+
     static func replacePlaintextDatabaseWithEncryptedTemp(
         atPath path: String,
         tempPath: String,
@@ -336,6 +351,17 @@ extension AppDatabase {
             if fm.fileExists(atPath: artifactPath) {
                 try fm.removeItem(atPath: artifactPath)
             }
+        }
+    }
+
+    private static func removeLegacyPreMigrationPlaintextArtifacts(atPath path: String) throws {
+        let fm = FileManager.default
+        let backupDirectory = (path as NSString).deletingLastPathComponent + "/Backups"
+        guard fm.fileExists(atPath: backupDirectory) else { return }
+
+        let names = try fm.contentsOfDirectory(atPath: backupDirectory)
+        for name in names where name.hasPrefix("pre-migration-") {
+            try fm.removeItem(atPath: backupDirectory + "/" + name)
         }
     }
 

@@ -131,8 +131,8 @@ struct AppDatabaseCipherTests {
                 "Schema version should match after migration of empty DB")
     }
 
-    @Test("testPopulatedUnencryptedDBMigratesAllTablesWithRowCountVerification — user data preserved")
-    func testPopulatedUnencryptedDBMigratesAllTablesWithRowCountVerification() throws {
+    @Test("testReleaseMigrationRemovesPlaintextArtifactsAndPreservesFixture — production recovery is keyed-only")
+    func testReleaseMigrationRemovesPlaintextArtifactsAndPreservesFixture() throws {
         let path = tmpPath("populated")
         defer { cleanup(path) }
 
@@ -160,12 +160,18 @@ struct AppDatabaseCipherTests {
         }
         try (plainDB.writer as? DatabasePool)?.close()
 
-        // 2. Migrate to encrypted.
+        // 2. Simulate the legacy release pre-migration snapshot, including the
+        // plaintext bundle that older production builds left in Backups/.
+        let legacyBackupPath = try #require(AppDatabase.backupDatabase(atPath: path))
+        #expect(FileManager.default.fileExists(atPath: legacyBackupPath))
+
+        // 3. Run the shared release helper used by AppCore. It must only remove
+        // plaintext artifacts after the keyed canonical open succeeds.
         let salt = Data(repeating: 0x33, count: 32)
         let keyHex = CipherKeyManager.deriveKey(pin: "2222", salt: salt)
-        try AppDatabase.migratePlaintextDBIfNeeded(atPath: path, keyHex: keyHex)
+        let encDB = try AppDatabase.openEncryptedDatabaseAfterReleaseMigration(atPath: path, keyHex: keyHex)
 
-        // 3. The plaintext rollback database and its sidecars must be gone once
+        // 4. The plaintext rollback database and its sidecars must be gone once
         // the promoted canonical DB has passed encrypted recovery.
         let fm = FileManager.default
         for suffix in ["", "-wal", "-shm"] {
@@ -173,7 +179,13 @@ struct AppDatabaseCipherTests {
                     "Plaintext rollback artifact must be removed after encrypted recovery: \(suffix)")
         }
 
-        // 4. The migrated canonical DB must reject an unkeyed SQLite read.
+        let backupDirectory = (path as NSString).deletingLastPathComponent + "/Backups"
+        let persistedPreMigrationArtifacts = (try? fm.contentsOfDirectory(atPath: backupDirectory))?
+            .filter { $0.hasPrefix("pre-migration-") } ?? []
+        #expect(persistedPreMigrationArtifacts.isEmpty,
+                "Release recovery must not retain plaintext pre-migration DB/WAL/SHM artifacts")
+
+        // 5. The migrated canonical DB must reject an unkeyed SQLite read.
         var unkeyedReadFailed = false
         do {
             let unkeyedPool = try DatabaseQueue(path: path)
@@ -186,8 +198,7 @@ struct AppDatabaseCipherTests {
         }
         #expect(unkeyedReadFailed, "Migrated canonical DB must not be readable without its SQLCipher key")
 
-        // 5. Verify the same populated fixture is present with the correct key.
-        let encDB = try AppDatabase.openEncryptedDatabase(atPath: path, keyHex: keyHex)
+        // 6. Verify the same populated fixture is present with the correct key.
         let testValue: String? = try encDB.writer.read { db in
             try String.fetchOne(db, sql: "SELECT value FROM settings WHERE key = 'cipher_migration_test'")
         }
