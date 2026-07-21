@@ -71,10 +71,10 @@ struct SyncIntegrationTests {
         _ data: Data,
         sharedKey: Data,
         request: URLRequest,
-        endpoint: String,
-        deviceId: String = "client-dev"
+        endpoint: String
     ) throws -> Data {
         let requestId = try #require(request.value(forHTTPHeaderField: "X-Sync-Request-ID"))
+        let deviceId = try #require(request.value(forHTTPHeaderField: "X-Sync-Device-ID"))
         return try SyncCrypto.decryptAESGCM(
             data: data,
             keyData: sharedKey,
