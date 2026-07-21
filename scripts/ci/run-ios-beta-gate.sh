@@ -255,6 +255,8 @@ command -v xcrun >/dev/null || fail "xcrun is required"
 
 available_kib="$(df -Pk "$runner_temp" | awk 'NR == 2 {print $4}')"
 [[ "$available_kib" =~ ^[0-9]+$ ]] || fail "could not determine free disk space for $runner_temp"
+[[ "$minimum_free_gib" =~ ^[0-9]+$ ]] && (( minimum_free_gib > 0 )) || \
+  fail "MINIMUM_FREE_GIB must be a positive integer (got: $minimum_free_gib)"
 required_kib=$((minimum_free_gib * 1024 * 1024))
 available_gib=$((available_kib / 1024 / 1024))
 echo "available_free_gib=$available_gib" >> "$metadata_file"
