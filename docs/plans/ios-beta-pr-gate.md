@@ -77,7 +77,7 @@ Runner unavailability, simulator-runtime drift, disk pressure, or GitHub Actions
 ## Validation
 
 - Shell syntax: `bash -n scripts/ci/run-ios-beta-gate.sh`
-- Recovery decision regression (CoreLocation and exact UI-test bootstrap signature only): `IOS_BETA_GATE_SELF_TEST=1 bash scripts/ci/run-ios-beta-gate.sh ipad`
+- Recovery decision regression (CoreLocation, exact UI-test bootstrap signature, and missing-first-`.xcresult` retry rejection): `IOS_BETA_GATE_SELF_TEST=1 bash scripts/ci/run-ios-beta-gate.sh ipad`
 - Workflow parse: Ruby/Psych or `actionlint` when available
 - Source assertions: trusted-PR guard, exact SHA checkout, two device contexts, local runner labels, artifact upload under `if: always()`
 - Local runner canary: execute one phone and one tablet lane with the current repository SHA and inspect `xcresulttool` summaries
