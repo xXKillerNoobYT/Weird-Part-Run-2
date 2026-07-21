@@ -61,6 +61,15 @@ struct IOSContentRouter: View {
             }
         }
         guard let pageId = deepRoutePageId else { return nil }
+        for module in appModules {
+            if let tab = module.tabs.first(where: { $0.id == pageId }) {
+                return RouteDescriptor(
+                    moduleLabel: module.label,
+                    pageLabel: tab.label,
+                    pageId: pageId
+                )
+            }
+        }
         let tokens = pageId.split(separator: "-").map(String.init)
         let moduleLabel = tokens.first?.capitalized ?? "App"
         let pageLabel = tokens.dropFirst().map { token in

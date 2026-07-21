@@ -63,7 +63,17 @@ def main() -> int:
 
     failures: list[str] = []
     screens = inventory.get("screens", [])
-    screen_ids = [screen.get("id") for screen in screens]
+    missing_or_blank_ids = [
+        f"screen at index {index}: id is {screen.get('id')!r}"
+        for index, screen in enumerate(screens)
+        if not isinstance(screen.get("id"), str) or not screen.get("id").strip()
+    ]
+    fail_section(failures, "inventory screen rows with missing or blank id:", missing_or_blank_ids)
+    screen_ids = [
+        screen.get("id")
+        for screen in screens
+        if isinstance(screen.get("id"), str) and screen.get("id").strip()
+    ]
     duplicate_ids = sorted(screen_id for screen_id, count in Counter(screen_ids).items() if count > 1)
     fail_section(failures, "duplicate inventory screen IDs:", duplicate_ids)
 
@@ -73,7 +83,11 @@ def main() -> int:
             r'AppTab\(id: "([^"]+)"[^\n]*path: "([^"]+)"', navigation
         )
     }
-    inventory_by_id = {screen.get("id"): screen for screen in screens}
+    inventory_by_id = {
+        screen.get("id"): screen
+        for screen in screens
+        if isinstance(screen.get("id"), str) and screen.get("id").strip()
+    }
     fail_section(
         failures,
         "navigable AppTab rows missing from inventory:",

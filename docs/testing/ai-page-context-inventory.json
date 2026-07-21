@@ -993,7 +993,7 @@
     {
       "id": "fleet-telematics",
       "label": "Fleet Telematics",
-      "path": "/fleet/tracking",
+      "path": "navigation:fleet-telematics",
       "disposition": "dedicated",
       "source": "Weird Parts IOS/Weird Parts IOS/Features/Fleet/IOSTelematicsPage.swift",
       "rationale": "This user-facing deep screen posts and clears a page-specific read-only context; its parent route remains unchanged.",
