@@ -818,18 +818,23 @@ public actor FoundationModelsService {
         _ messages: [AIConversationMessage],
         scope: AIConversationScope,
         expectedRevision: Int,
-        to db: AppDatabase
+        to db: AppDatabase,
+        afterPersisting: (@Sendable () async -> Void)? = nil
     ) async throws -> Bool {
         guard conversationRevisions[scope, default: 0] == expectedRevision else {
             return false
         }
         try await Self.saveMessages(messages, ownerUserId: scope.ownerUserId, to: db)
+        if let afterPersisting {
+            await afterPersisting()
+        }
         guard conversationRevisions[scope, default: 0] == expectedRevision else {
             // The actor can be re-entered while awaiting GRDB. If clear advanced the
-            // revision during that suspension, delete once more so write-vs-clear order
-            // cannot leave the just-finished stale write behind.
-            try await Self.clearPersistedConversation(
-                scope.conversationId,
+            // revision during that suspension, remove only this stale writer's rows.
+            // A newer revision may have persisted the same owner/conversation while this
+            // task was suspended, so whole-conversation cleanup would destroy valid turns.
+            try await Self.deleteMessages(
+                messages.map(\.id),
                 ownerUserId: scope.ownerUserId,
                 from: db
             )
@@ -924,6 +929,25 @@ public actor FoundationModelsService {
                 sql: "DELETE FROM ai_conversation_messages WHERE conversation_id = ? AND owner_user_id = ?",
                 arguments: [conversationId, ownerUserId]
             )
+        }
+    }
+
+    /// Delete only the specified authenticated owner's message rows. This is used to
+    /// clean up a stale in-flight write without touching a newer revision of the same
+    /// conversation that may have committed while the stale task was suspended.
+    private static func deleteMessages(
+        _ messageIds: [String],
+        ownerUserId: Int64,
+        from db: AppDatabase
+    ) async throws {
+        guard !messageIds.isEmpty else { return }
+        try await db.writer.write { dbConn in
+            for messageId in messageIds {
+                try dbConn.execute(
+                    sql: "DELETE FROM ai_conversation_messages WHERE owner_user_id = ? AND id = ?",
+                    arguments: [ownerUserId, messageId]
+                )
+            }
         }
     }
 

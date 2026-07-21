@@ -783,6 +783,73 @@ struct FoundationModelsServiceTests {
         #expect(remaining.isEmpty)
     }
 
+    @Test("stale fallback cleanup preserves a newer revision's same-scope turns")
+    func testDelayedWriteAfterClear_preservesNewerRevisionTurns() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = FoundationModelsService()
+        let gate = AsyncGate()
+        let scope = AIConversationScope(conversationId: "clear-race-newer-turns", ownerUserId: 88)
+        let revisionZero = await service.persistenceRevision(for: scope)
+        let staleTurns = [
+            AIConversationMessage(
+                id: "stale-user-turn",
+                conversationId: scope.conversationId,
+                role: "user",
+                content: "Revision zero question"
+            ),
+            AIConversationMessage(
+                id: "stale-assistant-turn",
+                conversationId: scope.conversationId,
+                role: "assistant",
+                content: "Revision zero answer"
+            ),
+        ]
+
+        let staleWriter = Task {
+            try await service.persistMessagesIfCurrent(
+                staleTurns,
+                scope: scope,
+                expectedRevision: revisionZero,
+                to: env.db,
+                afterPersisting: { await gate.enterAndWaitForRelease() }
+            )
+        }
+        await gate.waitUntilEntered()
+
+        try await service.clearConversation(scope.conversationId, ownerUserId: scope.ownerUserId, from: env.db)
+        let revisionOne = await service.persistenceRevision(for: scope)
+        let newerTurns = [
+            AIConversationMessage(
+                id: "newer-user-turn",
+                conversationId: scope.conversationId,
+                role: "user",
+                content: "Revision one question"
+            ),
+            AIConversationMessage(
+                id: "newer-assistant-turn",
+                conversationId: scope.conversationId,
+                role: "assistant",
+                content: "Revision one answer"
+            ),
+        ]
+        #expect(try await service.persistMessagesIfCurrent(
+            newerTurns,
+            scope: scope,
+            expectedRevision: revisionOne,
+            to: env.db
+        ))
+
+        await gate.release()
+        #expect(!(try await staleWriter.value))
+        let reloaded = try await FoundationModelsService.loadConversation(
+            scope.conversationId,
+            ownerUserId: scope.ownerUserId,
+            from: env.db
+        )
+        #expect(reloaded.map(\.id) == newerTurns.map(\.id))
+        #expect(reloaded.map(\.content) == newerTurns.map(\.content))
+    }
+
     // MARK: - AIConversationMessage Init
 
     @Test("AIConversationMessage defaults to UUID id and now timestamp")
