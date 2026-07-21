@@ -2916,7 +2916,7 @@ struct AIConversationLifecycleSnapshot: Equatable, Sendable {
     ) -> Bool {
         !isCancelled
             && conversationId == currentConversationId
-            && ownerUserId == currentOwnerUserId
+            && ownerUserId == (currentOwnerUserId ?? -1)
             && revision == currentRevision
     }
 }
