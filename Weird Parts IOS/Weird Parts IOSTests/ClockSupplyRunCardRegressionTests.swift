@@ -101,6 +101,11 @@ final class ClockSupplyRunCardRegressionTests: XCTestCase {
             in: source,
             endingBefore: "\n        .foregroundStyle(selected ? .white : .primary)\n    }"
         )
+        let sidebar = try Self.section(
+            named: "private var fullSidebarView",
+            in: source,
+            endingBefore: "private var fullSidebarHeader"
+        )
 
         XCTAssertFalse(
             assistant.contains(".dsMinTapTarget()"),
@@ -113,7 +118,8 @@ final class ClockSupplyRunCardRegressionTests: XCTestCase {
         )
         XCTAssertTrue(chip.contains(".frame(minWidth: 44, minHeight: 44)"))
         XCTAssertTrue(source.contains("!dynamicTypeSize.isAccessibilitySize"))
-        XCTAssertTrue(source.contains("Full-sidebar navigation is persistent chrome"))
+        XCTAssertTrue(sidebar.contains("fullSidebarModuleList"))
+        XCTAssertTrue(sidebar.contains(".dynamicTypeSize(...DynamicTypeSize.xxxLarge)"))
         XCTAssertTrue(source.contains(".accessibilityIdentifier(\"moreAIAssistantButton\")"))
         XCTAssertTrue(source.contains(".accessibilityIdentifier(\"sidebarAIAssistantButton\")"))
     }
@@ -135,28 +141,29 @@ final class ClockSupplyRunCardRegressionTests: XCTestCase {
         source.components(separatedBy: needle).count - 1
     }
 
-    private static func readClockSource(file: StaticString = #filePath) throws -> String {
-        let testFileURL = URL(fileURLWithPath: "\(file)")
-        let projectRoot = testFileURL
-            .deletingLastPathComponent() // Weird Parts IOSTests
-            .deletingLastPathComponent() // Weird Parts IOS
-        let sourceURL = projectRoot
-            .appendingPathComponent("Weird Parts IOS")
-            .appendingPathComponent("Features")
-            .appendingPathComponent("Jobs")
-            .appendingPathComponent("IOSClockPage.swift")
-        return try String(contentsOf: sourceURL, encoding: .utf8)
+    private static func readClockSource() throws -> String {
+        try readSourceSnapshot(named: "ClockSupplyRunCardRegressionClock")
     }
 
-    private static func readMainViewSource(file: StaticString = #filePath) throws -> String {
-        let testFileURL = URL(fileURLWithPath: "\(file)")
-        let projectRoot = testFileURL
-            .deletingLastPathComponent() // Weird Parts IOSTests
-            .deletingLastPathComponent() // Weird Parts IOS
-        let sourceURL = projectRoot
-            .appendingPathComponent("Weird Parts IOS")
-            .appendingPathComponent("Navigation")
-            .appendingPathComponent("IOSMainView.swift")
-        return try String(contentsOf: sourceURL, encoding: .utf8)
+    private static func readMainViewSource() throws -> String {
+        try readSourceSnapshot(named: "ClockSupplyRunCardRegressionMain")
+    }
+
+    private static func readSourceSnapshot(named name: String) throws -> String {
+        guard let snapshotURL = Bundle(for: Self.self).url(forResource: name, withExtension: "swift") else {
+            throw SnapshotError.missing(name)
+        }
+        return String(decoding: try Data(contentsOf: snapshotURL), as: UTF8.self)
+    }
+
+    private enum SnapshotError: LocalizedError {
+        case missing(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .missing(let name):
+                "Missing generated source snapshot \(name).swift in the test bundle."
+            }
+        }
     }
 }
