@@ -12,7 +12,7 @@ final class ClockSupplyRunCardRegressionTests: XCTestCase {
         let section = try Self.section(
             named: "private func clockedInSection",
             in: source,
-            endingBefore: "// MARK: - Status Helpers"
+            endingBefore: "private var statusLabel: String"
         )
 
         XCTAssertEqual(
@@ -67,7 +67,7 @@ final class ClockSupplyRunCardRegressionTests: XCTestCase {
         let section = try Self.section(
             named: "private func clockedInSection",
             in: source,
-            endingBefore: "// MARK: - Status Helpers"
+            endingBefore: "private var statusLabel: String"
         )
 
         XCTAssertTrue(source.contains("@Environment(\\.dynamicTypeSize) private var dynamicTypeSize"))
@@ -94,7 +94,7 @@ final class ClockSupplyRunCardRegressionTests: XCTestCase {
         let assistant = try Self.section(
             named: "private func aiFloatingButton",
             in: source,
-            endingBefore: "// MARK: - More Tab"
+            endingBefore: "private var moreTab: some View"
         )
         let chip = try Self.section(
             named: "private func subTabChip",
