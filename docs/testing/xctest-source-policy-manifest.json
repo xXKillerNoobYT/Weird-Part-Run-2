@@ -2162,6 +2162,179 @@
           "import SwiftUI"
         ]
       }
+    },
+    {
+      "id": "save-exit-empty-state-help-affordance",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SaveExitFirstUseStandardsRegressionTests.swift:testEmptyStateViewProvidesDedicatedHelpAffordanceSlot",
+      "target": "Weird Parts IOS/Weird Parts IOS/Shared/EmptyStateView.swift",
+      "invariant": "Empty states expose an optional, accessible, touch-friendly help action without creating blank action spacing.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Static shared-component surface policy; iPhone/iPad UI QA exercises the rendered affordance.",
+      "rule": {
+        "contains": [
+          "var helpLabel: String?",
+          "var helpAction: (() -> Void)?",
+          "Label(label, systemImage: \"questionmark.circle\")",
+          ".buttonStyle(.borderless)",
+          ".accessibilityIdentifier(\"emptyStateHelpButton\")",
+          ".frame(minHeight: 44)",
+          "private var hasPrimaryAction: Bool",
+          "actionLabel != nil && action != nil",
+          "private var hasSecondaryAction: Bool",
+          "secondaryActionLabel != nil && secondaryAction != nil",
+          "private var hasHelpAction: Bool",
+          "helpLabel != nil && helpAction != nil",
+          "VStack(spacing: 0)",
+          "if hasPrimaryOrSecondaryAction",
+          ".padding(.top, hasPrimaryOrSecondaryAction ? DS.Space.xs : 0)"
+        ]
+      }
+    },
+    {
+      "id": "save-exit-empty-state-help-taxonomy",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SaveExitFirstUseStandardsRegressionTests.swift:testEmptyStateHelpTaxonomyDocumentsOptionalInlineHelp",
+      "target": "docs/plans/empty-state-help-link-taxonomy.md",
+      "invariant": "The empty-state help taxonomy preserves optional inline help and toolbar Help as the Category A baseline.",
+      "replacement": "contains checkout-hosted documentation policy",
+      "executableCoverage": "not applicable: static documentation policy",
+      "rule": {
+        "contains": [
+          "optional GH #82 primitive",
+          "toolbar Help button remains the canonical Category A baseline"
+        ]
+      }
+    },
+    {
+      "id": "save-exit-form-sheet-save-guard",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SaveExitFirstUseStandardsRegressionTests.swift:testFormSheetPreservesSaveAndDirtyDismissStandards",
+      "target": "Weird Parts IOS/Weird Parts IOS/Shared/FormSheet.swift",
+      "invariant": "Shared form sheets retain configurable Save labels, disabled invalid/saving controls, and shared dirty-dismiss handling.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Static shared-component policy; sheet interaction behavior is covered by UI verification.",
+      "rule": {
+        "contains": [
+          "var saveLabel: String = \"Save\"",
+          ".disabled(!isValid || isSaving)",
+          ".disabled(isSaving)",
+          "DismissSafety.cancelOrConfirm",
+          ".dismissSafety("
+        ]
+      }
+    },
+    {
+      "id": "save-exit-dismiss-safety",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SaveExitFirstUseStandardsRegressionTests.swift:testFormSheetPreservesSaveAndDirtyDismissStandards",
+      "target": "Weird Parts IOS/Weird Parts IOS/Shared/DismissSafety.swift",
+      "invariant": "Dirty or saving sheets block drag dismissal and present explicit discard/continue choices.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Static shared-component policy; sheet interaction behavior is covered by UI verification.",
+      "rule": {
+        "contains": [
+          ".interactiveDismissDisabled(isDirty || isSaving)",
+          "Discard Changes",
+          "Keep Editing"
+        ]
+      }
+    },
+    {
+      "id": "save-exit-help-content-registry",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SaveExitFirstUseStandardsRegressionTests.swift:testHelpContentRegistryKeepsPageSpecificHelpQueryableByAI",
+      "target": "Weird Parts IOS/Weird Parts IOS/Shared/HelpContentRegistry.swift",
+      "invariant": "Page help remains centrally queryable and maps active notifications to representative core page IDs.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Static registry wiring policy; contextual help behavior is covered by app/UI flows.",
+      "rule": {
+        "contains": [
+          "static let entries",
+          "static func formattedHelp(for pageId: String)",
+          "static let notificationToPageId",
+          "dashboard-home",
+          "jobs-list",
+          "orders-pos",
+          "warehouse-dashboard"
+        ]
+      }
+    },
+    {
+      "id": "type-brand-color-selected-brand-rows",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/TypeBrandColorSectionRegressionTests.swift:testTypeBrandColorSectionUsesSelectedBrandChipStripAndSelectedBrandRows",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Parts/TypeBrandColorSection.swift",
+      "invariant": "The type/brand/color editor renders linked brands horizontally and filters SKU rows by selected brand.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Static SwiftUI wiring policy; SKU selection and mutations are covered by Parts service tests and UI QA.",
+      "rule": {
+        "contains": [
+          "ScrollView(.horizontal, showsIndicators: false)",
+          "ForEach(linkedBrands, id: \\.id)",
+          ".filter { $0.sku.brandId == selectedBrandId }"
+        ]
+      }
+    },
+    {
+      "id": "type-brand-color-sku-apis",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/TypeBrandColorSectionRegressionTests.swift:testTypeBrandColorSectionAddAndDeleteSkuFlowsUseSkuApis",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Parts/TypeBrandColorSection.swift",
+      "invariant": "SKU creation and soft deletion use the explicit color-brand SKU APIs.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Parts service mutation behavior remains covered by executable core tests; this protects UI call-site wiring.",
+      "rule": {
+        "contains": [
+          "Label(\"Add SKU\", systemImage: \"plus.circle.fill\")",
+          "private func createSKU(",
+          "service.upsertColorBrandSKU(",
+          "private func deleteSKU(service: PartsService, skuId: Int64) throws",
+          "service.deleteColorBrandSKU(skuId: skuId)"
+        ]
+      }
+    },
+    {
+      "id": "type-brand-color-locked-brand-variant-picker",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/TypeBrandColorSectionRegressionTests.swift:testTypeBrandColorSectionAddSkuSheetLocksBrandAndPicksVariantFromGlobalPool",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Parts/TypeBrandColorSection.swift",
+      "invariant": "The add-SKU sheet fixes the selected brand, selects variants globally, and does not expose a brand picker.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Static SwiftUI wiring policy; SKU mutation behavior remains covered by executable core tests.",
+      "rule": {
+        "contains": [
+          "Section(\"Brand\")",
+          "Text(brand.name)",
+          "Picker(\"Variant\", selection: $selectedColorId)",
+          "private var selectableColors: [PartColor]"
+        ],
+        "not_contains": [
+          "Picker(\"Brand\", selection:"
+        ]
+      }
+    },
+    {
+      "id": "type-brand-color-dismiss-before-parent-refresh",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/TypeBrandColorSectionRegressionTests.swift:testSkuEditorDismissesBeforeRefreshingParentAfterSuccessfulSave",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Parts/TypeBrandColorSection.swift",
+      "invariant": "The SKU editor's async save routine dismisses before refreshing its parent and preserves the dedicated post-save refresh helper.",
+      "replacement": "scoped/regex/order checkout-hosted source policy",
+      "executableCoverage": "Static sheet lifecycle ordering policy; SKU persistence remains covered by executable core tests.",
+      "rule": {
+        "contains": [
+          "private func refreshAfterSKUSave() async"
+        ],
+        "scoped": [
+          {
+            "start": "private struct ColorBrandSKUEditorSheet",
+            "end": "private func parseLocalizedDecimal",
+            "rule": {
+              "regex": [
+                "private\\s+func\\s+save\\s*\\(\\)\\s+async\\s*\\{"
+              ],
+              "ordered": [
+                [
+                  "dismiss()",
+                  "await onRefreshAfterSave()"
+                ]
+              ]
+            }
+          }
+        ]
+      }
     }
   ]
 }
