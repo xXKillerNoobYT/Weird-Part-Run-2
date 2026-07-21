@@ -1759,33 +1759,70 @@ public actor PeerManager {
             return
         }
 
-        let delivered = deliverResponse(response)
+        // Commit the host half before exposing an authenticated acceptance. This is
+        // the pairing commit point: a joiner may only persist the host trust and
+        // snapshot capability after it verifies this response, so sending it before
+        // this transaction could create an irreversible split-brain pairing.
+        let priorTrust: PeerDeviceTrustSnapshot?
+        do {
+            priorTrust = try ChangeTracker.capturePeerDeviceTrust(db: db, peerId: request.deviceId)
+        } catch {
+            try? await sState.setActivePairingCode(pairingCode)
+            _ = deliverResponse(rejectionResponse())
+            logger.fault("[PeerManager] Bluetooth pairing rejected — could not capture host trust state: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        let priorSnapshotToken = hostedSnapshotTokens[request.deviceId]
 
-        if delivered {
+        func restoreHostStateAfterUndeliveredAcceptance() {
             do {
-                try ChangeTracker.activateBluetoothPeerTrust(
+                try ChangeTracker.restorePeerDeviceTrust(
                     db: db,
                     peerId: request.deviceId,
-                    peerName: request.deviceName,
-                    platform: request.platform,
-                    keyAgreementPublicKey: clientPublicKey,
-                    injectFailureBeforeCommit: injectActivationFailure
+                    snapshot: priorTrust
                 )
-                hostedSnapshotTokens[request.deviceId] = snapshotToken
+                if let priorSnapshotToken {
+                    hostedSnapshotTokens[request.deviceId] = priorSnapshotToken
+                } else {
+                    hostedSnapshotTokens.removeValue(forKey: request.deviceId)
+                }
             } catch {
-                try? await sState.setActivePairingCode(pairingCode)
-                logger.fault("[PeerManager] Delivered Bluetooth response but trust activation failed closed: \(error.localizedDescription, privacy: .public)")
-                return
+                // A failed compensation must remain visible: proceeding would leave
+                // a host authorization whose corresponding acceptance was not sent.
+                logger.fault("[PeerManager] Bluetooth pairing rollback failed: \(error.localizedDescription, privacy: .public)")
             }
-            // The one-time code is consumed — close the cross-company connection
-            // window immediately (Copilot review on PR #1422: leaving it open
-            // weakened company isolation after a successful pairing).
-            setBluetoothPairingHostMode(false)
-            logger.info("[PeerManager] Bluetooth pairing accepted + delivered for peer \(String(request.deviceId.prefix(8)), privacy: .public)")
-        } else {
-            try? await sState.setActivePairingCode(pairingCode)
-            logger.error("[PeerManager] Bluetooth pairing valid but reply undelivered — trust remained inactive and code restored")
         }
+
+        do {
+            try ChangeTracker.activateBluetoothPeerTrust(
+                db: db,
+                peerId: request.deviceId,
+                peerName: request.deviceName,
+                platform: request.platform,
+                keyAgreementPublicKey: clientPublicKey,
+                injectFailureBeforeCommit: injectActivationFailure
+            )
+            hostedSnapshotTokens[request.deviceId] = snapshotToken
+        } catch {
+            restoreHostStateAfterUndeliveredAcceptance()
+            try? await sState.setActivePairingCode(pairingCode)
+            _ = deliverResponse(rejectionResponse())
+            logger.fault("[PeerManager] Bluetooth pairing rejected — host trust activation failed closed: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+
+        guard deliverResponse(response) else {
+            restoreHostStateAfterUndeliveredAcceptance()
+            try? await sState.setActivePairingCode(pairingCode)
+            logger.error("[PeerManager] Bluetooth pairing accepted response undelivered — host state restored and code kept for retry")
+            return
+        }
+
+        // The one-time code is consumed — close the cross-company connection
+        // window immediately (Copilot review on PR #1422: leaving it open
+        // weakened company isolation after a successful pairing).
+        setBluetoothPairingHostMode(false)
+        logger.info("[PeerManager] Bluetooth pairing committed + accepted for peer \(String(request.deviceId.prefix(8)), privacy: .public)")
     }
 
     @discardableResult

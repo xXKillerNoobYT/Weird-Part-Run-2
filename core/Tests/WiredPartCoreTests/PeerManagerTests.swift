@@ -95,31 +95,57 @@ private func authenticatedBluetoothPairingFixture(
     return (context, response)
 }
 
-private func bluetoothPairRequestPayload(
+private func bluetoothPairingAttemptPayload(
     pairingCode: String,
     hostDeviceId: String = "host",
     peerDeviceId: String = "joiner",
     peerName: String = "Joiner"
-) throws -> Data {
+) throws -> (context: BluetoothPairingAttemptContext, payload: Data) {
     let client = SyncCrypto.generateKeyAgreementPair()
     let nonce = SyncCrypto.bluetoothPairingRequestNonce()
     let normalizedCode = try #require(SyncCrypto.normalizedPairingCode(pairingCode))
-    return try JSONEncoder().encode(SyncPairRequest(
+    let pairingProof = SyncCrypto.bluetoothPairingProof(
+        normalizedCode: normalizedCode,
+        expectedHostDeviceId: hostDeviceId,
+        clientDeviceId: peerDeviceId,
+        clientPublicKeyB64: client.publicKey,
+        requestNonce: nonce
+    )
+    let context = BluetoothPairingAttemptContext(
+        protocolVersion: SyncCrypto.bluetoothPairingProtocolVersion,
+        expectedHostDeviceId: hostDeviceId,
+        clientDeviceId: peerDeviceId,
+        clientPrivateKeyB64: client.privateKey,
+        clientPublicKeyB64: client.publicKey,
+        normalizedPairingCode: normalizedCode,
+        requestNonce: nonce,
+        requestPairingProof: pairingProof
+    )
+    let payload = try JSONEncoder().encode(SyncPairRequest(
         deviceId: peerDeviceId,
         deviceName: peerName,
-        pairingProof: SyncCrypto.bluetoothPairingProof(
-            normalizedCode: normalizedCode,
-            expectedHostDeviceId: hostDeviceId,
-            clientDeviceId: peerDeviceId,
-            clientPublicKeyB64: client.publicKey,
-            requestNonce: nonce
-        ),
+        pairingProof: pairingProof,
         platform: "ios",
         bluetoothProtocolVersion: SyncCrypto.bluetoothPairingProtocolVersion,
         bluetoothRequestNonce: nonce,
         bluetoothExpectedHostDeviceId: hostDeviceId,
         keyAgreementPublicKey: client.publicKey
     ))
+    return (context, payload)
+}
+
+private func bluetoothPairRequestPayload(
+    pairingCode: String,
+    hostDeviceId: String = "host",
+    peerDeviceId: String = "joiner",
+    peerName: String = "Joiner"
+) throws -> Data {
+    try bluetoothPairingAttemptPayload(
+        pairingCode: pairingCode,
+        hostDeviceId: hostDeviceId,
+        peerDeviceId: peerDeviceId,
+        peerName: peerName
+    ).payload
 }
 
 private func expectTrustSnapshot(
@@ -1155,32 +1181,63 @@ struct PeerManagerTests {
         #expect(await pm.testPendingPairingNonce(for: "host") == nil)
     }
 
-    @Test("Injected Bluetooth activation failure rolls back newly introduced trust by database readback")
-    func testBluetoothActivationFailureRollsBackNewTrustByDatabaseReadback() async throws {
-        let db = try freshDB()
-        let pm = PeerManager(db: db)
-        try await pm.startPeerSync(deviceId: "host", deviceName: "Host", companyId: "company")
-        let payload = try bluetoothPairRequestPayload(pairingCode: try await pm.issuePairingCode())
+    @Test("Bluetooth activation failure rejects before either peer commits and permits retry")
+    func testBluetoothActivationFailureRejectsBeforeEitherPeerCommitsAndPermitsRetry() async throws {
+        let hostDB = try freshDB()
+        let joinerDB = try freshDB()
+        let host = PeerManager(db: hostDB)
+        let joiner = PeerManager(db: joinerDB)
+        try await host.startPeerSync(deviceId: "host", deviceName: "Host", companyId: "company")
+        let attempt = try bluetoothPairingAttemptPayload(pairingCode: try await host.issuePairingCode())
         let responses = PairResponseCollector()
 
-        #expect(try ChangeTracker.capturePeerDeviceTrust(db: db, peerId: "joiner") == nil)
-        await pm.processBluetoothPairRequest(
+        #expect(try ChangeTracker.capturePeerDeviceTrust(db: hostDB, peerId: "joiner") == nil)
+        #expect(try ChangeTracker.capturePeerDeviceTrust(db: joinerDB, peerId: "host") == nil)
+        await host.processBluetoothPairRequest(
             from: "joiner",
-            payload: payload,
+            payload: attempt.payload,
             injectActivationFailure: true
         ) { response in
             responses.append(response)
             return true
         }
 
-        #expect(responses.values.last?.accepted == true)
-        #expect(try ChangeTracker.capturePeerDeviceTrust(db: db, peerId: "joiner") == nil)
-        #expect(try await pm.isTrustedBluetoothPeer("joiner") == false)
-        #expect(await pm.testHostedSnapshotTokenAvailable(
-            try #require(responses.values.last?.bluetoothSnapshotToken),
+        let rejected = try #require(responses.values.last)
+        #expect(rejected.accepted == false)
+        await #expect(throws: MultipeerPairingError.self) {
+            try await joiner.acceptBluetoothPairingResponse(
+                rejected,
+                context: attempt.context,
+                peerName: "Host"
+            )
+        }
+        #expect(try ChangeTracker.capturePeerDeviceTrust(db: hostDB, peerId: "joiner") == nil)
+        #expect(try ChangeTracker.capturePeerDeviceTrust(db: joinerDB, peerId: "host") == nil)
+        #expect(try await host.isTrustedBluetoothPeer("joiner") == false)
+        #expect(try await joiner.isTrustedBluetoothPeer("host") == false)
+        #expect(await joiner.testReceivedSnapshotToken(from: "host") == nil)
+
+        // The restored pairing offer permits a fresh, authenticated retry without
+        // trusting either peer until both sides receive the committed transition.
+        await host.processBluetoothPairRequest(from: "joiner", payload: attempt.payload) { response in
+            responses.append(response)
+            return true
+        }
+        let accepted = try #require(responses.values.last)
+        #expect(accepted.accepted == true)
+        _ = try await joiner.acceptBluetoothPairingResponse(
+            accepted,
+            context: attempt.context,
+            peerName: "Host"
+        )
+        #expect(try await host.isTrustedBluetoothPeer("joiner"))
+        #expect(try await joiner.isTrustedBluetoothPeer("host"))
+        #expect(await host.testHostedSnapshotTokenAvailable(
+            try #require(accepted.bluetoothSnapshotToken),
             for: "joiner"
-        ) == false)
-        await pm.stopPeerSync()
+        ))
+        #expect(await joiner.testReceivedSnapshotToken(from: "host") == accepted.bluetoothSnapshotToken)
+        await host.stopPeerSync()
     }
 
     @Test("Injected Bluetooth activation failure preserves the exact prior row and token")
