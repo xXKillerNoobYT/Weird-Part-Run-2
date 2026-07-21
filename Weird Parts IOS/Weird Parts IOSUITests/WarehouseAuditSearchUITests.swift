@@ -49,7 +49,7 @@ final class WarehouseAuditSearchUITests: XCTestCase {
         XCTAssertTrue(dashboardTab.waitForExistence(timeout: 5), "The adjacent Warehouse Dashboard tab should be reachable.")
         XCTAssertTrue(dashboardTab.isHittable, "The Dashboard tab should be tappable from Audit.")
         dashboardTab.tap()
-        XCTAssertTrue(searchField.waitForNonExistence(timeout: 5), "Leaving Audit should remove its search control and inactive page context.")
+        XCTAssertFalse(searchField.waitForExistence(timeout: 5), "Leaving Audit should remove its search control and inactive page context.")
 
         XCTAssertTrue(auditTab.waitForExistence(timeout: 5), "The Audit tab should remain reachable after the context transition.")
         auditTab.tap()
