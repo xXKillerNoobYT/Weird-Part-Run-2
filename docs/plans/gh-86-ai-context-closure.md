@@ -122,10 +122,14 @@ The PR must not refactor the assistant architecture, add preference/proactive be
   presentation and an inventory row (or a documented scope exemption). Static
   regression coverage removes a non-router Vehicle Detail row and must observe
   verifier failure, preventing the reviewed omission class from recurring.
-- Router inactivity uses the same non-optional `RouteDescriptor.pageId` as the
-  active event. If a path has no descriptor, neither lifecycle event is posted;
-  Optional values are never boxed into notification `userInfo`, so the
-  assistant can deterministically decode and clear the active route identity.
+- Router inactivity uses the same non-optional page ID captured when the active
+  route was published. A transition to an unregistered/placeholder path posts
+  inactivity for that captured route rather than silently retaining it. Optional
+  values are never boxed into notification `userInfo`.
+- A matching inactive route clears route context, path, and route-derived page ID
+  as one state transition, even when Help temporarily changed the page ID. The
+  per-router instance token rejects a late inactive event from an older router,
+  including when SwiftUI recreates a router for the same path.
 
 ## Acceptance criteria
 

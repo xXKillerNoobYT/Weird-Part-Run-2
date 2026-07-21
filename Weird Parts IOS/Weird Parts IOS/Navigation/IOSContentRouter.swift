@@ -1,6 +1,25 @@
 import SwiftUI
 import WiredPartCore
 
+struct AIRouteIdentity: Equatable {
+    let path: String
+    let pageId: String
+    let instanceId: String
+}
+
+struct AIRouteContextLifecycle {
+    private(set) var publishedIdentity: AIRouteIdentity?
+
+    mutating func activate(path: String, pageId: String, instanceId: String) {
+        publishedIdentity = AIRouteIdentity(path: path, pageId: pageId, instanceId: instanceId)
+    }
+
+    mutating func deactivate() -> AIRouteIdentity? {
+        defer { publishedIdentity = nil }
+        return publishedIdentity
+    }
+}
+
 /// Routes a URL-style path to the appropriate native view.
 ///
 /// Paths that have fully implemented native views are routed directly.
@@ -14,6 +33,12 @@ struct IOSContentRouter: View {
         let pageLabel: String
         let pageId: String
     }
+
+    /// The last route identity actually published to the assistant. Keeping this
+    /// separate from the current path lets an unregistered/placeholder path
+    /// deactivate the prior registered route instead of silently retaining it.
+    @State private var routeContextLifecycle = AIRouteContextLifecycle()
+    @State private var routeInstanceId = UUID().uuidString
 
     var body: some View {
         routedView
@@ -129,7 +154,15 @@ struct IOSContentRouter: View {
     /// in dedicated notifications; this fallback deliberately excludes record
     /// values, private notes, credentials, and mutation identifiers.
     private func postRouteContext() {
-        guard let descriptor = routeDescriptor else { return }
+        guard let descriptor = routeDescriptor else {
+            postRouteInactive()
+            return
+        }
+        routeContextLifecycle.activate(
+            path: path,
+            pageId: descriptor.pageId,
+            instanceId: routeInstanceId
+        )
         let context = "Module: \(descriptor.moduleLabel); Page: \(descriptor.pageLabel); Route: \(path)"
         NotificationCenter.default.post(
             name: .routePageActive,
@@ -138,6 +171,7 @@ struct IOSContentRouter: View {
                 "context": context,
                 "path": path,
                 "pageId": descriptor.pageId,
+                "instanceId": routeInstanceId,
                 "module": descriptor.moduleLabel,
                 "page": descriptor.pageLabel,
             ]
@@ -145,13 +179,14 @@ struct IOSContentRouter: View {
     }
 
     private func postRouteInactive() {
-        guard let descriptor = routeDescriptor else { return }
+        guard let identity = routeContextLifecycle.deactivate() else { return }
         NotificationCenter.default.post(
             name: .routePageInactive,
             object: nil,
             userInfo: [
-                "path": path,
-                "pageId": descriptor.pageId,
+                "path": identity.path,
+                "pageId": identity.pageId,
+                "instanceId": identity.instanceId,
             ]
         )
     }
