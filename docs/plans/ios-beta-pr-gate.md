@@ -32,11 +32,11 @@ Add `scripts/ci/run-ios-beta-gate.sh` as the execution layer. It:
 1. Records expected SHA, actual SHA, runner, Xcode, runtime, and device-class metadata.
 2. Requires at least 60 GiB free on the volume backing `RUNNER_TEMP`; insufficient capacity fails before Xcode.
 3. Verifies the requested iOS runtime and simulator device type exist.
-4. Creates a run-owned temporary simulator and DerivedData directory; the boot command is bounded at 2 minutes and boot readiness at 10 minutes so runtime failures return control for cleanup/evidence upload.
+4. Creates a run-owned temporary simulator and DerivedData directory; the boot command is bounded at 2 minutes and boot readiness at 10 minutes. When only the iPad first boot exhausts that bound while `CoreLocationMigrator.migrator` is active, it captures diagnostics, deletes that run-owned simulator, and performs exactly one fresh 10-minute boot attempt. All other boot failures and a second migration failure remain nonzero failures.
 5. Runs all app/core unit and regression tests from `WiredPart-iOS`, excluding the broad UI-test target from that phase.
 6. Runs the bounded `WiredPart-iOS-Stage9-Smokes` deterministic UI plan on the same simulator; this includes the maintained viewport harness without invoking manual screenshot catalogs.
 7. Writes an `.xcresult`, Xcode log, and machine-readable summary for both phases in every lane.
-8. Bounds each Xcode phase at 40 minutes. A source-validated runtime assertion caps the two Xcode phases plus simulator boot at 92 minutes, reserving 20 minutes of the 120-minute job envelope for result packaging, cleanup, and artifact upload.
+8. Bounds each Xcode phase at 40 minutes. A source-validated runtime assertion budgets a possible recovery boot as well as the initial boot, reserving 18 minutes of the 120-minute job envelope for result packaging, cleanup, and artifact upload.
 9. Fails if Xcode fails or times out, the result bundle is missing, zero tests execute, any test fails, or any executed test is skipped.
 10. Shuts down/deletes the run-owned simulator and removes DerivedData on exit; an `always()` cleanup step repeats simulator removal after an interrupted script.
 
@@ -77,6 +77,7 @@ Runner unavailability, simulator-runtime drift, disk pressure, or GitHub Actions
 ## Validation
 
 - Shell syntax: `bash -n scripts/ci/run-ios-beta-gate.sh`
+- Recovery decision regression: `IOS_BETA_GATE_SELF_TEST=1 bash scripts/ci/run-ios-beta-gate.sh ipad`
 - Workflow parse: Ruby/Psych or `actionlint` when available
 - Source assertions: trusted-PR guard, exact SHA checkout, two device contexts, local runner labels, artifact upload under `if: always()`
 - Local runner canary: execute one phone and one tablet lane with the current repository SHA and inspect `xcresulttool` summaries
