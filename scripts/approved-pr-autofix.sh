@@ -20,6 +20,13 @@ DRY_RUN="${APPROVED_PR_AUTOFIX_DRY_RUN:-0}"
 TARGET_PR="${APPROVED_PR_AUTOFIX_PR_NUMBER:-}"
 CODEX_MODEL="${APPROVED_PR_AUTOFIX_MODEL:-gpt-5.5}"
 VALIDATE="${APPROVED_PR_AUTOFIX_VALIDATE:-auto}"
+# Trusted first-party work can progress without a manual GitHub approval click;
+# exact-head checks and sensitive-change exclusions still fail closed.
+REQUIRE_APPROVAL="${APPROVED_PR_AUTOFIX_REQUIRE_APPROVAL:-1}"
+# Comma-separated GitHub logins authorized to originate autonomous PR work.
+# Same-repository location alone is not sufficient: collaborators can create
+# branches, so PR author identity is checked separately.
+TRUSTED_PR_AUTHORS="${APPROVED_PR_AUTOFIX_TRUSTED_PR_AUTHORS:-xXKillerNoobYT}"
 SKIP_LABELS="${APPROVED_PR_AUTOFIX_SKIP_LABELS:-security,security-sensitive,manual-review,manual-merge,do-not-merge,no-autofix}"
 SKIP_TITLE_REGEX="${APPROVED_PR_AUTOFIX_SKIP_TITLE_REGEX:-security|sqlcipher|encryption|auth|payment|credential|secret|keychain}"
 MARKER="approved-pr-autofix:v1"
@@ -34,6 +41,19 @@ for cmd in gh jq git codex; do
 done
 
 IFS=',' read -r -a SKIP_LABEL_ARRAY <<<"$SKIP_LABELS"
+IFS=',' read -r -a TRUSTED_AUTHOR_ARRAY <<<"$TRUSTED_PR_AUTHORS"
+
+is_trusted_author() {
+  local author="$1" candidate normalized_author normalized_candidate
+  normalized_author="$(printf "%s" "$author" | tr '[:upper:]' '[:lower:]')"
+  for candidate in "${TRUSTED_AUTHOR_ARRAY[@]}"; do
+    candidate="$(printf "%s" "$candidate" | xargs)"
+    [[ -z "$candidate" ]] && continue
+    normalized_candidate="$(printf "%s" "$candidate" | tr '[:upper:]' '[:lower:]')"
+    [[ "$normalized_candidate" == "$normalized_author" ]] && return 0
+  done
+  return 1
+}
 
 run_or_log() {
   if [[ "$DRY_RUN" == "1" ]]; then
@@ -192,10 +212,10 @@ commit_and_push_if_changed() {
 
 select_prs() {
   if [[ -n "$TARGET_PR" ]]; then
-    gh pr view "$TARGET_PR" --repo "$REPO" --json number,title,isDraft,labels,headRepositoryOwner,headRefName,headRefOid,mergeStateStatus,mergeable,reviewDecision,autoMergeRequest | jq -c '[.]'
+    gh pr view "$TARGET_PR" --repo "$REPO" --json number,title,isDraft,labels,author,headRepositoryOwner,headRefName,headRefOid,mergeStateStatus,mergeable,reviewDecision,autoMergeRequest | jq -c '[.]'
   else
     gh pr list --repo "$REPO" --base "$BASE" --state open --limit "$MAX_PRS" \
-      --json number,title,isDraft,labels,headRepositoryOwner,headRefName,headRefOid,mergeStateStatus,mergeable,reviewDecision,autoMergeRequest
+      --json number,title,isDraft,labels,author,headRepositoryOwner,headRefName,headRefOid,mergeStateStatus,mergeable,reviewDecision,autoMergeRequest
   fi
 }
 
@@ -208,6 +228,7 @@ while IFS= read -r pr; do
   title="$(jq -r '.title' <<<"$pr")"
   is_draft="$(jq -r '.isDraft' <<<"$pr")"
   labels_json="$(jq -c '[.labels[]?.name]' <<<"$pr")"
+  author="$(jq -r '.author.login // ""' <<<"$pr")"
   head_owner="$(jq -r '.headRepositoryOwner.login // ""' <<<"$pr")"
   head_branch="$(jq -r '.headRefName' <<<"$pr")"
   head_sha="$(jq -r '.headRefOid' <<<"$pr")"
@@ -217,11 +238,18 @@ while IFS= read -r pr; do
 
   echo ""
   echo "--- PR #$number: $title"
-  echo "    review=$review_decision state=$merge_state mergeable=$mergeable draft=$is_draft branch=$head_branch sha=${head_sha:0:8}"
+  echo "    author=${author:-<unknown>} review=$review_decision state=$merge_state mergeable=$mergeable draft=$is_draft branch=$head_branch sha=${head_sha:0:8}"
 
   [[ "$is_draft" == "true" ]] && { echo "    skip: draft"; continue; }
   [[ "$head_owner" != "$repo_owner" ]] && { echo "    skip: fork/untrusted head owner"; continue; }
-  [[ "$review_decision" != "APPROVED" ]] && { echo "    skip: not approved"; continue; }
+  if ! is_trusted_author "$author"; then
+    echo "    skip: PR author is not in APPROVED_PR_AUTOFIX_TRUSTED_PR_AUTHORS"
+    continue
+  fi
+  if [[ "$REQUIRE_APPROVAL" == "1" && "$review_decision" != "APPROVED" ]]; then
+    echo "    skip: approval required by APPROVED_PR_AUTOFIX_REQUIRE_APPROVAL"
+    continue
+  fi
   if has_skip_label "$labels_json" || [[ "$title" =~ $SKIP_TITLE_REGEX ]]; then
     echo "    skip: manual/security label or title"
     continue

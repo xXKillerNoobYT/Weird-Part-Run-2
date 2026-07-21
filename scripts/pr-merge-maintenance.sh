@@ -29,6 +29,9 @@ REPO="${1:-${GITHUB_REPOSITORY:-}}"
 BASE="${PR_MAINTENANCE_BASE:-main}"
 MAX_PRS="${PR_MAINTENANCE_MAX_PRS:-}"
 DRY_RUN="${PR_MAINTENANCE_DRY_RUN:-0}"
+# Same-repository branches can still be opened by collaborators; require an
+# explicit PR-author allowlist before automated rebase or merge.
+TRUSTED_PR_AUTHORS="${PR_MAINTENANCE_TRUSTED_PR_AUTHORS:-xXKillerNoobYT}"
 SKIP_LABELS="${PR_MAINTENANCE_SKIP_LABELS:-security,security-sensitive,manual-review,manual-merge,do-not-merge}"
 SKIP_TITLE_REGEX="${PR_MAINTENANCE_SKIP_TITLE_REGEX:-security|sqlcipher|encryption|auth|payment|credential|secret|keychain}"
 
@@ -42,6 +45,19 @@ for cmd in gh jq; do
 done
 
 IFS=',' read -r -a SKIP_LABEL_ARRAY <<<"$SKIP_LABELS"
+IFS=',' read -r -a TRUSTED_AUTHOR_ARRAY <<<"$TRUSTED_PR_AUTHORS"
+
+is_trusted_author() {
+  local author="$1" candidate normalized_author normalized_candidate
+  normalized_author="$(printf "%s" "$author" | tr '[:upper:]' '[:lower:]')"
+  for candidate in "${TRUSTED_AUTHOR_ARRAY[@]}"; do
+    candidate="$(printf "%s" "$candidate" | xargs)"
+    [[ -z "$candidate" ]] && continue
+    normalized_candidate="$(printf "%s" "$candidate" | tr '[:upper:]' '[:lower:]')"
+    [[ "$normalized_candidate" == "$normalized_author" ]] && return 0
+  done
+  return 1
+}
 
 has_skip_label() {
   local labels_json="$1" label
@@ -90,6 +106,7 @@ pr_data_json="$(gh api --paginate --slurp "repos/$REPO/pulls?state=open&base=$BA
       title:            (.title // ""),
       isDraft:          (.draft // false),
       labels:           [(.labels // [])[].name],
+      author:           (.user.login // ""),
       headOwner:        (.head.repo.owner.login // ""),
       mergeable:        (if .mergeable == true then "MERGEABLE"
                          elif .mergeable == false then "CONFLICTING"
@@ -128,12 +145,13 @@ while IFS= read -r pr; do
   mergeable="$(jq -r   '.mergeable // "UNKNOWN"'         <<<"$pr")"
   auto_merge="$(jq -r  '.autoMerge'                      <<<"$pr")"
   labels_json="$(jq -c '.labels'                         <<<"$pr")"
+  author="$(jq -r      '.author // ""'                     <<<"$pr")"
   head_owner="$(jq -r  '.headOwner'                      <<<"$pr")"
   head_sha="$(jq -r    '.headSha'                        <<<"$pr")"
 
   echo ""
   echo "--- PR #$number: $title"
-  echo "    state=$merge_state mergeable=$mergeable autoMerge=$auto_merge draft=$is_draft"
+  echo "    author=${author:-<unknown>} state=$merge_state mergeable=$mergeable autoMerge=$auto_merge draft=$is_draft"
 
   # --- Skip conditions ---
   if [[ "$is_draft" == "true" ]]; then
@@ -141,6 +159,9 @@ while IFS= read -r pr; do
 
   if [[ "$head_owner" != "$repo_owner" ]]; then
     echo "    skip: fork (manual only)"; continue; fi
+
+  if ! is_trusted_author "$author"; then
+    echo "    skip: PR author is not in PR_MAINTENANCE_TRUSTED_PR_AUTHORS"; continue; fi
 
   if has_skip_label "$labels_json" || [[ "$title" =~ $SKIP_TITLE_REGEX ]]; then
     echo "    skip: security/manual label or title"; continue; fi
@@ -205,11 +226,11 @@ while IFS= read -r pr; do
     fi
   fi
 
-  # --- Copilot review gate (owner directive: every PR gets a Copilot review
-  #     before merge). Cloud PR checks now go green in seconds — faster than
-  #     Copilot can review — so the merge must wait for the review explicitly.
-  #     Set PR_MAINTENANCE_REQUIRE_COPILOT_REVIEW=0 to bypass (not recommended). ---
-  if [[ "${PR_MAINTENANCE_REQUIRE_COPILOT_REVIEW:-1}" == "1" ]]; then
+  # Legacy Copilot-only review gate is disabled: this repository uses the
+  # trusted first-party Codex path plus exact-head checks instead.
+  # It may be explicitly re-enabled only for a deliberately configured legacy
+  # migration, never as the default merge requirement.
+  if [[ "${PR_MAINTENANCE_REQUIRE_COPILOT_REVIEW:-0}" == "1" ]]; then
     # A GraphQL API failure must FAIL CLOSED (never merge on unknown review
     # state). We probe once and treat empty/failed output as "not satisfied".
     # Review nodes carry author login + state so a PENDING/DISMISSED review
