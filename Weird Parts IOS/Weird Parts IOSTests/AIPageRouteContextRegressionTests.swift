@@ -65,10 +65,15 @@ final class AIPageRouteContextRegressionTests: XCTestCase {
     @MainActor
     func testKnownRouteTransitionToUnregisteredPathDeactivatesPublishedIdentity() {
         var lifecycle = AIRouteContextLifecycle()
-        lifecycle.activate(path: "/jobs/list", pageId: "jobs-list", instanceId: "router-a")
+        lifecycle.activate(path: "/jobs/list", pageId: "jobs-list")
 
         XCTAssertEqual(
-            AIRouteIdentity(path: "/jobs/list", pageId: "jobs-list", instanceId: "router-a"),
+            AIRouteIdentity(
+                path: "/jobs/list",
+                pageId: "jobs-list",
+                instanceId: lifecycle.instanceId,
+                instanceOrder: lifecycle.instanceOrder
+            ),
             lifecycle.deactivate()
         )
         XCTAssertNil(lifecycle.publishedIdentity)
@@ -81,6 +86,7 @@ final class AIPageRouteContextRegressionTests: XCTestCase {
             routeContext: "Module: Jobs; Page: Jobs; Route: /jobs/list",
             activeRoutePath: "/jobs/list",
             activeRouteInstanceId: "router-current",
+            activeRouteInstanceOrder: 2,
             routePageId: "jobs-detail"
         )
 
@@ -91,6 +97,7 @@ final class AIPageRouteContextRegressionTests: XCTestCase {
                 routeContext: nil,
                 activeRoutePath: nil,
                 activeRouteInstanceId: nil,
+                activeRouteInstanceOrder: nil,
                 routePageId: nil
             ),
             matching
@@ -99,6 +106,49 @@ final class AIPageRouteContextRegressionTests: XCTestCase {
         var newerRoute = staleHelpState
         newerRoute.deactivate(matchingPath: "/jobs/list", instanceId: "router-old")
         XCTAssertEqual(staleHelpState, newerRoute)
+    }
+
+    @MainActor
+    func testNewActiveThenLateOldActiveThenOldInactiveKeepsNewerRouteContextAndHelpIdentity() {
+        var state = AIRoutePageContextState(
+            routeContext: nil,
+            activeRoutePath: nil,
+            activeRouteInstanceId: nil,
+            activeRouteInstanceOrder: nil,
+            routePageId: nil
+        )
+
+        state.activate(
+            context: "Module: Orders; Page: Purchase Orders; Route: /orders/purchase-orders",
+            path: "/orders/purchase-orders",
+            instanceId: "router-new",
+            instanceOrder: 2,
+            pageId: "orders-pos"
+        )
+        state.activate(
+            context: "Module: Jobs; Page: Jobs; Route: /jobs/list",
+            path: "/jobs/list",
+            instanceId: "router-old",
+            instanceOrder: 1,
+            pageId: "jobs-list"
+        )
+        state.deactivate(matchingPath: "/jobs/list", instanceId: "router-old")
+
+        XCTAssertEqual(
+            AIRoutePageContextState(
+                routeContext: "Module: Orders; Page: Purchase Orders; Route: /orders/purchase-orders",
+                activeRoutePath: "/orders/purchase-orders",
+                activeRouteInstanceId: "router-new",
+                activeRouteInstanceOrder: 2,
+                routePageId: "orders-pos"
+            ),
+            state,
+            "A late callback from an older router must not replace the newer AI route context or Help page identity."
+        )
+        XCTAssertEqual(
+            "orders-pos",
+            AIPageIdentityResolver.resolve(dedicatedPageId: nil, routePageId: state.routePageId)
+        )
     }
 
     @MainActor

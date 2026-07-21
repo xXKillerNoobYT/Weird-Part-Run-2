@@ -118,6 +118,7 @@ struct IOSAIAssistantPanel: View {
     @State private var routeContext: String?
     @State private var activeRoutePath: String?
     @State private var activeRouteInstanceId: String?
+    @State private var activeRouteInstanceOrder: UInt64?
 
     /// Route identity is the fallback. A dedicated deep/sheet screen wins while
     /// it is active, so a route refresh cannot replace the visible Help target.
@@ -572,6 +573,7 @@ struct IOSAIAssistantPanel: View {
             routeContext: $routeContext,
             activeRoutePath: $activeRoutePath,
             activeRouteInstanceId: $activeRouteInstanceId,
+            activeRouteInstanceOrder: $activeRouteInstanceOrder,
             routePageId: $routePageId
         ))
         .modifier(ActivePageIdTracker(activePageId: $dedicatedPageId))
@@ -1039,6 +1041,7 @@ struct IOSAIAssistantPanel: View {
         routeContext = nil
         activeRoutePath = nil
         activeRouteInstanceId = nil
+        activeRouteInstanceOrder = nil
         catalogContext = nil
         pricingContext = nil
         suppliersContext = nil
@@ -1881,13 +1884,24 @@ struct AIRoutePageContextState: Equatable {
     var routeContext: String?
     var activeRoutePath: String?
     var activeRouteInstanceId: String?
+    var activeRouteInstanceOrder: UInt64?
     var routePageId: String?
+
+    mutating func activate(context: String, path: String, instanceId: String, instanceOrder: UInt64, pageId: String) {
+        guard activeRouteInstanceOrder.map({ instanceOrder >= $0 }) ?? true else { return }
+        routeContext = context
+        activeRoutePath = path
+        activeRouteInstanceId = instanceId
+        activeRouteInstanceOrder = instanceOrder
+        routePageId = pageId
+    }
 
     mutating func deactivate(matchingPath path: String, instanceId: String) {
         guard path == activeRoutePath, instanceId == activeRouteInstanceId else { return }
         routeContext = nil
         activeRoutePath = nil
         activeRouteInstanceId = nil
+        activeRouteInstanceOrder = nil
         routePageId = nil
     }
 }
@@ -1899,6 +1913,7 @@ private struct RoutePageContextObserver: ViewModifier {
     @Binding var routeContext: String?
     @Binding var activeRoutePath: String?
     @Binding var activeRouteInstanceId: String?
+    @Binding var activeRouteInstanceOrder: UInt64?
     @Binding var routePageId: String?
 
     func body(content: Content) -> some View {
@@ -1907,11 +1922,27 @@ private struct RoutePageContextObserver: ViewModifier {
                 guard let context = notification.userInfo?["context"] as? String,
                       let path = notification.userInfo?["path"] as? String,
                       let instanceId = notification.userInfo?["instanceId"] as? String,
+                      let instanceOrder = notification.userInfo?["instanceOrder"] as? UInt64,
                       let pageId = notification.userInfo?["pageId"] as? String else { return }
-                routeContext = context
-                activeRoutePath = path
-                activeRouteInstanceId = instanceId
-                routePageId = pageId
+                var state = AIRoutePageContextState(
+                    routeContext: routeContext,
+                    activeRoutePath: activeRoutePath,
+                    activeRouteInstanceId: activeRouteInstanceId,
+                    activeRouteInstanceOrder: activeRouteInstanceOrder,
+                    routePageId: routePageId
+                )
+                state.activate(
+                    context: context,
+                    path: path,
+                    instanceId: instanceId,
+                    instanceOrder: instanceOrder,
+                    pageId: pageId
+                )
+                routeContext = state.routeContext
+                activeRoutePath = state.activeRoutePath
+                activeRouteInstanceId = state.activeRouteInstanceId
+                activeRouteInstanceOrder = state.activeRouteInstanceOrder
+                routePageId = state.routePageId
             }
             .onReceive(NotificationCenter.default.publisher(for: .routePageInactive)) { notification in
                 guard let path = notification.userInfo?["path"] as? String,
@@ -1920,12 +1951,14 @@ private struct RoutePageContextObserver: ViewModifier {
                     routeContext: routeContext,
                     activeRoutePath: activeRoutePath,
                     activeRouteInstanceId: activeRouteInstanceId,
+                    activeRouteInstanceOrder: activeRouteInstanceOrder,
                     routePageId: routePageId
                 )
                 state.deactivate(matchingPath: path, instanceId: instanceId)
                 routeContext = state.routeContext
                 activeRoutePath = state.activeRoutePath
                 activeRouteInstanceId = state.activeRouteInstanceId
+                activeRouteInstanceOrder = state.activeRouteInstanceOrder
                 routePageId = state.routePageId
             }
     }

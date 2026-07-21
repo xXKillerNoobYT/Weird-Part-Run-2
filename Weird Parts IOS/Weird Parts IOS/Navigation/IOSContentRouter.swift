@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 import WiredPartCore
 
@@ -5,13 +6,44 @@ struct AIRouteIdentity: Equatable {
     let path: String
     let pageId: String
     let instanceId: String
+    let instanceOrder: UInt64
+}
+
+/// Establishes a stable owner order when SwiftUI creates router instances.
+/// Lifecycle callbacks can arrive out of order during a route replacement, so
+/// callback arrival order must not decide which router owns AI/Help context.
+private enum AIRouteContextInstanceOrder {
+    private final class Counter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: UInt64 = 0
+
+        func next() -> UInt64 {
+            lock.lock()
+            defer { lock.unlock() }
+            value &+= 1
+            return value
+        }
+    }
+
+    private static let counter = Counter()
+
+    static func next() -> UInt64 {
+        counter.next()
+    }
 }
 
 struct AIRouteContextLifecycle {
     private(set) var publishedIdentity: AIRouteIdentity?
+    let instanceId = UUID().uuidString
+    let instanceOrder = AIRouteContextInstanceOrder.next()
 
-    mutating func activate(path: String, pageId: String, instanceId: String) {
-        publishedIdentity = AIRouteIdentity(path: path, pageId: pageId, instanceId: instanceId)
+    mutating func activate(path: String, pageId: String) {
+        publishedIdentity = AIRouteIdentity(
+            path: path,
+            pageId: pageId,
+            instanceId: instanceId,
+            instanceOrder: instanceOrder
+        )
     }
 
     mutating func deactivate() -> AIRouteIdentity? {
@@ -38,7 +70,7 @@ struct IOSContentRouter: View {
     /// separate from the current path lets an unregistered/placeholder path
     /// deactivate the prior registered route instead of silently retaining it.
     @State private var routeContextLifecycle = AIRouteContextLifecycle()
-    @State private var routeInstanceId = UUID().uuidString
+
 
     var body: some View {
         routedView
@@ -169,8 +201,7 @@ struct IOSContentRouter: View {
         }
         routeContextLifecycle.activate(
             path: path,
-            pageId: descriptor.pageId,
-            instanceId: routeInstanceId
+            pageId: descriptor.pageId
         )
         let context = "Module: \(descriptor.moduleLabel); Page: \(descriptor.pageLabel); Route: \(path)"
         NotificationCenter.default.post(
@@ -180,7 +211,8 @@ struct IOSContentRouter: View {
                 "context": context,
                 "path": path,
                 "pageId": descriptor.pageId,
-                "instanceId": routeInstanceId,
+                "instanceId": routeContextLifecycle.instanceId,
+                "instanceOrder": routeContextLifecycle.instanceOrder,
                 "module": descriptor.moduleLabel,
                 "page": descriptor.pageLabel,
             ]
@@ -196,6 +228,7 @@ struct IOSContentRouter: View {
                 "path": identity.path,
                 "pageId": identity.pageId,
                 "instanceId": identity.instanceId,
+                "instanceOrder": identity.instanceOrder,
             ]
         )
     }
