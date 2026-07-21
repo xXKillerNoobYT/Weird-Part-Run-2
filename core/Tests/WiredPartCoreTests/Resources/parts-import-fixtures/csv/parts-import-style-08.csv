@@ -1,0 +1,38 @@
+supplier,category,brand,name,code,upc,cost_price,unit,markup_percent,notes,quantity
+Panel Shop Order,Wire,Southwire,8 AWG THHN Copper Wire 250 ft spool,W-08-001,880000008001,0.29,ft,15,Fixture row 1; verify supplier/category mapping before import.,9
+Panel Shop Order,Conduit,Allied Tube,2 in EMT Conduit 10 ft,C-08-002,880000008002,6.75,stick,18,Fixture row 2; verify supplier/category mapping before import.,12
+Panel Shop Order,Fittings,Bridgeport,EMT Set-Screw Connector #11,F-08-003,880000008003,1.53,ea,21,Fixture row 3; verify supplier/category mapping before import.,15
+Panel Shop Order,Breakers,Square D,20A 1-pole QO Plug-On Breaker,B-08-004,880000008004,15.93,ea,24,Fixture row 4; verify supplier/category mapping before import.,18
+Panel Shop Order,Boxes,Raco,Steel Device Box #1,B-08-005,880000008005,3.61,ea,27,Fixture row 5; verify supplier/category mapping before import.,21
+Panel Shop Order,Lighting,Lithonia,LED Flat Panel #2,L-08-006,880000008006,63.18,ea,30,Fixture row 6; verify supplier/category mapping before import.,24
+Panel Shop Order,Devices,Leviton,Decorator Receptacle #3,D-08-007,880000008007,4.47,ea,12,Fixture row 7; verify supplier/category mapping before import.,27
+Panel Shop Order,Fasteners,Minerallac,Strut Strap #4,F-08-008,880000008008,0.90,ea,15,Fixture row 8; verify supplier/category mapping before import.,30
+Panel Shop Order,Wire,Southwire,12 AWG THHN Copper Wire 250 ft spool,W-08-009,880000008009,0.27,ft,18,Fixture row 9; verify supplier/category mapping before import.,33
+Panel Shop Order,Conduit,Allied Tube,1 in EMT Conduit 10 ft,C-08-010,880000008010,10.80,stick,21,Fixture row 10; verify supplier/category mapping before import.,36
+Panel Shop Order,Fittings,Bridgeport,EMT Set-Screw Connector #7,F-08-011,880000008011,1.42,ea,24,Fixture row 11; verify supplier/category mapping before import.,39
+Panel Shop Order,Breakers,Square D,50A 1-pole QO Plug-On Breaker,B-08-012,880000008012,14.89,ea,27,Fixture row 12; verify supplier/category mapping before import.,42
+Panel Shop Order,Boxes,Raco,Steel Device Box #9,B-08-013,880000008013,3.39,ea,30,Fixture row 13; verify supplier/category mapping before import.,45
+Panel Shop Order,Lighting,Lithonia,LED Flat Panel #10,L-08-014,880000008014,59.54,ea,12,Fixture row 14; verify supplier/category mapping before import.,48
+Panel Shop Order,Devices,Leviton,Decorator Receptacle #11,D-08-015,880000008015,4.23,ea,15,Fixture row 15; verify supplier/category mapping before import.,3
+Panel Shop Order,Fasteners,Minerallac,Strut Strap #12,F-08-016,880000008016,0.85,ea,18,Fixture row 16; verify supplier/category mapping before import.,6
+Panel Shop Order,Wire,Southwire,6 AWG THHN Copper Wire 250 ft spool,W-08-017,880000008017,0.26,ft,21,Fixture row 17; verify supplier/category mapping before import.,9
+Panel Shop Order,Conduit,Allied Tube,1/2 in EMT Conduit 10 ft,C-08-018,880000008018,10.29,stick,24,Fixture row 18; verify supplier/category mapping before import.,12
+Panel Shop Order,Fittings,Bridgeport,EMT Set-Screw Connector #3,F-08-019,880000008019,2.27,ea,27,Fixture row 19; verify supplier/category mapping before import.,15
+Panel Shop Order,Breakers,Square D,30A 1-pole QO Plug-On Breaker,B-08-020,880000008020,13.85,ea,30,Fixture row 20; verify supplier/category mapping before import.,18
+Panel Shop Order,Boxes,Raco,Steel Device Box #5,B-08-021,880000008021,3.17,ea,12,Fixture row 21; verify supplier/category mapping before import.,21
+Panel Shop Order,Lighting,Lithonia,LED Flat Panel #6,L-08-022,880000008022,55.89,ea,15,Fixture row 22; verify supplier/category mapping before import.,24
+Panel Shop Order,Devices,Leviton,Decorator Receptacle #7,D-08-023,880000008023,3.98,ea,18,Fixture row 23; verify supplier/category mapping before import.,27
+Panel Shop Order,Fasteners,Minerallac,Strut Strap #8,F-08-024,880000008024,0.81,ea,21,Fixture row 24; verify supplier/category mapping before import.,30
+Panel Shop Order,Wire,Southwire,10 AWG THHN Copper Wire 250 ft spool,W-08-025,880000008025,0.25,ft,24,Fixture row 25; verify supplier/category mapping before import.,33
+Panel Shop Order,Conduit,Allied Tube,1-1/4 in EMT Conduit 10 ft,C-08-026,880000008026,9.79,stick,27,Fixture row 26; verify supplier/category mapping before import.,36
+Panel Shop Order,Fittings,Bridgeport,EMT Set-Screw Connector #11,F-08-027,880000008027,2.17,ea,30,Fixture row 27; verify supplier/category mapping before import.,39
+Panel Shop Order,Breakers,Square D,15A 1-pole QO Plug-On Breaker,B-08-028,880000008028,22.16,ea,12,Fixture row 28; verify supplier/category mapping before import.,42
+Panel Shop Order,Boxes,Raco,Steel Device Box #1,B-08-029,880000008029,2.95,ea,15,Fixture row 29; verify supplier/category mapping before import.,45
+Panel Shop Order,Lighting,Lithonia,LED Flat Panel #2,L-08-030,880000008030,52.24,ea,18,Fixture row 30; verify supplier/category mapping before import.,48
+Panel Shop Order,Devices,Leviton,Decorator Receptacle #3,D-08-031,880000008031,3.74,ea,21,Fixture row 31; verify supplier/category mapping before import.,3
+Panel Shop Order,Fasteners,Minerallac,Strut Strap #4,F-08-032,880000008032,0.76,ea,24,Fixture row 32; verify supplier/category mapping before import.,6
+Panel Shop Order,Wire,Southwire,14 AWG THHN Copper Wire 250 ft spool,W-08-033,880000008033,0.23,ft,27,Fixture row 33; verify supplier/category mapping before import.,9
+Panel Shop Order,Conduit,Allied Tube,3/4 in EMT Conduit 10 ft,C-08-034,880000008034,9.28,stick,30,Fixture row 34; verify supplier/category mapping before import.,12
+Panel Shop Order,Fittings,Bridgeport,EMT Set-Screw Connector #7,F-08-035,880000008035,2.06,ea,12,Fixture row 35; verify supplier/category mapping before import.,15
+Panel Shop Order,Breakers,Square D,40A 1-pole QO Plug-On Breaker,B-08-036,880000008036,21.12,ea,15,Fixture row 36; verify supplier/category mapping before import.,18
+Panel Shop Order,Boxes,Raco,Steel Device Box #9,B-08-037,880000008037,4.72,ea,18,Fixture row 37; verify supplier/category mapping before import.,21
