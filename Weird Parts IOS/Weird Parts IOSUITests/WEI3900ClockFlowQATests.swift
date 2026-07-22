@@ -300,6 +300,13 @@ final class WEI3900ClockFlowQATests: XCTestCase {
         bottomInset: CGFloat = 100,
         maxSwipes: Int = 16
     ) -> Bool {
+        // Return to the List's leading edge before looking for another virtualized
+        // row. Otherwise a prior assertion can leave the next control outside
+        // the accessibility tree at AX5 even though it is reachable by scrolling.
+        for _ in 0..<3 {
+            app.swipeDown()
+        }
+
         for _ in 0..<maxSwipes {
             if element.exists {
                 let frame = element.frame
