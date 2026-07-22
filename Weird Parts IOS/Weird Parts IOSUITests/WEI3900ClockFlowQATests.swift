@@ -123,24 +123,46 @@ final class WEI3900ClockFlowQATests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Location Access Denied"].exists)
 
         for identifier in ["clockPage_clockOut", "clockPage_switchJob", "clockPage_statePicker"] {
-            let button = app.buttons[identifier]
-            for _ in 0..<10 where !button.isHittable || button.frame.maxY > app.frame.maxY - 120 {
+            // SwiftUI can export an accessibility identifier on an outer Other
+            // instead of its nested Button. Query the stable identifier across
+            // element types so this remains a user-like interaction check.
+            let control = app.descendants(matching: .any)[identifier]
+            // Restart from the top for each check. The List virtualizes distant
+            // rows at AX5, and a prior control may have scrolled to its end.
+            for _ in 0..<3 { app.swipeDown() }
+            for _ in 0..<14 where !control.exists || !control.isHittable || control.frame.maxY > app.frame.maxY - 120 {
                 app.swipeUp()
                 RunLoop.current.run(until: Date().addingTimeInterval(0.2))
             }
-            XCTAssertTrue(button.exists, "\(identifier) should remain reachable at AX5")
-            XCTAssertGreaterThanOrEqual(button.frame.width, 44, "\(identifier) width")
-            XCTAssertGreaterThanOrEqual(button.frame.height, 44, "\(identifier) height")
+            XCTAssertTrue(control.exists, "\(identifier) should remain reachable at AX5")
+            XCTAssertGreaterThanOrEqual(control.frame.width, 44, "\(identifier) width")
+            XCTAssertGreaterThanOrEqual(control.frame.height, 44, "\(identifier) height")
             XCTAssertLessThanOrEqual(
-                button.frame.maxY,
+                control.frame.maxY,
                 app.frame.maxY - 100,
                 "\(identifier) must scroll fully above persistent bottom navigation"
             )
         }
 
-        let statePicker = app.buttons["clockPage_statePicker"]
+        let statePicker = app.descendants(matching: .any)["clockPage_statePicker"]
         XCTAssertEqual(statePicker.label, "Open break, lunch, and end supply run options")
         XCTAssertEqual(statePicker.value as? String, "Supply run active")
+
+        // Today's Hours must use the same scroll region as the active Supply
+        // Run state. The persistent tab bar occupies the final ~100pt of the
+        // phone viewport, so verify the complete summary can move above it
+        // rather than merely existing behind the bottom chrome.
+        let todayTotal = app.descendants(matching: .any)["clockPage_todayTotal"]
+        for _ in 0..<12 where !todayTotal.exists || todayTotal.frame.maxY > app.frame.maxY - 100 {
+            app.swipeUp()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        }
+        XCTAssertTrue(todayTotal.exists, "Today's Hours total must remain present in the AX5 active Supply Run flow")
+        XCTAssertLessThanOrEqual(
+            todayTotal.frame.maxY,
+            app.frame.maxY - 100,
+            "Today's Hours total must scroll fully above persistent bottom navigation"
+        )
 
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "Supply Run AX5"

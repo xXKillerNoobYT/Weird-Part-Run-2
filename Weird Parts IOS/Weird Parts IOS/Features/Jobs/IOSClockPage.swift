@@ -478,19 +478,20 @@ struct IOSClockPage: View {
                     todayHoursSection
                 }
 
-                // The compact tab bar and floating assistant are overlays in the
-                // app shell. Keep enough trailing scroll content for the final
-                // Clock controls to move completely above both at large text
-                // sizes instead of stopping underneath them (#1456).
-                Color.clear
-                    .frame(height: dynamicTypeSize.isAccessibilitySize ? 104 : 76)
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets())
-                    .accessibilityHidden(true)
             }
             .accessibilityIdentifier("clockPage_root")
             .listStyle(.insetGrouped)
+            // The dashboard tab bar is persistent chrome. A trailing empty row
+            // can still be laid out beneath that overlay, so reserve the space
+            // from the List's visible scroll region instead. This lets Today's
+            // Hours and every active-state control scroll fully above the bar
+            // at AX5 (#1456).
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                Color.clear
+                    .frame(height: dynamicTypeSize.isAccessibilitySize ? 132 : 96)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
         }
     }
 
@@ -723,6 +724,11 @@ struct IOSClockPage: View {
             // at xxxLarge so the complete evidence card fits in the compact Clock
             // viewport at AX5. Its combined accessibility label remains complete.
             .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+            // Let the List calculate the complete multi-line row height before
+            // applying the card background. At AX5 this prevents the card's
+            // started/duration summary from being clipped by an inherited row
+            // height while retaining its compact visual scale.
+            .fixedSize(horizontal: false, vertical: true)
             .padding(10)
             .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
             .accessibilityElement(children: .combine)
@@ -1167,6 +1173,8 @@ struct IOSClockPage: View {
                         .font(.headline).bold().monospacedDigit()
                 }
                 .padding(.top, 4)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("clockPage_todayTotal")
             }
         } header: {
             Text("Today's Hours")

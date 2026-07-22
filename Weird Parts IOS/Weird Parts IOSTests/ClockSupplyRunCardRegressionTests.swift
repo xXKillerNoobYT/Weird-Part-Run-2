@@ -82,11 +82,14 @@ final class ClockSupplyRunCardRegressionTests: XCTestCase {
             "Adaptive Clock labels must retain explicit 44pt minimum targets."
         )
         XCTAssertTrue(
-            source.contains(".frame(height: dynamicTypeSize.isAccessibilitySize ? 104 : 76)"),
+            source.contains(".safeAreaInset(edge: .bottom, spacing: 0)"),
+            "AX layouts must reserve persistent bottom-navigation space from the List scroll region."
+        )
+        XCTAssertTrue(
+            source.contains(".frame(height: dynamicTypeSize.isAccessibilitySize ? 132 : 96)"),
             "AX layouts need enough scroll clearance above the floating bottom navigation."
         )
-        XCTAssertTrue(source.contains(".listRowSeparator(.hidden)"))
-        XCTAssertTrue(source.contains(".listRowInsets(EdgeInsets())"))
+        XCTAssertTrue(source.contains(".accessibilityIdentifier(\"clockPage_todayTotal\")"))
     }
 
     func testAX5NavigationChromeDoesNotExpandAcrossClockContent() throws {
