@@ -262,6 +262,8 @@ final class AIHelpResumeRegressionTests: XCTestCase {
             reset.contains("cancelConversationListLoad(clearError: false)"),
             "Withdrawing prerequisites must retire an in-flight Resume load without discarding its retryable error."
         )
+        XCTAssertTrue(reset.contains("let wasLoadingConversationList = isLoadingConversations"))
+        XCTAssertTrue(reset.contains("AIConversationListReadFailurePolicy.errorAfterPrerequisiteWithdrawal("))
     }
 
     func testResumeListFailurePreservesRowsAndDoesNotRenderEmptyCopy() throws {
@@ -384,9 +386,11 @@ final class AIHelpResumeRegressionTests: XCTestCase {
         XCTAssertTrue(ownerAccessor.contains("return currentUser?.id"))
         XCTAssertTrue(assistant.contains("appCore.aiConversationReadDatabase"))
         XCTAssertTrue(assistant.contains("appCore.aiConversationReadOwnerUserId"))
+        XCTAssertTrue(assistant.contains("await appCore.waitForWEI5159AIConversationListLoadReleaseIfNeeded()"))
         XCTAssertTrue(controls.contains(".frame(minWidth: 45, minHeight: 45)"))
         XCTAssertTrue(controls.contains("WEI5159 withhold AI conversation prerequisites"))
         XCTAssertTrue(controls.contains("WEI5159 restore AI conversation prerequisites"))
+        XCTAssertTrue(controls.contains("WEI5159 suspend next saved conversation load"))
     }
 
     func testReadFailureFixtureSQLUsesCanonicalTableNameConstants() throws {

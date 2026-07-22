@@ -688,6 +688,17 @@ struct IOSAIAssistantPanel: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(prerequisitesAvailable)
                 .accessibilityLabel("WEI5159 restore AI conversation prerequisites")
+
+                Button {
+                    appCore.setWEI5159AIConversationListSuspended(true)
+                } label: {
+                    Text("Suspend next Resume load")
+                        .frame(minWidth: 45, minHeight: 45)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.bordered)
+                .disabled(!prerequisitesAvailable || appCore.wei5159AIConversationListSuspended)
+                .accessibilityLabel("WEI5159 suspend next saved conversation load")
             }
 
             Text(appCore.wei5159AIPrerequisiteQAState)
@@ -1598,7 +1609,12 @@ struct IOSAIAssistantPanel: View {
             cancelConversationHistoryRetryTask()
             conversationLoadTask?.cancel()
             conversationLoadTask = nil
+            let wasLoadingConversationList = isLoadingConversations
             cancelConversationListLoad(clearError: false)
+            conversationListReadError = AIConversationListReadFailurePolicy.errorAfterPrerequisiteWithdrawal(
+                existingError: conversationListReadError,
+                retiredActiveLoad: wasLoadingConversationList
+            )
             isLoadingConversationHistory = true
             isProcessing = false
             return
@@ -2087,6 +2103,10 @@ struct IOSAIAssistantPanel: View {
         var lifecycleCoordinator = currentLifecycleCoordinator()
         let listLifecycle = lifecycleCoordinator.beginConversationListLoad(requestID: requestID)
         isLoadingConversations = lifecycleCoordinator.isLoadingConversations
+        #if DEBUG && targetEnvironment(simulator)
+        await appCore.waitForWEI5159AIConversationListLoadReleaseIfNeeded()
+        guard !Task.isCancelled else { return }
+        #endif
         do {
             let rows = try await FoundationModelsService.listConversations(
                 ownerUserId: ownerUserId,
@@ -3874,6 +3894,21 @@ enum AIAssistantInitializationLoadingPolicy {
         prerequisitesAvailable: Bool
     ) -> Bool {
         !prerequisitesAvailable || readError == nil
+    }
+}
+
+enum AIConversationListReadFailurePolicy {
+    static let unavailablePrerequisitesMessage = "The database or signed-in user is unavailable. Try again after signing in and the app finishes loading."
+
+    /// A withdrawn prerequisite is a read failure only when it retires an active
+    /// Resume request. Preserve any older recovery error and leave idle pickers
+    /// alone so they do not acquire a failure state without a read attempt.
+    static func errorAfterPrerequisiteWithdrawal(
+        existingError: String?,
+        retiredActiveLoad: Bool
+    ) -> String? {
+        guard existingError == nil, retiredActiveLoad else { return existingError }
+        return unavailablePrerequisitesMessage
     }
 }
 

@@ -729,6 +729,32 @@ final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
         XCTAssertEqual(coordinator.savedConversations, lastKnownRows)
     }
 
+    func testWithdrawingPrerequisitesFromAnActiveListInstallsRetryableFailureWithoutErasingPriorError() {
+        XCTAssertEqual(
+            AIConversationListReadFailurePolicy.errorAfterPrerequisiteWithdrawal(
+                existingError: nil,
+                retiredActiveLoad: true
+            ),
+            AIConversationListReadFailurePolicy.unavailablePrerequisitesMessage,
+            "An active Resume request withdrawn before completion must expose Retry instead of genuine-empty copy."
+        )
+        XCTAssertEqual(
+            AIConversationListReadFailurePolicy.errorAfterPrerequisiteWithdrawal(
+                existingError: "Earlier read failure",
+                retiredActiveLoad: true
+            ),
+            "Earlier read failure",
+            "Prerequisite withdrawal must preserve the last retryable error."
+        )
+        XCTAssertNil(
+            AIConversationListReadFailurePolicy.errorAfterPrerequisiteWithdrawal(
+                existingError: nil,
+                retiredActiveLoad: false
+            ),
+            "An idle picker must not gain a failure state without an active read to retire."
+        )
+    }
+
     func testMissingInitializationPrerequisitesStayFailClosedUntilLaterAttemptSucceeds() {
         XCTAssertTrue(
             AIAssistantInitializationLoadingPolicy.keepsLoading(

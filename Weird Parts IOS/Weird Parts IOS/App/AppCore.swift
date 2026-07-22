@@ -44,6 +44,7 @@ final class AppCore: ObservableObject {
     @Published private(set) var wei5134AIReadFailureQAState = "WEI5134 QA table state: preparing"
     @Published private(set) var wei5159AIPrerequisiteQAState = "WEI5159 QA prerequisites: unavailable"
     @Published private(set) var wei5159AIPrerequisitesAvailable = false
+    @Published private(set) var wei5159AIConversationListSuspended = false
     #endif
 
     // MARK: - Services (available after init completes)
@@ -1279,9 +1280,28 @@ final class AppCore: ObservableObject {
     func setWEI5159AIPrerequisitesAvailable(_ available: Bool) {
         guard isWEI5159AIPrerequisiteRecoveryUITestingMode else { return }
         wei5159AIPrerequisitesAvailable = available
+        if !available {
+            wei5159AIConversationListSuspended = false
+        }
         wei5159AIPrerequisiteQAState = available
             ? "WEI5159 QA prerequisites: available"
             : "WEI5159 QA prerequisites: unavailable"
+    }
+
+    /// Simulator-only gate that makes an in-flight Resume request observable
+    /// before the WEI-5159 control withdraws its read prerequisites.
+    func setWEI5159AIConversationListSuspended(_ suspended: Bool) {
+        guard isWEI5159AIPrerequisiteRecoveryUITestingMode else { return }
+        wei5159AIConversationListSuspended = suspended
+    }
+
+    func waitForWEI5159AIConversationListLoadReleaseIfNeeded() async {
+        guard isWEI5159AIPrerequisiteRecoveryUITestingMode else { return }
+        while wei5159AIConversationListSuspended,
+              wei5159AIPrerequisitesAvailable,
+              !Task.isCancelled {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
     }
     #endif
 

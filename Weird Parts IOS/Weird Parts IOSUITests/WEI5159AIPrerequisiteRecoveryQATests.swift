@@ -65,17 +65,25 @@ final class WEI5159AIPrerequisiteRecoveryQATests: XCTestCase {
         XCTAssertTrue(closeResume.waitForExistence(timeout: 5), "Resume must expose a reachable Close control.")
         closeResume.tap()
 
-        let withhold = hittableButton(named: "WEI5159 withhold AI conversation prerequisites")
-        XCTAssertTrue(withhold.waitForExistence(timeout: 5))
+        let suspendNextListLoad = hittableButton(named: "WEI5159 suspend next saved conversation load")
+        XCTAssertTrue(suspendNextListLoad.waitForExistence(timeout: 5))
+        XCTAssertTrue(suspendNextListLoad.isEnabled)
+        assertMinimumTapTarget(suspendNextListLoad, named: "Suspend next Resume load")
+        suspendNextListLoad.tap()
+        resume.tap()
+        XCTAssertTrue(
+            app.staticTexts["Loading conversations…"].waitForExistence(timeout: 5),
+            "The suspended request must make the in-flight Resume spinner visible before prerequisites are withdrawn."
+        )
+        let withhold = reachableButton(named: "WEI5159 withhold AI conversation prerequisites")
+        XCTAssertTrue(withhold.isEnabled)
         assertMinimumTapTarget(withhold, named: "Withhold AI prerequisites")
         withhold.tap()
         assertQAState("WEI5159 QA prerequisites: unavailable")
-
-        resume.tap()
         let failureTitle = app.staticTexts["Saved Conversations Could Not Be Loaded"]
-        XCTAssertTrue(failureTitle.waitForExistence(timeout: 10), "Missing prerequisites must end loading with a readable error.")
-        XCTAssertFalse(app.staticTexts["Loading conversations…"].exists, "The Resume spinner must yield to the prerequisite error.")
-        XCTAssertFalse(app.staticTexts["No Saved Conversations"].exists)
+        XCTAssertTrue(failureTitle.waitForExistence(timeout: 10), "Withdrawing prerequisites from an active Resume load must expose a readable error.")
+        XCTAssertFalse(app.staticTexts["Loading conversations…"].exists, "Prerequisite withdrawal must retire the active Resume spinner.")
+        XCTAssertFalse(app.staticTexts["No Saved Conversations"].exists, "A cancelled initial Resume read must not masquerade as genuine empty history.")
         XCTAssertTrue(
             app.staticTexts["The database or signed-in user is unavailable. Try again after signing in and the app finishes loading."].waitForExistence(timeout: 5)
         )
