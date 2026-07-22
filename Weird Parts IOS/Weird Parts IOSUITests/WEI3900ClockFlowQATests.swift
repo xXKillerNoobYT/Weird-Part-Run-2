@@ -122,6 +122,11 @@ final class WEI3900ClockFlowQATests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Location Required"].exists)
         XCTAssertFalse(app.staticTexts["Location Access Denied"].exists)
 
+        let activeCardAttachment = XCTAttachment(screenshot: app.screenshot())
+        activeCardAttachment.name = "Supply Run AX5 — Active Card"
+        activeCardAttachment.lifetime = .keepAlways
+        add(activeCardAttachment)
+
         for identifier in ["clockPage_clockOut", "clockPage_switchJob", "clockPage_statePicker"] {
             // SwiftUI can export an accessibility identifier on an outer Other
             // instead of its nested Button. Query the stable identifier across
@@ -148,6 +153,11 @@ final class WEI3900ClockFlowQATests: XCTestCase {
         XCTAssertEqual(statePicker.label, "Open break, lunch, and end supply run options")
         XCTAssertEqual(statePicker.value as? String, "Supply run active")
 
+        let statePickerAttachment = XCTAttachment(screenshot: app.screenshot())
+        statePickerAttachment.name = "Supply Run AX5 — State Picker"
+        statePickerAttachment.lifetime = .keepAlways
+        add(statePickerAttachment)
+
         // Today's Hours must use the same scroll region as the active Supply
         // Run state. The persistent tab bar occupies the final ~100pt of the
         // phone viewport, so verify the complete summary can move above it
@@ -165,7 +175,7 @@ final class WEI3900ClockFlowQATests: XCTestCase {
         )
 
         let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Supply Run AX5"
+        attachment.name = "Supply Run AX5 — Today's Hours"
         attachment.lifetime = .keepAlways
         add(attachment)
     }
