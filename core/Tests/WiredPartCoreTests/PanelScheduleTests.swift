@@ -134,6 +134,72 @@ struct PanelScheduleTests {
         #expect(persisted.circuits.map(\.spaceNumber) == [1])
     }
 
+    @Test("Panel types expose picker options derived from global supported sizes",
+          arguments: [
+            (PanelType.mdp, [42]),
+            (PanelType.subPanel, [20, 24, 30, 42]),
+            (PanelType.loadCenter, [20, 24, 30]),
+            (PanelType.smallPanel, [8, 12, 16, 20]),
+            (PanelType.disconnect, [2])
+          ])
+    func panelTypeAllowedSpacesComposeWithGlobalNormalization(
+        panelType: PanelType,
+        expectedSpaces: [Int]
+    ) {
+        #expect(panelType.allowedTotalSpaces == expectedSpaces)
+        #expect(panelType.allowedTotalSpaces.allSatisfy(PanelSchedule.supportedTotalSpaces.contains))
+        #expect(!panelType.allows(totalSpaces: expectedSpaces.last! + 1))
+    }
+
+    @Test("Malformed load values retain #1239 normalization without circuit loss")
+    func malformedMDPLoadRemainsRepairableBeforeUserEditValidation() throws {
+        let decoded = PanelSchedule(
+            panelType: .mdp,
+            totalSpaces: -2,
+            circuits: [
+                CircuitEntry(id: "visible", spaceNumber: 1, circuitDescription: "Office", isSpare: false),
+                CircuitEntry(id: "preserved", spaceNumber: 20, circuitDescription: "Shop", isSpare: false)
+            ]
+        )
+
+        let display = decoded.clampingTotalSpacesToSupportedRange()
+
+        #expect(display.totalSpaces == 20)
+        #expect(display.circuits.map(\.id) == ["visible", "preserved"])
+        #expect(throws: PanelScheduleValidationError.invalidPanelTypeSpaceCount(
+            panelType: .mdp,
+            spaces: 20,
+            allowedSpaces: [42]
+        )) {
+            try display.validated()
+        }
+    }
+
+    @Test("Invalid user panel-space edits are rejected atomically without circuit loss")
+    func invalidPanelSpaceEditLeavesScheduleUnchanged() throws {
+        var schedule = PanelSchedule(
+            panelType: .loadCenter,
+            totalSpaces: 20,
+            circuits: [
+                CircuitEntry(id: "office", spaceNumber: 1, circuitDescription: "Office", isSpare: false),
+                CircuitEntry(id: "shop", spaceNumber: 20, circuitDescription: "Shop", isSpare: false)
+            ]
+        )
+
+        #expect(throws: PanelScheduleValidationError.invalidPanelTypeSpaceCount(
+            panelType: .disconnect,
+            spaces: 20,
+            allowedSpaces: [2]
+        )) {
+            try schedule.updatePanelSettings(panelType: .disconnect, totalSpaces: 20)
+        }
+
+        #expect(schedule.panelType == .loadCenter)
+        #expect(schedule.totalSpaces == 20)
+        #expect(schedule.circuits.map(\.id) == ["office", "shop"])
+        #expect(schedule.circuits.map(\.spaceNumber) == [1, 20])
+    }
+
     // MARK: - Circuit classification, drag/drop move, and position validation
 
     @Test("Double breakers reserve same-side adjacent spaces")
