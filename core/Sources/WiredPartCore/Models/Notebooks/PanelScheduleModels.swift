@@ -85,12 +85,17 @@ public struct PanelSchedule: Codable, Identifiable, Sendable {
     /// Returns a copy safe to persist after panel builder edits.
     ///
     /// A circuit marked spare should not retain active breaker/load metadata that
-    /// will be hidden by the grid and exports. Normalize the panel size, the
-    /// visible panel range, and the per-circuit spare payload before writing
-    /// notebook JSON. Clamping runs first so pruning uses the repaired size.
+    /// will be hidden by the grid and exports. Normalize the panel size and
+    /// per-circuit spare payload before writing notebook JSON. Valid panel
+    /// settings also prune stale out-of-range circuits after confirmation in the
+    /// builder. A safe-loaded legacy type/size mismatch deliberately retains all
+    /// decoded circuits until `updatePanelSettings(panelType:totalSpaces:)`
+    /// explicitly corrects the settings pair.
     public func normalizedForPersistence() -> PanelSchedule {
         var normalized = clampingTotalSpacesToSupportedRange()
-            .pruningCircuitsOutsideTotalSpaces()
+        if normalized.panelSettingsValidationError == nil {
+            normalized = normalized.pruningCircuitsOutsideTotalSpaces()
+        }
         normalized.circuits = normalized.circuits.map { $0.normalizedForPersistence() }
         return normalized
     }
