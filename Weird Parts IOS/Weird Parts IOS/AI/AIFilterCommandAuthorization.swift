@@ -27,7 +27,12 @@ enum AIFilterCommandAuthorization {
         availableFilters: [(pageId: String, filterName: String, options: [String])]
     ) -> [AIFilterActivationCommand] {
         return parsedCommands(from: response).filter { command in
-            guard explicitlyRequestsFiltering(userQuery, for: command.value),
+            guard let intendedPageId = explicitlyRequestsFiltering(
+                userQuery,
+                for: command.value,
+                availableFilters: availableFilters
+            ),
+                  intendedPageId == command.pageId,
                   let filter = availableFilters.first(where: { $0.pageId == command.pageId })
             else {
                 return false
@@ -52,8 +57,14 @@ enum AIFilterCommandAuthorization {
     }
 
     /// Matches only imperative filter mutations and deliberately excludes questions
-    /// about a filter. Model output and navigation/record context are never inputs.
-    private static func explicitlyRequestsFiltering(_ query: String, for value: String) -> Bool {
+    /// about a filter. The query must also name exactly one registered page, so the
+    /// model cannot reuse a requested value to mutate a different page. Model output
+    /// and navigation/record context are never inputs.
+    private static func explicitlyRequestsFiltering(
+        _ query: String,
+        for value: String,
+        availableFilters: [(pageId: String, filterName: String, options: [String])]
+    ) -> String? {
         let normalized = query
             .lowercased()
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -65,10 +76,26 @@ enum AIFilterCommandAuthorization {
             #"^\#(politePrefix)show\b.*\bonly\s+\#(escapedValue)\b"#
         ]
 
-        return patterns.contains { pattern in
+        let requestsValue = patterns.contains { pattern in
             guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
             let range = NSRange(location: 0, length: (normalized as NSString).length)
             return regex.firstMatch(in: normalized, range: range) != nil
         }
+        guard requestsValue else { return nil }
+
+        let intendedPageIds = availableFilters.map(\.pageId).filter { pageId in
+            queryMentionsPage(normalized, pageId: pageId)
+        }
+        guard intendedPageIds.count == 1 else { return nil }
+        return intendedPageIds[0]
+    }
+
+    private static func queryMentionsPage(_ query: String, pageId: String) -> Bool {
+        let escapedPageId = NSRegularExpression.escapedPattern(for: pageId.lowercased())
+            .replacingOccurrences(of: "-", with: "[-_\\s]+")
+        let pattern = #"\b\#(escapedPageId)\b"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
+        let range = NSRange(location: 0, length: (query as NSString).length)
+        return regex.firstMatch(in: query, range: range) != nil
     }
 }

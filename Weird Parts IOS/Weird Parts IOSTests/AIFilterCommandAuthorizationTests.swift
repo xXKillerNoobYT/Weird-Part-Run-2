@@ -8,6 +8,11 @@ final class AIFilterCommandAuthorizationTests: XCTestCase {
         filterName: "PO Status",
         options: ["all", "draft", "submitted"]
     )
+    private let jpoFilter = (
+        pageId: "jpos",
+        filterName: "JPO Status",
+        options: ["all", "draft", "submitted"]
+    )
 
     func testRecordContextStyleModelCommandCannotActivateWithoutExplicitUserFilterRequest() {
         let adversarialResponse = """
@@ -54,6 +59,36 @@ final class AIFilterCommandAuthorizationTests: XCTestCase {
         XCTAssertEqual(commands, [AIFilterActivationCommand(pageId: "purchase-orders", value: "draft")])
     }
 
+    func testExplicitPurchaseOrderRequestRejectsJPOCommandWithSameAllowlistedValue() {
+        let commands = AIFilterCommandAuthorization.authorizedCommands(
+            response: "{\"activateFilter\":{\"pageId\":\"jpos\",\"value\":\"draft\"}}",
+            userQuery: "Filter purchase orders to draft",
+            availableFilters: [purchaseOrderFilter, jpoFilter]
+        )
+
+        XCTAssertTrue(commands.isEmpty)
+    }
+
+    func testExplicitJPORequestRejectsPurchaseOrderCommandWithSameAllowlistedValue() {
+        let commands = AIFilterCommandAuthorization.authorizedCommands(
+            response: "{\"activateFilter\":{\"pageId\":\"purchase-orders\",\"value\":\"draft\"}}",
+            userQuery: "Filter JPOs to draft",
+            availableFilters: [purchaseOrderFilter, jpoFilter]
+        )
+
+        XCTAssertTrue(commands.isEmpty)
+    }
+
+    func testExplicitSamePageRequestAuthorizesAllowlistedValueWhenMultiplePagesAreRegistered() {
+        let commands = AIFilterCommandAuthorization.authorizedCommands(
+            response: "{\"activateFilter\":{\"pageId\":\"purchase-orders\",\"value\":\"draft\"}}",
+            userQuery: "Filter purchase orders to draft",
+            availableFilters: [purchaseOrderFilter, jpoFilter]
+        )
+
+        XCTAssertEqual(commands, [AIFilterActivationCommand(pageId: "purchase-orders", value: "draft")])
+    }
+
     func testExplicitRequestRejectsUnknownPageAndUnsupportedValue() {
         let unknownPage = AIFilterCommandAuthorization.authorizedCommands(
             response: "{" + "\"activateFilter\":{\"pageId\":\"unknown\",\"value\":\"draft\"}}",
@@ -79,5 +114,10 @@ final class AIFilterCommandAuthorizationTests: XCTestCase {
 
         XCTAssertEqual(commands.count, 1)
         XCTAssertTrue(commands[0].requiresConfirmation)
+    }
+
+    func testClearCommandsRequireVisibleConfirmation() {
+        XCTAssertTrue(AIFilterActivationCommand(pageId: "purchase-orders", value: "clear").requiresConfirmation)
+        XCTAssertTrue(AIFilterActivationCommand(pageId: "purchase-orders", value: "clear-all").requiresConfirmation)
     }
 }
