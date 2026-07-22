@@ -117,6 +117,25 @@ struct ReportsServiceTests {
         #expect(abs((localDayRows.first?.totalHours ?? 0) - 1.0) < 0.01)
     }
 
+    @Test("Report exact-day and range paths reject malformed dates instead of querying normalized days")
+    func testReportsRejectMalformedOperationalDayInputs() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BAD-RANGE", name: "Malformed Range Job")
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, '2026-03-02 12:00:00', '2026-03-02 20:00:00', 8.0, 0.0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, jobId])
+        }
+
+        let exactDayRows = try env.reports.getDailyReportSummary(date: "2026-02-30")
+        let rangeRows = try env.reports.getTimesheetData(startDate: "2026-02-28", endDate: "2026-02-30")
+
+        #expect(exactDayRows.isEmpty)
+        #expect(rangeRows.isEmpty)
+    }
+
     @Test("Timesheet correction persists audit row and updates labor entry")
     func testTimesheetCorrectionPersistsAuditAndUpdatesEntry() throws {
         let env = try E2ETestHelpers.setUp()

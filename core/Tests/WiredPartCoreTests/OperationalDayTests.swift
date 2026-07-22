@@ -17,4 +17,13 @@ struct OperationalDayTests {
         #expect(interval.utcStart == "2026-07-20 10:00:00")
         #expect(interval.utcEnd == "2026-07-21 10:00:00")
     }
+
+    @Test("Date intervals reject malformed ISO components instead of normalizing them")
+    func intervalRejectsMalformedISODateComponents() throws {
+        let operationalDay = OperationalDay(calendar: Calendar(identifier: .gregorian))
+
+        #expect(operationalDay.interval(startDate: "2026-02-30", endDate: "2026-02-30") == nil)
+        #expect(operationalDay.interval(startDate: "2026-02-28", endDate: "2026-02-30") == nil)
+        #expect(operationalDay.interval(startDate: "2026-2-28", endDate: "2026-02-28") == nil)
+    }
 }

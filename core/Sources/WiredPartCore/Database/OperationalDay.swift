@@ -71,14 +71,28 @@ struct OperationalDay: Sendable {
     }
 
     private func date(from value: String) -> Date? {
+        let bytes = Array(value.utf8)
+        guard bytes.count == 10,
+              bytes[4] == 45,
+              bytes[7] == 45,
+              [0, 1, 2, 3, 5, 6, 8, 9].allSatisfy({ (48...57).contains(bytes[$0]) }) else {
+            return nil
+        }
         let parts = value.split(separator: "-", omittingEmptySubsequences: false)
         guard parts.count == 3,
               let year = Int(parts[0]),
               let month = Int(parts[1]),
-              let day = Int(parts[2]) else {
+              let day = Int(parts[2]),
+              let date = calendar.date(from: DateComponents(year: year, month: month, day: day)) else {
             return nil
         }
-        return calendar.date(from: DateComponents(year: year, month: month, day: day))
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        guard components.year == year,
+              components.month == month,
+              components.day == day else {
+            return nil
+        }
+        return date
     }
 
 }
