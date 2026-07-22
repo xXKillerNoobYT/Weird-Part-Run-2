@@ -443,21 +443,38 @@ struct AppDatabaseCipherTests {
         #expect(FileManager.default.fileExists(atPath: path + "-wal"),
                 "Regression setup must retain the committed sentinel in the source WAL")
         let sourceWAL = try Data(contentsOf: URL(fileURLWithPath: path + "-wal"))
+        #expect(FileManager.default.fileExists(atPath: path + "-shm"),
+                "Regression setup must retain the source SHM sidecar")
+        let sourceSHM = try Data(contentsOf: URL(fileURLWithPath: path + "-shm"))
         #expect(!sourceWAL.isEmpty, "Regression setup must capture the source WAL bundle")
+
+        enum ExpectedSidecarMoveFailure: Error {
+            case injected
+        }
 
         do {
             try AppDatabase.replacePlaintextDatabaseWithEncryptedTemp(
                 atPath: path,
                 tempPath: missingTempPath,
-                backupPath: path + ".unencrypted.bak"
+                backupPath: path + ".unencrypted.bak",
+                moveItem: { sourcePath, destinationPath in
+                    if sourcePath == path + "-shm" && destinationPath == path + ".unencrypted.bak-shm" {
+                        throw ExpectedSidecarMoveFailure.injected
+                    }
+                    try FileManager.default.moveItem(atPath: sourcePath, toPath: destinationPath)
+                }
             )
-            Issue.record("Promotion should throw when the encrypted temp database is missing")
+            Issue.record("Promotion should throw when the SHM rollback move fails")
         } catch {
             #expect(FileManager.default.fileExists(atPath: path), "Original plaintext DB must be restored to the canonical path")
             #expect(!FileManager.default.fileExists(atPath: path + ".unencrypted.bak"), "Rollback should not leave the only good copy stranded at the backup path")
             #expect(
                 try Data(contentsOf: URL(fileURLWithPath: path + "-wal")) == sourceWAL,
                 "Failed promotion must restore the original WAL bytes with the canonical plaintext database"
+            )
+            #expect(
+                try Data(contentsOf: URL(fileURLWithPath: path + "-shm")) == sourceSHM,
+                "Failed promotion must preserve the original SHM bytes with the canonical plaintext database"
             )
 
             try reader.close()

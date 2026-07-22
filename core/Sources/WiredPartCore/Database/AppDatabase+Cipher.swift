@@ -297,16 +297,20 @@ extension AppDatabase {
         atPath path: String,
         tempPath: String,
         backupPath bakPath: String,
-        fileManager fm: FileManager = .default
+        fileManager fm: FileManager = .default,
+        moveItem: ((String, String) throws -> Void)? = nil
     ) throws {
+        let moveItem = moveItem ?? { sourcePath, destinationPath in
+            try fm.moveItem(atPath: sourcePath, toPath: destinationPath)
+        }
         do {
             for suffix in ["", "-wal", "-shm"] { try? fm.removeItem(atPath: bakPath + suffix) }
             try fm.moveItem(atPath: path, toPath: bakPath)
-            for suffix in ["-wal", "-shm"] where fm.fileExists(atPath: path + suffix) {
-                try fm.moveItem(atPath: path + suffix, toPath: bakPath + suffix)
-            }
             do {
-                try fm.moveItem(atPath: tempPath, toPath: path)
+                for suffix in ["-wal", "-shm"] where fm.fileExists(atPath: path + suffix) {
+                    try moveItem(path + suffix, bakPath + suffix)
+                }
+                try moveItem(tempPath, path)
             } catch {
                 try restorePlaintextDatabaseBundle(atPath: path, backupPath: bakPath, fileManager: fm)
                 throw error
@@ -341,15 +345,12 @@ extension AppDatabase {
         backupPath bakPath: String,
         fileManager fm: FileManager
     ) throws {
-        for suffix in ["", "-wal", "-shm"] {
+        for suffix in ["", "-wal", "-shm"] where fm.fileExists(atPath: bakPath + suffix) {
             let canonicalPath = path + suffix
             if fm.fileExists(atPath: canonicalPath) {
                 try fm.removeItem(atPath: canonicalPath)
             }
-        }
-        try fm.moveItem(atPath: bakPath, toPath: path)
-        for suffix in ["-wal", "-shm"] where fm.fileExists(atPath: bakPath + suffix) {
-            try fm.moveItem(atPath: bakPath + suffix, toPath: path + suffix)
+            try fm.moveItem(atPath: bakPath + suffix, toPath: canonicalPath)
         }
     }
 
