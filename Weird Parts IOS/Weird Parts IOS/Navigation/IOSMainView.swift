@@ -983,6 +983,48 @@ struct ModuleHostView: View {
 
     @ViewBuilder
     private var subTabPicker: some View {
+        // A compact phone cannot display all Dashboard destinations at AX5
+        // without a partially clipped trailing label. Use one standard menu so
+        // every destination remains fully named and operable without consuming
+        // the vertical space needed by Clock controls (#1456).
+        if dynamicTypeSize.isAccessibilitySize, module.id == "dashboard" {
+            Menu {
+                ForEach(visibleTabsList) { tab in
+                    Button {
+                        dsAnimate(DS.Anim.fast) {
+                            selectedTabId = tab.id
+                        }
+                    } label: {
+                        Label(tab.label, systemImage: tab.icon)
+                    }
+                    .accessibilityIdentifier("subtab_\(tab.id)")
+                    .accessibilityLabel(tab.label)
+                }
+            } label: {
+                HStack(spacing: DS.Space.xs) {
+                    Image(systemName: visibleTabsList.first(where: { $0.id == selectedTabId })?.icon ?? "square.grid.2x2")
+                        .accessibilityHidden(true)
+                    Text(visibleTabsList.first(where: { $0.id == selectedTabId })?.label ?? "Dashboard")
+                        .lineLimit(1)
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .accessibilityHidden(true)
+                }
+                .font(.headline)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .padding(.horizontal, DS.Space.sm)
+                .background(
+                    RoundedRectangle(cornerRadius: DS.Radius.md)
+                        .fill(Color.accentColor.opacity(0.12))
+                )
+            }
+            .padding(.horizontal, DS.Space.xs)
+            .padding(.vertical, DS.Space.sm)
+            .background(DS.Background.page)
+            .accessibilityIdentifier("dashboardSubtabMenu")
+            .accessibilityLabel("Dashboard section")
+            .accessibilityValue(visibleTabsList.first(where: { $0.id == selectedTabId })?.label ?? "Dashboard")
+        } else {
         // AX text is capped within the chip, so reduce only its decorative
         // horizontal padding. This keeps the last Dashboard tab fully legible
         // instead of presenting a clipped "Daily Re…" label on compact phones.
@@ -1054,6 +1096,7 @@ struct ModuleHostView: View {
             .animation(.easeInOut(duration: 0.15), value: subTabScrollEdges)
         }
         .background(DS.Background.page)
+        }
     }
 
     /// Gradient scrim shown at a sub-tab strip edge while more chips remain

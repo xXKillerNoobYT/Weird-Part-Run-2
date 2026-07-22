@@ -167,7 +167,10 @@ final class WEI3900ClockFlowQATests: XCTestCase {
         // phone viewport, so verify the complete summary can move above it
         // rather than merely existing behind the bottom chrome.
         let todayTotal = app.descendants(matching: .any)["clockPage_todayTotal"]
-        XCTAssertTrue(scrollIntoVisibleBounds(todayTotal), "Today's Hours total must scroll fully into the AX5 viewport")
+        XCTAssertTrue(
+            scrollIntoVisibleBounds(todayTotal),
+            "Today's Hours total must scroll fully into the AX5 viewport"
+        )
         XCTAssertTrue(todayTotal.exists, "Today's Hours total must remain present in the AX5 active Supply Run flow")
         XCTAssertLessThanOrEqual(
             todayTotal.frame.maxY,
@@ -179,6 +182,31 @@ final class WEI3900ClockFlowQATests: XCTestCase {
         attachment.name = "Supply Run AX5 — Today's Hours"
         attachment.lifetime = .keepAlways
         add(attachment)
+
+        if app.frame.width < 500 {
+            let subTabMenu = app.descendants(matching: .any)["dashboardSubtabMenu"]
+            XCTAssertTrue(
+                subTabMenu.exists && subTabMenu.isHittable,
+                "The compact-phone AX5 Dashboard section menu must be reachable"
+            )
+            XCTAssertGreaterThanOrEqual(subTabMenu.frame.width, 44)
+            XCTAssertGreaterThanOrEqual(subTabMenu.frame.height, 44)
+            XCTAssertEqual(subTabMenu.label, "Dashboard section")
+            XCTAssertEqual(subTabMenu.value as? String, "Clock")
+
+            subTabMenu.tap()
+            let dailyReport = app.descendants(matching: .any)["subtab_dashboard-report"]
+            XCTAssertTrue(
+                dailyReport.waitForExistence(timeout: 5),
+                "The AX5 Dashboard menu must expose the complete Daily Report destination"
+            )
+            XCTAssertEqual(dailyReport.label, "Daily Report")
+
+            let dailyReportAttachment = XCTAttachment(screenshot: app.screenshot())
+            dailyReportAttachment.name = "Supply Run AX5 — Daily Report Sub-tab"
+            dailyReportAttachment.lifetime = .keepAlways
+            add(dailyReportAttachment)
+        }
     }
 
     private func waitForClockPage(timeout: TimeInterval = 25) -> Bool {
@@ -306,7 +334,7 @@ final class WEI3900ClockFlowQATests: XCTestCase {
         _ element: XCUIElement,
         topInset: CGFloat = 180,
         bottomInset: CGFloat = 140,
-        maxSwipes: Int = 16
+        maxSwipes: Int = 12
     ) -> Bool {
         // Return to the List's leading edge before looking for another virtualized
         // row. Otherwise a prior assertion can leave the next control outside
