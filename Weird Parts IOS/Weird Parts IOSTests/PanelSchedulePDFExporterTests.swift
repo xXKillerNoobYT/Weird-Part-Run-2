@@ -1,4 +1,5 @@
 import XCTest
+import PDFKit
 import WiredPartCore
 @testable import Weird_Parts
 
@@ -77,4 +78,58 @@ final class PanelSchedulePDFExporterTests: XCTestCase {
 
         XCTAssertGreaterThan(data.count, 0, "Rendering directly with a negative totalSpaces must not crash and must still produce PDF output.")
     }
+
+    func testWriteToTemporaryFileRendersSecondaryCircuitDescription() throws {
+        var schedule = PanelSchedule(panelName: "Tandem Panel")
+        schedule.circuits = [
+            CircuitEntry(
+                spaceNumber: 1,
+                breakerAmps: 20,
+                breakerType: .tandem,
+                circuitDescription: "Kitchen",
+                isSpare: false,
+                secondaryCircuitDescription: "Pantry"
+            )
+        ]
+
+        let url = try PanelSchedulePDFExporter(schedule: schedule, options: PanelScheduleExportOptions())
+            .writeToTemporaryFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let renderedText = try XCTUnwrap(PDFDocument(url: url)?.page(at: 0)?.string)
+        XCTAssertTrue(renderedText.contains("Kitchen / Pantry"), "The PDF circuit row must render both tandem circuit descriptions.")
+    }
+
+    func testWriteToTemporaryFileRejectsInvalidCircuitPositionsWithoutWritingPDF() throws {
+        let panelName = "InvalidPanel\(UUID().uuidString)"
+        var schedule = PanelSchedule(panelName: panelName, totalSpaces: 4)
+        schedule.circuits = [
+            CircuitEntry(
+                spaceNumber: 3,
+                breakerAmps: 30,
+                breakerType: .double,
+                circuitDescription: "Out of Range",
+                isSpare: false
+            )
+        ]
+        let exporter = PanelSchedulePDFExporter(schedule: schedule, options: PanelScheduleExportOptions())
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("PanelSchedules", isDirectory: true)
+        let date = DateFormatter.panelScheduleFilenameDate.string(from: Date())
+        let expectedURL = directory.appendingPathComponent("\(panelName)_\(date).pdf")
+        try? FileManager.default.removeItem(at: expectedURL)
+        defer { try? FileManager.default.removeItem(at: expectedURL) }
+
+        XCTAssertThrowsError(try exporter.writeToTemporaryFile()) { error in
+            XCTAssertEqual(error as? PanelScheduleValidationError, .doubleBreakerOutOfRange(space: 3))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: expectedURL.path), "An invalid panel schedule must not write a PDF for export or print.")
+    }
+}
+
+private extension DateFormatter {
+    static let panelScheduleFilenameDate: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
 }

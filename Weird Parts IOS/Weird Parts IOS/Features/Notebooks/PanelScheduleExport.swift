@@ -52,13 +52,13 @@ struct PanelSchedulePDFExporter {
     let options: PanelScheduleExportOptions
 
     func writeToTemporaryFile(fileManager: FileManager = .default) throws -> URL {
-        // Persist-time normalization (clamped totalSpaces, pruned out-of-range
-        // circuits) is the closest equivalent to a "validated" schedule on
-        // current main — `PanelSchedule` does not expose a `validated()`
-        // throwing method here, unlike the donor branch's later panel-editing
-        // lane. Rendering against the normalized copy keeps the export in
-        // sync with what `PanelScheduleBuilder`'s Save action persists.
+        // Normalize malformed dimensions and stale, invisible entries first
+        // (#1239), then reject conflicts in the schedule that will be rendered.
+        // Export and print share this entry point, so neither path can create a
+        // PDF for an overlapping circuit or a double breaker that overruns the
+        // visible panel.
         let normalizedSchedule = schedule.normalizedForPersistence()
+        try normalizedSchedule.validated()
 
         let directory = fileManager.temporaryDirectory.appendingPathComponent("PanelSchedules", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -239,6 +239,11 @@ struct PanelSchedulePDFExporter {
         guard let circuit else { return "SPARE" }
         if circuit.isSpare || circuit.circuitDescription.isEmpty {
             return "SPARE"
+        }
+        if let secondary = circuit.secondaryCircuitDescription?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !secondary.isEmpty {
+            return "\(circuit.circuitDescription) / \(secondary)"
         }
         return circuit.circuitDescription
     }
