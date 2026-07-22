@@ -752,8 +752,13 @@ struct IOSAIAssistantPanel: View {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.title2)
                     .foregroundStyle(Color.accentColor)
+                    // Keep the interaction element—not only the glyph—at the
+                    // platform minimum target size for VoiceOver and XCTest.
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
             }
             .accessibilityLabel("Send message")
+            .accessibilityIdentifier("aiAssistantSendMessage")
             .disabled(
                 query.isBlankRequiredText
                     || isProcessing
@@ -770,14 +775,17 @@ struct IOSAIAssistantPanel: View {
     @ViewBuilder
     private var chatTextEditor: some View {
         let lineCount = max(1, query.components(separatedBy: "\n").count)
-        let dynamicHeight = min(max(CGFloat(lineCount) * 20 + 16, 44), 120)
+        // TextEditor's exported interaction frame is smaller than its outer
+        // layout frame. Reserve 52pt so the actual accessible text view is at
+        // least the 44pt platform target on phone and tablet.
+        let dynamicHeight = min(max(CGFloat(lineCount) * 20 + 16, 52), 120)
 
         TextEditor(text: $query)
             .font(.subheadline)
             .scrollContentBackground(.hidden)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .frame(minHeight: 44, maxHeight: dynamicHeight)
+            .frame(minHeight: 52, maxHeight: dynamicHeight)
             .background(
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(Color(.separator), lineWidth: 0.5)
@@ -786,6 +794,9 @@ struct IOSAIAssistantPanel: View {
                             .fill(Color(.secondarySystemGroupedBackground))
                     )
             )
+            .accessibilityLabel("Message for AI Assistant")
+            .accessibilityHint("Type a question for the AI assistant")
+            .accessibilityIdentifier("aiAssistantComposer")
             .disabled(isProcessing || isClearingConversation || isLoadingConversationHistory)
             .onKeyPress(.return, phases: .down) { keyPress in
                 if keyPress.modifiers.contains(.shift) {
