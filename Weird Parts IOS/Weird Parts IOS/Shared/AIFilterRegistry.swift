@@ -84,6 +84,23 @@ class AIFilterRegistry: ObservableObject {
         }
     }
 
+    /// Activates an already-authorized assistant command only while its exact
+    /// page/value registration is still active. Unlike `activateFilter`, this
+    /// never creates a deferred request after a confirmation dialog is shown.
+    @discardableResult
+    func activateCurrentlyRegisteredFilter(pageId: String, value: String) -> Bool {
+        guard let registration = registrations[pageId],
+              registration.options.contains(where: {
+                  $0.compare(value, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+              })
+        else {
+            return false
+        }
+
+        registration.activate(value)
+        return true
+    }
+
     /// Called by a page in its onAppear to consume any pending filter request.
     func applyPendingFilter(pageId: String) {
         guard let pending = pendingFilter, pending.pageId == pageId else { return }

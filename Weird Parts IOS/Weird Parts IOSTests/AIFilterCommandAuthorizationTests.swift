@@ -106,4 +106,30 @@ final class AIFilterCommandAuthorizationTests: XCTestCase {
         XCTAssertEqual(commands.count, 1)
         XCTAssertTrue(commands[0].requiresConfirmation)
     }
+
+    func testConfirmedCommandCannotQueueAfterItsPageDeregisters() {
+        let registry = AIFilterRegistry()
+        var activatedValues: [String] = []
+
+        registry.register(
+            pageId: "purchase-orders",
+            filterName: "PO Status",
+            options: ["all", "draft"],
+            activate: { activatedValues.append($0) }
+        )
+        registry.deregister(pageId: "purchase-orders")
+
+        XCTAssertFalse(registry.activateCurrentlyRegisteredFilter(pageId: "purchase-orders", value: "all"))
+        XCTAssertNil(registry.pendingFilter)
+
+        registry.register(
+            pageId: "purchase-orders",
+            filterName: "PO Status",
+            options: ["all", "draft"],
+            activate: { activatedValues.append($0) }
+        )
+        registry.applyPendingFilter(pageId: "purchase-orders")
+
+        XCTAssertTrue(activatedValues.isEmpty)
+    }
 }

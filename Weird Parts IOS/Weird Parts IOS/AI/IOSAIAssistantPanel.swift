@@ -480,7 +480,12 @@ struct IOSAIAssistantPanel: View {
         ) {
             Button("Clear Filter", role: .destructive) {
                 if let command = pendingFilterActivation {
-                    appCore.aiFilterRegistry.activateFilter(pageId: command.pageId, value: command.value)
+                    // The page may have disappeared while confirmation was open.
+                    // Fail closed instead of queuing a model command for a later view.
+                    appCore.aiFilterRegistry.activateCurrentlyRegisteredFilter(
+                        pageId: command.pageId,
+                        value: command.value
+                    )
                 }
                 pendingFilterActivation = nil
             }
