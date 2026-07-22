@@ -24,6 +24,26 @@ final class AIFilterCommandAuthorizationTests: XCTestCase {
         XCTAssertTrue(commands.isEmpty)
     }
 
+    func testInformationalQuestionAboutFilterCannotActivateMatchingCommand() {
+        let commands = AIFilterCommandAuthorization.authorizedCommands(
+            response: "{\"activateFilter\":{\"pageId\":\"purchase-orders\",\"value\":\"draft\"}}",
+            userQuery: "What does the draft filter mean?",
+            availableFilters: [purchaseOrderFilter]
+        )
+
+        XCTAssertTrue(commands.isEmpty)
+    }
+
+    func testHelpWordingCannotActivateMatchingCommand() {
+        let commands = AIFilterCommandAuthorization.authorizedCommands(
+            response: "{\"activateFilter\":{\"pageId\":\"purchase-orders\",\"value\":\"draft\"}}",
+            userQuery: "How do I use the draft filter?",
+            availableFilters: [purchaseOrderFilter]
+        )
+
+        XCTAssertTrue(commands.isEmpty)
+    }
+
     func testExplicitUserFilterRequestAcceptsAllowlistedMatchingValue() {
         let commands = AIFilterCommandAuthorization.authorizedCommands(
             response: "{" + "\"activateFilter\":{\"pageId\":\"purchase-orders\",\"value\":\"draft\"}}",

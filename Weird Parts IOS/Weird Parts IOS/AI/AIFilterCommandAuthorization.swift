@@ -16,8 +16,8 @@ struct AIFilterActivationCommand: Equatable {
 /// Keeps model output non-authoritative for navigation filter mutations.
 ///
 /// The model may suggest a structured command, but the command becomes actionable
-/// only when the local query explicitly requests filtering, repeats the requested
-/// value, and the active registry recognizes the exact page/value pair.
+/// only when a local request parser identifies an explicit filter mutation for the
+/// requested value and the active registry recognizes the exact page/value pair.
 enum AIFilterCommandAuthorization {
     private static let commandPattern = #"\{[^{}]*"activateFilter"\s*:\s*\{[^{}]*"pageId"\s*:\s*"([^"]+)"[^{}]*"value"\s*:\s*"([^"]+)"[^{}]*\}[^{}]*\}"#
 
@@ -26,11 +26,8 @@ enum AIFilterCommandAuthorization {
         userQuery: String,
         availableFilters: [(pageId: String, filterName: String, options: [String])]
     ) -> [AIFilterActivationCommand] {
-        guard explicitlyRequestsFiltering(userQuery) else { return [] }
-
-        let requestedValues = userQuery.lowercased()
         return parsedCommands(from: response).filter { command in
-            guard requestedValues.contains(command.value.lowercased()),
+            guard explicitlyRequestsFiltering(userQuery, for: command.value),
                   let filter = availableFilters.first(where: { $0.pageId == command.pageId })
             else {
                 return false
@@ -54,11 +51,24 @@ enum AIFilterCommandAuthorization {
         }
     }
 
-    private static func explicitlyRequestsFiltering(_ query: String) -> Bool {
-        let normalized = query.lowercased()
-        return normalized.contains("filter")
-            || normalized.contains("show only")
-            || normalized.contains("only ")
-            || normalized.contains("apply ")
+    /// Matches only imperative filter mutations and deliberately excludes questions
+    /// about a filter. Model output and navigation/record context are never inputs.
+    private static func explicitlyRequestsFiltering(_ query: String, for value: String) -> Bool {
+        let normalized = query
+            .lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let escapedValue = NSRegularExpression.escapedPattern(for: value.lowercased())
+        let politePrefix = #"(?:(?:please|can\s+you|could\s+you|would\s+you)\s+)?"#
+        let patterns = [
+            #"^\#(politePrefix)(?:filter|apply)\b.*\b(?:to|for|as)\s+\#(escapedValue)\b"#,
+            #"^\#(politePrefix)show\s+only\s+(?:the\s+)?\#(escapedValue)\b"#,
+            #"^\#(politePrefix)show\b.*\bonly\s+\#(escapedValue)\b"#
+        ]
+
+        return patterns.contains { pattern in
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
+            let range = NSRange(location: 0, length: (normalized as NSString).length)
+            return regex.firstMatch(in: normalized, range: range) != nil
+        }
     }
 }
