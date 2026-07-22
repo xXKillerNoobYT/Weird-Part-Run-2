@@ -115,6 +115,7 @@ final class WEI3900ClockFlowQATests: XCTestCase {
         XCTAssertTrue(card.waitForExistence(timeout: 10))
         XCTAssertEqual(cards.count, 1)
         XCTAssertEqual(card.label, "Supply Run Active")
+        XCTAssertTrue(scrollIntoVisibleBounds(card), "The active Supply Run card must be fully scrollable into the AX5 viewport")
         let value = try XCTUnwrap(card.value as? String)
         XCTAssertTrue(value.contains("Started "))
         XCTAssertNotNil(durationMinutes(in: value))
@@ -132,14 +133,9 @@ final class WEI3900ClockFlowQATests: XCTestCase {
             // instead of its nested Button. Query the stable identifier across
             // element types so this remains a user-like interaction check.
             let control = app.descendants(matching: .any)[identifier]
-            // Restart from the top for each check. The List virtualizes distant
-            // rows at AX5, and a prior control may have scrolled to its end.
-            for _ in 0..<3 { app.swipeDown() }
-            for _ in 0..<14 where !control.exists || !control.isHittable || control.frame.maxY > app.frame.maxY - 120 {
-                app.swipeUp()
-                RunLoop.current.run(until: Date().addingTimeInterval(0.2))
-            }
+            XCTAssertTrue(scrollIntoVisibleBounds(control), "\(identifier) must be fully scrollable into the AX5 viewport")
             XCTAssertTrue(control.exists, "\(identifier) should remain reachable at AX5")
+            XCTAssertTrue(control.isHittable, "\(identifier) should be hittable at AX5")
             XCTAssertGreaterThanOrEqual(control.frame.width, 44, "\(identifier) width")
             XCTAssertGreaterThanOrEqual(control.frame.height, 44, "\(identifier) height")
             XCTAssertLessThanOrEqual(
@@ -163,10 +159,7 @@ final class WEI3900ClockFlowQATests: XCTestCase {
         // phone viewport, so verify the complete summary can move above it
         // rather than merely existing behind the bottom chrome.
         let todayTotal = app.descendants(matching: .any)["clockPage_todayTotal"]
-        for _ in 0..<12 where !todayTotal.exists || todayTotal.frame.maxY > app.frame.maxY - 100 {
-            app.swipeUp()
-            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
-        }
+        XCTAssertTrue(scrollIntoVisibleBounds(todayTotal), "Today's Hours total must scroll fully into the AX5 viewport")
         XCTAssertTrue(todayTotal.exists, "Today's Hours total must remain present in the AX5 active Supply Run flow")
         XCTAssertLessThanOrEqual(
             todayTotal.frame.maxY,
@@ -299,6 +292,36 @@ final class WEI3900ClockFlowQATests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.2))
         } while Date() < deadline
         return false
+    }
+
+    private func scrollIntoVisibleBounds(
+        _ element: XCUIElement,
+        topInset: CGFloat = 120,
+        bottomInset: CGFloat = 100,
+        maxSwipes: Int = 16
+    ) -> Bool {
+        for _ in 0..<maxSwipes {
+            if element.exists {
+                let frame = element.frame
+                if frame.minY >= app.frame.minY + topInset,
+                   frame.maxY <= app.frame.maxY - bottomInset {
+                    return true
+                }
+
+                if frame.minY < app.frame.minY + topInset {
+                    app.swipeDown()
+                } else {
+                    app.swipeUp()
+                }
+            } else {
+                app.swipeUp()
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        }
+
+        return element.exists
+            && element.frame.minY >= app.frame.minY + topInset
+            && element.frame.maxY <= app.frame.maxY - bottomInset
     }
 
     private func durationMinutes(in accessibilityValue: String) -> Int? {
