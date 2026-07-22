@@ -86,6 +86,10 @@ final class ClockSupplyRunCardRegressionTests: XCTestCase {
             "AX layouts must reserve persistent bottom-navigation space from the List scroll region."
         )
         XCTAssertTrue(
+            source.contains(".safeAreaInset(edge: .top, spacing: 0)"),
+            "AX layouts must reserve the persistent Dashboard section menu above the first Clock row."
+        )
+        XCTAssertTrue(
             source.contains(".contentMargins("),
             "AX layouts must reserve persistent bottom-navigation space in the List's hit-testable scroll content."
         )

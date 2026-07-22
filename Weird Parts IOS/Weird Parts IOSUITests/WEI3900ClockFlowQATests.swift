@@ -117,6 +117,11 @@ final class WEI3900ClockFlowQATests: XCTestCase {
         XCTAssertEqual(card.label, "Supply Run Active")
         let activeCardIsVisible = scrollIntoVisibleBounds(card)
         XCTAssertTrue(activeCardIsVisible, "The active Supply Run card must be fully scrollable into the AX5 viewport")
+        XCTAssertGreaterThanOrEqual(
+            card.frame.minY,
+            clockChromeTopInset(),
+            "The active Supply Run card must render below the persistent Clock section menu, not merely inside the application bounds"
+        )
         let value = try XCTUnwrap(card.value as? String)
         XCTAssertTrue(value.contains("Started "))
         XCTAssertNotNil(durationMinutes(in: value))
@@ -148,7 +153,7 @@ final class WEI3900ClockFlowQATests: XCTestCase {
             XCTAssertGreaterThanOrEqual(control.frame.height, 44, "\(identifier) height")
             XCTAssertLessThanOrEqual(
                 control.frame.maxY,
-                app.frame.maxY - 100,
+                app.frame.maxY - 140,
                 "\(identifier) must scroll fully above persistent bottom navigation"
             )
         }
@@ -174,7 +179,7 @@ final class WEI3900ClockFlowQATests: XCTestCase {
         XCTAssertTrue(todayTotal.exists, "Today's Hours total must remain present in the AX5 active Supply Run flow")
         XCTAssertLessThanOrEqual(
             todayTotal.frame.maxY,
-            app.frame.maxY - 100,
+            app.frame.maxY - 140,
             "Today's Hours total must scroll fully above persistent bottom navigation"
         )
 
@@ -332,10 +337,11 @@ final class WEI3900ClockFlowQATests: XCTestCase {
 
     private func scrollIntoVisibleBounds(
         _ element: XCUIElement,
-        topInset: CGFloat = 180,
+        topInset: CGFloat? = nil,
         bottomInset: CGFloat = 140,
         maxSwipes: Int = 12
     ) -> Bool {
+        let effectiveTopInset = max(topInset ?? 180, clockChromeTopInset())
         // Return to the List's leading edge before looking for another virtualized
         // row. Otherwise a prior assertion can leave the next control outside
         // the accessibility tree at AX5 even though it is reachable by scrolling.
@@ -346,12 +352,12 @@ final class WEI3900ClockFlowQATests: XCTestCase {
         for _ in 0..<maxSwipes {
             if element.exists {
                 let frame = element.frame
-                if frame.minY >= app.frame.minY + topInset,
+                if frame.minY >= app.frame.minY + effectiveTopInset,
                    frame.maxY <= app.frame.maxY - bottomInset {
                     return true
                 }
 
-                if frame.minY < app.frame.minY + topInset {
+                if frame.minY < app.frame.minY + effectiveTopInset {
                     swipeClockList(up: false)
                 } else {
                     swipeClockList(up: true)
@@ -363,8 +369,20 @@ final class WEI3900ClockFlowQATests: XCTestCase {
         }
 
         return element.exists
-            && element.frame.minY >= app.frame.minY + topInset
+            && element.frame.minY >= app.frame.minY + effectiveTopInset
             && element.frame.maxY <= app.frame.maxY - bottomInset
+    }
+
+    private func clockChromeTopInset() -> CGFloat {
+        let baseline: CGFloat = 180
+        guard app.frame.width < 500 else { return baseline }
+
+        let sectionMenu = app.descendants(matching: .any)["dashboardSubtabMenu"]
+        guard sectionMenu.exists else { return baseline }
+        // Keep an 8pt painted gap beneath the opaque Clock selector. XCTest's
+        // application bounds alone are insufficient because the selector is
+        // an ancestor's persistent visual chrome, not a system safe area.
+        return max(baseline, sectionMenu.frame.maxY + 8)
     }
 
     private func swipeClockList(up: Bool) {

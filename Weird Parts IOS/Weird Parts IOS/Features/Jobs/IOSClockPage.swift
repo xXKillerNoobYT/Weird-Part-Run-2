@@ -498,6 +498,16 @@ struct IOSClockPage: View {
             }
             .accessibilityIdentifier("clockPage_root")
             .listStyle(.insetGrouped)
+            // At AX5 the Dashboard's compact section menu is persistent chrome
+            // above this routed List. Reserve its rendered height inside the
+            // List rather than relying on the ancestor VStack's layout, which
+            // lets the first section header/card paint under the menu on iOS 26.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Color.clear
+                    .frame(height: dynamicTypeSize.isAccessibilitySize ? 84 : 0)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
             // Unlike safe-area insets, scroll-content margins participate in
             // the List's own final-row geometry. This makes the persistent
             // Dashboard tab bar clearance apply to hit testing as well as the
