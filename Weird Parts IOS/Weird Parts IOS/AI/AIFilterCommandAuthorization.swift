@@ -13,6 +13,28 @@ struct AIFilterActivationCommand: Equatable {
     }
 }
 
+/// The catalog's no-model path is deliberately guidance-only. It has no command
+/// or notification output, so a user query cannot mutate catalog state without a
+/// structured model response passing `AIFilterCommandAuthorization` below.
+enum CatalogFilterFallbackResolution: Equatable {
+    case guidance(String)
+
+    static func response(for query: String) -> CatalogFilterFallbackResolution {
+        _ = query
+        return .guidance(
+            "On-device AI is unavailable, so I can provide catalog guidance but won't change filters. " +
+            "Use the catalog filter cards to choose a category, brand, color, style, type, low-stock view, or All Parts."
+        )
+    }
+
+    var message: String {
+        switch self {
+        case .guidance(let message):
+            return message
+        }
+    }
+}
+
 /// Keeps model output non-authoritative for navigation filter mutations.
 ///
 /// The model may suggest a structured command, but the command becomes actionable

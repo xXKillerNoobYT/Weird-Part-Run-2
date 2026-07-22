@@ -1580,9 +1580,10 @@ struct IOSAIAssistantPanel: View {
             }
         }
 
-        // Fallback: if on the catalog page, try to handle filter requests locally
+        // No-model catalog fallback is guidance-only. Filter mutations remain
+        // exclusive to AIFilterCommandAuthorization's registry-checked path.
         if catalogContext != nil {
-            return handleCatalogFallback(for: queryText)
+            return CatalogFilterFallbackResolution.response(for: queryText).message
         }
 
         // Fallback: if on the pricing page, provide pricing-specific help
@@ -1662,53 +1663,6 @@ struct IOSAIAssistantPanel: View {
         }
 
         return "Here's the current supplier data:\n\n\(context)\n\nAsk me about quality scores, on-time rates, account numbers, brands, or contacts for more details."
-    }
-
-    /// Handles catalog-specific queries when Foundation Models aren't available.
-    private func handleCatalogFallback(for queryText: String) -> String {
-        let lower = queryText.lowercased()
-        var filters: [String: Any] = [:]
-
-        if lower.contains("clear") && (lower.contains("filter") || lower.contains("all")) {
-            filters["clearAll"] = true
-            applyAIFilterCommand(filters)
-            return "Done — cleared all filters."
-        }
-
-        if lower.contains("low stock") || lower.contains("low-stock") {
-            filters["lowStock"] = true
-        }
-
-        // Look for filter keywords
-        let filterKeywords = [
-            ("brand", "brand"), ("category", "category"), ("color", "color"),
-            ("style", "style"), ("type", "type")
-        ]
-        for (keyword, filterKey) in filterKeywords {
-            if let range = lower.range(of: "\(keyword) ") {
-                let afterKeyword = String(lower[range.upperBound...]).trimmingCharacters(in: .whitespaces)
-                let value = afterKeyword.components(separatedBy: .whitespaces).first ?? afterKeyword
-                if !value.isEmpty {
-                    filters[filterKey] = value.capitalized
-                }
-            }
-        }
-
-        if !filters.isEmpty {
-            applyAIFilterCommand(filters)
-            return "Updated catalog filters. Check the catalog view for results."
-        }
-
-        return generateFallbackResponse(for: queryText)
-    }
-
-    /// Posts filter changes to the catalog page via NotificationCenter.
-    private func applyAIFilterCommand(_ filters: [String: Any]) {
-        NotificationCenter.default.post(
-            name: .aiSetCatalogFilters,
-            object: nil,
-            userInfo: filters
-        )
     }
 
     // MARK: - AI Filter Command Parsing (prompt 62S)
