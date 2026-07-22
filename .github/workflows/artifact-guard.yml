@@ -30,5 +30,8 @@ jobs:
       - name: Verify guard catches representative artifacts
         run: python3 scripts/guard-tracked-artifacts.py --self-test
 
+      - name: Verify Panel Quality source policy
+        run: python3 scripts/check-panel-quality-source-policy.py
+
       - name: Fail on tracked local runtime artifacts
         run: python3 scripts/guard-tracked-artifacts.py
