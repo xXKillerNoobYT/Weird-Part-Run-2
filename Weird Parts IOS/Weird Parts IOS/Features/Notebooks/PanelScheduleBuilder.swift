@@ -455,7 +455,12 @@ struct PanelScheduleBuilder: View {
 
             Button {
                 guard validateBeforeSave() else { return }
-                if schedule.circuitsOutsideTotalSpaces.isEmpty {
+                // A #1239-safe-loaded type/size mismatch can have retained
+                // circuits outside the display-normalized range. Those circuits
+                // remain editable and must persist until the user explicitly
+                // corrects the settings pair through Panel Settings. Valid
+                // schedules keep the existing explicit prune confirmation.
+                if schedule.panelSettingsValidationError != nil || schedule.circuitsOutsideTotalSpaces.isEmpty {
                     saveNormalizedSchedule()
                 } else {
                     showHiddenCircuitPruneConfirmation = true

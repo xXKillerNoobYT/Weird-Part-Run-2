@@ -186,6 +186,35 @@ struct PanelScheduleTests {
         #expect(repaired.normalizedForPersistence().circuits.map(\.id) == ["visible", "preserved"])
     }
 
+    @Test("Normal persistence retains safe-loaded legacy circuits until panel settings are corrected")
+    func safeLoadedMalformedMDPSaveRetainsCircuitOutsideDisplayRange() throws {
+        let decoded = PanelSchedule(
+            panelType: .mdp,
+            totalSpaces: -2,
+            circuits: [
+                CircuitEntry(id: "edited", spaceNumber: 1, circuitDescription: "Office", isSpare: false),
+                CircuitEntry(id: "retained", spaceNumber: 21, circuitDescription: "Legacy equipment", isSpare: false)
+            ]
+        )
+
+        var safeLoaded = decoded.clampingTotalSpacesToSupportedRange()
+        #expect(safeLoaded.totalSpaces == 20)
+        #expect(safeLoaded.panelSettingsValidationError != nil)
+
+        // This mirrors a normal circuit edit followed by the builder's ordinary
+        // persistence path; it must not silently remove the retained circuit.
+        try safeLoaded.moveCircuit(id: "edited", to: 3)
+        let persistedBeforeSettingsCorrection = safeLoaded.normalizedForPersistence()
+        #expect(persistedBeforeSettingsCorrection.circuits.map(\.id) == ["edited", "retained"])
+        #expect(persistedBeforeSettingsCorrection.circuits.first { $0.id == "edited" }?.spaceNumber == 3)
+        #expect(persistedBeforeSettingsCorrection.circuits.first { $0.id == "retained" }?.spaceNumber == 21)
+
+        try safeLoaded.updatePanelSettings(panelType: .mdp, totalSpaces: 42)
+        let persistedAfterSettingsCorrection = safeLoaded.normalizedForPersistence()
+        #expect(persistedAfterSettingsCorrection.totalSpaces == 42)
+        #expect(persistedAfterSettingsCorrection.circuits.map(\.id) == ["edited", "retained"])
+    }
+
     @Test("Invalid user panel-space edits are rejected atomically without circuit loss")
     func invalidPanelSpaceEditLeavesScheduleUnchanged() throws {
         var schedule = PanelSchedule(
