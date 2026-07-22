@@ -196,14 +196,25 @@ public struct PanelSchedule: Codable, Identifiable, Sendable {
     /// This is intentionally distinct from `clampingTotalSpacesToSupportedRange()`:
     /// load normalization repairs malformed persisted values without changing
     /// circuits, while this user-edit API rejects incompatible type/size pairs
-    /// before mutating the schedule. The caller can then present the typed error
-    /// and a correction path without losing existing circuit entries.
+    /// or a pair that would hide existing circuits before mutating the schedule.
+    /// The caller can then present the typed error and a correction path without
+    /// losing existing circuit entries.
     public mutating func updatePanelSettings(panelType: PanelType, totalSpaces: Int) throws {
         var candidate = self
         candidate.panelType = panelType
         candidate.totalSpaces = totalSpaces
         if let error = candidate.panelSettingsValidationError {
             throw error
+        }
+        let circuitSpacesThatWouldBeHidden = candidate.circuitsOutsideTotalSpaces
+            .map(\.spaceNumber)
+            .sorted()
+        guard circuitSpacesThatWouldBeHidden.isEmpty else {
+            throw PanelScheduleValidationError.panelSettingsWouldHideCircuits(
+                panelType: panelType,
+                spaces: totalSpaces,
+                circuitSpaces: circuitSpacesThatWouldBeHidden
+            )
         }
         self = candidate
     }
@@ -362,6 +373,7 @@ public enum CircuitClassification: String, Codable, Sendable, CaseIterable {
 
 public enum PanelScheduleValidationError: Error, LocalizedError, Equatable, Sendable {
     case invalidPanelTypeSpaceCount(panelType: PanelType, spaces: Int, allowedSpaces: [Int])
+    case panelSettingsWouldHideCircuits(panelType: PanelType, spaces: Int, circuitSpaces: [Int])
     case spaceConflict(space: Int, first: Int, second: Int)
     case doubleBreakerOutOfRange(space: Int)
     case circuitNotFound
@@ -371,6 +383,9 @@ public enum PanelScheduleValidationError: Error, LocalizedError, Equatable, Send
         case .invalidPanelTypeSpaceCount(let panelType, let spaces, let allowedSpaces):
             let options = allowedSpaces.map(String.init).joined(separator: ", ")
             return "\(panelType.rawValue) panels do not support \(spaces) spaces. Choose one of: \(options)."
+        case .panelSettingsWouldHideCircuits(let panelType, let spaces, let circuitSpaces):
+            let affectedSpaces = circuitSpaces.map(String.init).joined(separator: ", ")
+            return "\(panelType.rawValue) with \(spaces) spaces would hide circuits at spaces \(affectedSpaces). Move or remove those circuits before changing panel settings."
         case .spaceConflict(let space, let first, let second):
             return "Space \(space) is already occupied by circuits \(first) and \(second)."
         case .doubleBreakerOutOfRange(let space):
