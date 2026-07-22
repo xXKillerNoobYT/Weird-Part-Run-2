@@ -211,6 +211,31 @@ struct PanelScheduleTests {
         #expect(schedule.circuits.map(\.spaceNumber) == [1, 20])
     }
 
+    @Test("Shrinking panel settings rejects hidden circuits atomically")
+    func shrinkingPanelSettingsLeavesCircuitsAndSettingsUnchanged() throws {
+        var schedule = PanelSchedule(
+            panelType: .mdp,
+            totalSpaces: 42,
+            circuits: [
+                CircuitEntry(id: "main", spaceNumber: 1, circuitDescription: "Main feed", isSpare: false),
+                CircuitEntry(id: "high-space", spaceNumber: 42, circuitDescription: "Roof unit", isSpare: false)
+            ]
+        )
+
+        #expect(throws: PanelScheduleValidationError.panelSettingsWouldHideCircuits(
+            panelType: .disconnect,
+            spaces: 2,
+            circuitSpaces: [42]
+        )) {
+            try schedule.updatePanelSettings(panelType: .disconnect, totalSpaces: 2)
+        }
+
+        #expect(schedule.panelType == .mdp)
+        #expect(schedule.totalSpaces == 42)
+        #expect(schedule.circuits.map(\.id) == ["main", "high-space"])
+        #expect(schedule.circuits.map(\.spaceNumber) == [1, 42])
+    }
+
     // MARK: - Circuit classification, drag/drop move, and position validation
 
     @Test("Double breakers reserve same-side adjacent spaces")
