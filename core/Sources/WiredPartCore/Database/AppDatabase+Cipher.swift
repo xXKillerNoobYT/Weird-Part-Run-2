@@ -300,15 +300,15 @@ extension AppDatabase {
         fileManager fm: FileManager = .default
     ) throws {
         do {
-            for suffix in ["-wal", "-shm"] { try? fm.removeItem(atPath: path + suffix) }
             for suffix in ["", "-wal", "-shm"] { try? fm.removeItem(atPath: bakPath + suffix) }
             try fm.moveItem(atPath: path, toPath: bakPath)
+            for suffix in ["-wal", "-shm"] where fm.fileExists(atPath: path + suffix) {
+                try fm.moveItem(atPath: path + suffix, toPath: bakPath + suffix)
+            }
             do {
                 try fm.moveItem(atPath: tempPath, toPath: path)
             } catch {
-                if fm.fileExists(atPath: bakPath), !fm.fileExists(atPath: path) {
-                    try fm.moveItem(atPath: bakPath, toPath: path)
-                }
+                try restorePlaintextDatabaseBundle(atPath: path, backupPath: bakPath, fileManager: fm)
                 throw error
             }
         } catch {
@@ -333,13 +333,23 @@ extension AppDatabase {
         backupPath bakPath: String,
         fileManager fm: FileManager = .default
     ) throws {
-        for suffix in ["-wal", "-shm"] {
-            try? fm.removeItem(atPath: path + suffix)
+        try restorePlaintextDatabaseBundle(atPath: path, backupPath: bakPath, fileManager: fm)
+    }
+
+    private static func restorePlaintextDatabaseBundle(
+        atPath path: String,
+        backupPath bakPath: String,
+        fileManager fm: FileManager
+    ) throws {
+        for suffix in ["", "-wal", "-shm"] {
+            let canonicalPath = path + suffix
+            if fm.fileExists(atPath: canonicalPath) {
+                try fm.removeItem(atPath: canonicalPath)
+            }
         }
-        try fm.removeItem(atPath: path)
         try fm.moveItem(atPath: bakPath, toPath: path)
-        for suffix in ["-wal", "-shm"] {
-            try? fm.removeItem(atPath: bakPath + suffix)
+        for suffix in ["-wal", "-shm"] where fm.fileExists(atPath: bakPath + suffix) {
+            try fm.moveItem(atPath: bakPath + suffix, toPath: path + suffix)
         }
     }
 

@@ -419,14 +419,31 @@ struct AppDatabaseCipherTests {
         let missingTempPath = path + ".encrypted-tmp"
         defer { cleanup(path) }
 
-        let plainDB = try AppDatabase.openDatabase(atPath: path)
-        try plainDB.writer.write { db in
+        let initializedDatabase = try AppDatabase.openDatabase(atPath: path)
+        try (initializedDatabase.writer as? DatabasePool)?.close()
+
+        let writer = try DatabaseQueue(path: path)
+        try writer.writeWithoutTransaction { db in
+            try db.execute(sql: "PRAGMA journal_mode = WAL")
+            try db.execute(sql: "PRAGMA wal_autocheckpoint = 0")
             try db.execute(sql: """
                 INSERT OR REPLACE INTO settings (key, value, category)
                 VALUES ('promotion_rollback_sentinel', 'original_value', 'test')
             """)
         }
-        try (plainDB.writer as? DatabasePool)?.close()
+
+        // Keep a second connection open while the writer closes so the committed
+        // sentinel remains in the plaintext WAL instead of being checkpointed into
+        // the base file before the promotion attempt.
+        let reader = try DatabaseQueue(path: path)
+        _ = try reader.read { db in
+            try String.fetchOne(db, sql: "SELECT value FROM settings WHERE key = 'promotion_rollback_sentinel'")
+        }
+        try writer.close()
+        #expect(FileManager.default.fileExists(atPath: path + "-wal"),
+                "Regression setup must retain the committed sentinel in the source WAL")
+        let sourceWAL = try Data(contentsOf: URL(fileURLWithPath: path + "-wal"))
+        #expect(!sourceWAL.isEmpty, "Regression setup must capture the source WAL bundle")
 
         do {
             try AppDatabase.replacePlaintextDatabaseWithEncryptedTemp(
@@ -438,7 +455,12 @@ struct AppDatabaseCipherTests {
         } catch {
             #expect(FileManager.default.fileExists(atPath: path), "Original plaintext DB must be restored to the canonical path")
             #expect(!FileManager.default.fileExists(atPath: path + ".unencrypted.bak"), "Rollback should not leave the only good copy stranded at the backup path")
+            #expect(
+                try Data(contentsOf: URL(fileURLWithPath: path + "-wal")) == sourceWAL,
+                "Failed promotion must restore the original WAL bytes with the canonical plaintext database"
+            )
 
+            try reader.close()
             let checkPool = try DatabasePool(path: path)
             let sentinel: String? = try checkPool.read { db in
                 try String.fetchOne(db, sql: "SELECT value FROM settings WHERE key = 'promotion_rollback_sentinel'")
