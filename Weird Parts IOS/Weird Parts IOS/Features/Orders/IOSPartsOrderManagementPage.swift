@@ -456,14 +456,17 @@ struct IOSPartsOrderManagementPage: View {
     }
 
     private func postAIContext() {
-        let supplierName = suppliers.first(where: { $0.id == selectedSupplierId })?.name ?? "none"
+        let selectedSupplier = suppliers.first(where: { $0.id == selectedSupplierId })
         let context = [
             "Parts order management page is open.",
-            "Selected supplier: \(supplierName). Suppliers with active POs: \(suppliers.count).",
+            "Suppliers with active POs: \(suppliers.count).",
             "Rows loaded: \(allRows.count), filtered rows: \(filteredRows.count).",
             "PO filters draft/active/partial/received/cancelled: \(showDraft)/\(showActive)/\(showPartial)/\(showReceived)/\(showCancelled).",
             "Part filters waiting/backorder/received: \(showWaiting)/\(showBackorder)/\(showReceivedParts). Search text is \(searchText.isEmpty ? "empty" : "active").",
-            "This context is read-only; explain supplier-centric PO parts, filters, and outstanding quantities without moving or editing parts."
+            "This context is read-only; explain supplier-centric PO parts, filters, and outstanding quantities without moving or editing parts.",
+            AIRecordDataEnvelope.make([
+                ("selected_supplier_name", selectedSupplier?.name ?? "none")
+            ])
         ].joined(separator: " ")
         NotificationCenter.default.post(
             name: .partsOrderManagementPageActive,
