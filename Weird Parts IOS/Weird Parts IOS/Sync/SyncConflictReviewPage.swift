@@ -163,6 +163,7 @@ struct SyncConflictReviewPage: View {
             }
         }
         .listStyle(.insetGrouped)
+        .accessibilityIdentifier("syncConflictReviewList")
     }
 
     // MARK: - Conflict Row (severity-aware)

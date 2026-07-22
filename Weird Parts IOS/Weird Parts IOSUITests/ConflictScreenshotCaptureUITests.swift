@@ -256,11 +256,13 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
     }
 
     private func swipeConflictListUp() {
-        // SwiftUI keeps the dashboard's collection in the hierarchy behind the
-        // review sheet, so querying `collectionViews.firstMatch` can swipe the
-        // wrong surface. A centered coordinate drag targets the visible sheet.
-        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
-        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
+        // The dashboard keeps scrollable views in the hierarchy behind the
+        // review sheet. Target the identified List rather than the app-wide
+        // center so a long selectable value cannot consume the gesture on iPad.
+        let conflictList = app.descendants(matching: .any)["syncConflictReviewList"]
+        XCTAssertTrue(conflictList.waitForExistence(timeout: 5), "Sync conflict list must exist before scrolling")
+        let start = conflictList.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
+        let end = conflictList.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
         start.press(forDuration: 0.05, thenDragTo: end)
     }
 
