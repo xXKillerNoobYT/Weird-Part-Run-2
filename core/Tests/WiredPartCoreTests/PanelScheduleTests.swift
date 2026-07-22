@@ -151,8 +151,8 @@ struct PanelScheduleTests {
         #expect(!panelType.allows(totalSpaces: expectedSpaces.last! + 1))
     }
 
-    @Test("Malformed load values retain #1239 normalization without circuit loss")
-    func malformedMDPLoadRemainsRepairableBeforeUserEditValidation() throws {
+    @Test("Malformed load values stay circuit-editable and repairable without circuit loss")
+    func malformedMDPLoadCanBeCorrectedWithoutLosingCircuits() throws {
         let decoded = PanelSchedule(
             panelType: .mdp,
             totalSpaces: -2,
@@ -166,13 +166,24 @@ struct PanelScheduleTests {
 
         #expect(display.totalSpaces == 20)
         #expect(display.circuits.map(\.id) == ["visible", "preserved"])
-        #expect(throws: PanelScheduleValidationError.invalidPanelTypeSpaceCount(
+        #expect(display.panelSettingsValidationError == .invalidPanelTypeSpaceCount(
             panelType: .mdp,
             spaces: 20,
             allowedSpaces: [42]
-        )) {
-            try display.validated()
-        }
+        ))
+
+        // Safe-loaded schedules can continue through circuit edit/save paths
+        // before a user explicitly repairs their type/size settings.
+        var repaired = display
+        try repaired.moveCircuit(id: "visible", to: 3)
+        try repaired.validated()
+        try repaired.updatePanelSettings(panelType: .mdp, totalSpaces: 42)
+
+        #expect(repaired.panelType == .mdp)
+        #expect(repaired.totalSpaces == 42)
+        #expect(repaired.circuits.map(\.id) == ["visible", "preserved"])
+        #expect(repaired.circuits.first { $0.id == "visible" }?.spaceNumber == 3)
+        #expect(repaired.normalizedForPersistence().circuits.map(\.id) == ["visible", "preserved"])
     }
 
     @Test("Invalid user panel-space edits are rejected atomically without circuit loss")
