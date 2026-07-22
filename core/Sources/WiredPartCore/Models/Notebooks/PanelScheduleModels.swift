@@ -104,22 +104,16 @@ public struct PanelSchedule: Codable, Identifiable, Sendable {
 
     // MARK: - Circuit Position Validation (drag/drop + move mode)
 
-    /// Validation errors for the *visible* panel range (1...totalSpaces).
-    /// This is independent of the #1239 clamping/pruning above, which
-    /// repairs a malformed `totalSpaces` itself; this instead validates
-    /// circuit *placement* within an already-valid panel size — same-side
-    /// double-breaker span and space occupancy conflicts.
+    /// Circuit-placement validation errors for the *visible* panel range
+    /// (1...totalSpaces).
+    ///
+    /// This intentionally excludes panel-type/space-count compatibility. A
+    /// #1239 safe-load can normalize malformed persisted data to a globally
+    /// supported size that does not match its saved type (for example MDP/20).
+    /// That schedule must remain editable and saveable until the user chooses
+    /// a valid settings pair through `updatePanelSettings(panelType:totalSpaces:)`.
     public var validationErrors: [PanelScheduleValidationError] {
         var errors: [PanelScheduleValidationError] = []
-        if !panelType.allows(totalSpaces: totalSpaces) {
-            errors.append(
-                .invalidPanelTypeSpaceCount(
-                    panelType: panelType,
-                    spaces: totalSpaces,
-                    allowedSpaces: panelType.allowedTotalSpaces
-                )
-            )
-        }
         var occupied: [Int: CircuitEntry] = [:]
         for circuit in circuits {
             guard (1...max(totalSpaces, 1)).contains(circuit.spaceNumber) else { continue }
@@ -146,6 +140,18 @@ public struct PanelSchedule: Codable, Identifiable, Sendable {
         if let error = validationErrors.first {
             throw error
         }
+    }
+
+    /// The type/space error presented when a user attempts to save panel
+    /// settings that are outside the plan-defined bounds. Unlike
+    /// `validationErrors`, this is not applied to decoded safe-load data.
+    public var panelSettingsValidationError: PanelScheduleValidationError? {
+        guard !panelType.allows(totalSpaces: totalSpaces) else { return nil }
+        return .invalidPanelTypeSpaceCount(
+            panelType: panelType,
+            spaces: totalSpaces,
+            allowedSpaces: panelType.allowedTotalSpaces
+        )
     }
 
     /// Spaces a circuit occupies. Double breakers reserve the matching space
@@ -196,7 +202,9 @@ public struct PanelSchedule: Codable, Identifiable, Sendable {
         var candidate = self
         candidate.panelType = panelType
         candidate.totalSpaces = totalSpaces
-        try candidate.validated()
+        if let error = candidate.panelSettingsValidationError {
+            throw error
+        }
         self = candidate
     }
 }
