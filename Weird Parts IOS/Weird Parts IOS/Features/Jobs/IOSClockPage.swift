@@ -478,9 +478,35 @@ struct IOSClockPage: View {
                     todayHoursSection
                 }
 
+                // Keep a real trailing scroll row in addition to the List's
+                // safe-area inset. The Dashboard tab bar is rendered by the
+                // ancestor TabView, so an inset alone can still leave a final
+                // AX5 row visually above the bar but outside its hit region.
+                // This row lets every Clock action and Today's Hours scroll
+                // past the persistent chrome with no interactive or VoiceOver
+                // surface of its own (#1456).
+                Section {
+                    Color.clear
+                        .frame(height: dynamicTypeSize.isAccessibilitySize ? 132 : 72)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets())
+
             }
             .accessibilityIdentifier("clockPage_root")
             .listStyle(.insetGrouped)
+            // Unlike safe-area insets, scroll-content margins participate in
+            // the List's own final-row geometry. This makes the persistent
+            // Dashboard tab bar clearance apply to hit testing as well as the
+            // visible rendered area on iOS 26.
+            .contentMargins(
+                .bottom,
+                dynamicTypeSize.isAccessibilitySize ? 220 : 120,
+                for: .scrollContent
+            )
             // The dashboard tab bar is persistent chrome. A trailing empty row
             // can still be laid out beneath that overlay, so reserve the space
             // from the List's visible scroll region instead. This lets Today's
@@ -488,7 +514,7 @@ struct IOSClockPage: View {
             // at AX5 (#1456).
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 Color.clear
-                    .frame(height: dynamicTypeSize.isAccessibilitySize ? 132 : 96)
+                    .frame(height: dynamicTypeSize.isAccessibilitySize ? 180 : 96)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
@@ -504,12 +530,6 @@ struct IOSClockPage: View {
 
         return Section("Current Status") {
             VStack(alignment: .leading, spacing: 8) {
-                // Status label
-                Label(statusLabel, systemImage: statusIcon)
-                    .font(.headline)
-                    .foregroundStyle(statusColor)
-                    .accessibilityIdentifier("clockPage_currentStatus")
-
                 // Surface the actionable active state before the large elapsed
                 // timer. At AX5 this keeps the Supply Run evidence card in the
                 // first reachable portion of the section instead of pushing it
@@ -517,6 +537,14 @@ struct IOSClockPage: View {
                 if let supplyRunStart = activeSupplyRunStartDate, activityStatus == "supply_run" {
                     activeSupplyRunCard(startedAt: supplyRunStart)
                 }
+
+                // Keep the status announcement directly after its active-state
+                // evidence card. At AX5 this prevents the redundant heading
+                // from being clipped beneath the persistent sub-tab strip.
+                Label(statusLabel, systemImage: statusIcon)
+                    .font(.headline)
+                    .foregroundStyle(statusColor)
+                    .accessibilityIdentifier("clockPage_currentStatus")
 
                 // Live elapsed timer — large, readable display
                 VStack(spacing: 2) {

@@ -86,8 +86,16 @@ final class ClockSupplyRunCardRegressionTests: XCTestCase {
             "AX layouts must reserve persistent bottom-navigation space from the List scroll region."
         )
         XCTAssertTrue(
-            source.contains(".frame(height: dynamicTypeSize.isAccessibilitySize ? 132 : 96)"),
-            "AX layouts need enough scroll clearance above the floating bottom navigation."
+            source.contains(".contentMargins("),
+            "AX layouts must reserve persistent bottom-navigation space in the List's hit-testable scroll content."
+        )
+        XCTAssertTrue(
+            source.contains(".frame(height: dynamicTypeSize.isAccessibilitySize ? 180 : 96)"),
+            "AX layouts need enough safe-area clearance above the floating bottom navigation."
+        )
+        XCTAssertTrue(
+            source.contains(".frame(height: dynamicTypeSize.isAccessibilitySize ? 132 : 72)"),
+            "AX layouts need a real trailing scroll row so controls remain hittable above ancestor navigation chrome."
         )
         XCTAssertTrue(source.contains(".accessibilityIdentifier(\"clockPage_todayTotal\")"))
     }

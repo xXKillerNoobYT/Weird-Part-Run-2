@@ -115,7 +115,8 @@ final class WEI3900ClockFlowQATests: XCTestCase {
         XCTAssertTrue(card.waitForExistence(timeout: 10))
         XCTAssertEqual(cards.count, 1)
         XCTAssertEqual(card.label, "Supply Run Active")
-        XCTAssertTrue(scrollIntoVisibleBounds(card), "The active Supply Run card must be fully scrollable into the AX5 viewport")
+        let activeCardIsVisible = scrollIntoVisibleBounds(card)
+        XCTAssertTrue(activeCardIsVisible, "The active Supply Run card must be fully scrollable into the AX5 viewport")
         let value = try XCTUnwrap(card.value as? String)
         XCTAssertTrue(value.contains("Started "))
         XCTAssertNotNil(durationMinutes(in: value))
@@ -133,8 +134,15 @@ final class WEI3900ClockFlowQATests: XCTestCase {
             // instead of its nested Button. Query the stable identifier across
             // element types so this remains a user-like interaction check.
             let control = app.descendants(matching: .any)[identifier]
-            XCTAssertTrue(scrollIntoVisibleBounds(control), "\(identifier) must be fully scrollable into the AX5 viewport")
+            let isInVisibleBounds = scrollIntoVisibleBounds(control)
+            XCTAssertTrue(isInVisibleBounds, "\(identifier) must be fully scrollable into the AX5 viewport")
             XCTAssertTrue(control.exists, "\(identifier) should remain reachable at AX5")
+
+            let controlAttachment = XCTAttachment(screenshot: app.screenshot())
+            controlAttachment.name = "Supply Run AX5 — \(identifier)"
+            controlAttachment.lifetime = .keepAlways
+            add(controlAttachment)
+
             XCTAssertTrue(control.isHittable, "\(identifier) should be hittable at AX5")
             XCTAssertGreaterThanOrEqual(control.frame.width, 44, "\(identifier) width")
             XCTAssertGreaterThanOrEqual(control.frame.height, 44, "\(identifier) height")
@@ -296,15 +304,15 @@ final class WEI3900ClockFlowQATests: XCTestCase {
 
     private func scrollIntoVisibleBounds(
         _ element: XCUIElement,
-        topInset: CGFloat = 120,
-        bottomInset: CGFloat = 100,
+        topInset: CGFloat = 180,
+        bottomInset: CGFloat = 140,
         maxSwipes: Int = 16
     ) -> Bool {
         // Return to the List's leading edge before looking for another virtualized
         // row. Otherwise a prior assertion can leave the next control outside
         // the accessibility tree at AX5 even though it is reachable by scrolling.
         for _ in 0..<3 {
-            app.swipeDown()
+            swipeClockList(up: false)
         }
 
         for _ in 0..<maxSwipes {
@@ -316,12 +324,12 @@ final class WEI3900ClockFlowQATests: XCTestCase {
                 }
 
                 if frame.minY < app.frame.minY + topInset {
-                    app.swipeDown()
+                    swipeClockList(up: false)
                 } else {
-                    app.swipeUp()
+                    swipeClockList(up: true)
                 }
             } else {
-                app.swipeUp()
+                swipeClockList(up: true)
             }
             RunLoop.current.run(until: Date().addingTimeInterval(0.2))
         }
@@ -329,6 +337,15 @@ final class WEI3900ClockFlowQATests: XCTestCase {
         return element.exists
             && element.frame.minY >= app.frame.minY + topInset
             && element.frame.maxY <= app.frame.maxY - bottomInset
+    }
+
+    private func swipeClockList(up: Bool) {
+        // A full application swipe jumps between positions above and below the
+        // AX5 safe viewport. Use a short vertical drag inside the Clock List to
+        // settle a control fully between the sub-tab strip and tab bar.
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: up ? 0.65 : 0.50))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: up ? 0.50 : 0.65))
+        start.press(forDuration: 0.01, thenDragTo: end)
     }
 
     private func durationMinutes(in accessibilityValue: String) -> Int? {

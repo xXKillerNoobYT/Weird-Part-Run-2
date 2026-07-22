@@ -791,6 +791,7 @@ struct ModuleHostView: View {
     let navigationRequest: ModuleNavigationRequest?
     @EnvironmentObject private var appCore: AppCore
     @EnvironmentObject private var tabPrefs: TabBarPreferences
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var selectedTabId: String = ""
     @State private var showUserMenu = false
 
@@ -982,7 +983,10 @@ struct ModuleHostView: View {
 
     @ViewBuilder
     private var subTabPicker: some View {
-        let chipH: CGFloat = 14
+        // AX text is capped within the chip, so reduce only its decorative
+        // horizontal padding. This keeps the last Dashboard tab fully legible
+        // instead of presenting a clipped "Daily Re…" label on compact phones.
+        let chipH: CGFloat = dynamicTypeSize.isAccessibilitySize ? 6 : 14
         let isSelected: (AppTab) -> Bool = { $0.id == selectedTabId }
 
         ScrollViewReader { proxy in
@@ -1008,7 +1012,10 @@ struct ModuleHostView: View {
                         .id(tab.id)
                     }
                 }
-                .padding(.horizontal, DS.Space.lg)
+                // Preserve a full 44pt target while using the page gutters for
+                // usable label width at AX5. With only a few Dashboard tabs,
+                // this prevents a half-visible trailing "Daily Report" chip.
+                .padding(.horizontal, dynamicTypeSize.isAccessibilitySize ? DS.Space.xs : DS.Space.lg)
                 .padding(.vertical, DS.Space.sm)
             }
             .onAppear {
