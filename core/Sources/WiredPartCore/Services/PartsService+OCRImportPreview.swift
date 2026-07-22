@@ -154,12 +154,10 @@ extension PartsService {
         pages: [PartsOCRTextPage],
         chunkLineLimit: Int = 8
     ) throws -> PartsOCRImportPreview {
-        let cleanedPages = pages
-            .filter { !$0.text.isBlankRequiredText }
-            .sorted { $0.pageNumber < $1.pageNumber }
-        guard !cleanedPages.isEmpty else {
+        guard !pages.isEmpty, pages.allSatisfy({ !$0.text.isBlankRequiredText }) else {
             throw PartsError.invalidInput("OCR import preview requires at least one page of extracted text.")
         }
+        let cleanedPages = pages.sorted { $0.pageNumber < $1.pageNumber }
 
         let safeChunkLineLimit = max(1, chunkLineLimit)
         let chunks = makeOCRImportChunks(pages: cleanedPages, chunkLineLimit: safeChunkLineLimit)
@@ -181,12 +179,10 @@ extension PartsService {
         pages: [PartsOCRTextPage],
         chunkLineLimit: Int = 12
     ) throws -> PartsOCRImportPreview {
-        let cleanedPages = pages
-            .filter { !$0.text.isBlankRequiredText }
-            .sorted { $0.pageNumber < $1.pageNumber }
-        guard !cleanedPages.isEmpty else {
+        guard !pages.isEmpty, pages.allSatisfy({ !$0.text.isBlankRequiredText }) else {
             throw PartsError.invalidInput("Digital PDF import preview requires at least one page of extracted text.")
         }
+        let cleanedPages = pages.sorted { $0.pageNumber < $1.pageNumber }
 
         let tables = extractDigitalPDFTables(pages: cleanedPages)
         let chunks = makeOCRImportChunks(

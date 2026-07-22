@@ -15,20 +15,30 @@ struct PartsOCRImportPreviewTests {
         }
     }
 
-    @Test("OCR and digital-PDF previews reject blank page input")
+    @Test("OCR and digital-PDF previews reject blank pages even when another page is valid")
     func previewPartsImportRejectsBlankPages() throws {
         let env = try E2ETestHelpers.setUp()
-        let blankPage = [PartsService.PartsOCRTextPage(pageNumber: 1, text: " \n\t ")]
+        let blankPage = PartsService.PartsOCRTextPage(pageNumber: 1, text: " \n\t ")
+        let validPage = PartsService.PartsOCRTextPage(pageNumber: 2, text: """
+        Code | Name | Category
+        VALID-1 | Valid Preview Row | Electrical
+        """)
+        let invalidPageSets = [
+            [blankPage],
+            [blankPage, validPage]
+        ]
 
-        #expect(throws: PartsService.PartsError.invalidInput(
-            "OCR import preview requires at least one page of extracted text."
-        )) {
-            _ = try env.parts.previewPartsImportOCR(pages: blankPage)
-        }
-        #expect(throws: PartsService.PartsError.invalidInput(
-            "Digital PDF import preview requires at least one page of extracted text."
-        )) {
-            _ = try env.parts.previewPartsImportDigitalPDF(pages: blankPage)
+        for pages in invalidPageSets {
+            #expect(throws: PartsService.PartsError.invalidInput(
+                "OCR import preview requires at least one page of extracted text."
+            )) {
+                _ = try env.parts.previewPartsImportOCR(pages: pages)
+            }
+            #expect(throws: PartsService.PartsError.invalidInput(
+                "Digital PDF import preview requires at least one page of extracted text."
+            )) {
+                _ = try env.parts.previewPartsImportDigitalPDF(pages: pages)
+            }
         }
     }
 
