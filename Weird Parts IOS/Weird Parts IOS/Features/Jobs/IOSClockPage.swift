@@ -510,6 +510,14 @@ struct IOSClockPage: View {
                     .foregroundStyle(statusColor)
                     .accessibilityIdentifier("clockPage_currentStatus")
 
+                // Surface the actionable active state before the large elapsed
+                // timer. At AX5 this keeps the Supply Run evidence card in the
+                // first reachable portion of the section instead of pushing it
+                // under the persistent bottom navigation.
+                if let supplyRunStart = activeSupplyRunStartDate, activityStatus == "supply_run" {
+                    activeSupplyRunCard(startedAt: supplyRunStart)
+                }
+
                 // Live elapsed timer — large, readable display
                 VStack(spacing: 2) {
                     Text(elapsedText)
@@ -532,10 +540,6 @@ struct IOSClockPage: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .accessibilityElement(children: .combine)
-
-                if let supplyRunStart = activeSupplyRunStartDate, activityStatus == "supply_run" {
-                    activeSupplyRunCard(startedAt: supplyRunStart)
-                }
 
                 // Active break/lunch indicator
                 if let breakRecord = activeBreakRecord {
