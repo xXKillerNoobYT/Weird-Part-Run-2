@@ -288,6 +288,7 @@ extension AppDatabase {
     ) throws -> AppDatabase {
         try migratePlaintextDBIfNeeded(atPath: path, keyHex: keyHex)
         let database = try openEncryptedDatabase(atPath: path, keyHex: keyHex)
+        try removePlaintextRollbackArtifacts(atPath: path + ".unencrypted.bak")
         try removeLegacyPreMigrationPlaintextArtifacts(atPath: path)
         return database
     }

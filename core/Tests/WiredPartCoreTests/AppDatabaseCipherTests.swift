@@ -268,6 +268,57 @@ struct AppDatabaseCipherTests {
         #expect((legacyCategory?["is_active"] as Int?) == 1)
     }
 
+    @Test("testResumeAfterInterruptedPromotionRemovesPlaintextRollbackArtifacts — keyed reopen cleans stale rollback bundle")
+    func testResumeAfterInterruptedPromotionRemovesPlaintextRollbackArtifacts() throws {
+        let path = tmpPath("interrupted-promotion")
+        let plaintextFixturePath = path + ".plaintext-fixture"
+        defer {
+            cleanup(path, plaintextFixturePath)
+        }
+
+        let plainDB = try AppDatabase.openDatabase(atPath: path)
+        try plainDB.writer.write { db in
+            try db.execute(sql: """
+                INSERT OR REPLACE INTO settings (key, value, category)
+                VALUES ('interrupted_promotion_sentinel', 'survives_resume', 'test')
+            """)
+        }
+        try (plainDB.writer as? DatabasePool)?.close()
+
+        let fm = FileManager.default
+        try fm.copyItem(atPath: path, toPath: plaintextFixturePath)
+
+        let salt = Data(repeating: 0x77, count: 32)
+        let keyHex = CipherKeyManager.deriveKey(pin: "6666", salt: salt)
+        try AppDatabase.migratePlaintextDBIfNeeded(atPath: path, keyHex: keyHex)
+
+        // Model a process interruption after encrypted promotion/recovery but before
+        // rollback cleanup by staging the plaintext rollback bundle left by that window.
+        let rollbackPath = path + ".unencrypted.bak"
+        try fm.copyItem(atPath: plaintextFixturePath, toPath: rollbackPath)
+        try Data("plaintext WAL artifact".utf8).write(to: URL(fileURLWithPath: rollbackPath + "-wal"))
+        try Data("plaintext SHM artifact".utf8).write(to: URL(fileURLWithPath: rollbackPath + "-shm"))
+
+        let resumedDatabase = try AppDatabase.openEncryptedDatabaseAfterReleaseMigration(
+            atPath: path,
+            keyHex: keyHex
+        )
+        let sentinel: String? = try resumedDatabase.writer.read { db in
+            try String.fetchOne(
+                db,
+                sql: "SELECT value FROM settings WHERE key = 'interrupted_promotion_sentinel'"
+            )
+        }
+        #expect(sentinel == "survives_resume", "Canonical database must remain keyed-readable after resume")
+
+        for suffix in ["", "-wal", "-shm"] {
+            #expect(
+                !fm.fileExists(atPath: rollbackPath + suffix),
+                "Interrupted-promotion plaintext rollback artifact must be removed on keyed resume: \(suffix)"
+            )
+        }
+    }
+
     @Test("testIdempotencyAlreadyEncryptedSkipsMigration — second call is a no-op")
     func testIdempotencyAlreadyEncryptedSkipsMigration() throws {
         let path = tmpPath("idempotent")
