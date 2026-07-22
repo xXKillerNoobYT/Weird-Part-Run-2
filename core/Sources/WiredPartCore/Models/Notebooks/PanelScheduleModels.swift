@@ -206,14 +206,19 @@ public struct PanelSchedule: Codable, Identifiable, Sendable {
         if let error = candidate.panelSettingsValidationError {
             throw error
         }
-        let circuitSpacesThatWouldBeHidden = candidate.circuitsOutsideTotalSpaces
+        let circuitOriginSpacesThatWouldBeHidden = candidate.circuits
+            .filter { circuit in
+                candidate.occupiedSpaces(for: circuit).contains { occupiedSpace in
+                    occupiedSpace < 1 || occupiedSpace > totalSpaces
+                }
+            }
             .map(\.spaceNumber)
             .sorted()
-        guard circuitSpacesThatWouldBeHidden.isEmpty else {
+        guard circuitOriginSpacesThatWouldBeHidden.isEmpty else {
             throw PanelScheduleValidationError.panelSettingsWouldHideCircuits(
                 panelType: panelType,
                 spaces: totalSpaces,
-                circuitSpaces: circuitSpacesThatWouldBeHidden
+                circuitSpaces: circuitOriginSpacesThatWouldBeHidden
             )
         }
         self = candidate
