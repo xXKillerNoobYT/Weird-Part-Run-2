@@ -648,6 +648,10 @@ struct IOSClockPage: View {
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            // Long operational actions remain readable at AX5, but use the
+            // same compact xxxLarge cap as the active evidence card so their
+            // 44pt controls can scroll entirely between persistent chrome.
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
             .frame(maxWidth: .infinity, minHeight: 44)
         } else {
             Label(title, systemImage: systemImage)
