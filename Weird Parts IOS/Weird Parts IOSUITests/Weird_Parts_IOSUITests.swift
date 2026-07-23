@@ -569,10 +569,21 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Database Size"].waitForExistence(timeout: 5), "Backup page should show database size")
         captureWEI3988("01-backups-before-create")
 
-        let createBackup = app.buttons["Create Backup Now"].firstMatch
-        XCTAssertTrue(createBackup.waitForExistence(timeout: 10), "Create Backup Now action should be available")
+        // The Settings craft kit collapses this row into one accessibility
+        // element. Query its stable identifier rather than its hidden visual
+        // child label so this smoke exercises the actual accessible action.
+        let createBackup = app.descendants(matching: .any)["settings-backups-create-backup-button"]
+        XCTAssertTrue(createBackup.waitForExistence(timeout: 10), "Create backup action should be available")
+        XCTAssertTrue(createBackup.isHittable, "Create backup action should be hittable")
         createBackup.tap()
-        XCTAssertTrue(app.buttons["Backup Created!"].waitForExistence(timeout: 15), "Manual backup action should complete with visible success state")
+        let createdBackup = app.descendants(matching: .any)
+            .matching(NSPredicate(
+                format: "identifier == %@ AND value == %@",
+                "settings-backups-create-backup-button",
+                "Backup created"
+            ))
+            .firstMatch
+        XCTAssertTrue(createdBackup.waitForExistence(timeout: 15), "Manual backup action should complete with an accessible success state")
         XCTAssertTrue(app.staticTexts["Stored Backups"].waitForExistence(timeout: 5), "Backup count row should remain visible after backup creation")
         captureWEI3988("02-backups-created")
 
