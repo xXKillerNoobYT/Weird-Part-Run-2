@@ -91,6 +91,7 @@ struct IOSAIAssistantPanel: View {
     @State private var clearConversationRetryId: String?
     @State private var conversationPersistenceError: String?
     @State private var pendingFallbackSave: PendingFallbackSave?
+    @State private var didInjectUITestFallbackWriteFailure = false
     @State private var isUITestingFallbackSaveWarningVisible = ProcessInfo.processInfo.arguments.contains("-UITesting")
         && ProcessInfo.processInfo.arguments.contains("-UITestingAIFallbackSaveWarning")
     @State private var aiAvailability: AIAvailability = .notSupported
@@ -532,7 +533,13 @@ struct IOSAIAssistantPanel: View {
         .task(id: resumePrerequisiteToken) {
             let initialization = helpHandoffReadiness.beginInitialization()
             isLoadingConversationHistory = true
-            aiAvailability = aiService.checkAvailability()
+            if ProcessInfo.processInfo.arguments.contains("-UITestingAIGenerationFailure") {
+                aiAvailability = .available
+            } else if ProcessInfo.processInfo.arguments.contains("-UITestingAIUnavailable") {
+                aiAvailability = .notSupported
+            } else {
+                aiAvailability = aiService.checkAvailability()
+            }
             await resumeLastConversationIfNeeded()
             await loadCurrentConversation()
             guard !Task.isCancelled,
@@ -1001,6 +1008,13 @@ struct IOSAIAssistantPanel: View {
             return
         }
         guard self.pendingFallbackSave == pendingSave else { return }
+
+        if ProcessInfo.processInfo.arguments.contains("-UITestingAIFailFirstFallbackWrite"),
+           !didInjectUITestFallbackWriteFailure {
+            didInjectUITestFallbackWriteFailure = true
+            conversationPersistenceError = "Resume will not include this turn yet: simulated storage write failure. Tap Retry Save to try again."
+            return
+        }
 
         let db = appCore.db
         let ownershipDecision = AIFallbackPendingSaveOwnershipDecision.resolve(
@@ -1575,6 +1589,9 @@ struct IOSAIAssistantPanel: View {
     /// Generates a response using Foundation Models with tool calling when available,
     /// falls back to basic keyword matching.
     private func generateResponse(for queryText: String) async -> GeneratedResponse {
+        if ProcessInfo.processInfo.arguments.contains("-UITestingAIGenerationFailure") {
+            return .fallback(generateFallbackResponse(for: queryText))
+        }
         if aiAvailability == .available, let db = appCore.db {
             // Use Foundation Models with tool calling for real database access
             var navContext = buildNavigationContext(permissions: appCore.permissions)
