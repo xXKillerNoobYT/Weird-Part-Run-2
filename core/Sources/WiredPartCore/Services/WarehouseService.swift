@@ -2640,6 +2640,7 @@ public final class WarehouseService: Sendable {
                           AND s.last_counted IS NOT NULL
                           AND date(s.last_counted) = date('now')
                           AND s.counted_qty IS NOT NULL
+                          AND s.counted_qty != s.qty
                         ORDER BY p.name
                         """
                 )

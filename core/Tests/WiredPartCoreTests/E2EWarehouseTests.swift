@@ -570,6 +570,25 @@ struct E2EWarehouseTests {
                 "Soft-deleted part must degrade to 'Unknown Part' in getAuditDiscrepancies")
     }
 
+    @Test("getAuditDiscrepancies excludes matched physical counts")
+    func testGetAuditDiscrepanciesExcludesMatchedCounts() throws {
+        let env = try E2ETestHelpers.setUp()
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "Matched Audit Category")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Matched Audit Part", categoryId: categoryId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10)
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                UPDATE stock
+                SET counted_qty = qty, last_counted = datetime('now')
+                WHERE part_id = ? AND location_type = 'warehouse'
+                """, arguments: [partId])
+        }
+
+        let discrepancies = try env.warehouse.getAuditDiscrepancies()
+        #expect(discrepancies.contains(where: { $0.partId == partId }) == false,
+                "A matched physical count is not a discrepancy")
+    }
+
     @Test("listTrailers and getTrailer show nil driver for soft-deleted user")
     func testTrailersHideDeletedDriverName() throws {
         let env = try E2ETestHelpers.setUp()
