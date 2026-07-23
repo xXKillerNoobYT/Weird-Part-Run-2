@@ -130,6 +130,15 @@ public final class PlatformSyncDeviceIdentityStore: SyncDeviceIdentityStoring, @
 
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
+        return try Self.decodeKeychainRead(status: status, item: item)
+    }
+
+    /// Decodes the direct Keychain result without providing an identity fallback.
+    /// Internal for a no-Keychain-mutation regression of the fail-closed branch.
+    static func decodeKeychainRead(
+        status: OSStatus,
+        item: CFTypeRef?
+    ) throws -> SyncDeviceIdentity? {
         if status == errSecItemNotFound {
             return nil
         }

@@ -37,5 +37,22 @@ struct SyncDeviceIdentityStoreTests {
             )
         }
     }
+
+    @Test("Keychain read failure remains visible instead of creating a fallback identity")
+    func keychainReadFailureRemainsFailClosed() {
+        let expectedStatus = errSecMissingEntitlement
+
+        do {
+            _ = try PlatformSyncDeviceIdentityStore.decodeKeychainRead(
+                status: expectedStatus,
+                item: nil
+            )
+            Issue.record("Expected Keychain read failure to remain visible")
+        } catch {
+            #expect(
+                error as? SyncIdentityStoreError == .keychainReadFailed(Int32(expectedStatus))
+            )
+        }
+    }
 }
 #endif

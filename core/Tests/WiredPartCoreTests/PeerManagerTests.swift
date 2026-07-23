@@ -198,6 +198,28 @@ struct PeerManagerTests {
         try AppDatabase.openInMemoryDatabase()
     }
 
+    @Test("iOS unit-test runtime selects injected identity storage")
+    func testUnitTestRuntimeUsesInjectedIdentityStore() async throws {
+        let store = PeerManager.identityStoreForRuntime(isRunningUnitTests: true)
+        #expect(store is InMemorySyncDeviceIdentityStore)
+
+        let pm = PeerManager(db: try freshDB())
+        try await pm.startPeerSync(
+            deviceId: "test-bundle-device",
+            deviceName: "Test Bundle Device",
+            companyId: "test-company",
+            startMultipeer: false,
+            startSyncServer: false
+        )
+        await pm.stopPeerSync()
+    }
+
+    @Test("production runtime continues to select durable Keychain identity storage")
+    func testProductionRuntimeUsesPlatformIdentityStore() {
+        let store = PeerManager.identityStoreForRuntime(isRunningUnitTests: false)
+        #expect(store is PlatformSyncDeviceIdentityStore)
+    }
+
     /// Migration 112 backfills every seeded reference row into _change_log so
     /// pre-trigger data syncs on first contact. Tests that assert on SPECIFIC
     /// change entries clear that backfill first.

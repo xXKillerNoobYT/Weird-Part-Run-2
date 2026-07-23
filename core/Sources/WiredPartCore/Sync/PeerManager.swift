@@ -192,12 +192,35 @@ public actor PeerManager {
         onStateChanged = callback
     }
 
+    /// The app always uses the durable Keychain-backed store. XCTest processes
+    /// receive an in-memory store because iOS test bundles do not carry the app
+    /// Keychain entitlement; keeping that decision here prevents a test-only
+    /// environment workaround from ever reaching pairing or encryption logic.
+    public init(db: AppDatabase) {
+        self.init(
+            db: db,
+            identityStore: Self.identityStoreForRuntime(
+                isRunningUnitTests: ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+            )
+        )
+    }
+
     public init(
         db: AppDatabase,
-        identityStore: any SyncDeviceIdentityStoring = PlatformSyncDeviceIdentityStore.shared
+        identityStore: any SyncDeviceIdentityStoring
     ) {
         self.db = db
         self.identityStore = identityStore
+    }
+
+    /// Internal so the test bundle can prove its identity storage is isolated
+    /// without changing the production Keychain failure contract.
+    static func identityStoreForRuntime(
+        isRunningUnitTests: Bool
+    ) -> any SyncDeviceIdentityStoring {
+        isRunningUnitTests
+            ? InMemorySyncDeviceIdentityStore()
+            : PlatformSyncDeviceIdentityStore.shared
     }
 
     /// Get current state snapshot.
