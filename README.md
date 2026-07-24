@@ -1,6 +1,18 @@
 # WiredPart
 
-Native iOS field-service operations app for an electrical contracting shop. WiredPart manages parts inventory, warehouse operations, fleet tracking, job labor, procurement, scheduling, reporting, notebooks, chat/RFIs, and local device sync from a SwiftUI app backed by a shared Swift package.
+**A local-first field-service operations app for electrical contracting shops.**
+
+WiredPart helps a crew and office stay oriented around the work in front of them: see operational signals, manage parts and warehouse movement deliberately, and carry jobs through labor, orders, scheduling, and reporting. It is a native SwiftUI app backed by a shared Swift core; the app's feature guide is the source of truth for its current capabilities.
+
+## From field work to follow-through
+
+| Moment | What WiredPart supports |
+| --- | --- |
+| **See the work** | Start from the dashboard to review operational signals and jump into the next task. |
+| **Move material deliberately** | Find parts, manage stock, and guide warehouse movement from source through confirmation. |
+| **Keep jobs moving** | Bring job activity together with labor, orders, scheduling, and reports for operational follow-up. |
+
+> Documentation screenshots for this README are intentionally limited to newly captured iOS Simulator views using synthetic demo data. See [the reviewed asset register](docs/readme-assets/README-ASSET-REVIEW.md) for the privacy and public-artifact gate.
 
 Tracking:
 
