@@ -109,11 +109,6 @@ final class AppCore: ObservableObject {
             // Cmd+R rebuild. Clean builds already delete the simulator
             // sandbox, so migrations create tables from scratch naturally.
             let result = try await Task.detached(priority: .userInitiated) {
-                // Production safety: back up before migration so we can roll back
-                #if !DEBUG
-                let backupPath = AppDatabase.backupDatabase(atPath: path)
-                #endif
-
                 let database: AppDatabase
                 do {
 // SQLCipher: derive a device-bound bootstrap key from the Keychain.
@@ -124,10 +119,10 @@ final class AppCore: ObservableObject {
                     // Migration path: if the DB file is still plaintext (pre-SQLCipher binary),
                     // `migratePlaintextDBIfNeeded` converts it in-place before opening.
                     let keyHex = try Self.deviceBootstrapKeyHex()
-                    try AppDatabase.migratePlaintextDBIfNeeded(atPath: path, keyHex: keyHex)
-                    database = try AppDatabase.openEncryptedDatabase(atPath: path, keyHex: keyHex)
-                    // Remove the .unencrypted.bak file after it has been retained for 7 days.
-                    AppDatabase.cleanupStaleUnencryptedBackup(atPath: path)
+                    database = try AppDatabase.openEncryptedDatabaseAfterReleaseMigration(
+                        atPath: path,
+                        keyHex: keyHex
+                    )
                 } catch {
                     #if DEBUG && targetEnvironment(simulator)
                     if Self.shouldResetLocalDatabaseAfterCipherOpenFailure(error) {
@@ -141,28 +136,7 @@ final class AppCore: ObservableObject {
                         throw error
                     }
                     #else
-                    #if !DEBUG
-                    // Migration failed — restore the pre-migration backup and retry once.
-                    // A successful restore leaves the old schema/data on disk; reopening it
-                    // lets normal startup migrations run again instead of surfacing the
-                    // original, now-recovered failure to the user.
-                    do {
-                        database = try Self.retryOpeningRestoredDatabase(
-                            backupPath: backupPath,
-                            databasePath: path,
-                            keyHex: try Self.deviceBootstrapKeyHex(),
-                            restoreDatabase: AppDatabase.restoreDatabase(from:to:),
-                            migratePlaintextDatabaseIfNeeded: AppDatabase.migratePlaintextDBIfNeeded(atPath:keyHex:),
-                            openEncryptedDatabase: AppDatabase.openEncryptedDatabase(atPath:keyHex:)
-                        )
-                        self.logger.error("[AppCore] Migration failed, restored from backup, and retry open succeeded. Original error: \(error.localizedDescription)")
-                    } catch {
-                        self.logger.error("[AppCore] Migration failed; restore/retry also failed. Retry error: \(error.localizedDescription)")
-                        throw error
-                    }
-                    #else
                     throw error
-                    #endif
                     #endif
                 }
 
@@ -390,22 +364,6 @@ final class AppCore: ObservableObject {
         #endif
     }
 
-    nonisolated static func retryOpeningRestoredDatabase<Database>(
-        backupPath: String?,
-        databasePath: String,
-        keyHex: String,
-        restoreDatabase: (String, String) throws -> Void,
-        migratePlaintextDatabaseIfNeeded: (String, String) throws -> Void,
-        openEncryptedDatabase: (String, String) throws -> Database
-    ) throws -> Database {
-        guard let backupPath else {
-            throw AppCoreError.missingMigrationRollbackBackup
-        }
-
-        try restoreDatabase(backupPath, databasePath)
-        try migratePlaintextDatabaseIfNeeded(databasePath, keyHex)
-        return try openEncryptedDatabase(databasePath, keyHex)
-    }
 
     // MARK: - Auth Actions
 
@@ -809,14 +767,11 @@ final class AppCore: ObservableObject {
 
     enum AppCoreError: LocalizedError {
         case noDocumentsDirectory
-        case missingMigrationRollbackBackup
 
         var errorDescription: String? {
             switch self {
             case .noDocumentsDirectory:
                 return "Unable to locate app storage directory. Please restart the app."
-            case .missingMigrationRollbackBackup:
-                return "Unable to restore the app database because no migration rollback backup is available."
             }
         }
     }
@@ -1251,6 +1206,61 @@ final class AppCore: ObservableObject {
                 arguments: [partId, supplierId]
             )
 
+            var auditAreaId = try Int64.fetchOne(
+                dbConn,
+                sql: "SELECT id FROM warehouse_storage_areas WHERE full_location_code = 'WEI-3295-A1' AND deleted_at IS NULL LIMIT 1"
+            )
+            if auditAreaId == nil {
+                try dbConn.execute(
+                    sql: """
+                        INSERT INTO warehouse_floor_plans
+                        (name, width_inches, length_inches, is_active, created_at, updated_at, deleted_at)
+                        VALUES ('WEI-3295 Stage 8 QA Floor', 120, 120, 1, datetime('now'), datetime('now'), NULL)
+                        """
+                )
+                let floorPlanId = try Int64.fetchOne(
+                    dbConn,
+                    sql: "SELECT id FROM warehouse_floor_plans WHERE name = 'WEI-3295 Stage 8 QA Floor' AND deleted_at IS NULL ORDER BY id DESC LIMIT 1"
+                )!
+                try dbConn.execute(
+                    sql: """
+                        INSERT INTO warehouse_storage_units
+                        (floor_plan_id, name, unit_type, unit_number, is_configured, created_at, updated_at, deleted_at)
+                        VALUES (?, 'WEI-3295 QA Shelf', 'shelf', 'WEI3295', 1, datetime('now'), datetime('now'), NULL)
+                        """,
+                    arguments: [floorPlanId]
+                )
+                let unitId = try Int64.fetchOne(
+                    dbConn,
+                    sql: "SELECT id FROM warehouse_storage_units WHERE name = 'WEI-3295 QA Shelf' AND deleted_at IS NULL ORDER BY id DESC LIMIT 1"
+                )!
+                try dbConn.execute(
+                    sql: """
+                        INSERT INTO warehouse_storage_levels
+                        (unit_id, level_code, level_name, level_order, area_count, created_at, deleted_at)
+                        VALUES (?, 'A', 'QA Shelf Level A', 1, 1, datetime('now'), NULL)
+                        """,
+                    arguments: [unitId]
+                )
+                let levelId = try Int64.fetchOne(
+                    dbConn,
+                    sql: "SELECT id FROM warehouse_storage_levels WHERE unit_id = ? AND level_code = 'A' AND deleted_at IS NULL ORDER BY id DESC LIMIT 1",
+                    arguments: [unitId]
+                )!
+                try dbConn.execute(
+                    sql: """
+                        INSERT INTO warehouse_storage_areas
+                        (level_id, area_code, area_number, width_inches, has_qr_code, has_sticker, full_location_code, created_at, deleted_at)
+                        VALUES (?, 'A1', 1, 24, 0, 0, 'WEI-3295-A1', datetime('now'), NULL)
+                        """,
+                    arguments: [levelId]
+                )
+                auditAreaId = try Int64.fetchOne(
+                    dbConn,
+                    sql: "SELECT id FROM warehouse_storage_areas WHERE full_location_code = 'WEI-3295-A1' AND deleted_at IS NULL ORDER BY id DESC LIMIT 1"
+                )
+            }
+
             try dbConn.execute(
                 sql: """
                     DELETE FROM audit_sessions_v2
@@ -1265,6 +1275,26 @@ final class AppCore: ObservableObject {
                     VALUES ('count', ?, 'active', 1, 1, 'WEI-3295 Stage 8 reports viewport seed', datetime('now'), NULL)
                     """,
                 arguments: [userId]
+            )
+            let auditSessionId = try Int64.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT id
+                    FROM audit_sessions_v2
+                    WHERE notes = 'WEI-3295 Stage 8 reports viewport seed'
+                      AND deleted_at IS NULL
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """
+            )!
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO audit_counts
+                    (session_id, part_id, area_id, system_count, user_count, variance,
+                     variance_dollars, variance_percent, result, counted_by, counted_at)
+                    VALUES (?, ?, ?, 12, 9, -3, 127.50, -25.0, 'variance', ?, datetime('now'))
+                    """,
+                arguments: [auditSessionId, partId, auditAreaId!, userId]
             )
         }
     }

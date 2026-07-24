@@ -324,6 +324,45 @@ struct FoundationModelsServiceTests {
         #expect(list.first?.preview == "Latest reply")
     }
 
+    @Test("equal timestamps use save order for resume, list order, and previews")
+    func testConversationRecency_equalTimestampsUsesSaveOrderWithinOwner() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let tiedTimestamp = "2026-07-17T10:00:00Z"
+        let ownerMessages = [
+            AIConversationMessage(id: "tie-a-1", conversationId: "tie-conv-A", role: "user", content: "A first", createdAt: tiedTimestamp),
+            AIConversationMessage(id: "tie-a-2", conversationId: "tie-conv-A", role: "assistant", content: "A actual latest preview", createdAt: tiedTimestamp),
+            AIConversationMessage(id: "tie-b-1", conversationId: "tie-conv-B", role: "user", content: "B saved last", createdAt: tiedTimestamp),
+        ]
+        for message in ownerMessages {
+            try await FoundationModelsService.saveMessage(message, ownerUserId: 101, to: env.db)
+        }
+        try await FoundationModelsService.saveMessage(
+            AIConversationMessage(
+                id: "tie-other-owner",
+                conversationId: "tie-other-owner-conv",
+                role: "user",
+                content: "Other owner saved newest",
+                createdAt: tiedTimestamp
+            ),
+            ownerUserId: 202,
+            to: env.db
+        )
+
+        let loadedA = try await FoundationModelsService.loadConversation(
+            "tie-conv-A",
+            ownerUserId: 101,
+            from: env.db
+        )
+        let ownerList = try await FoundationModelsService.listConversations(ownerUserId: 101, from: env.db)
+        let ownerLatest = try await FoundationModelsService.latestConversationId(ownerUserId: 101, from: env.db)
+
+        #expect(loadedA.map(\.content) == ["A first", "A actual latest preview"])
+        #expect(ownerList.map(\.id) == ["tie-conv-B", "tie-conv-A"])
+        #expect(ownerList.map(\.preview) == ["B saved last", "A actual latest preview"])
+        #expect(ownerLatest == "tie-conv-B")
+        #expect(try await FoundationModelsService.listConversations(ownerUserId: 202, from: env.db).map(\.id) == ["tie-other-owner-conv"])
+    }
+
     @Test("latestConversationId returns nil when no messages exist")
     func testLatestConversationId_emptyDatabase() async throws {
         let env = try E2ETestHelpers.setUp()
@@ -595,6 +634,133 @@ struct FoundationModelsServiceTests {
         #endif
     }
 
+    @Test("local fallback persists atomically and is visible to reload and conversation list")
+    func testStageLocalConversation_persistsForResumeAndList() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = FoundationModelsService()
+
+        let outcome = try await service.stageLocalConversation(
+            "fallback-resume",
+            ownerUserId: 77,
+            userPrompt: "How do I update pricing?",
+            assistantResponse: "Open Parts, then choose Pricing.",
+            in: env.db
+        )
+
+        #expect(outcome == .persistedAndStaged)
+        let reloaded = try await FoundationModelsService.loadConversation(
+            "fallback-resume",
+            ownerUserId: 77,
+            from: env.db
+        )
+        let listed = try await FoundationModelsService.listConversations(
+            ownerUserId: 77,
+            from: env.db
+        )
+        #expect(reloaded.map(\.role) == ["user", "assistant"])
+        #expect(reloaded.map(\.content) == [
+            "How do I update pricing?",
+            "Open Parts, then choose Pricing.",
+        ])
+        #expect(listed.first?.id == "fallback-resume")
+        #expect(listed.first?.preview == "Open Parts, then choose Pricing.")
+        #expect(await service.currentMessageHistory().map(\.content) == reloaded.map(\.content))
+    }
+
+    @Test("local fallback write failure rolls back the complete visible pair")
+    func testStageLocalConversation_writeFailureIsAtomic() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = FoundationModelsService()
+        try await env.db.writer.write { db in
+            try db.execute(sql: """
+                CREATE TRIGGER reject_fallback_assistant
+                BEFORE INSERT ON ai_conversation_messages
+                WHEN NEW.role = 'assistant'
+                BEGIN
+                    SELECT RAISE(ABORT, 'forced fallback write failure');
+                END
+                """)
+        }
+
+        await #expect(throws: (any Error).self) {
+            try await service.stageLocalConversation(
+                "fallback-write-failure",
+                ownerUserId: 77,
+                userPrompt: "Visible question",
+                assistantResponse: "Visible fallback response",
+                in: env.db
+            )
+        }
+
+        let persistedCount = try await env.db.writer.read { db in
+            try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM ai_conversation_messages WHERE conversation_id = ?",
+                arguments: ["fallback-write-failure"]
+            ) ?? 0
+        }
+        #expect(persistedCount == 0)
+        #expect(await service.currentMessageHistory().isEmpty)
+    }
+
+    @Test("post-write lifecycle invalidation reports durable without replacing newer staged history")
+    func testStageLocalConversation_postWriteInvalidationDistinguishesDurablePair() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = FoundationModelsService()
+        let gate = AsyncGate()
+        let ownerUserId: Int64 = 77
+
+        #expect(try await service.stageLocalConversation(
+            "conversation-b",
+            ownerUserId: ownerUserId,
+            userPrompt: "Conversation B question",
+            assistantResponse: "Conversation B response",
+            in: env.db
+        ) == .persistedAndStaged)
+
+        let stagingTask = Task {
+            try await service.stageLocalConversation(
+                "fallback-post-write-race",
+                ownerUserId: ownerUserId,
+                userPrompt: "Visible fallback question",
+                assistantResponse: "Visible fallback response",
+                in: env.db,
+                afterPersisting: {
+                    await gate.enterAndWaitForRelease()
+                }
+            )
+        }
+
+        await gate.waitUntilEntered()
+        let visibleCurrentConversation = try await service.resumeConversation(
+            "conversation-b",
+            ownerUserId: ownerUserId,
+            from: env.db
+        )
+        await gate.release()
+
+        let outcome = try await stagingTask.value
+        let reloadedFallback = try await FoundationModelsService.loadConversation(
+            "fallback-post-write-race",
+            ownerUserId: ownerUserId,
+            from: env.db
+        )
+        let otherOwnerReload = try await FoundationModelsService.loadConversation(
+            "fallback-post-write-race",
+            ownerUserId: ownerUserId + 1,
+            from: env.db
+        )
+
+        #expect(outcome == .persistedButNotStaged)
+        #expect(reloadedFallback.map(\.role) == ["user", "assistant"])
+        #expect(reloadedFallback.map(\.content) == [
+            "Visible fallback question",
+            "Visible fallback response",
+        ])
+        #expect(otherOwnerReload.isEmpty)
+        #expect(await service.currentMessageHistory().map(\.content) == visibleCurrentConversation.map(\.content))
+    }
+
     @Test("delayed Help staging does not hydrate the model transcript until staging completes")
     func testStageHelpConversation_delayedStagingCompletesBeforeHydration() async throws {
         let env = try E2ETestHelpers.setUp()
@@ -654,6 +820,73 @@ struct FoundationModelsServiceTests {
         )
         #expect(!wasPersisted)
         #expect(remaining.isEmpty)
+    }
+
+    @Test("stale fallback cleanup preserves a newer revision's same-scope turns")
+    func testDelayedWriteAfterClear_preservesNewerRevisionTurns() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = FoundationModelsService()
+        let gate = AsyncGate()
+        let scope = AIConversationScope(conversationId: "clear-race-newer-turns", ownerUserId: 88)
+        let revisionZero = await service.persistenceRevision(for: scope)
+        let staleTurns = [
+            AIConversationMessage(
+                id: "stale-user-turn",
+                conversationId: scope.conversationId,
+                role: "user",
+                content: "Revision zero question"
+            ),
+            AIConversationMessage(
+                id: "stale-assistant-turn",
+                conversationId: scope.conversationId,
+                role: "assistant",
+                content: "Revision zero answer"
+            ),
+        ]
+
+        let staleWriter = Task {
+            try await service.persistMessagesIfCurrent(
+                staleTurns,
+                scope: scope,
+                expectedRevision: revisionZero,
+                to: env.db,
+                afterPersisting: { await gate.enterAndWaitForRelease() }
+            )
+        }
+        await gate.waitUntilEntered()
+
+        try await service.clearConversation(scope.conversationId, ownerUserId: scope.ownerUserId, from: env.db)
+        let revisionOne = await service.persistenceRevision(for: scope)
+        let newerTurns = [
+            AIConversationMessage(
+                id: "newer-user-turn",
+                conversationId: scope.conversationId,
+                role: "user",
+                content: "Revision one question"
+            ),
+            AIConversationMessage(
+                id: "newer-assistant-turn",
+                conversationId: scope.conversationId,
+                role: "assistant",
+                content: "Revision one answer"
+            ),
+        ]
+        #expect(try await service.persistMessagesIfCurrent(
+            newerTurns,
+            scope: scope,
+            expectedRevision: revisionOne,
+            to: env.db
+        ))
+
+        await gate.release()
+        #expect(!(try await staleWriter.value))
+        let reloaded = try await FoundationModelsService.loadConversation(
+            scope.conversationId,
+            ownerUserId: scope.ownerUserId,
+            from: env.db
+        )
+        #expect(reloaded.map(\.id) == newerTurns.map(\.id))
+        #expect(reloaded.map(\.content) == newerTurns.map(\.content))
     }
 
     // MARK: - AIConversationMessage Init

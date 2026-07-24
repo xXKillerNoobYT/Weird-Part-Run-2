@@ -9,6 +9,55 @@ enum AIDisplayMode: String, Sendable {
     case overlay // Floating panel, app remains navigable
 }
 
+enum AIFallbackPersistenceRetryDecision: Equatable {
+    case saved
+    case retryable
+    case discardStale
+
+    static func resolve(
+        outcome: AIConversationStagingOutcome,
+        lifecycleIsCurrent: Bool
+    ) -> Self {
+        switch outcome {
+        case .persistedAndStaged, .persistedButNotStaged:
+            return .saved
+        case .notPersisted:
+            return lifecycleIsCurrent ? .retryable : .discardStale
+        }
+    }
+}
+
+enum AIFallbackPendingSaveOwnershipDecision: Equatable {
+    case persist(ownerUserId: Int64)
+    case retryStableOwner
+    case discardStale
+
+    static func resolve(
+        capturedOwnerUserId: Int64?,
+        currentOwnerUserId: Int64?,
+        databaseIsReady: Bool
+    ) -> Self {
+        guard let capturedOwnerUserId, capturedOwnerUserId > 0 else {
+            return .discardStale
+        }
+        guard let currentOwnerUserId, currentOwnerUserId > 0 else {
+            return .retryStableOwner
+        }
+        guard currentOwnerUserId == capturedOwnerUserId else {
+            return .discardStale
+        }
+        guard databaseIsReady else {
+            return .retryStableOwner
+        }
+        return .persist(ownerUserId: capturedOwnerUserId)
+    }
+
+    var ownerUserIdForWrite: Int64? {
+        guard case .persist(let ownerUserId) = self else { return nil }
+        return ownerUserId
+    }
+}
+
 // MARK: - AI Assistant Panel
 
 /// Floating AI assistant panel accessible from any page in the app.
@@ -26,6 +75,7 @@ enum AIDisplayMode: String, Sendable {
 struct IOSAIAssistantPanel: View {
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @Binding var displayMode: AIDisplayMode
     @Binding var isVisible: Bool
@@ -40,7 +90,16 @@ struct IOSAIAssistantPanel: View {
     @State private var clearConversationError: String?
     @State private var clearConversationRetryId: String?
     @State private var conversationPersistenceError: String?
+    @State private var pendingFallbackSave: PendingFallbackSave?
+    @State private var didInjectUITestFallbackWriteFailure = false
+    @State private var isUITestingFallbackSaveWarningVisible = ProcessInfo.processInfo.arguments.contains("-UITesting")
+        && ProcessInfo.processInfo.arguments.contains("-UITestingAIFallbackSaveWarning")
     @State private var aiAvailability: AIAvailability = .notSupported
+    @State private var pendingFilterActivation: AIFilterActivationCommand?
+#if DEBUG
+    @State private var uiTestPurchaseOrdersFilter = "all"
+    @State private var uiTestJPOsFilter = "all"
+#endif
     @State private var catalogContext: String?
     @State private var pricingContext: String?
     @State private var suppliersContext: String?
@@ -142,9 +201,39 @@ struct IOSAIAssistantPanel: View {
         pendingHelpRequest?["requestID"] as? String
     }
 
+    private var uiTestingFallbackSaveError: String? {
+        guard isUITestingFallbackSaveWarningVisible else { return nil }
+        return "Simulated storage write failure for UI verification."
+    }
+
+    private var hasFallbackSaveWarning: Bool {
+        conversationPersistenceError != nil || uiTestingFallbackSaveError != nil
+    }
+
     private struct ResumePrerequisiteToken: Hashable {
         let ownerUserId: Int64?
         let isDatabaseReady: Bool
+    }
+
+    private struct PendingFallbackSave: Equatable, Sendable {
+        let conversationId: String
+        let ownerUserId: Int64?
+        let conversationRevision: UInt
+        let userPrompt: String
+        let assistantResponse: String
+    }
+
+    private struct GeneratedResponse: Sendable {
+        let text: String
+        let needsLocalPersistence: Bool
+
+        static func persisted(_ text: String) -> Self {
+            Self(text: text, needsLocalPersistence: false)
+        }
+
+        static func fallback(_ text: String) -> Self {
+            Self(text: text, needsLocalPersistence: true)
+        }
     }
 
     /// Restarts assistant initialization when a panel mounted during startup/login
@@ -438,17 +527,29 @@ struct IOSAIAssistantPanel: View {
     @ViewBuilder
     private var chatBody: some View {
         VStack(spacing: 0) {
-            if displayMode == .sheet {
+            if displayMode == .sheet && !(dynamicTypeSize.isAccessibilitySize && hasFallbackSaveWarning) {
                 availabilityHeader
             }
+#if DEBUG
+            if AIFilterCommandUITestFixture.isEnabled {
+                aiFilterCommandFixtureControls
+            }
+#endif
             clearConversationStatus
+                .layoutPriority(hasFallbackSaveWarning ? 2 : 0)
             messagesArea
             inputBar
         }
         .task(id: resumePrerequisiteToken) {
             let initialization = helpHandoffReadiness.beginInitialization()
             isLoadingConversationHistory = true
-            aiAvailability = aiService.checkAvailability()
+            if ProcessInfo.processInfo.arguments.contains("-UITestingAIGenerationFailure") {
+                aiAvailability = .available
+            } else if ProcessInfo.processInfo.arguments.contains("-UITestingAIUnavailable") {
+                aiAvailability = .notSupported
+            } else {
+                aiAvailability = aiService.checkAvailability()
+            }
             await resumeLastConversationIfNeeded()
             await loadCurrentConversation()
             guard !Task.isCancelled,
@@ -468,6 +569,26 @@ struct IOSAIAssistantPanel: View {
         }
         .sheet(isPresented: $showConversationPicker) {
             conversationPicker
+        }
+        .confirmationDialog(
+            "Clear filter?",
+            isPresented: Binding(
+                get: { pendingFilterActivation != nil },
+                set: { if !$0 { pendingFilterActivation = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Apply Filter Change", role: .destructive) {
+                if let command = pendingFilterActivation {
+                    appCore.aiFilterRegistry.activateFilter(pageId: command.pageId, value: command.value)
+                }
+                pendingFilterActivation = nil
+            }
+            Button("Keep Current Filter") {
+                pendingFilterActivation = nil
+            }
+        } message: {
+            Text("The assistant suggested clearing or broadening a filter. Confirm before changing the current view.")
         }
         .modifier(PartsPageContextObservers(
             catalogContext: $catalogContext,
@@ -555,7 +676,108 @@ struct IOSAIAssistantPanel: View {
         .onReceive(NotificationCenter.default.publisher(for: .appDidLogout)) { _ in
             resetForLogout()
         }
+#if DEBUG
+        .onAppear {
+            configureAIFilterCommandFixtureIfNeeded()
+        }
+        .onDisappear {
+            guard AIFilterCommandUITestFixture.isEnabled else { return }
+            appCore.aiFilterRegistry.deregister(pageId: AIFilterCommandUITestFixture.purchaseOrdersPageId)
+            appCore.aiFilterRegistry.deregister(pageId: AIFilterCommandUITestFixture.jposPageId)
+        }
+#endif
     }
+
+#if DEBUG
+    @ViewBuilder
+    private var aiFilterCommandFixtureControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Assistant filter command fixture")
+                .font(.caption)
+                .fontWeight(.semibold)
+            Text("Purchase orders: \(uiTestPurchaseOrdersFilter)")
+                .accessibilityIdentifier("aiFilterFixturePurchaseOrdersValue")
+            Text("JPOs: \(uiTestJPOsFilter)")
+                .accessibilityIdentifier("aiFilterFixtureJPOsValue")
+            HStack {
+                Button("Apply Draft Filter") {
+                    runAIFilterCommandFixture(
+                        pageId: AIFilterCommandUITestFixture.purchaseOrdersPageId,
+                        value: "draft",
+                        userQuery: "Filter purchase orders to draft"
+                    )
+                }
+                .accessibilityIdentifier("aiFilterFixtureApplyDraft")
+
+                Button("Show All Filters") {
+                    runAIFilterCommandFixture(
+                        pageId: AIFilterCommandUITestFixture.purchaseOrdersPageId,
+                        value: "all",
+                        userQuery: "Filter purchase orders to all"
+                    )
+                }
+                .accessibilityIdentifier("aiFilterFixtureShowAll")
+            }
+            HStack {
+                Button("Clear Filter Fixture") {
+                    runAIFilterCommandFixture(
+                        pageId: AIFilterCommandUITestFixture.purchaseOrdersPageId,
+                        value: "clear",
+                        userQuery: "Filter purchase orders to clear"
+                    )
+                }
+                .accessibilityIdentifier("aiFilterFixtureClear")
+
+                Button("Clear All Filters Fixture") {
+                    runAIFilterCommandFixture(
+                        pageId: AIFilterCommandUITestFixture.purchaseOrdersPageId,
+                        value: "clear-all",
+                        userQuery: "Filter purchase orders to clear-all"
+                    )
+                }
+                .accessibilityIdentifier("aiFilterFixtureClearAll")
+            }
+            Button("Try Unauthorized Filter Command") {
+                runAIFilterCommandFixture(
+                    pageId: AIFilterCommandUITestFixture.jposPageId,
+                    value: "draft",
+                    userQuery: "Filter purchase orders to draft"
+                )
+            }
+            .accessibilityIdentifier("aiFilterFixtureUnauthorized")
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("aiFilterCommandFixture")
+    }
+
+    private func configureAIFilterCommandFixtureIfNeeded() {
+        guard AIFilterCommandUITestFixture.isEnabled else { return }
+        let purchaseOrdersFilter = $uiTestPurchaseOrdersFilter
+        let jposFilter = $uiTestJPOsFilter
+        appCore.aiFilterRegistry.register(
+            pageId: AIFilterCommandUITestFixture.purchaseOrdersPageId,
+            filterName: "Fixture Purchase Order Status",
+            options: AIFilterCommandUITestFixture.options,
+            activate: { value in purchaseOrdersFilter.wrappedValue = value }
+        )
+        appCore.aiFilterRegistry.register(
+            pageId: AIFilterCommandUITestFixture.jposPageId,
+            filterName: "Fixture JPO Status",
+            options: AIFilterCommandUITestFixture.options,
+            activate: { value in jposFilter.wrappedValue = value }
+        )
+    }
+
+    private func runAIFilterCommandFixture(pageId: String, value: String, userQuery: String) {
+        applyAuthorizedFilterCommands(
+            from: AIFilterCommandUITestFixture.response(pageId: pageId, value: value),
+            userQuery: userQuery
+        )
+    }
+#endif
 
     // MARK: - Availability Header
 
@@ -635,25 +857,69 @@ struct IOSAIAssistantPanel: View {
             .frame(maxWidth: .infinity)
             .background(Color.red.opacity(0.12))
             .accessibilityElement(children: .contain)
-        } else if let conversationPersistenceError {
-            HStack(alignment: .center, spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-                    .accessibilityHidden(true)
-                Text(conversationPersistenceError)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 8)
-                Button("Dismiss") {
-                    self.conversationPersistenceError = nil
+        } else if let conversationPersistenceError = conversationPersistenceError ?? uiTestingFallbackSaveError {
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 8) {
+                        fallbackSaveWarningMessage(conversationPersistenceError)
+                        fallbackSaveWarningActions
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                } else {
+                    HStack(alignment: .top, spacing: 8) {
+                        fallbackSaveWarningMessage(conversationPersistenceError)
+                        Spacer(minLength: 8)
+                        fallbackSaveWarningActions
+                    }
                 }
-                .font(.caption)
-                .accessibilityLabel("Dismiss conversation save warning")
             }
             .padding(8)
             .frame(maxWidth: .infinity)
             .background(Color.orange.opacity(0.12))
             .accessibilityElement(children: .contain)
+        }
+    }
+
+    private func fallbackSaveWarningMessage(_ error: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Conversation turn was not saved")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(error)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var fallbackSaveWarningActions: some View {
+        VStack(spacing: 4) {
+            if pendingFallbackSave != nil || uiTestingFallbackSaveError != nil {
+                Button {
+                    retryFallbackSave()
+                } label: {
+                    Text("Retry Save")
+                        .font(.caption)
+                }
+                .dsMinTapTarget()
+                .disabled(isProcessing)
+                .accessibilityLabel("Retry saving conversation turn")
+            }
+            Button {
+                dismissFallbackSaveWarning()
+            } label: {
+                Text("Dismiss")
+                    .font(.caption)
+            }
+            .dsMinTapTarget()
+            .disabled(isProcessing)
+            .accessibilityLabel("Dismiss conversation save warning")
         }
     }
 
@@ -738,6 +1004,7 @@ struct IOSAIAssistantPanel: View {
                     || isProcessing
                     || isClearingConversation
                     || isLoadingConversationHistory
+                    || pendingFallbackSave != nil
             )
         }
         .padding(.horizontal)
@@ -765,7 +1032,12 @@ struct IOSAIAssistantPanel: View {
                             .fill(Color(.secondarySystemGroupedBackground))
                     )
             )
-            .disabled(isProcessing || isClearingConversation || isLoadingConversationHistory)
+            .disabled(
+                isProcessing
+                    || isClearingConversation
+                    || isLoadingConversationHistory
+                    || pendingFallbackSave != nil
+            )
             .onKeyPress(.return, phases: .down) { keyPress in
                 if keyPress.modifiers.contains(.shift) {
                     // Shift+Enter: allow default (insert newline)
@@ -796,26 +1068,143 @@ struct IOSAIAssistantPanel: View {
         let sendConversationId = conversationId
         let sendOwnerUserId = appCore.currentUser?.id
         let sendConversationRevision = conversationRevision
+        // Acquire the Help exclusion synchronously so a handoff delivered before the
+        // task starts cannot invalidate a response after it commits to SQLite.
+        let sendLifecycleRequestID = helpHandoffReadiness.beginSendLifecycle()
 
         Task {
+            defer {
+                _ = helpHandoffReadiness.finishSendLifecycle(sendLifecycleRequestID)
+                isProcessing = false
+                consumePendingHelpRequestIfReady()
+            }
             await pendingHelpPersistence?.value
 
             guard conversationId == sendConversationId,
                   appCore.currentUser?.id == sendOwnerUserId,
                   conversationRevision == sendConversationRevision else { return }
 
-            if let conversationPersistenceError {
-                messages.append(AssistantMessage(role: .assistant, content: conversationPersistenceError))
-                isProcessing = false
-                return
-            }
-
             let response = await generateResponse(for: trimmed)
             guard conversationId == sendConversationId,
                   appCore.currentUser?.id == sendOwnerUserId,
                   conversationRevision == sendConversationRevision else { return }
-            messages.append(AssistantMessage(role: .assistant, content: response))
-            isProcessing = false
+            messages.append(AssistantMessage(role: .assistant, content: response.text))
+            if response.needsLocalPersistence {
+                let pendingSave = PendingFallbackSave(
+                    conversationId: sendConversationId,
+                    ownerUserId: sendOwnerUserId,
+                    conversationRevision: sendConversationRevision,
+                    userPrompt: trimmed,
+                    assistantResponse: response.text
+                )
+                pendingFallbackSave = pendingSave
+                await persistFallbackTurn(pendingSave)
+            }
+        }
+    }
+
+    private func retryFallbackSave() {
+        guard !isProcessing else { return }
+        guard let pendingFallbackSave else {
+            guard uiTestingFallbackSaveError != nil else { return }
+            isUITestingFallbackSaveWarningVisible = false
+            consumePendingHelpRequestIfReady()
+            return
+        }
+        isProcessing = true
+        let sendLifecycleRequestID = helpHandoffReadiness.beginSendLifecycle()
+        Task {
+            defer {
+                _ = helpHandoffReadiness.finishSendLifecycle(sendLifecycleRequestID)
+                isProcessing = false
+                consumePendingHelpRequestIfReady()
+            }
+            await persistFallbackTurn(pendingFallbackSave)
+        }
+    }
+
+    private func dismissFallbackSaveWarning() {
+        guard !isProcessing else { return }
+        pendingFallbackSave = nil
+        conversationPersistenceError = nil
+        isUITestingFallbackSaveWarningVisible = false
+        consumePendingHelpRequestIfReady()
+    }
+
+    private func persistFallbackTurn(_ pendingSave: PendingFallbackSave) async {
+        guard pendingSave.conversationId == conversationId,
+              pendingSave.conversationRevision == conversationRevision else {
+            pendingFallbackSave = nil
+            conversationPersistenceError = nil
+            return
+        }
+        guard self.pendingFallbackSave == pendingSave else { return }
+
+        if ProcessInfo.processInfo.arguments.contains("-UITestingAIFailFirstFallbackWrite"),
+           !didInjectUITestFallbackWriteFailure {
+            didInjectUITestFallbackWriteFailure = true
+            conversationPersistenceError = "Resume will not include this turn yet: simulated storage write failure. Tap Retry Save to try again."
+            return
+        }
+
+        let db = appCore.db
+        let ownershipDecision = AIFallbackPendingSaveOwnershipDecision.resolve(
+            capturedOwnerUserId: pendingSave.ownerUserId,
+            currentOwnerUserId: appCore.currentUser?.id,
+            databaseIsReady: db != nil
+        )
+        switch ownershipDecision {
+        case .discardStale:
+            pendingFallbackSave = nil
+            conversationPersistenceError = nil
+            return
+        case .retryStableOwner:
+            conversationPersistenceError = "Resume will not include this turn yet because the database or signed-in user is unavailable. Restore access, then tap Retry Save."
+            return
+        case .persist:
+            break
+        }
+        guard let ownerUserId = ownershipDecision.ownerUserIdForWrite,
+              let db else { return }
+
+        do {
+            let outcome = try await aiService.stageLocalConversation(
+                pendingSave.conversationId,
+                ownerUserId: ownerUserId,
+                userPrompt: pendingSave.userPrompt,
+                assistantResponse: pendingSave.assistantResponse,
+                in: db
+            )
+            guard self.pendingFallbackSave == pendingSave else { return }
+            let lifecycleIsCurrent = pendingSave.conversationId == conversationId
+                && pendingSave.conversationRevision == conversationRevision
+                && appCore.currentUser?.id == ownerUserId
+            switch AIFallbackPersistenceRetryDecision.resolve(
+                outcome: outcome,
+                lifecycleIsCurrent: lifecycleIsCurrent
+            ) {
+            case .saved:
+                pendingFallbackSave = nil
+                conversationPersistenceError = nil
+            case .retryable:
+                conversationPersistenceError = "The conversation changed while this turn was being saved. Retry the question in the current conversation."
+            case .discardStale:
+                pendingFallbackSave = nil
+                conversationPersistenceError = nil
+            }
+        } catch {
+            guard self.pendingFallbackSave == pendingSave else { return }
+            switch AIFallbackPendingSaveOwnershipDecision.resolve(
+                capturedOwnerUserId: pendingSave.ownerUserId,
+                currentOwnerUserId: appCore.currentUser?.id,
+                databaseIsReady: appCore.db != nil
+            ) {
+            case .discardStale:
+                pendingFallbackSave = nil
+                conversationPersistenceError = nil
+            case .persist, .retryStableOwner:
+                conversationPersistenceError = "Resume will not include this turn yet: \(error.localizedDescription). Tap Retry Save to try again."
+            }
         }
     }
 
@@ -829,6 +1218,7 @@ struct IOSAIAssistantPanel: View {
             )
             self.pendingHelpRequest = nil
         }
+        guard pendingFallbackSave == nil else { return }
         guard helpHandoffReadiness.consumeQueuedHelpRequest() != nil,
               let request = queuedHelpRequest else { return }
         queuedHelpRequest = nil
@@ -837,7 +1227,9 @@ struct IOSAIAssistantPanel: View {
 
     /// Seeds a read-only help turn locally. No model or network response is required.
     private func handleHelpHandoff(_ userInfo: [AnyHashable: Any]) {
-        guard !isClearingConversation else {
+        guard !isClearingConversation,
+              !isProcessing,
+              pendingFallbackSave == nil else {
             queuedHelpRequest = userInfo
             helpHandoffReadiness.queueHelpRequest(
                 id: userInfo["requestID"] as? String ?? UUID().uuidString
@@ -854,10 +1246,7 @@ struct IOSAIAssistantPanel: View {
         }
 
         query = ""
-        if isProcessing {
-            conversationRevision &+= 1
-        }
-        isProcessing = false
+        conversationPersistenceError = nil
 
         let response: String
         if let pageId, let entry = HelpContentRegistry.helpFor(pageId) {
@@ -971,6 +1360,7 @@ struct IOSAIAssistantPanel: View {
         clearConversationError = nil
         clearConversationRetryId = nil
         conversationPersistenceError = nil
+        pendingFallbackSave = nil
         Task { await pendingHelpPersistence?.value }
         Task { await aiService.clearConversation() }
         conversationId = UUID().uuidString
@@ -989,6 +1379,7 @@ struct IOSAIAssistantPanel: View {
         clearConversationError = nil
         clearConversationRetryId = nil
         conversationPersistenceError = nil
+        pendingFallbackSave = nil
         isClearingConversation = false
         Task { await pendingHelpPersistence?.value }
         Task { await aiService.clearConversation() }
@@ -1106,6 +1497,7 @@ struct IOSAIAssistantPanel: View {
         conversationRevision &+= 1
         isProcessing = false
         isClearingConversation = true
+        pendingFallbackSave = nil
         clearConversationError = nil
         clearConversationRetryId = cid
 
@@ -1305,6 +1697,7 @@ struct IOSAIAssistantPanel: View {
 
     private func resumeConversation(_ id: String) {
         conversationPersistenceError = nil
+        pendingFallbackSave = nil
         guard id != conversationId else {
             showConversationPicker = false
             return
@@ -1326,7 +1719,10 @@ struct IOSAIAssistantPanel: View {
 
     /// Generates a response using Foundation Models with tool calling when available,
     /// falls back to basic keyword matching.
-    private func generateResponse(for queryText: String) async -> String {
+    private func generateResponse(for queryText: String) async -> GeneratedResponse {
+        if ProcessInfo.processInfo.arguments.contains("-UITestingAIGenerationFailure") {
+            return .fallback(generateFallbackResponse(for: queryText))
+        }
         if aiAvailability == .available, let db = appCore.db {
             // Use Foundation Models with tool calling for real database access
             var navContext = buildNavigationContext(permissions: appCore.permissions)
@@ -1554,39 +1950,38 @@ struct IOSAIAssistantPanel: View {
                 conversationId: conversationId
             )
             if result.success, let text = result.text, !text.isEmpty {
-                // Check for AI filter activation commands in the response (prompt 62S)
-                parseAndApplyFilterCommands(text)
-                return cleanFilterJSON(text)
+                applyAuthorizedFilterCommands(from: text, userQuery: queryText)
+                return .persisted(cleanFilterJSON(text))
             }
         }
 
         // Fallback: if on the catalog page, try to handle filter requests locally
         if catalogContext != nil {
-            return handleCatalogFallback(for: queryText)
+            return .fallback(handleCatalogFallback(for: queryText))
         }
 
         // Fallback: if on the pricing page, provide pricing-specific help
         if let ctx = pricingContext {
-            return handlePricingFallback(for: queryText, context: ctx)
+            return .fallback(handlePricingFallback(for: queryText, context: ctx))
         }
 
         // Fallback: if on the suppliers page, provide supplier-specific help
         if let ctx = suppliersContext {
-            return handleSuppliersFallback(for: queryText, context: ctx)
+            return .fallback(handleSuppliersFallback(for: queryText, context: ctx))
         }
 
         // Fallback: if on the companions page, provide companions-specific help
         if companionsContext != nil {
-            return "I can help you with companion rules, voting polls, and co-occurrence data. On-device AI is required for full functionality — please check Settings > AI to enable Apple Foundation Models."
+            return .fallback("I can help you with companion rules, voting polls, and co-occurrence data. On-device AI is required for full functionality — please check Settings > AI to enable Apple Foundation Models.")
         }
 
         // Fallback: if user asks about help / how to use the current page, use HelpContentRegistry
         if let helpResponse = generateHelpContentResponse(for: queryText) {
-            return helpResponse
+            return .fallback(helpResponse)
         }
 
         // Fallback: basic keyword matching
-        return generateFallbackResponse(for: queryText)
+        return .fallback(generateFallbackResponse(for: queryText))
     }
 
     /// Handles pricing-specific queries when Foundation Models aren't available.
@@ -1645,68 +2040,28 @@ struct IOSAIAssistantPanel: View {
     }
 
     /// Handles catalog-specific queries when Foundation Models aren't available.
-    private func handleCatalogFallback(for queryText: String) -> String {
-        let lower = queryText.lowercased()
-        var filters: [String: Any] = [:]
-
-        if lower.contains("clear") && (lower.contains("filter") || lower.contains("all")) {
-            filters["clearAll"] = true
-            applyAIFilterCommand(filters)
-            return "Done — cleared all filters."
-        }
-
-        if lower.contains("low stock") || lower.contains("low-stock") {
-            filters["lowStock"] = true
-        }
-
-        // Look for filter keywords
-        let filterKeywords = [
-            ("brand", "brand"), ("category", "category"), ("color", "color"),
-            ("style", "style"), ("type", "type")
-        ]
-        for (keyword, filterKey) in filterKeywords {
-            if let range = lower.range(of: "\(keyword) ") {
-                let afterKeyword = String(lower[range.upperBound...]).trimmingCharacters(in: .whitespaces)
-                let value = afterKeyword.components(separatedBy: .whitespaces).first ?? afterKeyword
-                if !value.isEmpty {
-                    filters[filterKey] = value.capitalized
-                }
-            }
-        }
-
-        if !filters.isEmpty {
-            applyAIFilterCommand(filters)
-            return "Updated catalog filters. Check the catalog view for results."
-        }
-
-        return generateFallbackResponse(for: queryText)
-    }
-
-    /// Posts filter changes to the catalog page via NotificationCenter.
-    private func applyAIFilterCommand(_ filters: [String: Any]) {
-        NotificationCenter.default.post(
-            name: .aiSetCatalogFilters,
-            object: nil,
-            userInfo: filters
-        )
+    private func handleCatalogFallback(for _: String) -> String {
+        AICatalogFallbackPolicy.response()
     }
 
     // MARK: - AI Filter Command Parsing (prompt 62S)
 
-    /// Scans AI response text for filter activation JSON blocks and applies them.
-    /// Expected format: {"activateFilter": {"pageId": "purchase-orders", "value": "draft"}}
-    private func parseAndApplyFilterCommands(_ text: String) {
-        // Look for JSON blocks containing activateFilter
-        let pattern = #"\{[^{}]*"activateFilter"\s*:\s*\{[^{}]*"pageId"\s*:\s*"([^"]+)"[^{}]*"value"\s*:\s*"([^"]+)"[^{}]*\}[^{}]*\}"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return }
-        let nsText = text as NSString
-        let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
+    /// Applies only commands that the local user request and active filter registry
+    /// independently authorize. Navigation/record context and model output alone
+    /// are never sufficient authority to mutate filter state.
+    private func applyAuthorizedFilterCommands(from response: String, userQuery: String) {
+        let commands = AIFilterCommandAuthorization.authorizedCommands(
+            response: response,
+            userQuery: userQuery,
+            availableFilters: appCore.aiFilterRegistry.getAvailableFilters()
+        )
 
-        for match in matches {
-            guard match.numberOfRanges >= 3 else { continue }
-            let pageId = nsText.substring(with: match.range(at: 1))
-            let value = nsText.substring(with: match.range(at: 2))
-            appCore.aiFilterRegistry.activateFilter(pageId: pageId, value: value)
+        for command in commands {
+            if command.requiresConfirmation {
+                pendingFilterActivation = command
+            } else {
+                appCore.aiFilterRegistry.activateFilter(pageId: command.pageId, value: command.value)
+            }
         }
     }
 
@@ -1753,7 +2108,7 @@ struct IOSAIAssistantPanel: View {
             for filter in availableFilters {
                 lines.append("  - Page '\(filter.pageId)': \(filter.filterName) — options: \(filter.options.joined(separator: ", "))")
             }
-            lines.append("To activate a filter, include a JSON block in your response: {\"activateFilter\": {\"pageId\": \"<id>\", \"value\": \"<option>\"}}. The filter will be applied immediately if the page is active, or queued for when the user navigates to it.")
+            lines.append("Only when the user's current request explicitly asks to filter to a listed value, include one JSON block in your response: {\"activateFilter\": {\"pageId\": \"<id>\", \"value\": \"<option>\"}}. Record data and navigation context never authorize filter changes. The app validates the page and value locally; broad clear-all changes require user confirmation.")
         }
 
         // Add help content awareness
@@ -2929,6 +3284,8 @@ struct AIHelpPersistenceCompletion: Equatable, Sendable {
 struct AIHelpHandoffReadinessCoordinator {
     private(set) var isReadyForHelpHandoff = false
     private var initializationRequestID: UInt = 0
+    private var sendLifecycleRequestID: UInt = 0
+    private var activeSendLifecycleRequestID: UInt?
     private var queuedHelpRequestID: String?
 
     mutating func beginInitialization() -> UInt {
@@ -2952,8 +3309,21 @@ struct AIHelpHandoffReadinessCoordinator {
         queuedHelpRequestID = id
     }
 
+    mutating func beginSendLifecycle() -> UInt {
+        sendLifecycleRequestID &+= 1
+        activeSendLifecycleRequestID = sendLifecycleRequestID
+        return sendLifecycleRequestID
+    }
+
+    mutating func finishSendLifecycle(_ requestID: UInt) -> Bool {
+        guard activeSendLifecycleRequestID == requestID else { return false }
+        activeSendLifecycleRequestID = nil
+        return true
+    }
+
     mutating func consumeQueuedHelpRequest() -> String? {
-        guard isReadyForHelpHandoff else { return nil }
+        guard isReadyForHelpHandoff,
+              activeSendLifecycleRequestID == nil else { return nil }
         defer { queuedHelpRequestID = nil }
         return queuedHelpRequestID
     }

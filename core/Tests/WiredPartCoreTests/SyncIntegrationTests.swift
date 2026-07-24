@@ -27,6 +27,66 @@ struct SyncIntegrationTests {
         return (server, state, port)
     }
 
+    private func makeEncryptedRequest(
+        url: URL,
+        plainBody: Data,
+        state: SyncServerState,
+        deviceId: String = "client-dev",
+        endpoint: String
+    ) async throws -> (request: URLRequest, sharedKey: Data) {
+        let (privateKey, publicKey) = SyncCrypto.generateKeyAgreementPair()
+        try await state.registerAuthorizedPeer(
+            deviceId: deviceId,
+            deviceName: "Integration client",
+            platform: "test",
+            keyAgreementPublicKey: publicKey
+        )
+        let sharedKey = try SyncCrypto.deriveSharedKeyData(
+            ourPrivateKeyB64: privateKey,
+            theirPublicKeyB64: state.kaPublicKeyB64
+        )
+        let requestId = UUID().uuidString
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = try SyncCrypto.encryptAESGCM(
+            data: plainBody,
+            keyData: sharedKey,
+            aad: LanSyncServer.syncAAD(
+                endpoint: endpoint,
+                direction: "request",
+                deviceId: deviceId,
+                requestId: requestId
+            )
+        )
+        request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        request.setValue("1", forHTTPHeaderField: "X-Sync-Encrypted")
+        request.setValue(publicKey, forHTTPHeaderField: "X-Sync-Sender-Key")
+        request.setValue(deviceId, forHTTPHeaderField: "X-Sync-Device-ID")
+        request.setValue(requestId, forHTTPHeaderField: "X-Sync-Request-ID")
+        request.timeoutInterval = 5
+        return (request, sharedKey)
+    }
+
+    private func decryptResponse(
+        _ data: Data,
+        sharedKey: Data,
+        request: URLRequest,
+        endpoint: String
+    ) throws -> Data {
+        let requestId = try #require(request.value(forHTTPHeaderField: "X-Sync-Request-ID"))
+        let deviceId = try #require(request.value(forHTTPHeaderField: "X-Sync-Device-ID"))
+        return try SyncCrypto.decryptAESGCM(
+            data: data,
+            keyData: sharedKey,
+            aad: LanSyncServer.syncAAD(
+                endpoint: endpoint,
+                direction: "response",
+                deviceId: deviceId,
+                requestId: requestId
+            )
+        )
+    }
+
     // MARK: - Test 1: Loopback Push/Pull
 
     @Test("Loopback: push changes to server, pull them back")
@@ -53,15 +113,17 @@ struct SyncIntegrationTests {
         ] as [String: Any]
 
         let pushData = try JSONSerialization.data(withJSONObject: pushBody)
-        var pushReq = URLRequest(url: URL(string: "\(baseURL)/sync/push")!)
-        pushReq.httpMethod = "POST"
-        pushReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        pushReq.httpBody = pushData
-        pushReq.timeoutInterval = 5
+        let (pushReq, sharedKey) = try await makeEncryptedRequest(
+            url: URL(string: "\(baseURL)/sync/push")!,
+            plainBody: pushData,
+            state: state,
+            endpoint: "push"
+        )
 
-        let (pushResp, pushHTTP) = try await URLSession.shared.data(for: pushReq)
+        let (encryptedPushResp, pushHTTP) = try await URLSession.shared.data(for: pushReq)
         #expect((pushHTTP as! HTTPURLResponse).statusCode == 200)
 
+        let pushResp = try decryptResponse(encryptedPushResp, sharedKey: sharedKey, request: pushReq, endpoint: "push")
         let pushResult = try JSONDecoder().decode(SyncPushResponse.self, from: pushResp)
         #expect(pushResult.accepted == 1)
 
@@ -100,15 +162,17 @@ struct SyncIntegrationTests {
             "vector_clock": ["server-dev": 3]
         ]
         let pullData = try JSONSerialization.data(withJSONObject: pullBody)
-        var pullReq = URLRequest(url: URL(string: "\(baseURL)/sync/pull")!)
-        pullReq.httpMethod = "POST"
-        pullReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        pullReq.httpBody = pullData
-        pullReq.timeoutInterval = 5
+        let (pullReq, sharedKey) = try await makeEncryptedRequest(
+            url: URL(string: "\(baseURL)/sync/pull")!,
+            plainBody: pullData,
+            state: state,
+            endpoint: "pull"
+        )
 
-        let (pullResp, pullHTTP) = try await URLSession.shared.data(for: pullReq)
+        let (encryptedPullResp, pullHTTP) = try await URLSession.shared.data(for: pullReq)
         #expect((pullHTTP as! HTTPURLResponse).statusCode == 200)
 
+        let pullResp = try decryptResponse(encryptedPullResp, sharedKey: sharedKey, request: pullReq, endpoint: "pull")
         let pullResult = try JSONDecoder().decode(SyncPullResponse.self, from: pullResp)
         // Should only get changes 4 and 5
         #expect(pullResult.changes.count == 2)
@@ -315,11 +379,12 @@ struct SyncIntegrationTests {
             "changes": [] as [[String: Any]]
         ]
         let noCertData = try JSONSerialization.data(withJSONObject: noCertBody)
-        var noCertReq = URLRequest(url: URL(string: "\(baseURL)/sync/push")!)
-        noCertReq.httpMethod = "POST"
-        noCertReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        noCertReq.httpBody = noCertData
-        noCertReq.timeoutInterval = 5
+        let (noCertReq, _) = try await makeEncryptedRequest(
+            url: URL(string: "\(baseURL)/sync/push")!,
+            plainBody: noCertData,
+            state: state,
+            endpoint: "push"
+        )
 
         let (_, noCertHTTP) = try await URLSession.shared.data(for: noCertReq)
         #expect((noCertHTTP as! HTTPURLResponse).statusCode == 401)
@@ -344,11 +409,12 @@ struct SyncIntegrationTests {
             ]
         ]
         let withCertData = try JSONSerialization.data(withJSONObject: withCertBody)
-        var withCertReq = URLRequest(url: URL(string: "\(baseURL)/sync/push")!)
-        withCertReq.httpMethod = "POST"
-        withCertReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        withCertReq.httpBody = withCertData
-        withCertReq.timeoutInterval = 5
+        let (withCertReq, _) = try await makeEncryptedRequest(
+            url: URL(string: "\(baseURL)/sync/push")!,
+            plainBody: withCertData,
+            state: state,
+            endpoint: "push"
+        )
 
         let (_, withCertHTTP) = try await URLSession.shared.data(for: withCertReq)
         #expect((withCertHTTP as! HTTPURLResponse).statusCode == 200)
@@ -391,11 +457,12 @@ struct SyncIntegrationTests {
             ]
         ]
         let bodyData = try JSONSerialization.data(withJSONObject: body)
-        var req = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/push")!)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = bodyData
-        req.timeoutInterval = 5
+        let (req, _) = try await makeEncryptedRequest(
+            url: URL(string: "http://127.0.0.1:\(port)/sync/push")!,
+            plainBody: bodyData,
+            state: state,
+            endpoint: "push"
+        )
 
         let (_, httpResp) = try await URLSession.shared.data(for: req)
         #expect((httpResp as! HTTPURLResponse).statusCode == 403)
@@ -429,13 +496,15 @@ struct SyncIntegrationTests {
             "company_id": "test-company"
         ]
         let pull1Data = try JSONSerialization.data(withJSONObject: pull1Body)
-        var pull1Req = URLRequest(url: URL(string: "\(baseURL)/sync/pull")!)
-        pull1Req.httpMethod = "POST"
-        pull1Req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        pull1Req.httpBody = pull1Data
-        pull1Req.timeoutInterval = 5
+        let (pull1Req, sharedKey1) = try await makeEncryptedRequest(
+            url: URL(string: "\(baseURL)/sync/pull")!,
+            plainBody: pull1Data,
+            state: state,
+            endpoint: "pull"
+        )
 
-        let (resp1, _) = try await URLSession.shared.data(for: pull1Req)
+        let (encryptedResp1, _) = try await URLSession.shared.data(for: pull1Req)
+        let resp1 = try decryptResponse(encryptedResp1, sharedKey: sharedKey1, request: pull1Req, endpoint: "pull")
         let result1 = try JSONDecoder().decode(SyncPullResponse.self, from: resp1)
         #expect(result1.changes.count == 3)
 
@@ -459,13 +528,15 @@ struct SyncIntegrationTests {
             "vector_clock": ["server-dev": 3]
         ]
         let pull2Data = try JSONSerialization.data(withJSONObject: pull2Body)
-        var pull2Req = URLRequest(url: URL(string: "\(baseURL)/sync/pull")!)
-        pull2Req.httpMethod = "POST"
-        pull2Req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        pull2Req.httpBody = pull2Data
-        pull2Req.timeoutInterval = 5
+        let (pull2Req, sharedKey2) = try await makeEncryptedRequest(
+            url: URL(string: "\(baseURL)/sync/pull")!,
+            plainBody: pull2Data,
+            state: state,
+            endpoint: "pull"
+        )
 
-        let (resp2, _) = try await URLSession.shared.data(for: pull2Req)
+        let (encryptedResp2, _) = try await URLSession.shared.data(for: pull2Req)
+        let resp2 = try decryptResponse(encryptedResp2, sharedKey: sharedKey2, request: pull2Req, endpoint: "pull")
         let result2 = try JSONDecoder().decode(SyncPullResponse.self, from: resp2)
         #expect(result2.changes.count == 2)  // Only items 4 and 5
     }
@@ -507,7 +578,7 @@ struct SyncIntegrationTests {
 
     @Test("Wrong company_id on push/pull → 403")
     func testWrongCompanyIntegration() async throws {
-        let (server, _, port) = try await startServer(companyId: "company-A")
+        let (server, state, port) = try await startServer(companyId: "company-A")
         defer { Task { await server.stop() } }
 
         let baseURL = "http://127.0.0.1:\(port)"
@@ -519,14 +590,20 @@ struct SyncIntegrationTests {
             "changes": [] as [[String: Any]]
         ]
         let pushData = try JSONSerialization.data(withJSONObject: pushBody)
-        var pushReq = URLRequest(url: URL(string: "\(baseURL)/sync/push")!)
-        pushReq.httpMethod = "POST"
-        pushReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        pushReq.httpBody = pushData
-        pushReq.timeoutInterval = 5
+        let (pushReq, _) = try await makeEncryptedRequest(
+            url: URL(string: "\(baseURL)/sync/push")!,
+            plainBody: pushData,
+            state: state,
+            endpoint: "push"
+        )
 
-        let (_, pushHTTP) = try await URLSession.shared.data(for: pushReq)
-        #expect((pushHTTP as! HTTPURLResponse).statusCode == 403)
+        // Use separate connections repeatedly: a 403 response must be delivered
+        // completely, not converted into a lost-connection transport error while
+        // the server closes the response stream.
+        for _ in 0..<20 {
+            let (_, pushHTTP) = try await URLSession.shared.data(for: pushReq)
+            #expect((pushHTTP as! HTTPURLResponse).statusCode == 403)
+        }
 
         // Pull with wrong company
         let pullBody: [String: Any] = [
@@ -534,11 +611,12 @@ struct SyncIntegrationTests {
             "company_id": "company-B"
         ]
         let pullData = try JSONSerialization.data(withJSONObject: pullBody)
-        var pullReq = URLRequest(url: URL(string: "\(baseURL)/sync/pull")!)
-        pullReq.httpMethod = "POST"
-        pullReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        pullReq.httpBody = pullData
-        pullReq.timeoutInterval = 5
+        let (pullReq, _) = try await makeEncryptedRequest(
+            url: URL(string: "\(baseURL)/sync/pull")!,
+            plainBody: pullData,
+            state: state,
+            endpoint: "pull"
+        )
 
         let (_, pullHTTP) = try await URLSession.shared.data(for: pullReq)
         #expect((pullHTTP as! HTTPURLResponse).statusCode == 403)
