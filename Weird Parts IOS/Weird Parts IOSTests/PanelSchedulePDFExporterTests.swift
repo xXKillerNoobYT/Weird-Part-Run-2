@@ -124,6 +124,26 @@ final class PanelSchedulePDFExporterTests: XCTestCase {
         }
         XCTAssertFalse(FileManager.default.fileExists(atPath: expectedURL.path), "An invalid panel schedule must not write a PDF for export or print.")
     }
+
+    func testWriteToTemporaryFileRejectsOverlappingCircuitPositionsWithoutWritingPDF() throws {
+        let panelName = "OverlappingPanel\(UUID().uuidString)"
+        var schedule = PanelSchedule(panelName: panelName, totalSpaces: 20)
+        schedule.circuits = [
+            CircuitEntry(id: "double-breaker", spaceNumber: 1, breakerAmps: 30, breakerType: .double, circuitDescription: "Range", isSpare: false),
+            CircuitEntry(id: "overlapping-single", spaceNumber: 3, breakerAmps: 20, breakerType: .single, circuitDescription: "Kitchen", isSpare: false)
+        ]
+        let exporter = PanelSchedulePDFExporter(schedule: schedule, options: PanelScheduleExportOptions())
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("PanelSchedules", isDirectory: true)
+        let date = DateFormatter.panelScheduleFilenameDate.string(from: Date())
+        let expectedURL = directory.appendingPathComponent("\(panelName)_\(date).pdf")
+        try? FileManager.default.removeItem(at: expectedURL)
+        defer { try? FileManager.default.removeItem(at: expectedURL) }
+
+        XCTAssertThrowsError(try exporter.writeToTemporaryFile()) { error in
+            XCTAssertEqual(error as? PanelScheduleValidationError, .spaceConflict(space: 3, first: 1, second: 3))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: expectedURL.path), "An overlapping schedule must not write a PDF for export or print.")
+    }
 }
 
 private extension DateFormatter {
