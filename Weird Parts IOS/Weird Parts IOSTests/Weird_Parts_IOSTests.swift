@@ -1112,15 +1112,42 @@ struct Weird_Parts_IOSTests {
 
         #expect(!source.contains("try? FileManager.default.copyItem"), "Manual backup WAL/SHM copy failures must not be swallowed")
         #expect(!source.contains("try? FileManager.default.removeItem"), "Failed manual backups must not swallow cleanup failures")
-        #expect(source.contains("try IOSBackupFileCopier.copySQLiteSnapshot"), "Manual backup creation should use the throwing SQLite snapshot copier")
+        #expect(source.contains("try IOSBackupFileCopier.checkpointAndCopySQLiteSnapshot"), "Manual backup creation should checkpoint and copy a consistent SQLite snapshot")
         #expect(source.contains("try IOSBackupFileCopier.pruneBackups"), "Successful manual backup creation should enforce the rolling retention limit")
         #expect(source.contains("createdURLs.reversed()"), "Partial backup cleanup should remove sidecars before the main database")
         #expect(source.contains("try IOSBackupFileCopier.removeSQLiteSnapshot(at: destURL)"), "A backup copied before retention failure should be rolled back instead of being left on disk")
-        let snapshotCall = try #require(source.range(of: "try IOSBackupFileCopier.copySQLiteSnapshot"))
+        let snapshotCall = try #require(source.range(of: "try IOSBackupFileCopier.checkpointAndCopySQLiteSnapshot"))
         let pruneCall = try #require(source.range(of: "try IOSBackupFileCopier.pruneBackups"))
         let successState = try #require(source.range(of: "backupSuccess = true"))
         #expect(snapshotCall.lowerBound < pruneCall.lowerBound, "Retention should run after the full SQLite snapshot is copied")
         #expect(pruneCall.lowerBound < successState.lowerBound, "Success state must only be set after retention succeeds")
+    }
+
+    @Test func manualBackupCheckpointIncludesWALChanges() throws {
+        let tempRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("IOSBackupCheckpointTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let sourceURL = tempRoot.appendingPathComponent("wiredpart-live.sqlite")
+        let destinationURL = tempRoot.appendingPathComponent("wiredpart-backup.sqlite")
+        let source = try DatabasePool(path: sourceURL.path)
+        try source.write { db in
+            try db.execute(sql: "PRAGMA journal_mode = WAL")
+            try db.execute(sql: "PRAGMA wal_autocheckpoint = 0")
+            try db.execute(sql: "CREATE TABLE backup_probe(id INTEGER PRIMARY KEY, value TEXT NOT NULL)")
+            try db.execute(sql: "INSERT INTO backup_probe(value) VALUES (?)", arguments: ["committed-in-wal"])
+        }
+
+        #expect(FileManager.default.fileExists(atPath: sourceURL.path + "-wal"), "Test fixture should keep committed data in a WAL sidecar")
+        try IOSBackupFileCopier.checkpointAndCopySQLiteSnapshot(from: source, sourceURL: sourceURL, to: destinationURL)
+        #expect(!FileManager.default.fileExists(atPath: destinationURL.path + "-wal"), "Checkpointed snapshots should not depend on a copied WAL sidecar")
+
+        let restored = try DatabaseQueue(path: destinationURL.path)
+        let restoredValue = try restored.read { db in
+            try String.fetchOne(db, sql: "SELECT value FROM backup_probe WHERE id = 1")
+        }
+        #expect(restoredValue == "committed-in-wal")
     }
 
     @Test func fullDatabaseExportCheckpointsAndIncludesWALChanges() throws {
