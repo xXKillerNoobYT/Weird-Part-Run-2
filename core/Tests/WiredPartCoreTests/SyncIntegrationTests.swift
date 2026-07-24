@@ -525,8 +525,13 @@ struct SyncIntegrationTests {
         pushReq.httpBody = pushData
         pushReq.timeoutInterval = 5
 
-        let (_, pushHTTP) = try await URLSession.shared.data(for: pushReq)
-        #expect((pushHTTP as! HTTPURLResponse).statusCode == 403)
+        // Use separate connections repeatedly: a 403 response must be delivered
+        // completely, not converted into a lost-connection transport error while
+        // the server closes the response stream.
+        for _ in 0..<20 {
+            let (_, pushHTTP) = try await URLSession.shared.data(for: pushReq)
+            #expect((pushHTTP as! HTTPURLResponse).statusCode == 403)
+        }
 
         // Pull with wrong company
         let pullBody: [String: Any] = [
