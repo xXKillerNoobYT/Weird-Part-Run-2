@@ -17,8 +17,10 @@ from pathlib import PurePosixPath
 
 BLOCKED_EXAMPLES = [
     ".paperclip/worktrees/WEI-123/state.json",
+    ".paperclip/worktrees/WEI-123/evidence.png",
     ".paperclip/DerivedData-WEI-1188/ModuleCache.noindex/Session.modulevalidation",
     "DerivedData/Build/Intermediates.noindex/file.o",
+    "DerivedData/Build/capture.png",
     "app/DerivedData-WEI-1/Build/Products/App.app",
     "core/.build/debug/WiredPartCoreTests.xctest",
     "core/SourcePackages/checkouts/GRDB.swift/Package.swift",
@@ -34,6 +36,8 @@ BLOCKED_EXAMPLES = [
     # 26 MB of QA evidence and problem screenshots accumulated in docs/).
     "docs/testing/artifacts/wei-9999/evidence.png",
     "docs/some-report/screenshot.png",
+    "docs/readme-assets/unreviewed-screenshot.png",
+    "docs/readme-assets/unreviewed-screenshot.jpg",
     "Weird Parts IOS/Weird Parts IOS/debug-capture.jpg",
 ]
 
@@ -47,18 +51,28 @@ ALLOWED_EXAMPLES = [
     "Weird Parts IOS/AppDelegate.swift",
     "docs/build-notes.md",
     "docs/github-issue-fisher/.gitkeep",
-    # Sanctioned image locations: the user's problem-report inbox and
-    # Xcode asset catalogs.
+    # Sanctioned image locations: the user's problem-report inbox, Xcode asset
+    # catalogs, and the pre-reviewed synthetic README capture register.
     "docs/problems/Screenshot 2026-03-28 at 2.01.57 PM.png",
+    "docs/readme-assets/wiredpart-dashboard-synthetic.png",
+    "docs/readme-assets/wiredpart-warehouse-synthetic.png",
+    "docs/readme-assets/wiredpart-jobs-synthetic.png",
     "Weird Parts IOS/Weird Parts IOS/Assets.xcassets/AppIcon.appiconset/icon.png",
 ]
 
-# Tracked images are only allowed in these locations. Everything else is a
-# screenshot/evidence dump that belongs in a GitHub issue or PR attachment
-# (see docs/testing/artifacts/README.md for the policy).
+# Tracked images are denied by default. Exceptions are the existing
+# problem-report inboxes, Xcode asset catalogs, and the exact synthetic README
+# captures approved in docs/readme-assets/README-ASSET-REVIEW.md. Everything
+# else is a screenshot/evidence dump that belongs in a GitHub issue or PR
+# attachment (see docs/testing/artifacts/README.md for the policy).
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".heic", ".webp"}
 IMAGE_ALLOWED_PREFIXES = ("docs/problems/",)
 IMAGE_ALLOWED_PATH_PARTS = {"Assets.xcassets"}
+README_IMAGE_ALLOWED_PATHS = {
+    "docs/readme-assets/wiredpart-dashboard-synthetic.png",
+    "docs/readme-assets/wiredpart-warehouse-synthetic.png",
+    "docs/readme-assets/wiredpart-jobs-synthetic.png",
+}
 
 # Any tracked file larger than this is presumed to be a build artifact or
 # media dump; raise the limit deliberately if a legitimate need appears.
@@ -111,9 +125,11 @@ def is_blocked(path: str) -> bool:
     if any(normalized.endswith(suffix) for suffix in BLOCKED_FILE_SUFFIXES):
         return True
 
-    # Images are only allowed in the problem-report inbox and asset catalogs.
+    # Image exceptions are limited to the reviewed locations declared above.
     suffix = PurePosixPath(normalized).suffix.lower()
     if suffix in IMAGE_SUFFIXES:
+        if normalized in README_IMAGE_ALLOWED_PATHS:
+            return False
         if normalized.startswith(IMAGE_ALLOWED_PREFIXES):
             return False
         if any(part in IMAGE_ALLOWED_PATH_PARTS for part in parts):
@@ -121,6 +137,11 @@ def is_blocked(path: str) -> bool:
         return True
 
     return False
+
+
+def is_oversized(size_bytes: int) -> bool:
+    """Return True when a tracked file exceeds the repository size limit."""
+    return size_bytes > MAX_TRACKED_FILE_BYTES
 
 
 def tracked_files() -> list[str]:
@@ -141,6 +162,11 @@ def run_self_test() -> int:
     for path in ALLOWED_EXAMPLES:
         if is_blocked(path):
             failures.append(f"expected allowed but blocked: {path}")
+
+    if is_oversized(MAX_TRACKED_FILE_BYTES):
+        failures.append("expected size limit itself to be allowed")
+    if not is_oversized(MAX_TRACKED_FILE_BYTES + 1):
+        failures.append("expected file above size limit to be blocked")
 
     if failures:
         print("Artifact guard self-test failed:", file=sys.stderr)
@@ -174,7 +200,7 @@ def main() -> int:
             size = os.path.getsize(path)
         except OSError:
             continue
-        if size > MAX_TRACKED_FILE_BYTES:
+        if is_oversized(size):
             oversized.append(f"{path} ({size / 1_000_000:.1f} MB)")
 
     if blocked or oversized:
