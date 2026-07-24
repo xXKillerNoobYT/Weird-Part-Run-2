@@ -134,7 +134,14 @@ struct IOSBackupsPage: View {
                 ("How to Use It", "Tap 'Create Backup Now' to snapshot the current database. Automatic backups run daily. Up to 7 rolling backups are retained. Database restore must be done from the desktop application."),
             ])
         }
-        .task { if canManageSettings { loadData() } }
+        .task {
+            guard canManageSettings else { return }
+            do {
+                try loadData()
+            } catch {
+                errorMessage = userFriendlyError(error, context: "load backup status")
+            }
+        }
         .alert("Restore Not Available", isPresented: $showRestoreAlert) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -268,7 +275,7 @@ struct IOSBackupsPage: View {
 
     // MARK: - Data Loading
 
-    private func loadData() {
+    private func loadData() throws {
         // DB size
         if let path = dbPath,
            let attrs = try? FileManager.default.attributesOfItem(atPath: path),
@@ -279,16 +286,17 @@ struct IOSBackupsPage: View {
         }
 
         // Scan backups
-        if let dir = backupDir,
-           let backups = try? IOSBackupFileCopier.manualBackupSnapshotFiles(in: dir) {
-            backupCount = backups.count
-            if let newest = backups.first {
-                lastBackupTime = newest.lastPathComponent
-                    .replacingOccurrences(of: "wiredpart-backup-", with: "")
-                    .replacingOccurrences(of: ".sqlite", with: "")
-            } else {
-                lastBackupTime = nil
-            }
+        guard let dir = backupDir else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        let backups = try IOSBackupFileCopier.manualBackupSnapshotFiles(in: dir)
+        backupCount = backups.count
+        if let newest = backups.first {
+            lastBackupTime = newest.lastPathComponent
+                .replacingOccurrences(of: "wiredpart-backup-", with: "")
+                .replacingOccurrences(of: ".sqlite", with: "")
+        } else {
+            lastBackupTime = nil
         }
     }
 
@@ -334,8 +342,8 @@ struct IOSBackupsPage: View {
                 throw error
             }
 
+            try loadData()
             backupSuccess = true
-            loadData()
 
             Task {
                 try? await Task.sleep(nanoseconds: 2_000_000_000)

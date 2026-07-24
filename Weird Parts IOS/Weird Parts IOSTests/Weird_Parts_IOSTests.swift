@@ -1101,7 +1101,7 @@ struct Weird_Parts_IOSTests {
         #expect(!FileManager.default.fileExists(atPath: backupURL.path + "-shm"))
     }
 
-    @Test func manualBackupSidecarCopiesAreNotSwallowedBeforeSuccessState() throws {
+    @Test func manualBackupCompletionWaitsForLedgerReloadAfterCopyAndPrune() throws {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -1116,11 +1116,15 @@ struct Weird_Parts_IOSTests {
         #expect(source.contains("try IOSBackupFileCopier.pruneBackups"), "Successful manual backup creation should enforce the rolling retention limit")
         #expect(source.contains("createdURLs.reversed()"), "Partial backup cleanup should remove sidecars before the main database")
         #expect(source.contains("try IOSBackupFileCopier.removeSQLiteSnapshot(at: destURL)"), "A backup copied before retention failure should be rolled back instead of being left on disk")
+        #expect(source.contains("private func loadData() throws"), "Backup-ledger reload failures must propagate to the manual backup flow")
+        #expect(!source.contains("let backups = try? IOSBackupFileCopier.manualBackupSnapshotFiles"), "Backup-ledger reload failures must not be swallowed")
         let snapshotCall = try #require(source.range(of: "try IOSBackupFileCopier.copySQLiteSnapshot"))
         let pruneCall = try #require(source.range(of: "try IOSBackupFileCopier.pruneBackups"))
+        let ledgerReload = try #require(source.range(of: "try loadData()", range: pruneCall.lowerBound..<source.endIndex))
         let successState = try #require(source.range(of: "backupSuccess = true"))
         #expect(snapshotCall.lowerBound < pruneCall.lowerBound, "Retention should run after the full SQLite snapshot is copied")
-        #expect(pruneCall.lowerBound < successState.lowerBound, "Success state must only be set after retention succeeds")
+        #expect(pruneCall.lowerBound < ledgerReload.lowerBound, "The backup ledger must reload after retention succeeds")
+        #expect(ledgerReload.lowerBound < successState.lowerBound, "Success accessibility state must only be set after the backup ledger reload succeeds")
     }
 
     @Test func fullDatabaseExportCheckpointsAndIncludesWALChanges() throws {
