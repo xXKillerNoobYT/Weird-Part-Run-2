@@ -45,7 +45,8 @@ jobs:
       APPROVED_PR_AUTOFIX_MAX_ATTEMPTS: "3"
       # Only first-party PR authors explicitly entrusted by Isaac are eligible.
       APPROVED_PR_AUTOFIX_TRUSTED_PR_AUTHORS: "xXKillerNoobYT"
-      APPROVED_PR_AUTOFIX_REQUIRE_APPROVAL: "0"
+      # A bounded repair/merge path still requires a real GitHub approval.
+      APPROVED_PR_AUTOFIX_REQUIRE_APPROVAL: "1"
       APPROVED_PR_AUTOFIX_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true && '1' || '0' }}
       APPROVED_PR_AUTOFIX_PR_NUMBER: ${{ inputs.pr_number }}
       APPROVED_PR_AUTOFIX_MODEL: gpt-5.5

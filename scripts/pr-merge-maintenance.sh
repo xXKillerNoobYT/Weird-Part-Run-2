@@ -226,72 +226,70 @@ while IFS= read -r pr; do
     fi
   fi
 
-  # Legacy Copilot-only review gate is disabled: this repository uses the
-  # trusted first-party Codex path plus exact-head checks instead.
-  # It may be explicitly re-enabled only for a deliberately configured legacy
-  # migration, never as the default merge requirement.
-  if [[ "${PR_MAINTENANCE_REQUIRE_COPILOT_REVIEW:-0}" == "1" ]]; then
-    # A GraphQL API failure must FAIL CLOSED (never merge on unknown review
-    # state). We probe once and treat empty/failed output as "not satisfied".
-    # Review nodes carry author login + state so a PENDING/DISMISSED review
-    # cannot satisfy the gate.
-    # reviews(last: 100) — the MOST RECENT reviews, so a Copilot review is
-    # never missed on PRs whose total review history exceeds one page.
-    review_state="$(gh api graphql -f query="query { repository(owner: \"$repo_owner\", name: \"$repo_name\") { pullRequest(number: $number) { latestReviews: reviews(last: 100) { nodes { author { login } state } } reviewThreads(first: 100) { totalCount nodes { isResolved } } } } }" 2>/dev/null || echo "")"
+  # Mandatory fail-closed gate. No configuration value may bypass the required
+  # submitted Copilot review/comment or unresolved-thread proof before merge.
+  # A GraphQL API failure must FAIL CLOSED (never merge on unknown review
+  # state). We probe once and treat empty/failed output as "not satisfied".
+  # Review nodes carry author login + state so a PENDING/DISMISSED review
+  # cannot satisfy the gate.
+  # reviews(last: 100) — the MOST RECENT reviews, so a Copilot review is
+  # never missed on PRs whose total review history exceeds one page. The review
+  # must be attached to the current PR head, not an older superseded commit.
+  review_state="$(gh api graphql -f query="query { repository(owner: \"$repo_owner\", name: \"$repo_name\") { pullRequest(number: $number) { latestReviews: reviews(last: 100) { nodes { author { login } state commit { oid } } } reviewThreads(first: 100) { totalCount nodes { isResolved } } } } }" 2>/dev/null || echo "")"
 
-    if [[ -z "$review_state" ]]; then
-      echo "    skip: could not read review state (API failure) — not merging on unknown review status"
-      continue
-    fi
+  if [[ -z "$review_state" ]]; then
+    echo "    skip: could not read review state (API failure) — not merging on unknown review status"
+    continue
+  fi
 
-    # A satisfying Copilot review is an EXACT bot login (no prefix spoofing by a
-    # 'copilot*' human account) whose state is a real submitted review
-    # (COMMENTED/APPROVED/CHANGES_REQUESTED — never PENDING/DISMISSED).
-    copilot_reviews="$(jq '[.data.repository.pullRequest.latestReviews.nodes[]?
-      | select((.author.login // "") == "copilot-pull-request-reviewer[bot]")
-      | select(.state == "COMMENTED" or .state == "APPROVED" or .state == "CHANGES_REQUESTED")] | length' <<<"$review_state" 2>/dev/null || echo "0")"
-    if [[ ! "$copilot_reviews" =~ ^[0-9]+$ ]]; then copilot_reviews="0"; fi
+  # A satisfying Copilot review is an EXACT bot login (no prefix spoofing by a
+  # 'copilot*' human account) whose state is a real submitted review
+  # (COMMENTED/APPROVED/CHANGES_REQUESTED — never PENDING/DISMISSED).
+  copilot_reviews="$(jq --arg head_sha "$head_sha" '[.data.repository.pullRequest.latestReviews.nodes[]?
+    | select((.author.login // "") == "copilot-pull-request-reviewer[bot]")
+    | select((.commit.oid // "") == $head_sha)
+    | select(.state == "COMMENTED" or .state == "APPROVED" or .state == "CHANGES_REQUESTED")] | length' <<<"$review_state" 2>/dev/null || echo "0")"
+  if [[ ! "$copilot_reviews" =~ ^[0-9]+$ ]]; then copilot_reviews="0"; fi
 
-    if [[ "$copilot_reviews" -eq 0 ]]; then
+  if [[ "$copilot_reviews" -eq 0 ]]; then
       # Request the review only if the Copilot bot is not already a requested
       # reviewer. Match the two exact logins GitHub uses for this bot across
       # API surfaces ('Copilot' in requested_reviewers,
       # 'copilot-pull-request-reviewer[bot]' in reviews) — no prefix match, so a
       # similarly-named human can't suppress the request.
-      already_requested="$(gh api "repos/$REPO/pulls/$number" \
-        --jq '[.requested_reviewers[]?.login | select(. == "Copilot" or . == "copilot-pull-request-reviewer[bot]")] | length' 2>/dev/null || echo "0")"
-      if [[ ! "$already_requested" =~ ^[0-9]+$ ]]; then already_requested="0"; fi
-      if [[ "$already_requested" -eq 0 ]]; then
+    already_requested="$(gh api "repos/$REPO/pulls/$number" \
+      --jq '[.requested_reviewers[]?.login | select(. == "Copilot" or . == "copilot-pull-request-reviewer[bot]")] | length' 2>/dev/null || echo "0")"
+    if [[ ! "$already_requested" =~ ^[0-9]+$ ]]; then already_requested="0"; fi
+    if [[ "$already_requested" -eq 0 ]]; then
         # Surface request failures honestly — a silently failed request would
         # stall the train with a log line claiming the review was requested.
-        if run_or_log gh api -X POST "repos/$REPO/pulls/$number/requested_reviewers" \
-          -f 'reviewers[]=copilot-pull-request-reviewer[bot]' >/dev/null; then
-          echo "    skip: requested Copilot review — waiting for it before merge"
-        else
-          echo "    skip: FAILED to request Copilot review (API error above) — PR needs a manual review request"
-        fi
+      if run_or_log gh api -X POST "repos/$REPO/pulls/$number/requested_reviewers" \
+        -f 'reviewers[]=copilot-pull-request-reviewer[bot]' >/dev/null; then
+        echo "    skip: requested Copilot review — waiting for it before merge"
       else
-        echo "    skip: Copilot review pending — waiting before merge"
+        echo "    skip: FAILED to request Copilot review (API error above) — PR needs a manual review request"
       fi
-      continue
+    else
+      echo "    skip: Copilot review pending — waiting before merge"
     fi
+    continue
+  fi
 
-    # Copilot has reviewed — block on any unresolved review thread (from any
-    # reviewer) so findings are addressed and resolved before the merge, not
-    # after. If the thread count exceeds the page we fetched, fail closed
-    # (can't prove resolution).
-    thread_total="$(jq '.data.repository.pullRequest.reviewThreads.totalCount // 0' <<<"$review_state" 2>/dev/null || echo "0")"
-    if [[ ! "$thread_total" =~ ^[0-9]+$ ]]; then thread_total="0"; fi
-    if [[ "$thread_total" -gt 100 ]]; then
-      echo "    skip: $thread_total review threads exceed the 100 fetched — cannot confirm resolution, not merging"
-      continue
-    fi
-    unresolved="$(jq '[.data.repository.pullRequest.reviewThreads.nodes[]? | select(.isResolved == false)] | length' <<<"$review_state" 2>/dev/null || echo "1")"
-    if [[ ! "$unresolved" =~ ^[0-9]+$ ]]; then unresolved="1"; fi
-    if [[ "$unresolved" -gt 0 ]]; then
-      echo "    skip: $unresolved unresolved review thread(s) (any reviewer) — must be resolved before merge"
-      continue
-    fi
+  # Copilot has reviewed — block on any unresolved review thread (from any
+  # reviewer) so findings are addressed and resolved before the merge, not
+  # after. If the thread count exceeds the page we fetched, fail closed
+  # (can't prove resolution).
+  thread_total="$(jq '.data.repository.pullRequest.reviewThreads.totalCount // 0' <<<"$review_state" 2>/dev/null || echo "0")"
+  if [[ ! "$thread_total" =~ ^[0-9]+$ ]]; then thread_total="0"; fi
+  if [[ "$thread_total" -gt 100 ]]; then
+    echo "    skip: $thread_total review threads exceed the 100 fetched — cannot confirm resolution, not merging"
+    continue
+  fi
+  unresolved="$(jq '[.data.repository.pullRequest.reviewThreads.nodes[]? | select(.isResolved == false)] | length' <<<"$review_state" 2>/dev/null || echo "1")"
+  if [[ ! "$unresolved" =~ ^[0-9]+$ ]]; then unresolved="1"; fi
+  if [[ "$unresolved" -gt 0 ]]; then
+    echo "    skip: $unresolved unresolved review thread(s) (any reviewer) — must be resolved before merge"
+    continue
   fi
 
   # --- Ready to merge ---

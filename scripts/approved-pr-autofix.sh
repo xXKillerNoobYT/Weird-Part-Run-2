@@ -20,9 +20,9 @@ DRY_RUN="${APPROVED_PR_AUTOFIX_DRY_RUN:-0}"
 TARGET_PR="${APPROVED_PR_AUTOFIX_PR_NUMBER:-}"
 CODEX_MODEL="${APPROVED_PR_AUTOFIX_MODEL:-gpt-5.5}"
 VALIDATE="${APPROVED_PR_AUTOFIX_VALIDATE:-auto}"
-# Trusted first-party work can progress without a manual GitHub approval click;
-# exact-head checks and sensitive-change exclusions still fail closed.
-REQUIRE_APPROVAL="${APPROVED_PR_AUTOFIX_REQUIRE_APPROVAL:-1}"
+# The workflow sets this to 1 as a source-level policy witness. The merge path
+# below enforces approval unconditionally so an environment override cannot
+# downgrade the gate.
 # Comma-separated GitHub logins authorized to originate autonomous PR work.
 # Same-repository location alone is not sufficient: collaborators can create
 # branches, so PR author identity is checked separately.
@@ -220,6 +220,58 @@ select_prs() {
 }
 
 repo_owner="${REPO%%/*}"
+repo_name="${REPO##*/}"
+
+copilot_review_and_threads_satisfied() {
+  local number="$1" review_state copilot_reviews thread_total unresolved already_requested
+
+  # Fail closed on API errors and require a submitted Copilot review/comment
+  # plus a fully resolved review-thread set before this automation can repair
+  # or merge a PR. The review must be attached to the current head. A repair
+  # creates a new head and exits, so the next run must satisfy this gate again
+  # before any subsequent merge action.
+  review_state="$(gh api graphql -f query="query { repository(owner: \"$repo_owner\", name: \"$repo_name\") { pullRequest(number: $number) { latestReviews: reviews(last: 100) { nodes { author { login } state commit { oid } } } reviewThreads(first: 100) { totalCount nodes { isResolved } } } } }" 2>/dev/null || echo "")"
+  if [[ -z "$review_state" ]]; then
+    echo "    skip: could not read review state (API failure) — not proceeding on unknown review status"
+    return 1
+  fi
+
+  copilot_reviews="$(jq --arg head_sha "$head_sha" '[.data.repository.pullRequest.latestReviews.nodes[]?
+    | select((.author.login // "") == "copilot-pull-request-reviewer[bot]")
+    | select((.commit.oid // "") == $head_sha)
+    | select(.state == "COMMENTED" or .state == "APPROVED" or .state == "CHANGES_REQUESTED")] | length' <<<"$review_state" 2>/dev/null || echo "0")"
+  if [[ ! "$copilot_reviews" =~ ^[0-9]+$ ]]; then copilot_reviews="0"; fi
+  if [[ "$copilot_reviews" -eq 0 ]]; then
+    already_requested="$(gh api "repos/$REPO/pulls/$number" \
+      --jq '[.requested_reviewers[]?.login | select(. == "Copilot" or . == "copilot-pull-request-reviewer[bot]")] | length' 2>/dev/null || echo "0")"
+    if [[ ! "$already_requested" =~ ^[0-9]+$ ]]; then already_requested="0"; fi
+    if [[ "$already_requested" -eq 0 ]]; then
+      if run_or_log gh api -X POST "repos/$REPO/pulls/$number/requested_reviewers" \
+        -f 'reviewers[]=copilot-pull-request-reviewer[bot]' >/dev/null; then
+        echo "    skip: requested Copilot review — waiting before repair or merge"
+      else
+        echo "    skip: FAILED to request Copilot review (API error above) — PR needs a manual review request"
+      fi
+    else
+      echo "    skip: Copilot review pending — waiting before repair or merge"
+    fi
+    return 1
+  fi
+
+  thread_total="$(jq '.data.repository.pullRequest.reviewThreads.totalCount // 0' <<<"$review_state" 2>/dev/null || echo "0")"
+  if [[ ! "$thread_total" =~ ^[0-9]+$ ]]; then thread_total="0"; fi
+  if [[ "$thread_total" -gt 100 ]]; then
+    echo "    skip: $thread_total review threads exceed the 100 fetched — cannot confirm resolution"
+    return 1
+  fi
+  unresolved="$(jq '[.data.repository.pullRequest.reviewThreads.nodes[]? | select(.isResolved == false)] | length' <<<"$review_state" 2>/dev/null || echo "1")"
+  if [[ ! "$unresolved" =~ ^[0-9]+$ ]]; then unresolved="1"; fi
+  if [[ "$unresolved" -gt 0 ]]; then
+    echo "    skip: $unresolved unresolved review thread(s) (any reviewer) — must be resolved before repair or merge"
+    return 1
+  fi
+}
+
 echo "==> Approved PR autofix scan for $REPO base=$BASE max_attempts=$MAX_ATTEMPTS dry_run=$DRY_RUN"
 prs_json="$(select_prs)"
 
@@ -246,12 +298,15 @@ while IFS= read -r pr; do
     echo "    skip: PR author is not in APPROVED_PR_AUTOFIX_TRUSTED_PR_AUTHORS"
     continue
   fi
-  if [[ "$REQUIRE_APPROVAL" == "1" && "$review_decision" != "APPROVED" ]]; then
-    echo "    skip: approval required by APPROVED_PR_AUTOFIX_REQUIRE_APPROVAL"
+  if [[ "$review_decision" != "APPROVED" ]]; then
+    echo "    skip: bounded autofix requires an APPROVED GitHub review"
     continue
   fi
   if has_skip_label "$labels_json" || [[ "$title" =~ $SKIP_TITLE_REGEX ]]; then
     echo "    skip: manual/security label or title"
+    continue
+  fi
+  if ! copilot_review_and_threads_satisfied "$number"; then
     continue
   fi
 
