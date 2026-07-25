@@ -72,7 +72,14 @@ def validate(workflow: str) -> list[str]:
     if not reject_steps:
         errors.append("fork rejection must be a fork-conditioned nonzero-exit run step")
 
-    checkout_steps = [step for step in steps if step.get("uses") == "actions/checkout@v4"]
+    # Pinning a checkout version is a supply-chain choice, not a trust boundary.
+    # Guard every actions/checkout@* invocation so a later version bump cannot
+    # bypass the trusted-source condition.
+    checkout_steps = [
+        step
+        for step in steps
+        if step.get("uses", "").startswith("actions/checkout@")
+    ]
     if not checkout_steps:
         errors.append("workflow must have a trusted checkout step")
     for step in checkout_steps:
@@ -122,7 +129,7 @@ def run_self_test() -> int:
         uses: actions/checkout@v4
       - name: Checkout repository after fork rejection
         if: always()
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Run artifact guard
         if: {TRUSTED_CONDITION}
         run: python3 scripts/guard-tracked-artifacts.py
@@ -142,7 +149,7 @@ def run_self_test() -> int:
 """
     fixtures = {
         "dynamic fork-to-self-hosted-Mac runner": unsafe_dynamic_fork_runner,
-        "later always() checkout after trusted checkout": unsafe_always_checkout,
+        "later always() actions/checkout@v5 after trusted checkout": unsafe_always_checkout,
         "unguarded repository-code step": unsafe_unguarded_repository_code,
     }
     failures = [name for name, fixture in fixtures.items() if not validate(fixture)]
