@@ -48,6 +48,16 @@ def _steps(workflow: str) -> list[dict[str, str]]:
     return steps
 
 
+def _yaml_scalar(value: str) -> str:
+    """Normalize the single-line YAML scalar forms accepted for ``uses`` values."""
+    value = value.strip()
+    if len(value) < 2 or value[0] != value[-1] or value[0] not in {"'", '"'}:
+        return value
+    if value[0] == "'":
+        return value[1:-1].replace("''", "'")
+    return value[1:-1]
+
+
 def validate(workflow: str) -> list[str]:
     """Return fail-closed policy violations for the workflow source."""
     errors: list[str] = []
@@ -78,7 +88,7 @@ def validate(workflow: str) -> list[str]:
     checkout_steps = [
         step
         for step in steps
-        if step.get("uses", "").startswith("actions/checkout@")
+        if _yaml_scalar(step.get("uses", "")).startswith("actions/checkout@")
     ]
     if not checkout_steps:
         errors.append("workflow must have a trusted checkout step")
@@ -117,7 +127,7 @@ def run_self_test() -> int:
         if: {FORK_CONDITION}
         run: exit 1
 {trusted_steps}"""
-    unsafe_always_checkout = f"""jobs:
+    unsafe_always_quoted_checkout = f"""jobs:
   tracked-artifacts:
     runs-on: {DYNAMIC_RUNNER}
     steps:
@@ -129,11 +139,14 @@ def run_self_test() -> int:
         uses: actions/checkout@v4
       - name: Checkout repository after fork rejection
         if: always()
-        uses: actions/checkout@v5
+        uses: "actions/checkout@v5"
       - name: Run artifact guard
         if: {TRUSTED_CONDITION}
         run: python3 scripts/guard-tracked-artifacts.py
 """
+    unsafe_always_single_quoted_checkout = unsafe_always_quoted_checkout.replace(
+        'uses: "actions/checkout@v5"', "uses: 'actions/checkout@v5'"
+    )
     unsafe_unguarded_repository_code = f"""jobs:
   tracked-artifacts:
     runs-on: {DYNAMIC_RUNNER}
@@ -147,11 +160,39 @@ def run_self_test() -> int:
       - name: Run repository-controlled command without source guard
         run: python3 scripts/guard-tracked-artifacts.py
 """
+    valid_quoted_checkouts = {
+        "double-quoted trusted checkout": trusted_steps.replace(
+            "uses: actions/checkout@v4", 'uses: "actions/checkout@v4"'
+        ),
+        "single-quoted trusted checkout": trusted_steps.replace(
+            "uses: actions/checkout@v4", "uses: 'actions/checkout@v4'"
+        ),
+    }
     fixtures = {
         "dynamic fork-to-self-hosted-Mac runner": unsafe_dynamic_fork_runner,
-        "later always() actions/checkout@v5 after trusted checkout": unsafe_always_checkout,
+        "later always() double-quoted actions/checkout@v5 after trusted checkout": unsafe_always_quoted_checkout,
+        "later always() single-quoted actions/checkout@v5 after trusted checkout": unsafe_always_single_quoted_checkout,
         "unguarded repository-code step": unsafe_unguarded_repository_code,
     }
+    valid_failures = {
+        name: validate(
+            f"""jobs:
+  tracked-artifacts:
+    runs-on: {DYNAMIC_RUNNER}
+    steps:
+      - name: Reject untrusted fork without using the Mac runner
+        if: {FORK_CONDITION}
+        run: exit 1
+{steps}"""
+        )
+        for name, steps in valid_quoted_checkouts.items()
+    }
+    valid_failures = {name: errors for name, errors in valid_failures.items() if errors}
+    if valid_failures:
+        print("artifact-guard source validator self-test failed: valid quoted checkout rejected", file=sys.stderr)
+        for name, errors in valid_failures.items():
+            print(f"- {name}: {errors}", file=sys.stderr)
+        return 1
     failures = [name for name, fixture in fixtures.items() if not validate(fixture)]
     if failures:
         print("artifact-guard source validator self-test failed: unsafe fixtures passed", file=sys.stderr)
