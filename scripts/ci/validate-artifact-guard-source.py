@@ -117,6 +117,9 @@ def run_self_test() -> int:
       - name: Reject untrusted fork without using the Mac runner
         if: {FORK_CONDITION}
         run: exit 1
+      - name: Checkout repository
+        if: {TRUSTED_CONDITION}
+        uses: actions/checkout@v4
       - name: Checkout repository after fork rejection
         if: always()
         uses: actions/checkout@v4
@@ -124,9 +127,23 @@ def run_self_test() -> int:
         if: {TRUSTED_CONDITION}
         run: python3 scripts/guard-tracked-artifacts.py
 """
+    unsafe_unguarded_repository_code = f"""jobs:
+  tracked-artifacts:
+    runs-on: {DYNAMIC_RUNNER}
+    steps:
+      - name: Reject untrusted fork without using the Mac runner
+        if: {FORK_CONDITION}
+        run: exit 1
+      - name: Checkout repository
+        if: {TRUSTED_CONDITION}
+        uses: actions/checkout@v4
+      - name: Run repository-controlled command without source guard
+        run: python3 scripts/guard-tracked-artifacts.py
+"""
     fixtures = {
         "dynamic fork-to-self-hosted-Mac runner": unsafe_dynamic_fork_runner,
-        "later always() checkout": unsafe_always_checkout,
+        "later always() checkout after trusted checkout": unsafe_always_checkout,
+        "unguarded repository-code step": unsafe_unguarded_repository_code,
     }
     failures = [name for name, fixture in fixtures.items() if not validate(fixture)]
     if failures:
