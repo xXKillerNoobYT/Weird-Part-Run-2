@@ -27,6 +27,7 @@ DYNAMIC_RUNNER = (
 )
 STEP_START = re.compile(r"^      -(?:\s|$)")
 FIELD = re.compile(r"^        (?P<name>if|uses|run):\s*(?P<value>.*)$")
+NON_PLAIN_USES_PREFIXES = ("&", "*", "!", ">", "|")
 
 
 def _steps(workflow: str) -> list[dict[str, str]]:
@@ -58,6 +59,17 @@ def _yaml_scalar(value: str) -> str:
     return value[1:-1]
 
 
+def _is_non_plain_uses_scalar(value: str) -> bool:
+    """Reject YAML syntax that can hide a checkout action from this source guard.
+
+    The workflow deliberately uses plain or quoted scalar action references.  This
+    validator does not attempt a partial YAML implementation: anchors, aliases,
+    tags, and block scalars are rejected so they cannot resolve to a later
+    ``actions/checkout@*`` invocation outside the trusted-source condition.
+    """
+    return value.lstrip().startswith(NON_PLAIN_USES_PREFIXES)
+
+
 def validate(workflow: str) -> list[str]:
     """Return fail-closed policy violations for the workflow source."""
     errors: list[str] = []
@@ -81,6 +93,17 @@ def validate(workflow: str) -> list[str]:
     ]
     if not reject_steps:
         errors.append("fork rejection must be a fork-conditioned nonzero-exit run step")
+
+    non_plain_uses = [
+        step["uses"]
+        for step in steps
+        if "uses" in step and _is_non_plain_uses_scalar(step["uses"])
+    ]
+    if non_plain_uses:
+        errors.append(
+            "uses fields must use plain or quoted scalars; aliases, tags, anchors, "
+            "and block scalars are not allowed"
+        )
 
     # Pinning a checkout version is a supply-chain choice, not a trust boundary.
     # Guard every actions/checkout@* invocation so a later version bump cannot
@@ -147,6 +170,22 @@ def run_self_test() -> int:
     unsafe_always_single_quoted_checkout = unsafe_always_quoted_checkout.replace(
         'uses: "actions/checkout@v5"', "uses: 'actions/checkout@v5'"
     )
+    unsafe_always_anchor_checkout = unsafe_always_quoted_checkout.replace(
+        'uses: "actions/checkout@v5"', "uses: &checkout_v5 actions/checkout@v5"
+    )
+    unsafe_always_tagged_checkout = unsafe_always_quoted_checkout.replace(
+        'uses: "actions/checkout@v5"', "uses: !!str actions/checkout@v5"
+    )
+    unsafe_always_folded_checkout = unsafe_always_quoted_checkout.replace(
+        'uses: "actions/checkout@v5"', "uses: >-\n          actions/checkout@v5"
+    )
+    unsafe_always_literal_checkout = unsafe_always_quoted_checkout.replace(
+        'uses: "actions/checkout@v5"', "uses: |-\n          actions/checkout@v5"
+    )
+    unsafe_always_aliased_checkout = unsafe_always_quoted_checkout.replace(
+        "- name: Checkout repository after fork rejection\n        if: always()\n        uses: \"actions/checkout@v5\"",
+        "- name: &checkout_v5 actions/checkout@v5\n        if: always()\n        uses: *checkout_v5",
+    )
     unsafe_unguarded_repository_code = f"""jobs:
   tracked-artifacts:
     runs-on: {DYNAMIC_RUNNER}
@@ -172,6 +211,11 @@ def run_self_test() -> int:
         "dynamic fork-to-self-hosted-Mac runner": unsafe_dynamic_fork_runner,
         "later always() double-quoted actions/checkout@v5 after trusted checkout": unsafe_always_quoted_checkout,
         "later always() single-quoted actions/checkout@v5 after trusted checkout": unsafe_always_single_quoted_checkout,
+        "later always() anchored actions/checkout@v5 after trusted checkout": unsafe_always_anchor_checkout,
+        "later always() explicitly tagged actions/checkout@v5 after trusted checkout": unsafe_always_tagged_checkout,
+        "later always() folded actions/checkout@v5 after trusted checkout": unsafe_always_folded_checkout,
+        "later always() literal actions/checkout@v5 after trusted checkout": unsafe_always_literal_checkout,
+        "later always() aliased actions/checkout@v5 after trusted checkout": unsafe_always_aliased_checkout,
         "unguarded repository-code step": unsafe_unguarded_repository_code,
     }
     valid_failures = {
