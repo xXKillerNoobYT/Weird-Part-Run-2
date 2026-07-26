@@ -66,6 +66,22 @@ def mapping_entries(mapping)
   end
 end
 
+def step_syntax_errors(step)
+  errors = []
+  walk(step) do |node|
+    if node.is_a?(Psych::Nodes::Alias)
+      errors << "workflow step contains a YAML alias"
+    elsif node.is_a?(Psych::Nodes::Mapping)
+      node.children.each_slice(2) do |key, _value|
+        if key.is_a?(Psych::Nodes::Scalar) && key.value == "<<"
+          errors << "workflow step contains a YAML mapping merge key"
+        end
+      end
+    end
+  end
+  errors.uniq
+end
+
 document = Psych.parse_stream(STDIN.read)
 anchors = anchors_for(document)
 steps = []
@@ -77,7 +93,7 @@ walk(document) do |node|
   step_list.children.each do |step|
     next unless step.is_a?(Psych::Nodes::Mapping)
     step_entries = mapping_entries(step)
-    steps << %w[if uses run].each_with_object({}) do |field, result|
+    steps << %w[if uses run].each_with_object({ "syntax_errors" => step_syntax_errors(step) }) do |field, result|
       result[field] = scalar_metadata(step_entries[field], anchors) if step_entries.key?(field)
     end
   end
@@ -159,6 +175,8 @@ def validate(workflow: str) -> list[str]:
             "uses fields must use plain or quoted scalars; aliases, tags, anchors, "
             "and block scalars are not allowed"
         )
+    if any(step.get("syntax_errors") for step in steps):
+        errors.append("workflow steps must not use YAML aliases or mapping merge keys")
 
     # Pinning a checkout version is a supply-chain choice, not a trust boundary.
     # Guard every actions/checkout@* invocation so a later version bump cannot
@@ -248,6 +266,10 @@ def run_self_test() -> int:
         "- name: Checkout repository after fork rejection\n        if: always()\n        uses: \"actions/checkout@v5\"",
         "- name: &checkout_v5 actions/checkout@v5\n        if: always()\n        uses: *checkout_v5",
     )
+    unsafe_always_merged_checkout = unsafe_always_quoted_checkout.replace(
+        "- name: Checkout repository after fork rejection\n        if: always()\n        uses: \"actions/checkout@v5\"",
+        f"- &trusted_checkout\n        name: Trusted checkout template\n        if: {TRUSTED_CONDITION}\n        uses: actions/checkout@v4\n      - <<: *trusted_checkout\n        name: Checkout repository after fork rejection\n        if: always()",
+    )
     unsafe_unguarded_repository_code = f"""jobs:
   tracked-artifacts:
     runs-on: {DYNAMIC_RUNNER}
@@ -283,6 +305,7 @@ def run_self_test() -> int:
         "later always() folded actions/checkout@v5 after trusted checkout": unsafe_always_folded_checkout,
         "later always() literal actions/checkout@v5 after trusted checkout": unsafe_always_literal_checkout,
         "later always() aliased actions/checkout@v5 after trusted checkout": unsafe_always_aliased_checkout,
+        "later always() merged actions/checkout@v4 after trusted checkout": unsafe_always_merged_checkout,
         "unguarded repository-code step": unsafe_unguarded_repository_code,
     }
     valid_failures = {
