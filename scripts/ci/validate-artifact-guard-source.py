@@ -4,8 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
-import re
+import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -25,88 +26,105 @@ DYNAMIC_RUNNER = (
     "'[\"ubuntu-latest\"]' || "
     "'[\"self-hosted\",\"macOS\",\"ARM64\",\"xcode\",\"ios\",\"local-mac\"]') }}"
 )
-STEP_START = re.compile(r"^      -(?:\s|$)")
-FIELD = re.compile(r"^        (?P<name>if|uses|run):\s*(?P<value>.*)$")
-NON_PLAIN_USES_PREFIXES = ("&", "*", "!", ">", "|")
+RUBY_STEP_PARSER = r"""
+require "json"
+require "psych"
+
+def walk(node, &block)
+  yield node
+  (node.respond_to?(:children) && node.children || []).each { |child| walk(child, &block) }
+end
+
+def anchors_for(document)
+  anchors = {}
+  walk(document) do |node|
+    if node.is_a?(Psych::Nodes::Scalar) && node.anchor
+      anchors[node.anchor] = node
+    end
+  end
+  anchors
+end
+
+def scalar_metadata(node, anchors)
+  case node
+  when Psych::Nodes::Scalar
+    { "kind" => "scalar", "value" => node.value, "style" => node.style,
+      "tag" => node.tag, "anchor" => node.anchor }
+  when Psych::Nodes::Alias
+    target = anchors[node.anchor]
+    { "kind" => "alias", "value" => target&.value, "style" => target&.style,
+      "tag" => target&.tag, "anchor" => node.anchor }
+  else
+    { "kind" => "unsupported", "value" => nil, "style" => nil,
+      "tag" => nil, "anchor" => nil }
+  end
+end
+
+def mapping_entries(mapping)
+  mapping.children.each_slice(2).each_with_object({}) do |(key, value), entries|
+    entries[key.value] = value if key.is_a?(Psych::Nodes::Scalar)
+  end
+end
+
+document = Psych.parse_stream(STDIN.read)
+anchors = anchors_for(document)
+steps = []
+walk(document) do |node|
+  next unless node.is_a?(Psych::Nodes::Mapping)
+  entries = mapping_entries(node)
+  step_list = entries["steps"]
+  next unless step_list.is_a?(Psych::Nodes::Sequence)
+  step_list.children.each do |step|
+    next unless step.is_a?(Psych::Nodes::Mapping)
+    step_entries = mapping_entries(step)
+    steps << %w[if uses run].each_with_object({}) do |field, result|
+      result[field] = scalar_metadata(step_entries[field], anchors) if step_entries.key?(field)
+    end
+  end
+end
+puts JSON.generate({ "steps" => steps })
+"""
+
+PLAIN_OR_QUOTED_YAML_STYLES = {1, 2, 3}
 
 
-def _steps(workflow: str) -> list[dict[str, str]]:
-    """Extract each workflow step's security-relevant fields without YAML coercion."""
-    steps: list[dict[str, str]] = []
-    current: dict[str, str] | None = None
-    for line in workflow.splitlines():
-        if STEP_START.match(line):
-            current = {}
-            steps.append(current)
-            continue
-        if current is None:
-            continue
-        match = FIELD.match(line)
-        if match:
-            current[match.group("name")] = match.group("value").strip()
-        elif line.startswith("          "):
-            for name in ("run", "uses"):
-                if current.get(name, "").startswith(("|", ">")):
-                    current[name] += f"\n{line.strip()}"
+def _steps(workflow: str) -> list[dict[str, dict[str, object]]]:
+    """Parse workflow steps structurally and preserve YAML scalar metadata.
+
+    Psych resolves the YAML tree rather than inferring fields from indentation, so
+    legal sequence styles such as ``- uses: ...`` cannot conceal an action. The
+    validator fails closed if the parser is unavailable or the workflow is invalid.
+    """
+    try:
+        result = subprocess.run(
+            ["ruby", "-e", RUBY_STEP_PARSER],
+            input=workflow,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        parsed = json.loads(result.stdout)
+    except (FileNotFoundError, subprocess.CalledProcessError, json.JSONDecodeError) as error:
+        raise ValueError(f"structural YAML parser failed: {error}") from error
+    steps = parsed.get("steps")
+    if not isinstance(steps, list):
+        raise ValueError("structural YAML parser did not return workflow steps")
     return steps
 
 
-def _strip_yaml_inline_comment(value: str) -> str:
-    """Remove a YAML comment while preserving hashes inside quoted scalars."""
-    quote: str | None = None
-    escaped = False
-    for index, character in enumerate(value):
-        if quote == '"' and character == "\\" and not escaped:
-            escaped = True
-            continue
-        if character == quote and not escaped:
-            quote = None
-        elif quote is None and character in {"'", '"'}:
-            quote = character
-        elif quote is None and character == "#" and (index == 0 or value[index - 1].isspace()):
-            return value[:index].rstrip()
-        escaped = False
-    return value.rstrip()
+def _value(step: dict[str, dict[str, object]], field: str) -> str:
+    value = step.get(field, {}).get("value")
+    return value if isinstance(value, str) else ""
 
 
-def _yaml_scalar(value: str) -> str:
-    """Extract a checkout candidate from a YAML scalar without trusting its syntax.
-
-    This is deliberately not a general YAML parser.  The policy rejects aliases,
-    anchors, tags, and block scalar syntax below, but still extracts their textual
-    checkout target so every semantic ``actions/checkout@*`` candidate receives the
-    trusted-source check before the unsupported syntax produces its fail-closed
-    violation.
-    """
-    value = _strip_yaml_inline_comment(value.strip())
-    if value.startswith((">", "|")):
-        return " ".join(
-            _strip_yaml_inline_comment(line.strip())
-            for line in value.splitlines()[1:]
-        ).strip()
-    if value.startswith("&") or value.startswith("!"):
-        parts = value.split(maxsplit=1)
-        return _yaml_scalar(parts[1]) if len(parts) == 2 else ""
-    if value.startswith("*"):
-        return ""
-    if len(value) < 2 or value[0] not in {"'", '"'}:
-        return value
-    if value[-1] != value[0]:
-        return ""
-    if value[0] == "'":
-        return value[1:-1].replace("''", "'")
-    return value[1:-1]
-
-
-def _is_non_plain_uses_scalar(value: str) -> bool:
-    """Reject YAML syntax that can hide a checkout action from this source guard.
-
-    The workflow deliberately uses plain or quoted scalar action references.  This
-    validator does not attempt a partial YAML implementation: anchors, aliases,
-    tags, and block scalars are rejected so they cannot resolve to a later
-    ``actions/checkout@*`` invocation outside the trusted-source condition.
-    """
-    return value.lstrip().startswith(NON_PLAIN_USES_PREFIXES)
+def _has_unsupported_uses_syntax(step: dict[str, dict[str, object]]) -> bool:
+    uses = step["uses"]
+    return (
+        uses.get("kind") != "scalar"
+        or uses.get("style") not in PLAIN_OR_QUOTED_YAML_STYLES
+        or uses.get("tag") is not None
+        or uses.get("anchor") is not None
+    )
 
 
 def validate(workflow: str) -> list[str]:
@@ -124,21 +142,19 @@ def validate(workflow: str) -> list[str]:
     if any("runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]" in line for line in lines):
         errors.append("workflow has an unconditional self-hosted runner assignment")
 
-    steps = _steps(workflow)
+    try:
+        steps = _steps(workflow)
+    except ValueError as error:
+        return [*errors, str(error)]
     reject_steps = [
         step
         for step in steps
-        if step.get("if") == FORK_CONDITION and "exit 1" in step.get("run", "")
+        if _value(step, "if") == FORK_CONDITION and "exit 1" in _value(step, "run")
     ]
     if not reject_steps:
         errors.append("fork rejection must be a fork-conditioned nonzero-exit run step")
 
-    non_plain_uses = [
-        step["uses"]
-        for step in steps
-        if "uses" in step and _is_non_plain_uses_scalar(step["uses"])
-    ]
-    if non_plain_uses:
+    if any("uses" in step and _has_unsupported_uses_syntax(step) for step in steps):
         errors.append(
             "uses fields must use plain or quoted scalars; aliases, tags, anchors, "
             "and block scalars are not allowed"
@@ -150,21 +166,21 @@ def validate(workflow: str) -> list[str]:
     checkout_steps = [
         step
         for step in steps
-        if _yaml_scalar(step.get("uses", "")).startswith("actions/checkout@")
+        if _value(step, "uses").startswith("actions/checkout@")
     ]
     if not checkout_steps:
         errors.append("workflow must have a trusted checkout step")
     for step in checkout_steps:
-        if step.get("if") != TRUSTED_CONDITION:
+        if _value(step, "if") != TRUSTED_CONDITION:
             errors.append("checkout can run without the exact trusted-source condition")
 
     # A run step executes repository-controlled content after checkout; require the
     # trusted source guard on every normal run, not merely on the first such step.
     for step in steps:
-        run = step.get("run")
+        run = _value(step, "run")
         if not run or step in reject_steps:
             continue
-        if step.get("if") != TRUSTED_CONDITION:
+        if _value(step, "if") != TRUSTED_CONDITION:
             errors.append(f"repository-code step is not bound to the trusted-source condition: {run!r}")
 
     return errors
@@ -212,6 +228,10 @@ def run_self_test() -> int:
     unsafe_always_quoted_inline_comment_checkout = unsafe_always_quoted_checkout.replace(
         'uses: "actions/checkout@v5"', 'uses: "actions/checkout@v5" # semantic checkout action'
     )
+    unsafe_always_inline_mapping_checkout = unsafe_always_quoted_checkout.replace(
+        "- name: Checkout repository after fork rejection\n        if: always()\n        uses: \"actions/checkout@v5\"",
+        "- uses: actions/checkout@v5\n        if: always()",
+    )
     unsafe_always_anchor_checkout = unsafe_always_quoted_checkout.replace(
         'uses: "actions/checkout@v5"', "uses: &checkout_v5 actions/checkout@v5"
     )
@@ -257,6 +277,7 @@ def run_self_test() -> int:
         "later always() double-quoted actions/checkout@v5 after trusted checkout": unsafe_always_quoted_checkout,
         "later always() single-quoted actions/checkout@v5 after trusted checkout": unsafe_always_single_quoted_checkout,
         "later always() quoted actions/checkout@v5 with inline comment after trusted checkout": unsafe_always_quoted_inline_comment_checkout,
+        "later always() inline-mapping actions/checkout@v5 after trusted checkout": unsafe_always_inline_mapping_checkout,
         "later always() anchored actions/checkout@v5 after trusted checkout": unsafe_always_anchor_checkout,
         "later always() explicitly tagged actions/checkout@v5 after trusted checkout": unsafe_always_tagged_checkout,
         "later always() folded actions/checkout@v5 after trusted checkout": unsafe_always_folded_checkout,
