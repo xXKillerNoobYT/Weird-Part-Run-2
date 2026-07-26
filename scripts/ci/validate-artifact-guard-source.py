@@ -91,7 +91,16 @@ walk(document) do |node|
   step_list = entries["steps"]
   next unless step_list.is_a?(Psych::Nodes::Sequence)
   step_list.children.each do |step|
-    next unless step.is_a?(Psych::Nodes::Mapping)
+    # A sequence alias can materialize a complete step mapping without exposing
+    # its fields in this AST position. Reject it rather than silently omitting a
+    # semantic checkout from the policy scan.
+    unless step.is_a?(Psych::Nodes::Mapping)
+      error = step.is_a?(Psych::Nodes::Alias) ?
+        "workflow step contains a YAML alias" :
+        "workflow step must be a YAML mapping"
+      steps << { "syntax_errors" => [error] }
+      next
+    end
     step_entries = mapping_entries(step)
     steps << %w[if uses run].each_with_object({ "syntax_errors" => step_syntax_errors(step) }) do |field, result|
       result[field] = scalar_metadata(step_entries[field], anchors) if step_entries.key?(field)
@@ -270,6 +279,22 @@ def run_self_test() -> int:
         "- name: Checkout repository after fork rejection\n        if: always()\n        uses: \"actions/checkout@v5\"",
         f"- &trusted_checkout\n        name: Trusted checkout template\n        if: {TRUSTED_CONDITION}\n        uses: actions/checkout@v4\n      - <<: *trusted_checkout\n        name: Checkout repository after fork rejection\n        if: always()",
     )
+    unsafe_aliased_step_checkout = f"""jobs:
+  tracked-artifacts:
+    runs-on: {DYNAMIC_RUNNER}
+    steps:
+      - name: Reject untrusted fork without using the Mac runner
+        if: {FORK_CONDITION}
+        run: exit 1
+      - &trusted_checkout
+        name: Trusted checkout template
+        if: {TRUSTED_CONDITION}
+        uses: actions/checkout@v4
+      - *trusted_checkout
+      - name: Run artifact guard
+        if: {TRUSTED_CONDITION}
+        run: python3 scripts/guard-tracked-artifacts.py
+"""
     unsafe_unguarded_repository_code = f"""jobs:
   tracked-artifacts:
     runs-on: {DYNAMIC_RUNNER}
@@ -306,6 +331,7 @@ def run_self_test() -> int:
         "later always() literal actions/checkout@v5 after trusted checkout": unsafe_always_literal_checkout,
         "later always() aliased actions/checkout@v5 after trusted checkout": unsafe_always_aliased_checkout,
         "later always() merged actions/checkout@v4 after trusted checkout": unsafe_always_merged_checkout,
+        "aliased workflow-step checkout after trusted checkout": unsafe_aliased_step_checkout,
         "unguarded repository-code step": unsafe_unguarded_repository_code,
     }
     valid_failures = {
