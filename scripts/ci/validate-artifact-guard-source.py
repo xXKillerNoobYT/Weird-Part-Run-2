@@ -44,16 +44,55 @@ def _steps(workflow: str) -> list[dict[str, str]]:
         match = FIELD.match(line)
         if match:
             current[match.group("name")] = match.group("value").strip()
-        elif current.get("run", "").startswith("|") and line.startswith("          "):
-            current["run"] += f"\n{line.strip()}"
+        elif line.startswith("          "):
+            for name in ("run", "uses"):
+                if current.get(name, "").startswith(("|", ">")):
+                    current[name] += f"\n{line.strip()}"
     return steps
 
 
+def _strip_yaml_inline_comment(value: str) -> str:
+    """Remove a YAML comment while preserving hashes inside quoted scalars."""
+    quote: str | None = None
+    escaped = False
+    for index, character in enumerate(value):
+        if quote == '"' and character == "\\" and not escaped:
+            escaped = True
+            continue
+        if character == quote and not escaped:
+            quote = None
+        elif quote is None and character in {"'", '"'}:
+            quote = character
+        elif quote is None and character == "#" and (index == 0 or value[index - 1].isspace()):
+            return value[:index].rstrip()
+        escaped = False
+    return value.rstrip()
+
+
 def _yaml_scalar(value: str) -> str:
-    """Normalize the single-line YAML scalar forms accepted for ``uses`` values."""
-    value = value.strip()
-    if len(value) < 2 or value[0] != value[-1] or value[0] not in {"'", '"'}:
+    """Extract a checkout candidate from a YAML scalar without trusting its syntax.
+
+    This is deliberately not a general YAML parser.  The policy rejects aliases,
+    anchors, tags, and block scalar syntax below, but still extracts their textual
+    checkout target so every semantic ``actions/checkout@*`` candidate receives the
+    trusted-source check before the unsupported syntax produces its fail-closed
+    violation.
+    """
+    value = _strip_yaml_inline_comment(value.strip())
+    if value.startswith((">", "|")):
+        return " ".join(
+            _strip_yaml_inline_comment(line.strip())
+            for line in value.splitlines()[1:]
+        ).strip()
+    if value.startswith("&") or value.startswith("!"):
+        parts = value.split(maxsplit=1)
+        return _yaml_scalar(parts[1]) if len(parts) == 2 else ""
+    if value.startswith("*"):
+        return ""
+    if len(value) < 2 or value[0] not in {"'", '"'}:
         return value
+    if value[-1] != value[0]:
+        return ""
     if value[0] == "'":
         return value[1:-1].replace("''", "'")
     return value[1:-1]
@@ -170,6 +209,9 @@ def run_self_test() -> int:
     unsafe_always_single_quoted_checkout = unsafe_always_quoted_checkout.replace(
         'uses: "actions/checkout@v5"', "uses: 'actions/checkout@v5'"
     )
+    unsafe_always_quoted_inline_comment_checkout = unsafe_always_quoted_checkout.replace(
+        'uses: "actions/checkout@v5"', 'uses: "actions/checkout@v5" # semantic checkout action'
+    )
     unsafe_always_anchor_checkout = unsafe_always_quoted_checkout.replace(
         'uses: "actions/checkout@v5"', "uses: &checkout_v5 actions/checkout@v5"
     )
@@ -206,11 +248,15 @@ def run_self_test() -> int:
         "single-quoted trusted checkout": trusted_steps.replace(
             "uses: actions/checkout@v4", "uses: 'actions/checkout@v4'"
         ),
+        "double-quoted trusted checkout with inline comment": trusted_steps.replace(
+            "uses: actions/checkout@v4", 'uses: "actions/checkout@v4" # trusted action'
+        ),
     }
     fixtures = {
         "dynamic fork-to-self-hosted-Mac runner": unsafe_dynamic_fork_runner,
         "later always() double-quoted actions/checkout@v5 after trusted checkout": unsafe_always_quoted_checkout,
         "later always() single-quoted actions/checkout@v5 after trusted checkout": unsafe_always_single_quoted_checkout,
+        "later always() quoted actions/checkout@v5 with inline comment after trusted checkout": unsafe_always_quoted_inline_comment_checkout,
         "later always() anchored actions/checkout@v5 after trusted checkout": unsafe_always_anchor_checkout,
         "later always() explicitly tagged actions/checkout@v5 after trusted checkout": unsafe_always_tagged_checkout,
         "later always() folded actions/checkout@v5 after trusted checkout": unsafe_always_folded_checkout,
