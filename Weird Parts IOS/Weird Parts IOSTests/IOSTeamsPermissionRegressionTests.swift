@@ -93,7 +93,7 @@ final class IOSTeamsPermissionRegressionTests: XCTestCase {
             XCTAssertTrue(body.contains("guard let actorUserId = appCore.currentUser?.id else"))
             XCTAssertTrue(body.contains("No signed-in user"))
         }
-        XCTAssertTrue(addTeamSave.contains("userFriendlyError(error, context: \"create team\")"))
+        XCTAssertTrue(addTeamSave.contains("userFriendlyError(error, context: \"save team\")"))
         XCTAssertTrue(removeMember.contains("userFriendlyError(error, context: \"remove team member\")"))
         XCTAssertTrue(deleteTeam.contains("userFriendlyError(error, context: \"delete team\")"))
         XCTAssertTrue(editTeam.contains("userFriendlyError(error, context: \"update team\")"))
