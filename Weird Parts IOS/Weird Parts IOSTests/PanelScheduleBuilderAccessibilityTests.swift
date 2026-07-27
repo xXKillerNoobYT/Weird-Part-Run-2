@@ -70,7 +70,7 @@ final class PanelScheduleBuilderAccessibilityTests: XCTestCase {
         )
         XCTAssertTrue(
             source.contains("schedule.circuitsOutsideTotalSpaces") &&
-                source.contains("Saving will remove"),
+                source.contains("Saving will permanently remove"),
             "Panel settings should warn when a shrink will prune hidden circuits above the new total space count."
         )
         XCTAssertTrue(
