@@ -85,12 +85,17 @@ public struct PanelSchedule: Codable, Identifiable, Sendable {
     /// Returns a copy safe to persist after panel builder edits.
     ///
     /// A circuit marked spare should not retain active breaker/load metadata that
-    /// will be hidden by the grid and exports. Normalize the panel size, the
-    /// visible panel range, and the per-circuit spare payload before writing
-    /// notebook JSON. Clamping runs first so pruning uses the repaired size.
+    /// will be hidden by the grid and exports. Normalize the panel size and
+    /// per-circuit spare payload before writing notebook JSON. Valid panel
+    /// settings also prune stale out-of-range circuits after confirmation in the
+    /// builder. A safe-loaded legacy type/size mismatch deliberately retains all
+    /// decoded circuits until `updatePanelSettings(panelType:totalSpaces:)`
+    /// explicitly corrects the settings pair.
     public func normalizedForPersistence() -> PanelSchedule {
         var normalized = clampingTotalSpacesToSupportedRange()
-            .pruningCircuitsOutsideTotalSpaces()
+        if normalized.panelSettingsValidationError == nil {
+            normalized = normalized.pruningCircuitsOutsideTotalSpaces()
+        }
         normalized.circuits = normalized.circuits.map { $0.normalizedForPersistence() }
         return normalized
     }
@@ -104,11 +109,14 @@ public struct PanelSchedule: Codable, Identifiable, Sendable {
 
     // MARK: - Circuit Position Validation (drag/drop + move mode)
 
-    /// Validation errors for the *visible* panel range (1...totalSpaces).
-    /// This is independent of the #1239 clamping/pruning above, which
-    /// repairs a malformed `totalSpaces` itself; this instead validates
-    /// circuit *placement* within an already-valid panel size — same-side
-    /// double-breaker span and space occupancy conflicts.
+    /// Circuit-placement validation errors for the *visible* panel range
+    /// (1...totalSpaces).
+    ///
+    /// This intentionally excludes panel-type/space-count compatibility. A
+    /// #1239 safe-load can normalize malformed persisted data to a globally
+    /// supported size that does not match its saved type (for example MDP/20).
+    /// That schedule must remain editable and saveable until the user chooses
+    /// a valid settings pair through `updatePanelSettings(panelType:totalSpaces:)`.
     public var validationErrors: [PanelScheduleValidationError] {
         var errors: [PanelScheduleValidationError] = []
         var occupied: [Int: CircuitEntry] = [:]
@@ -137,6 +145,18 @@ public struct PanelSchedule: Codable, Identifiable, Sendable {
         if let error = validationErrors.first {
             throw error
         }
+    }
+
+    /// The type/space error presented when a user attempts to save panel
+    /// settings that are outside the plan-defined bounds. Unlike
+    /// `validationErrors`, this is not applied to decoded safe-load data.
+    public var panelSettingsValidationError: PanelScheduleValidationError? {
+        guard !panelType.allows(totalSpaces: totalSpaces) else { return nil }
+        return .invalidPanelTypeSpaceCount(
+            panelType: panelType,
+            spaces: totalSpaces,
+            allowedSpaces: panelType.allowedTotalSpaces
+        )
     }
 
     /// Spaces a circuit occupies. Double breakers reserve the matching space
@@ -175,6 +195,39 @@ public struct PanelSchedule: Codable, Identifiable, Sendable {
         try candidate.validated()
         self = candidate
     }
+
+    /// Atomically applies a user-selected panel type and space count.
+    ///
+    /// This is intentionally distinct from `clampingTotalSpacesToSupportedRange()`:
+    /// load normalization repairs malformed persisted values without changing
+    /// circuits, while this user-edit API rejects incompatible type/size pairs
+    /// or a pair that would hide existing circuits before mutating the schedule.
+    /// The caller can then present the typed error and a correction path without
+    /// losing existing circuit entries.
+    public mutating func updatePanelSettings(panelType: PanelType, totalSpaces: Int) throws {
+        var candidate = self
+        candidate.panelType = panelType
+        candidate.totalSpaces = totalSpaces
+        if let error = candidate.panelSettingsValidationError {
+            throw error
+        }
+        let circuitOriginSpacesThatWouldBeHidden = candidate.circuits
+            .filter { circuit in
+                candidate.occupiedSpaces(for: circuit).contains { occupiedSpace in
+                    occupiedSpace < 1 || occupiedSpace > totalSpaces
+                }
+            }
+            .map(\.spaceNumber)
+            .sorted()
+        guard circuitOriginSpacesThatWouldBeHidden.isEmpty else {
+            throw PanelScheduleValidationError.panelSettingsWouldHideCircuits(
+                panelType: panelType,
+                spaces: totalSpaces,
+                circuitSpaces: circuitOriginSpacesThatWouldBeHidden
+            )
+        }
+        self = candidate
+    }
 }
 
 /// Panel types in electrical installations.
@@ -184,6 +237,36 @@ public enum PanelType: String, Codable, Sendable, CaseIterable {
     case disconnect = "Disconnect"
     case loadCenter = "Load Center"
     case smallPanel = "Small Panel"
+
+    /// The supported picker values for this panel type.
+    ///
+    /// The plan-defined bounds are composed with `PanelSchedule`'s global
+    /// supported sizes so the #1239 load-path normalization table remains the
+    /// only source of selectable numeric sizes.
+    public var allowedTotalSpaces: [Int] {
+        PanelSchedule.supportedTotalSpaces.filter(isWithinPlanSpaceBounds)
+    }
+
+    /// Whether a space count is valid for a user edit of this panel type.
+    public func allows(totalSpaces: Int) -> Bool {
+        PanelSchedule.supportedTotalSpaces.contains(totalSpaces)
+            && isWithinPlanSpaceBounds(totalSpaces)
+    }
+
+    private func isWithinPlanSpaceBounds(_ totalSpaces: Int) -> Bool {
+        switch self {
+        case .mdp:
+            return totalSpaces >= 42
+        case .subPanel:
+            return (20...42).contains(totalSpaces)
+        case .loadCenter:
+            return (20...40).contains(totalSpaces)
+        case .smallPanel:
+            return (8...20).contains(totalSpaces)
+        case .disconnect:
+            return totalSpaces == 2
+        }
+    }
 }
 
 /// A single circuit entry in a panel schedule.
@@ -299,12 +382,20 @@ public enum CircuitClassification: String, Codable, Sendable, CaseIterable {
 }
 
 public enum PanelScheduleValidationError: Error, LocalizedError, Equatable, Sendable {
+    case invalidPanelTypeSpaceCount(panelType: PanelType, spaces: Int, allowedSpaces: [Int])
+    case panelSettingsWouldHideCircuits(panelType: PanelType, spaces: Int, circuitSpaces: [Int])
     case spaceConflict(space: Int, first: Int, second: Int)
     case doubleBreakerOutOfRange(space: Int)
     case circuitNotFound
 
     public var errorDescription: String? {
         switch self {
+        case .invalidPanelTypeSpaceCount(let panelType, let spaces, let allowedSpaces):
+            let options = allowedSpaces.map(String.init).joined(separator: ", ")
+            return "\(panelType.rawValue) panels do not support \(spaces) spaces. Choose one of: \(options)."
+        case .panelSettingsWouldHideCircuits(let panelType, let spaces, let circuitSpaces):
+            let affectedSpaces = circuitSpaces.map(String.init).joined(separator: ", ")
+            return "\(panelType.rawValue) with \(spaces) spaces would hide circuits at spaces \(affectedSpaces). Move or remove those circuits before changing panel settings."
         case .spaceConflict(let space, let first, let second):
             return "Space \(space) is already occupied by circuits \(first) and \(second)."
         case .doubleBreakerOutOfRange(let space):

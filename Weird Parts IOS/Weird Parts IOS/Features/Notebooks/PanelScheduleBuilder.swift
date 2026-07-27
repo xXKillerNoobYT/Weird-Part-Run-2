@@ -455,7 +455,12 @@ struct PanelScheduleBuilder: View {
 
             Button {
                 guard validateBeforeSave() else { return }
-                if schedule.circuitsOutsideTotalSpaces.isEmpty {
+                // A #1239-safe-loaded type/size mismatch can have retained
+                // circuits outside the display-normalized range. Those circuits
+                // remain editable and must persist until the user explicitly
+                // corrects the settings pair through Panel Settings. Valid
+                // schedules keep the existing explicit prune confirmation.
+                if schedule.panelSettingsValidationError != nil || schedule.circuitsOutsideTotalSpaces.isEmpty {
                     saveNormalizedSchedule()
                 } else {
                     showHiddenCircuitPruneConfirmation = true
@@ -657,17 +662,48 @@ private struct PanelSettingsSheet: View {
     @Binding var schedule: PanelSchedule
     @Environment(\.dismiss) private var dismiss
 
-    // Single source of truth lives on the model so decode-time clamping and
-    // the picker can never drift apart.
-    private let spaceOptions = PanelSchedule.supportedTotalSpaces
+    // Type and size are one atomic settings pair. Keep user edits local until
+    // `updatePanelSettings` has accepted the pair so a rejected shrink cannot
+    // partially mutate the schedule or hide a double-breaker's second space.
+    @State private var draftPanelType: PanelType
+    @State private var draftTotalSpaces: Int
+    @State private var settingsValidationMessage: String?
+
     private let ampOptions = [100, 125, 150, 200, 225, 400, 600]
+
+    init(schedule: Binding<PanelSchedule>) {
+        self._schedule = schedule
+
+        let savedSchedule = schedule.wrappedValue
+        let allowedSpaces = savedSchedule.panelType.allowedTotalSpaces
+        self._draftPanelType = State(initialValue: savedSchedule.panelType)
+        self._draftTotalSpaces = State(initialValue:
+            allowedSpaces.contains(savedSchedule.totalSpaces)
+                ? savedSchedule.totalSpaces
+                : allowedSpaces.first ?? savedSchedule.totalSpaces
+        )
+    }
+
+    /// Mirrors the atomic model validation so a draft warning includes the
+    /// second occupied space of a double breaker (for example 19/21), not only
+    /// circuit origin spaces beyond the proposed panel size.
+    private var circuitOriginSpacesThatWouldBeHidden: [Int] {
+        schedule.circuits
+            .filter { circuit in
+                schedule.occupiedSpaces(for: circuit).contains { occupiedSpace in
+                    occupiedSpace < 1 || occupiedSpace > draftTotalSpaces
+                }
+            }
+            .map(\.spaceNumber)
+            .sorted()
+    }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Panel") {
                     TextField("Panel Name", text: $schedule.panelName)
-                    Picker("Type", selection: $schedule.panelType) {
+                    Picker("Type", selection: $draftPanelType) {
                         ForEach(PanelType.allCases, id: \.self) { type in
                             Text(type.rawValue).tag(type)
                         }
@@ -678,14 +714,14 @@ private struct PanelSettingsSheet: View {
                     ))
                 }
                 Section("Electrical") {
-                    Picker("Total Spaces", selection: $schedule.totalSpaces) {
-                        ForEach(spaceOptions, id: \.self) { size in
+                    Picker("Total Spaces", selection: $draftTotalSpaces) {
+                        ForEach(draftPanelType.allowedTotalSpaces, id: \.self) { size in
                             Text("\(size) spaces").tag(size)
                         }
                     }
-                    if !schedule.circuitsOutsideTotalSpaces.isEmpty {
+                    if !circuitOriginSpacesThatWouldBeHidden.isEmpty {
                         Label(
-                            "Saving will remove \(schedule.circuitsOutsideTotalSpaces.count) hidden circuit\(schedule.circuitsOutsideTotalSpaces.count == 1 ? "" : "s") outside the visible 1–\(schedule.totalSpaces) panel range.",
+                            "The selected settings would hide circuit\(circuitOriginSpacesThatWouldBeHidden.count == 1 ? "" : "s") at space\(circuitOriginSpacesThatWouldBeHidden.count == 1 ? "" : "s") \(circuitOriginSpacesThatWouldBeHidden.map(String.init).joined(separator: ", ")). Move or remove \(circuitOriginSpacesThatWouldBeHidden.count == 1 ? "it" : "them") before saving.",
                             systemImage: "exclamationmark.triangle"
                         )
                         .font(.caption)
@@ -710,11 +746,36 @@ private struct PanelSettingsSheet: View {
             }
             .navigationTitle("Panel Settings")
             .navigationBarTitleDisplayMode(.inline)
+            .onChange(of: draftPanelType) { _, newType in
+                guard !newType.allowedTotalSpaces.contains(draftTotalSpaces),
+                      let firstAllowedSpace = newType.allowedTotalSpaces.first else {
+                    return
+                }
+                draftTotalSpaces = firstAllowedSpace
+            }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    Button("Done") {
+                        do {
+                            try schedule.updatePanelSettings(
+                                panelType: draftPanelType,
+                                totalSpaces: draftTotalSpaces
+                            )
+                            dismiss()
+                        } catch {
+                            settingsValidationMessage = error.localizedDescription
+                        }
+                    }
                         .fontWeight(.semibold)
                 }
+            }
+            .alert("Panel settings issue", isPresented: Binding(
+                get: { settingsValidationMessage != nil },
+                set: { if !$0 { settingsValidationMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { settingsValidationMessage = nil }
+            } message: {
+                Text(settingsValidationMessage ?? "")
             }
         }
     }
