@@ -355,7 +355,7 @@ private struct AddTeamSheet: View {
             dismiss()
             onSave()
         } catch {
-            errorMessage = userFriendlyError(error, context: "create team")
+            errorMessage = userFriendlyError(error, context: "save team")
         }
     }
 }
