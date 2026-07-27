@@ -63,6 +63,23 @@ run_or_log() {
   "$@"
 }
 
+# The PR-list snapshot and its review evidence are stale after a push. Check the
+# live head immediately before each repair or merge action, and fail closed when
+# it differs so the next run collects fresh Copilot/thread/check evidence.
+current_pr_head_matches() {
+  local number="$1" expected_head="$2" action="$3" current_head
+  current_head="$(gh api "repos/$REPO/pulls/$number" --jq '.head.sha // empty' 2>/dev/null || true)"
+  if [[ -z "$current_head" ]]; then
+    echo "    skip: could not re-read PR head before $action — not acting on unknown head"
+    return 1
+  fi
+  if [[ "$current_head" != "$expected_head" ]]; then
+    echo "    skip: PR head changed from ${expected_head:0:8} to ${current_head:0:8} before $action — not acting on stale review/check state"
+    return 1
+  fi
+  return 0
+}
+
 dry_run_exit_action() {
   local description="$1"
   echo "dry-run: would $description"
@@ -322,6 +339,9 @@ while IFS= read -r pr; do
     mode="merge-conflict"
     [[ "$DRY_RUN" == "1" ]] && dry_run_exit_action "attempt $mode repair for approved PR #$number at head $head_sha"
     comment_pr "$number" "🛠️ **$MARKER**\n\nAttempt $((attempts + 1))/$MAX_ATTEMPTS for head \`$head_sha\`. Mode: $mode. The PR is approved but has merge conflicts/dirty merge state; trying one bounded Codex repair on the self-hosted Mac runner."
+    if ! current_pr_head_matches "$number" "$head_sha" "$mode repair"; then
+      continue
+    fi
     checkout_pr_branch "$number" "$head_branch"
     set +e
     git merge --no-ff --no-commit "origin/$BASE"
@@ -345,6 +365,9 @@ while IFS= read -r pr; do
     failures="$(check_summary_for_sha "$head_sha")"
     fp="$(failure_fingerprint "$failures")"
     comment_pr "$number" "🛠️ **$MARKER**\n\nAttempt $((attempts + 1))/$MAX_ATTEMPTS for head \`$head_sha\`. Mode: $mode. Failure fingerprint: \`$fp\`. Trying one bounded Codex repair on the self-hosted Mac runner."
+    if ! current_pr_head_matches "$number" "$head_sha" "$mode repair"; then
+      continue
+    fi
     checkout_pr_branch "$number" "$head_branch"
     codex_fix "$number" "$mode" "$title" "$head_sha" "$failures"
     commit_and_push_if_changed "$number" "$mode"
@@ -358,8 +381,11 @@ while IFS= read -r pr; do
   fi
 
   if [[ "$merge_state" == "CLEAN" || "$merge_state" == "HAS_HOOKS" || "$merge_state" == "BLOCKED" ]]; then
+    if ! current_pr_head_matches "$number" "$head_sha" "merge"; then
+      continue
+    fi
     echo "==> approved PR #$number has no failing checks; queueing/performing squash merge"
-    run_or_log gh pr merge "$number" --repo "$REPO" --squash --delete-branch --auto
+    run_or_log gh pr merge "$number" --repo "$REPO" --squash --delete-branch --auto --match-head-commit "$head_sha"
     exit 0
   fi
 

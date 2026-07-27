@@ -23,7 +23,7 @@ if [[ "${1:-}" == "api" ]]; then
       unresolved)
         printf '%s\n' '{"data":{"repository":{"pullRequest":{"latestReviews":{"nodes":[{"author":{"login":"copilot-pull-request-reviewer[bot]"},"state":"COMMENTED","commit":{"oid":"fixture-sha"}}]},"reviewThreads":{"totalCount":1,"nodes":[{"isResolved":false}]}}}}}'
         ;;
-      satisfied)
+      satisfied|stale)
         printf '%s\n' '{"data":{"repository":{"pullRequest":{"latestReviews":{"nodes":[{"author":{"login":"copilot-pull-request-reviewer[bot]"},"state":"APPROVED","commit":{"oid":"fixture-sha"}}]},"reviewThreads":{"totalCount":1,"nodes":[{"isResolved":true}]}}}}}'
         ;;
     esac
@@ -42,9 +42,17 @@ if [[ "${1:-}" == "api" ]]; then
         exit 0
         ;;
       repos/*/pulls/77)
-        # Missing-Copilot fixture is already awaiting the reviewer, so neither
-        # script needs a mutating reviewer-request API call.
-        printf '%s\n' '1'
+        if [[ "$*" == *'.head.sha // empty'* ]]; then
+          if [[ "${GATE_FIXTURE:?}" == "stale" ]]; then
+            printf '%s\n' 'newer-sha'
+          else
+            printf '%s\n' 'fixture-sha'
+          fi
+        else
+          # Missing-Copilot fixture is already awaiting the reviewer, so neither
+          # script needs a mutating reviewer-request API call.
+          printf '%s\n' '1'
+        fi
         exit 0
         ;;
     esac
@@ -76,15 +84,21 @@ assert_gate() {
   printf '%s\n' "$output" | grep -Fq "$expected"
   if [[ "$fixture" == "satisfied" ]]; then
     printf '%s\n' "$output" | grep -Fq 'dry-run: gh pr merge 77'
-  elif printf '%s\n' "$output" | grep -Fq 'dry-run: gh pr merge 77'; then
-    echo "$script unexpectedly reached merge for $fixture gate fixture" >&2
-    exit 1
+  else
+    if [[ "$fixture" == "stale" ]]; then
+      printf '%s\n' "$output" | grep -Fq 'PR head changed from fixture- to newer-sh'
+    fi
+    if printf '%s\n' "$output" | grep -Fq 'dry-run: gh pr merge 77'; then
+      echo "$script unexpectedly reached merge for $fixture gate fixture" >&2
+      exit 1
+    fi
   fi
 }
 
 for script in pr-merge-maintenance.sh approved-pr-autofix.sh; do
   assert_gate "$script" missing 'Copilot review pending'
   assert_gate "$script" unresolved 'unresolved review thread(s)'
+  assert_gate "$script" stale 'PR head changed from fixture- to newer-sh'
   assert_gate "$script" satisfied 'dry-run: gh pr merge 77'
 done
 

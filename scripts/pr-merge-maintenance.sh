@@ -78,6 +78,23 @@ run_or_log() {
   "$@"
 }
 
+# The list endpoint snapshot is not an authorization to mutate: a PR can be
+# pushed after its Copilot/thread gate was read. Re-read its head immediately
+# before an action and fail closed unless it is still the exact reviewed SHA.
+current_pr_head_matches() {
+  local number="$1" expected_head="$2" action="$3" current_head
+  current_head="$(gh api "repos/$REPO/pulls/$number" --jq '.head.sha // empty' 2>/dev/null || true)"
+  if [[ -z "$current_head" ]]; then
+    echo "    skip: could not re-read PR head before $action — not acting on unknown head"
+    return 1
+  fi
+  if [[ "$current_head" != "$expected_head" ]]; then
+    echo "    skip: PR head changed from ${expected_head:0:8} to ${current_head:0:8} before $action — not acting on stale review/check state"
+    return 1
+  fi
+  return 0
+}
+
 if [[ -n "$MAX_PRS" && ! "$MAX_PRS" =~ ^[0-9]+$ ]]; then
   echo "error: PR_MAINTENANCE_MAX_PRS must be a positive integer when set, got '$MAX_PRS'" >&2
   exit 1
@@ -294,8 +311,11 @@ while IFS= read -r pr; do
 
   # --- Ready to merge ---
   if [[ "$merge_state" == "CLEAN" || "$merge_state" == "HAS_HOOKS" || "$merge_state" == "BLOCKED" ]]; then
+    if ! current_pr_head_matches "$number" "$head_sha" "merge"; then
+      continue
+    fi
     echo "==> PR #$number is CLEAN, checks pass, Copilot review satisfied — merging now (squash)"
-    if run_or_log gh pr merge "$number" --repo "$REPO" --squash --delete-branch --auto; then
+    if run_or_log gh pr merge "$number" --repo "$REPO" --squash --delete-branch --auto --match-head-commit "$head_sha"; then
       echo "    Merged (or auto-merge queued). Push to $BASE will trigger next run."
     else
       echo "    Merge failed — may need manual review."
