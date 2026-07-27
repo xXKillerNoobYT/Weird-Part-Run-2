@@ -708,6 +708,8 @@ private struct PanelSettingsSheet: View {
                             Text(type.rawValue).tag(type)
                         }
                     }
+                    .accessibilityIdentifier("panelSettingsTypePicker")
+                    .accessibilityHint("Changing the panel type updates the available total spaces choices.")
                     TextField("Location", text: Binding(
                         get: { schedule.location ?? "" },
                         set: { schedule.location = $0.isEmpty ? nil : $0 }
@@ -719,6 +721,8 @@ private struct PanelSettingsSheet: View {
                             Text("\(size) spaces").tag(size)
                         }
                     }
+                    .accessibilityIdentifier("panelSettingsTotalSpacesPicker")
+                    .accessibilityHint("Choose a total space count supported by the selected panel type.")
                     if !circuitOriginSpacesThatWouldBeHidden.isEmpty {
                         Label(
                             "The selected settings would hide circuit\(circuitOriginSpacesThatWouldBeHidden.count == 1 ? "" : "s") at space\(circuitOriginSpacesThatWouldBeHidden.count == 1 ? "" : "s") \(circuitOriginSpacesThatWouldBeHidden.map(String.init).joined(separator: ", ")). Move or remove \(circuitOriginSpacesThatWouldBeHidden.count == 1 ? "it" : "them") before saving.",
@@ -755,28 +759,31 @@ private struct PanelSettingsSheet: View {
             }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        do {
-                            try schedule.updatePanelSettings(
-                                panelType: draftPanelType,
-                                totalSpaces: draftTotalSpaces
-                            )
-                            dismiss()
-                        } catch {
-                            settingsValidationMessage = error.localizedDescription
-                        }
-                    }
+                    Button("Done") { savePanelSettings() }
                         .fontWeight(.semibold)
+                        .accessibilityIdentifier("panelSettingsSaveButton")
                 }
             }
-            .alert("Panel settings issue", isPresented: Binding(
-                get: { settingsValidationMessage != nil },
-                set: { if !$0 { settingsValidationMessage = nil } }
-            )) {
-                Button("OK", role: .cancel) { settingsValidationMessage = nil }
-            } message: {
-                Text(settingsValidationMessage ?? "")
-            }
+        }
+        .alert("Unable to Save Panel Settings", isPresented: Binding(
+            get: { settingsValidationMessage != nil },
+            set: { if !$0 { settingsValidationMessage = nil } }
+        )) {
+            Button("Keep Editing", role: .cancel) { settingsValidationMessage = nil }
+        } message: {
+            Text(settingsValidationMessage ?? "")
+        }
+    }
+
+    private func savePanelSettings() {
+        do {
+            try schedule.updatePanelSettings(
+                panelType: draftPanelType,
+                totalSpaces: draftTotalSpaces
+            )
+            dismiss()
+        } catch {
+            settingsValidationMessage = error.localizedDescription
         }
     }
 }

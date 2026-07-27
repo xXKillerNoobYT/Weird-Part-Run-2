@@ -229,6 +229,61 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testPanelSettingsRequireTypeSupportedSpaceBeforeSaving() throws {
+        relaunchForPanelScheduleBuilderFixture()
+
+        let settings = app.buttons["Settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 10))
+        settings.tap()
+
+        let typePicker = app.descendants(matching: .any)["panelSettingsTypePicker"]
+        let totalSpacesPicker = app.descendants(matching: .any)["panelSettingsTotalSpacesPicker"]
+        let save = app.buttons["panelSettingsSaveButton"]
+        XCTAssertTrue(typePicker.waitForExistence(timeout: 5), "Panel type picker should be visible in Settings.")
+        XCTAssertTrue(totalSpacesPicker.exists, "Total spaces picker should be visible in Settings.")
+        XCTAssertTrue(save.exists, "Settings must expose a save action.")
+
+        typePicker.tap()
+        let disconnect = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", "Disconnect"))
+            .firstMatch
+        XCTAssertTrue(disconnect.waitForExistence(timeout: 5))
+        disconnect.tap()
+
+        save.tap()
+        XCTAssertTrue(
+            app.alerts["Unable to Save Panel Settings"].waitForExistence(timeout: 5),
+            "A panel-size change that would hide a double breaker's second occupied space should stay in Settings and present the shared-core validation error."
+        )
+        XCTAssertTrue(
+            app.staticTexts["Disconnect with 2 spaces would hide circuits at spaces 2. Move or remove those circuits before changing panel settings."].exists,
+            "The alert should identify the circuit origin that must be moved or removed before saving."
+        )
+        XCTAssertTrue(app.buttons["Keep Editing"].exists, "The alert must leave a correction path in the settings sheet.")
+        app.buttons["Keep Editing"].tap()
+
+        typePicker.tap()
+        let smallPanel = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", "Small Panel"))
+            .firstMatch
+        XCTAssertTrue(smallPanel.waitForExistence(timeout: 5))
+        smallPanel.tap()
+        save.tap()
+
+        XCTAssertFalse(
+            app.navigationBars["Panel Settings"].waitForExistence(timeout: 2),
+            "A supported type/size correction should save and dismiss the settings sheet."
+        )
+        XCTAssertTrue(app.staticTexts["Small Panel"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["8 Spaces"].exists)
+
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = "WEI-6008 panel settings no-loss correction saved"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     private func relaunchForPanelScheduleBuilderFixture() {
         app?.terminate()
         app = XCUIApplication()
