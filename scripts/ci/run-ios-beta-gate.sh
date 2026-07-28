@@ -38,6 +38,7 @@ runner_temp="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
 runtime_version="${IOS_RUNTIME_VERSION:-26.5}"
 runtime_id="com.apple.CoreSimulator.SimRuntime.iOS-${runtime_version//./-}"
 minimum_free_gib="${MINIMUM_FREE_GIB:-60}"
+derived_data_stale_minutes="${DERIVED_DATA_STALE_MINUTES:-60}"
 simulator_boot_command_timeout_seconds="${SIMULATOR_BOOT_COMMAND_TIMEOUT_SECONDS:-120}"
 simulator_boot_timeout_seconds="${SIMULATOR_BOOT_TIMEOUT_SECONDS:-600}"
 simulator_boot_recovery_timeout_seconds="${SIMULATOR_BOOT_RECOVERY_TIMEOUT_SECONDS:-600}"
@@ -208,6 +209,8 @@ for timeout_value in \
 done
 [[ "$minimum_free_gib" =~ ^[0-9]+$ ]] && (( minimum_free_gib > 0 )) || \
   fail "minimum free disk budget must be a positive integer in GiB"
+[[ "$derived_data_stale_minutes" =~ ^[0-9]+$ ]] && (( derived_data_stale_minutes > 0 )) || \
+  fail "DerivedData stale cutoff must be a positive integer in minutes"
 (( cleanup_upload_margin_seconds < job_timeout_seconds )) || \
   fail "cleanup/upload margin must be smaller than the job timeout"
 internal_budget_seconds=$((
@@ -232,6 +235,7 @@ actual_sha="$(git -C "$workspace" rev-parse HEAD)" || fail "cannot resolve repos
   echo "runtime=$runtime_id"
   echo "device_type=$device_type"
   echo "minimum_free_gib=$minimum_free_gib"
+  echo "derived_data_stale_minutes=$derived_data_stale_minutes"
   echo "simulator_boot_command_timeout_seconds=$simulator_boot_command_timeout_seconds"
   echo "simulator_boot_timeout_seconds=$simulator_boot_timeout_seconds"
   echo "simulator_boot_recovery_timeout_seconds=$simulator_boot_recovery_timeout_seconds"
@@ -258,6 +262,26 @@ available_kib="$(df -Pk "$runner_temp" | awk 'NR == 2 {print $4}')"
 required_kib=$((minimum_free_gib * 1024 * 1024))
 available_gib=$((available_kib / 1024 / 1024))
 echo "available_free_gib=$available_gib" >> "$metadata_file"
+if (( available_kib < required_kib )); then
+  # Below the disk budget: reclaim stale shared DerivedData before failing.
+  # Only top-level entries idle past the cutoff are deleted; anything newer
+  # may belong to a concurrent build on the other Mac runner and must survive.
+  derived_data_cache="$HOME/Library/Developer/Xcode/DerivedData"
+  echo "runner has ${available_gib} GiB free; deleting DerivedData entries older than ${derived_data_stale_minutes} minutes before failing" | tee -a "$artifact_dir/gate.log"
+  if [[ -d "$derived_data_cache" ]]; then
+    find "$derived_data_cache" -mindepth 1 -maxdepth 1 -mmin "+${derived_data_stale_minutes}" -print -exec rm -rf {} + \
+      2>&1 | tee -a "$artifact_dir/gate.log" || true
+  fi
+  available_kib="$(df -Pk "$runner_temp" | awk 'NR == 2 {print $4}')"
+  [[ "$available_kib" =~ ^[0-9]+$ ]] || fail "could not determine free disk space for $runner_temp after DerivedData cleanup"
+  cleanup_freed_gib=$((available_kib / 1024 / 1024 - available_gib))
+  available_gib=$((available_kib / 1024 / 1024))
+  {
+    echo "derived_data_cleanup_freed_gib=$cleanup_freed_gib"
+    echo "post_cleanup_free_gib=$available_gib"
+  } >> "$metadata_file"
+  echo "DerivedData cleanup freed ${cleanup_freed_gib} GiB; ${available_gib} GiB now free" | tee -a "$artifact_dir/gate.log"
+fi
 (( available_kib >= required_kib )) || fail "runner has ${available_gib} GiB free; ${minimum_free_gib} GiB is required"
 
 xcrun simctl list runtimes | grep -Fq "$runtime_id" || fail "required simulator runtime is unavailable: $runtime_id"

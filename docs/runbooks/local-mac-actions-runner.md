@@ -52,7 +52,7 @@ Every same-repository PR targeting `main` must produce both current-head checks:
 - `iOS Beta Gate (iPhone)`
 - `iOS Beta Gate (iPad)`
 
-The workflow is `.github/workflows/ios-beta-gate.yml`; deterministic execution is in `scripts/ci/run-ios-beta-gate.sh`. Each lane verifies the checked-out SHA, requires at least 60 GiB free on the runner temp volume, creates a run-owned iOS 26.5 simulator, runs the `WiredPart-iOS` unit/regression phase plus the bounded `WiredPart-iOS-Stage9-Smokes` UI plan, and uploads logs, summaries, metadata, and `.xcresult` evidence even on failure.
+The workflow is `.github/workflows/ios-beta-gate.yml`; deterministic execution is in `scripts/ci/run-ios-beta-gate.sh`. Each lane verifies the checked-out SHA, requires at least 60 GiB free on the runner temp volume (reclaiming stale shared DerivedData first when below budget — see Disk-capacity response), creates a run-owned iOS 26.5 simulator, runs the `WiredPart-iOS` unit/regression phase plus the bounded `WiredPart-iOS-Stage9-Smokes` UI plan, and uploads logs, summaries, metadata, and `.xcresult` evidence even on failure.
 
 Missing, queued, cancelled, stale-head, skipped-test, zero-test, disk-capacity, simulator-runtime, timeout, and runner-offline outcomes are non-mergeable. Do not substitute `Analyze (swift)` or another echo/status-only check for either device lane.
 
@@ -60,10 +60,12 @@ Ordinary PR gates never archive or upload to App Store Connect. TestFlight uploa
 
 ### Disk-capacity response
 
-If either lane reports less than 60 GiB free:
+The preflight self-heals before failing (added via #1536). When free space on the runner temp volume is below 60 GiB, the gate script deletes top-level `~/Library/Developer/Xcode/DerivedData` entries not modified in the last 60 minutes (cutoff tunable via `DERIVED_DATA_STALE_MINUTES`), then re-checks free space and fails only if still below budget. Newer entries are never deleted because a concurrent build on the other Mac runner may still own them. Each deleted entry is logged to the lane's `gate.log`, and `metadata.txt` records `derived_data_cleanup_freed_gib` and `post_cleanup_free_gib`.
+
+If either lane still reports less than 60 GiB free after that cleanup:
 
 1. Keep the check red and the PR out of the merge queue.
-2. Inspect the runner volume and generated caches/artifacts without deleting live worktrees or unique work.
+2. Inspect the runner volume and generated caches/artifacts without deleting live worktrees or unique work. Start from the lane's `gate.log`/`metadata.txt`, which already show what stale DerivedData was removed and how much that freed.
 3. Perform only evidence-backed safe cleanup; route uncertain or broad deletion through a bounded cleanup issue.
 4. Rerun both device lanes at the unchanged PR head and use the new check/artifact URLs as evidence.
 5. Recheck free space after the run because a successful build can still expose a capacity trend.
