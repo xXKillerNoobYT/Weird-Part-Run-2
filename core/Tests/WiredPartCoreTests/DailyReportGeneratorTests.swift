@@ -1,9 +1,4 @@
 import Foundation
-#if canImport(Darwin)
-import Darwin
-#elseif canImport(Glibc)
-import Glibc
-#endif
 import Testing
 import GRDB
 @testable import WiredPartCore
@@ -11,9 +6,12 @@ import GRDB
 @Suite("DailyReportGenerator Tests", .serialized)
 struct DailyReportGeneratorTests {
 
-    private func freshEnv() throws -> (E2ETestHelpers.TestEnvironment, DailyReportGenerator) {
+    private func freshEnv(
+        calendar: Calendar = .current,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) throws -> (E2ETestHelpers.TestEnvironment, DailyReportGenerator) {
         let env = try E2ETestHelpers.setUp()
-        let generator = DailyReportGenerator(db: env.db)
+        let generator = DailyReportGenerator(db: env.db, calendar: calendar, now: now)
         return (env, generator)
     }
 
@@ -106,7 +104,7 @@ struct DailyReportGeneratorTests {
         try env.db.writer.write { db in
             try db.execute(sql: """
                 INSERT INTO labor_entries (user_id, job_id, clock_in, deleted_at)
-                VALUES (?, ?, '\(fixedDate) 08:00:00', NULL)
+                VALUES (?, ?, '\(fixedDate) 12:00:00', NULL)
                 """, arguments: [env.adminUserId, jobId])
             try db.execute(sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?", arguments: [jobId])
         }
@@ -162,68 +160,111 @@ struct DailyReportGeneratorTests {
 
     @Test("Generate report buckets UTC end-of-day labor into local report date")
     func testGenerateReportUsesLocalClockInDateBucket() throws {
-        try withMountainTimeZone {
-            let (env, gen) = try freshEnv()
-            let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-LOCAL-DRG", name: "Local Daily Report")
+        let (env, gen) = try freshEnv(calendar: Self.mountainCalendar)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-LOCAL-DRG", name: "Local Daily Report")
 
-            try env.db.writer.write { db in
-                try db.execute(sql: """
-                    INSERT INTO labor_entries
-                        (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
-                    VALUES (?, ?, '2026-02-01 02:30:00', '2026-02-01 04:30:00', 2.0, 0.0, 'completed', datetime('now'))
-                    """, arguments: [env.adminUserId, jobId])
-            }
-
-            let date = try #require(Self.dayFormatter.date(from: "2026-01-31"))
-            let report = try gen.generateReport(userId: env.adminUserId, jobId: jobId, date: date)
-
-            #expect(report.clockIn == "2026-02-01 02:30:00")
-            #expect(report.totalHours == 2.0)
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, '2026-02-01 02:30:00', '2026-02-01 04:30:00', 2.0, 0.0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, jobId])
         }
+
+        let date = try #require(Self.mountainCalendar.date(
+            from: DateComponents(year: 2026, month: 1, day: 31, hour: 12)
+        ))
+        let report = try gen.generateReport(userId: env.adminUserId, jobId: jobId, date: date)
+
+        #expect(report.clockIn == "2026-02-01 02:30:00")
+        #expect(report.totalHours == 2.0)
     }
 
     @Test("Today's jobs buckets UTC end-of-day labor into local work date")
     func testTodaysJobsUsesLocalClockInDateBucket() throws {
-        try withMountainTimeZone {
-            let (env, gen) = try freshEnv()
-            let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-LOCAL-JOBS", name: "Local Jobs")
+        let (env, gen) = try freshEnv(calendar: Self.mountainCalendar)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-LOCAL-JOBS", name: "Local Jobs")
 
-            try env.db.writer.write { db in
-                try db.execute(sql: """
-                    INSERT INTO labor_entries
-                        (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
-                    VALUES (?, ?, '2026-02-01 02:30:00', '2026-02-01 04:30:00', 2.0, 0.0, 'completed', datetime('now'))
-                    """, arguments: [env.adminUserId, jobId])
-            }
-
-            let date = try #require(Self.dayFormatter.date(from: "2026-01-31"))
-            let jobs = try gen.getTodaysJobs(userId: env.adminUserId, date: date)
-
-            #expect(jobs.contains { $0.jobId == jobId && abs($0.hours - 2.0) < 0.001 })
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, '2026-02-01 02:30:00', '2026-02-01 04:30:00', 2.0, 0.0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, jobId])
         }
+
+        let date = try #require(Self.mountainCalendar.date(
+            from: DateComponents(year: 2026, month: 1, day: 31, hour: 12)
+        ))
+        let jobs = try gen.getTodaysJobs(userId: env.adminUserId, date: date)
+
+        #expect(jobs.contains { $0.jobId == jobId && abs($0.hours - 2.0) < 0.001 })
     }
 
-    private static let dayFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone(identifier: "America/Denver")
-        return formatter
+    @Test("Historical report instant controls active labor and break durations")
+    func testGenerateReportUsesExplicitInstantForActiveRows() throws {
+        // 09:45 UTC is 23:45 on July 20 in Honolulu. The UTC date differs from
+        // the operational date, so SQLite date(started_at) would miss this break.
+        let injectedNow = try Date("2026-07-22T09:45:00Z", strategy: .iso8601)
+        let reportDate = try Date("2026-07-21T09:45:00Z", strategy: .iso8601)
+        let (env, gen) = try freshEnv(calendar: Self.honoluluCalendar, now: { injectedNow })
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-HIST-DRG", name: "Historical Report")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, '2026-07-21 09:00:00', NULL, 0, 0, 'active', '2026-07-21 09:00:00')
+                """, arguments: [env.adminUserId, jobId])
+            let laborEntryId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO break_records
+                    (user_id, labor_entry_id, break_type, started_at, ended_at, duration_minutes, is_paid, auto_filled)
+                VALUES (?, ?, 'break', '2026-07-21 09:30:00', NULL, NULL, 1, 0)
+                """, arguments: [env.adminUserId, laborEntryId])
+        }
+
+        let report = try gen.generateReport(
+            userId: env.adminUserId,
+            jobId: jobId,
+            date: reportDate
+        )
+        let breakMinutes = try #require(report.breaksTaken.first?.durationMinutes)
+
+        #expect((14...15).contains(breakMinutes))
+        #expect(abs(report.totalHours - (45.0 - Double(breakMinutes)) / 60.0) < 0.001)
+    }
+
+    @Test("Local-midnight active labor uses the requested instant instead of wall clock")
+    func testTodaysJobsUsesExplicitInstantForActiveLabor() throws {
+        let injectedNow = try Date("2026-07-21T10:30:00Z", strategy: .iso8601)
+        let reportDate = try Date("2026-07-20T10:30:00Z", strategy: .iso8601)
+        let (env, gen) = try freshEnv(calendar: Self.honoluluCalendar, now: { injectedNow })
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-MIDNIGHT-DRG", name: "Midnight Report")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, '2026-07-20 10:00:00', NULL, 0, 0, 'active', '2026-07-20 10:00:00')
+                """, arguments: [env.adminUserId, jobId])
+        }
+
+        let jobs = try gen.getTodaysJobs(userId: env.adminUserId, date: reportDate)
+        let hours = try #require(jobs.first(where: { $0.jobId == jobId })?.hours)
+
+        #expect(abs(hours - 0.5) < 0.001)
+    }
+
+    private static let mountainCalendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Denver") ?? .gmt
+        return calendar
     }()
 
-    private func withMountainTimeZone<T>(_ body: () throws -> T) rethrows -> T {
-        #if canImport(Darwin) || canImport(Glibc)
-        let originalTZ = getenv("TZ").map { String(cString: $0) }
-        setenv("TZ", "America/Denver", 1)
-        tzset()
-        defer {
-            if let originalTZ {
-                setenv("TZ", originalTZ, 1)
-            } else {
-                unsetenv("TZ")
-            }
-            tzset()
-        }
-        #endif
-        return try body()
-    }
+    private static let honoluluCalendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Pacific/Honolulu") ?? .gmt
+        return calendar
+    }()
 }
