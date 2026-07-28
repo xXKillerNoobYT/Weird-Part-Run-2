@@ -15,12 +15,17 @@ pr_json() {
   jq -nc --arg sha "$1" '{number:1,title:"Safe merge fixture",draft:false,labels:[],user:{login:"xXKillerNoobYT"},head:{repo:{owner:{login:"xXKillerNoobYT"}},sha:$sha},mergeable:true,mergeable_state:"clean",auto_merge:null}'
 }
 reviews_json() {
-  jq -nc --arg sha "$1" '[[
-    {commit_id:$sha,state:"APPROVED",body:"LocalFirst\nVerdict: Pass",user:{login:"xXKillerNoobYT"}},
-    {commit_id:$sha,state:"APPROVED",body:"GPTReviewer\nVerdict: Accept",user:{login:"xXKillerNoobYT"}},
-    {commit_id:$sha,state:"APPROVED",body:"ClaudeReviewer\nVerdict: Accept",user:{login:"xXKillerNoobYT"}},
-    {commit_id:$sha,state:"APPROVED",body:"Copilot review",user:{login:"copilot-pull-request-reviewer[bot]"}}
-  ]]'
+  jq -nc --arg sha "$1" --arg mode "$FIXTURE_MODE" '[
+    [
+      {id:101,submitted_at:"2026-07-28T10:00:00Z",commit_id:$sha,state:"APPROVED",body:"LocalFirst\nVerdict: Pass",user:{login:"xXKillerNoobYT"}},
+      {id:102,submitted_at:"2026-07-28T10:01:00Z",commit_id:$sha,state:"APPROVED",body:"GPTReviewer\nVerdict: Accept",user:{login:"xXKillerNoobYT"}},
+      {id:103,submitted_at:"2026-07-28T10:02:00Z",commit_id:$sha,state:"APPROVED",body:"ClaudeReviewer\nVerdict: Accept",user:{login:"xXKillerNoobYT"}},
+      {id:104,submitted_at:"2026-07-28T10:03:00Z",commit_id:$sha,state:"APPROVED",body:"Copilot review",user:{login:"copilot-pull-request-reviewer[bot]"}}
+    ] +
+    (if $mode == "later-gpt-revise" then
+      [{id:105,submitted_at:"2026-07-28T10:04:00Z",commit_id:$sha,state:"COMMENTED",body:"GPTReviewer\nVerdict: Revise",user:{login:"xXKillerNoobYT"}}]
+     else [] end)
+  ]'
 }
 
 if [[ "${1:-}" == "api" ]]; then
@@ -77,6 +82,8 @@ run_rejection_case "head-change-after-listing" "head changed during final verifi
 run_rejection_case "review-api-failure" "could not read review evidence"
 run_rejection_case "review-thread-api-failure" "could not read review thread state"
 run_rejection_case "unresolved-review-thread" "review threads are unresolved"
+# The newer submitted GPTReviewer Revise must supersede its earlier valid pass.
+run_rejection_case "later-gpt-revise" "latest current-head review lane rejected (LocalFirst=PASS GPT=REVISE Claude=PASS Copilot=1)"
 
 fixture_dir="$TMPDIR/merge-eligible"; mkdir -p "$fixture_dir"
 PATH="$TMPDIR:$PATH" FIXTURE_MODE="merge-eligible" FIXTURE_DIR="$fixture_dir" "$ROOT/scripts/pr-merge-maintenance.sh" xXKillerNoobYT/Weird-Part-Run-2 >/dev/null

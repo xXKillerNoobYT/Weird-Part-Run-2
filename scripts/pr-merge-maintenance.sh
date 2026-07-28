@@ -78,43 +78,124 @@ run_or_log() {
   "$@"
 }
 
-# Historical GitHub reviews survive a rebase or force-push. Require a positive
-# review from every mandatory lane whose commit ID is the exact head being
-# merged, and fail closed if API or thread-resolution evidence is unavailable.
-require_current_head_review_lanes() {
-  local number="$1" head_sha="$2" reviews_json thread_state
-  local localfirst_count gpt_count claude_count copilot_count thread_total unresolved
+# The paginated list is only a queue-discovery snapshot. Never make a rebase or
+# merge decision from it: a force-push can change the review/check target after
+# the list request returns. Every candidate is re-read before eligibility and
+# the merge path verifies that exact head again immediately before invoking gh.
+fetch_current_pr() {
+  local number="$1"
+  gh api "repos/$REPO/pulls/$number" | jq -ce '{
+    number:           .number,
+    title:            (.title // ""),
+    isDraft:          (.draft // false),
+    labels:           [(.labels // [])[].name],
+    author:           (.user.login // ""),
+    headOwner:        (.head.repo.owner.login // ""),
+    mergeable:        (if .mergeable == true then "MERGEABLE"
+                       elif .mergeable == false then "CONFLICTING"
+                       else "UNKNOWN" end),
+    mergeStateStatus: ((.mergeable_state // "unknown") | ascii_upcase),
+    autoMerge:        (.auto_merge != null),
+    headSha:          (.head.sha // "")
+  }'
+}
 
-  reviews_json="$(gh api --paginate --slurp "repos/$REPO/pulls/$number/reviews?per_page=100" 2>/dev/null || echo "")"
-  if [[ -z "$reviews_json" ]] || ! jq -e 'type == "array"' <<<"$reviews_json" >/dev/null 2>&1; then
+load_pr_snapshot() {
+  local snapshot="$1"
+  title="$(jq -r     '.title'                            <<<"$snapshot")"
+  is_draft="$(jq -r  '.isDraft'                          <<<"$snapshot")"
+  merge_state="$(jq -r '.mergeStateStatus // "UNKNOWN"'  <<<"$snapshot")"
+  mergeable="$(jq -r   '.mergeable // "UNKNOWN"'         <<<"$snapshot")"
+  auto_merge="$(jq -r  '.autoMerge'                      <<<"$snapshot")"
+  labels_json="$(jq -c '.labels'                         <<<"$snapshot")"
+  author="$(jq -r      '.author // ""'                   <<<"$snapshot")"
+  head_owner="$(jq -r  '.headOwner'                      <<<"$snapshot")"
+  head_sha="$(jq -r    '.headSha'                        <<<"$snapshot")"
+}
+
+# Historical reviews survive rebases and force-pushes. For every named
+# non-Copilot lane, GitHub's submitted_at timestamp is the primary ordering key
+# and numeric review id breaks equal timestamps. The last exact-head submitted
+# decision is authoritative: only an explicit Accept/Pass is eligible; Revise,
+# missing verdicts, and malformed ordering data fail closed.
+latest_current_head_lane_verdict() {
+  local lane="$1" lane_pattern="$2" verified_head="$3" reviews_json="$4" verdict
+
+  if ! verdict="$(jq -er --arg sha "$verified_head" --arg lane "$lane_pattern" '
+    [ .[][]?
+      | select(type == "object")
+      | select(.commit_id == $sha)
+      | select(.state == "APPROVED" or .state == "COMMENTED")
+      | select((.body | type) == "string")
+      | select(.body | test($lane; "i"))
+      | select((.submitted_at | type) == "string")
+      | select((.id | type) == "number")
+      | {
+          submittedAt: .submitted_at,
+          submittedEpoch: (.submitted_at | fromdateiso8601),
+          id: .id,
+          body: .body
+        }
+    ]
+    | if length == 0 then error("missing exact-head lane review") else
+        sort_by(.submittedEpoch, .id) | last | .body
+        | if test("(?im)\\bVerdict:\\s*Revise\\b") then "REVISE"
+          elif test("(?im)\\bVerdict:\\s*(Accept|Pass)\\b") then "PASS"
+          else error("latest lane review lacks an explicit verdict")
+          end
+      end
+  ' <<<"$reviews_json" 2>/dev/null)"; then
+    echo "    skip: current-head $lane review evidence was malformed or incomplete — failing closed"
+    return 1
+  fi
+
+  printf '%s' "$verdict"
+}
+
+# Every required lane must have accepted evidence for the current head, and
+# thread evidence must come from that same current pull request state.
+require_current_head_review_lanes() {
+  local number="$1" verified_head="$2" reviews_json thread_state review_head
+  local localfirst_verdict gpt_verdict claude_verdict copilot_count thread_total unresolved
+
+  if ! reviews_json="$(gh api --paginate --slurp "repos/$REPO/pulls/$number/reviews?per_page=100")"; then
     echo "    skip: could not read review evidence — failing closed"
     return 1
   fi
-
-  localfirst_count="$(jq --arg sha "$head_sha" '[.[][]? | select(.commit_id == $sha) | select(.state == "APPROVED" or .state == "COMMENTED") | select((.body // "") | test("(?i)LocalFirst(?:Reviewer)?")) | select((.body // "") | test("(?im)\\bVerdict:\\s*(Accept|Pass)\\b")) | select(((.body // "") | test("(?im)\\bVerdict:\\s*Revise\\b")) | not)] | length' <<<"$reviews_json" 2>/dev/null || echo "0")"
-  gpt_count="$(jq --arg sha "$head_sha" '[.[][]? | select(.commit_id == $sha) | select(.state == "APPROVED" or .state == "COMMENTED") | select((.body // "") | test("(?i)GPTReviewer")) | select((.body // "") | test("(?im)\\bVerdict:\\s*(Accept|Pass)\\b")) | select(((.body // "") | test("(?im)\\bVerdict:\\s*Revise\\b")) | not)] | length' <<<"$reviews_json" 2>/dev/null || echo "0")"
-  claude_count="$(jq --arg sha "$head_sha" '[.[][]? | select(.commit_id == $sha) | select(.state == "APPROVED" or .state == "COMMENTED") | select((.body // "") | test("(?i)ClaudeReviewer")) | select((.body // "") | test("(?im)\\bVerdict:\\s*(Accept|Pass)\\b")) | select(((.body // "") | test("(?im)\\bVerdict:\\s*Revise\\b")) | not)] | length' <<<"$reviews_json" 2>/dev/null || echo "0")"
-  copilot_count="$(jq --arg sha "$head_sha" '[.[][]? | select(.commit_id == $sha) | select(.state == "APPROVED" or .state == "COMMENTED") | select((.user.login // "") == "copilot-pull-request-reviewer" or (.user.login // "") == "copilot-pull-request-reviewer[bot]")] | length' <<<"$reviews_json" 2>/dev/null || echo "0")"
-
-  if [[ ! "$localfirst_count" =~ ^[0-9]+$ || ! "$gpt_count" =~ ^[0-9]+$ || ! "$claude_count" =~ ^[0-9]+$ || ! "$copilot_count" =~ ^[0-9]+$ ]]; then
+  if ! jq -e 'type == "array"' <<<"$reviews_json" >/dev/null 2>&1; then
     echo "    skip: review evidence was malformed — failing closed"
     return 1
   fi
-  if [[ "$localfirst_count" -eq 0 || "$gpt_count" -eq 0 || "$claude_count" -eq 0 || "$copilot_count" -eq 0 ]]; then
-    echo "    skip: current-head review lane incomplete (LocalFirst=$localfirst_count GPT=$gpt_count Claude=$claude_count Copilot=$copilot_count)"
+
+  if ! localfirst_verdict="$(latest_current_head_lane_verdict "LocalFirst" "LocalFirst(?:Reviewer)?" "$verified_head" "$reviews_json")" ||
+     ! gpt_verdict="$(latest_current_head_lane_verdict "GPTReviewer" "GPTReviewer" "$verified_head" "$reviews_json")" ||
+     ! claude_verdict="$(latest_current_head_lane_verdict "ClaudeReviewer" "ClaudeReviewer" "$verified_head" "$reviews_json")"; then
+    return 1
+  fi
+  copilot_count="$(jq --arg sha "$verified_head" '[.[][]? | select(.commit_id == $sha) | select(.state == "APPROVED" or .state == "COMMENTED") | select((.user.login // "") == "copilot-pull-request-reviewer" or (.user.login // "") == "copilot-pull-request-reviewer[bot]")] | length' <<<"$reviews_json" 2>/dev/null || true)"
+
+  if [[ ! "$copilot_count" =~ ^[0-9]+$ ]]; then
+    echo "    skip: review evidence was malformed — failing closed"
+    return 1
+  fi
+  if [[ "$localfirst_verdict" != "PASS" || "$gpt_verdict" != "PASS" || "$claude_verdict" != "PASS" || "$copilot_count" -eq 0 ]]; then
+    echo "    skip: latest current-head review lane rejected (LocalFirst=$localfirst_verdict GPT=$gpt_verdict Claude=$claude_verdict Copilot=$copilot_count)"
     return 1
   fi
 
-  thread_state="$(gh api graphql -f query="query { repository(owner: \"$repo_owner\", name: \"$repo_name\") { pullRequest(number: $number) { reviewThreads(first: 100) { totalCount nodes { isResolved } } } } }" 2>/dev/null || echo "")"
-  thread_total="$(jq '.data.repository.pullRequest.reviewThreads.totalCount // -1' <<<"$thread_state" 2>/dev/null || echo "-1")"
-  unresolved="$(jq '[.data.repository.pullRequest.reviewThreads.nodes[]? | select(.isResolved == false)] | length' <<<"$thread_state" 2>/dev/null || echo "-1")"
-  if [[ ! "$thread_total" =~ ^[0-9]+$ || ! "$unresolved" =~ ^[0-9]+$ || "$thread_total" -gt 100 || "$unresolved" -gt 0 ]]; then
-    echo "    skip: review threads are unresolved or cannot be fully verified (total=$thread_total unresolved=$unresolved)"
+  if ! thread_state="$(gh api graphql -f query="query { repository(owner: \"$repo_owner\", name: \"$repo_name\") { pullRequest(number: $number) { headRefOid reviewThreads(first: 100) { totalCount nodes { isResolved } } } } }")"; then
+    echo "    skip: could not read review thread state — failing closed"
+    return 1
+  fi
+  review_head="$(jq -r '.data.repository.pullRequest.headRefOid // empty' <<<"$thread_state" 2>/dev/null || true)"
+  thread_total="$(jq -r '.data.repository.pullRequest.reviewThreads.totalCount // empty' <<<"$thread_state" 2>/dev/null || true)"
+  unresolved="$(jq '[.data.repository.pullRequest.reviewThreads.nodes[]? | select(.isResolved == false)] | length' <<<"$thread_state" 2>/dev/null || true)"
+  if [[ "$review_head" != "$verified_head" || ! "$thread_total" =~ ^[0-9]+$ || ! "$unresolved" =~ ^[0-9]+$ || "$thread_total" -gt 100 || "$unresolved" -gt 0 ]]; then
+    echo "    skip: review threads are unresolved or cannot be fully verified for current head (head=${review_head:0:8} total=${thread_total:-unknown} unresolved=${unresolved:-unknown})"
     return 1
   fi
 
   echo "    current-head review lanes satisfied (LocalFirst, GPT, Claude, Copilot; threads resolved)"
-  return 0
 }
 
 if [[ -n "$MAX_PRS" && ! "$MAX_PRS" =~ ^[0-9]+$ ]]; then
@@ -178,21 +259,19 @@ repo_name="${REPO##*/}"
 # Pick the FIRST one we can act on and do exactly that one action, then exit.
 while IFS= read -r pr; do
   number="$(jq -r    '.number'                           <<<"$pr")"
-  title="$(jq -r     '.title'                            <<<"$pr")"
-  is_draft="$(jq -r  '.isDraft'                          <<<"$pr")"
-  merge_state="$(jq -r '.mergeStateStatus // "UNKNOWN"'  <<<"$pr")"
-  mergeable="$(jq -r   '.mergeable // "UNKNOWN"'         <<<"$pr")"
-  auto_merge="$(jq -r  '.autoMerge'                      <<<"$pr")"
-  labels_json="$(jq -c '.labels'                         <<<"$pr")"
-  author="$(jq -r      '.author // ""'                     <<<"$pr")"
-  head_owner="$(jq -r  '.headOwner'                      <<<"$pr")"
-  head_sha="$(jq -r    '.headSha'                        <<<"$pr")"
+  # The list record is deliberately not used to choose an action. Refetch first
+  # so every eligibility check below is bound to one current PR snapshot.
+  if ! current_pr="$(fetch_current_pr "$number")"; then
+    echo "    skip: could not refresh current PR state — not acting on stale queue data"
+    continue
+  fi
+  load_pr_snapshot "$current_pr"
 
   echo ""
   echo "--- PR #$number: $title"
-  echo "    author=${author:-<unknown>} state=$merge_state mergeable=$mergeable autoMerge=$auto_merge draft=$is_draft"
+  echo "    refreshed head=${head_sha:0:8} author=${author:-<unknown>} state=$merge_state mergeable=$mergeable autoMerge=$auto_merge draft=$is_draft"
 
-  # --- Skip conditions ---
+  # --- Skip conditions, evaluated from the fresh PR snapshot ---
   if [[ "$is_draft" == "true" ]]; then
     echo "    skip: draft"; continue; fi
 
@@ -209,21 +288,21 @@ while IFS= read -r pr; do
     echo "    skip: has merge conflicts — engineer must resolve first"; continue; fi
 
   # --- Resolve UNKNOWN mergeability before acting ---
-  # The list endpoint returns mergeable_state only when GitHub has it cached;
-  # treating UNKNOWN as BEHIND made the train "rebase" an up-to-date branch
-  # forever (update-branch no-ops, the state never changes, nothing merges).
-  # A single-PR GET forces GitHub to compute mergeability; poll briefly.
+  # Refresh the full PR rather than only mergeable_state so a head change while
+  # GitHub computes mergeability cannot carry stale review/check evidence forward.
   if [[ "$merge_state" == "UNKNOWN" ]]; then
     for _attempt in 1 2 3 4 5; do
-      merge_state="$(gh api "repos/$REPO/pulls/$number" \
-        --jq '(.mergeable_state // "unknown") | ascii_upcase' 2>/dev/null || echo "UNKNOWN")"
+      if ! current_pr="$(fetch_current_pr "$number")"; then
+        break
+      fi
+      load_pr_snapshot "$current_pr"
       [[ "$merge_state" != "UNKNOWN" ]] && break
       sleep 3
     done
     echo "    resolved mergeability: state=$merge_state"
     if [[ "$merge_state" == "UNKNOWN" ]]; then
-      echo "    skip: mergeability still computing — next run retries"; continue; fi
-    if [[ "$merge_state" == "DIRTY" ]]; then
+      echo "    skip: mergeability still computing or refresh failed — next run retries"; continue; fi
+    if [[ "$mergeable" == "CONFLICTING" || "$merge_state" == "DIRTY" ]]; then
       echo "    skip: has merge conflicts — engineer must resolve first"; continue; fi
   fi
 
@@ -242,19 +321,29 @@ while IFS= read -r pr; do
   fi
 
   # --- Check if all required status checks are passing ---
-  if [[ -n "$head_sha" ]]; then
-    failing_checks="$(gh api "repos/$REPO/commits/$head_sha/check-runs" \
-      --jq '[.check_runs[] | select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != null and .status == "completed")] | length' 2>/dev/null || echo "0")"
-    pending_checks="$(gh api "repos/$REPO/commits/$head_sha/check-runs" \
-      --jq '[.check_runs[] | select(.status == "in_progress" or .status == "queued")] | length' 2>/dev/null || echo "0")"
+  if [[ -z "$head_sha" ]]; then
+    echo "    skip: refreshed PR has no head SHA — cannot verify checks"
+    continue
+  fi
+  if ! check_runs="$(gh api "repos/$REPO/commits/$head_sha/check-runs")"; then
+    echo "    skip: could not read checks for refreshed head ${head_sha:0:8} — not merging on unknown check state"
+    continue
+  fi
+  if ! failing_checks="$(jq -er '[.check_runs[] | select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != null and .status == "completed")] | length' <<<"$check_runs")"; then
+    echo "    skip: malformed check response for refreshed head ${head_sha:0:8} — not merging"
+    continue
+  fi
+  if ! pending_checks="$(jq -er '[.check_runs[] | select(.status == "in_progress" or .status == "queued")] | length' <<<"$check_runs")"; then
+    echo "    skip: malformed check response for refreshed head ${head_sha:0:8} — not merging"
+    continue
+  fi
 
-    if [[ "$pending_checks" -gt 0 ]]; then
-      echo "    skip: $pending_checks check(s) still running — waiting for scan to complete"; continue; fi
+  if [[ "$pending_checks" -gt 0 ]]; then
+    echo "    skip: $pending_checks check(s) still running — waiting for scan to complete"; continue; fi
 
-    if [[ "$failing_checks" -gt 0 ]]; then
+  if [[ "$failing_checks" -gt 0 ]]; then
       # Summarise failures and comment once (avoid spamming)
-      failures="$(gh api "repos/$REPO/commits/$head_sha/check-runs" \
-        --jq '[.check_runs[] | select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != null and .status == "completed") | "- \(.name): \(.conclusion)"] | join("\n")' 2>/dev/null || echo "unknown")"
+      failures="$(jq -r '[.check_runs[] | select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != null and .status == "completed") | "- \(.name): \(.conclusion)"] | join("\n")' <<<"$check_runs")"
       echo "    SCAN FAILED — $failing_checks check(s) failing:"
       echo "$failures"
       # Only comment if not already commented recently
@@ -262,23 +351,37 @@ while IFS= read -r pr; do
         --body "🔴 **Merge blocked — required checks failing.**\n\nFailing checks on \`${head_sha:0:8}\`:\n${failures}\n\nPlease fix the issues above and push. The pipeline will retry automatically." 2>/dev/null || true
       echo "    Commented on PR. Skipping — engineer must fix scan failures."
       continue
-    fi
   fi
 
   # This is intentionally unconditional: workflow/environment configuration
   # cannot downgrade the mandatory LocalFirst → GPT → Claude → Copilot chain.
-  # Each accepted lane is bound to head_sha, so a changed head resets readiness.
   if ! require_current_head_review_lanes "$number" "$head_sha"; then
     continue
   fi
 
   # --- Ready to merge ---
   if [[ "$merge_state" == "CLEAN" || "$merge_state" == "HAS_HOOKS" ]]; then
-    echo "==> PR #$number is $merge_state with required checks green — merging now (squash)"
-    if run_or_log gh pr merge "$number" --repo "$REPO" --squash --delete-branch --auto; then
+    # A second fresh snapshot closes the list→verify→merge TOCTOU window. The
+    # server-side match guard covers the remaining race after this GET.
+    if ! final_pr="$(fetch_current_pr "$number")"; then
+      echo "    skip: could not refresh final PR state — not invoking merge"
+      continue
+    fi
+    final_head="$(jq -r '.headSha' <<<"$final_pr")"
+    final_state="$(jq -r '.mergeStateStatus // "UNKNOWN"' <<<"$final_pr")"
+    if [[ "$final_head" != "$head_sha" ]]; then
+      echo "    skip: PR head changed during final verification (${head_sha:0:8} -> ${final_head:0:8}) — deferring without merge"
+      continue
+    fi
+    if [[ "$final_state" != "CLEAN" && "$final_state" != "HAS_HOOKS" ]]; then
+      echo "    skip: merge state changed during final verification ($merge_state -> $final_state) — deferring without merge"
+      continue
+    fi
+    echo "==> PR #$number is $final_state at verified head ${head_sha:0:8} — merging now (squash)"
+    if run_or_log gh pr merge "$number" --repo "$REPO" --squash --delete-branch --auto --match-head-commit "$head_sha"; then
       echo "    Merged (or auto-merge queued). Push to $BASE will trigger next run."
     else
-      echo "    Merge failed — may need manual review."
+      echo "    Merge failed — the head may have changed or manual review is needed."
     fi
     exit 0   # ONE action per run — stop here
   fi
