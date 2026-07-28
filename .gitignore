@@ -62,6 +62,7 @@ token.json
 
 # Temporary files
 .tmp/
+/artifacts/
 __pycache__/
 **/__pycache__/
 *.py[cod]

@@ -18,20 +18,33 @@ permissions:
 jobs:
   tracked-artifacts:
     name: Tracked artifact guard
-    # Pure-python guard — no Xcode needed, but this private repo currently
-    # sees GitHub-hosted zero-step failures (runner_id=0), so run on WPR2's
-    # self-hosted Mac labels until hosted capacity/billing is restored.
-    runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
+    # Fork heads run only on GitHub-hosted infrastructure and fail before
+    # checkout. Same-repository PRs and main pushes retain the private Mac
+    # runner so untrusted code can never reach the local machine.
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '["ubuntu-latest"]' || '["self-hosted","macOS","ARM64","xcode","ios","local-mac"]') }}
     timeout-minutes: 5
     steps:
+      - name: Reject untrusted fork without using the Mac runner
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "::error::Fork pull requests cannot execute repository code on WPR2's self-hosted Mac runners. A trusted maintainer must reproduce the head in a same-repository branch before the artifact guard can pass."
+          exit 1
+
       - name: Checkout repository
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/checkout@v4
 
+      - name: Validate fail-closed artifact-guard source policy
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        run: python3 scripts/ci/validate-artifact-guard-source.py
+
       - name: Verify guard catches representative artifacts
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         run: python3 scripts/guard-tracked-artifacts.py --self-test
 
       - name: Verify Panel Quality source policy
         run: python3 scripts/check-panel-quality-source-policy.py
 
       - name: Fail on tracked local runtime artifacts
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         run: python3 scripts/guard-tracked-artifacts.py

@@ -617,16 +617,19 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Database Size"].waitForExistence(timeout: 5), "Backup page should show database size")
         captureWEI3988("01-backups-before-create")
 
-        // `rowAccessibility` deliberately exposes this row with a stable
-        // identifier and sentence-case VoiceOver label. Keep the smoke coupled
-        // to that accessible contract, not title-cased visual copy.
-        let createBackup = app.descendants(matching: .any)["settings-backups-create-backup-button"]
+        let createBackup = app.descendants(matching: .any)["settings-backups-create-backup-button"].firstMatch
         XCTAssertTrue(createBackup.waitForExistence(timeout: 10), "Create Backup Now action should be available")
-        XCTAssertTrue(createBackup.isHittable, "Create backup action should be hittable")
+        XCTAssertEqual(createBackup.label, "Create backup now", "Backup action should expose its stable accessible name")
         createBackup.tap()
-        let backupCreated = NSPredicate(format: "value == %@", "Backup created")
-        expectation(for: backupCreated, evaluatedWith: createBackup, handler: nil)
-        waitForExpectations(timeout: 15)
+        let backupCreated = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "Backup created"),
+            object: createBackup
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [backupCreated], timeout: 15),
+            .completed,
+            "Manual backup action should complete with visible and accessible success state"
+        )
         XCTAssertTrue(app.staticTexts["Stored Backups"].waitForExistence(timeout: 5), "Backup count row should remain visible after backup creation")
         captureWEI3988("02-backups-created")
 
