@@ -55,6 +55,165 @@ final class WEI3900ClockFlowQATests: XCTestCase {
         verifyBreakLunchAndSupplyRunControlsAreReachable()
     }
 
+    /// GitHub #1450 / WEI-4956 regression: the canonical active Supply Run
+    /// card must cross a real minute boundary while the foreground Clock page
+    /// remains untouched. This intentionally waits instead of navigating away
+    /// and back, which previously hid the invalidated timer bug.
+    @MainActor
+    func testActiveSupplyRunDurationAdvancesWithoutLeavingClockPage() throws {
+        app.launchArguments.append("-UITestingActiveSupplyRunNearMinute")
+        app.launch()
+        allowLocationIfPrompted()
+
+        XCTAssertTrue(waitForClockPage())
+        // SwiftUI exports the combined card identifier on a container whose
+        // XCUI element type varies by OS/runtime; keep this stable-identifier
+        // query type-agnostic and assert singularity below.
+        let cards = app.descendants(matching: .any).matching(identifier: "clock-active-supply-run-card")
+        let card = cards.firstMatch
+        for _ in 0..<6 where !card.exists {
+            app.swipeUp()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        }
+        XCTAssertTrue(card.waitForExistence(timeout: 10), "The deterministic active Supply Run should show one canonical card.")
+        XCTAssertEqual(cards.count, 1)
+        XCTAssertEqual(card.label, "Supply Run Active")
+
+        let initialValue = try XCTUnwrap(card.value as? String)
+        let initialMinutes = try XCTUnwrap(durationMinutes(in: initialValue))
+
+        XCTAssertTrue(
+            waitUntil(timeout: 70) {
+                guard let value = card.value as? String,
+                      let minutes = durationMinutes(in: value) else { return false }
+                return value != initialValue && minutes > initialMinutes
+            },
+            "The foreground card accessibility value must advance from its observed duration without leaving or re-entering the Clock page. Initial: \(initialValue). Last: \(String(describing: card.value))"
+        )
+    }
+
+    /// GitHub #1450 / #1456: AX5 must preserve the active Supply Run state,
+    /// complete accessibility semantics, and 44pt primary controls.
+    @MainActor
+    func testActiveSupplyRunAX5LayoutAndAccessibilityState() throws {
+        app.launchArguments += [
+            "-UITestingActiveSupplyRunNearMinute",
+            "-UIPreferredContentSizeCategoryName",
+            UIContentSizeCategory.accessibilityExtraExtraExtraLarge.rawValue,
+        ]
+        app.launch()
+        allowLocationIfPrompted()
+
+        XCTAssertTrue(waitForClockPage())
+        let cards = app.descendants(matching: .any).matching(identifier: "clock-active-supply-run-card")
+        let card = cards.firstMatch
+        for _ in 0..<8 where !card.exists {
+            app.swipeUp()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        }
+
+        XCTAssertTrue(card.waitForExistence(timeout: 10))
+        XCTAssertEqual(cards.count, 1)
+        XCTAssertEqual(card.label, "Supply Run Active")
+        let activeCardIsVisible = scrollIntoVisibleBounds(card)
+        XCTAssertTrue(activeCardIsVisible, "The active Supply Run card must be fully scrollable into the AX5 viewport")
+        XCTAssertGreaterThanOrEqual(
+            card.frame.minY,
+            clockChromeTopInset(),
+            "The active Supply Run card must render below the persistent Clock section menu, not merely inside the application bounds"
+        )
+        let value = try XCTUnwrap(card.value as? String)
+        XCTAssertTrue(value.contains("Started "))
+        XCTAssertNotNil(durationMinutes(in: value))
+        XCTAssertTrue(value.contains("Billable while active"))
+        XCTAssertFalse(app.staticTexts["Location Required"].exists)
+        XCTAssertFalse(app.staticTexts["Location Access Denied"].exists)
+
+        let activeCardAttachment = XCTAttachment(screenshot: app.screenshot())
+        activeCardAttachment.name = "Supply Run AX5 — Active Card"
+        activeCardAttachment.lifetime = .keepAlways
+        add(activeCardAttachment)
+
+        for identifier in ["clockPage_clockOut", "clockPage_switchJob", "clockPage_statePicker"] {
+            // SwiftUI can export an accessibility identifier on an outer Other
+            // instead of its nested Button. Query the stable identifier across
+            // element types so this remains a user-like interaction check.
+            let control = app.descendants(matching: .any)[identifier]
+            let isInVisibleBounds = scrollIntoVisibleBounds(control)
+            XCTAssertTrue(isInVisibleBounds, "\(identifier) must be fully scrollable into the AX5 viewport")
+            XCTAssertTrue(control.exists, "\(identifier) should remain reachable at AX5")
+
+            let controlAttachment = XCTAttachment(screenshot: app.screenshot())
+            controlAttachment.name = "Supply Run AX5 — \(identifier)"
+            controlAttachment.lifetime = .keepAlways
+            add(controlAttachment)
+
+            XCTAssertTrue(control.isHittable, "\(identifier) should be hittable at AX5")
+            XCTAssertGreaterThanOrEqual(control.frame.width, 44, "\(identifier) width")
+            XCTAssertGreaterThanOrEqual(control.frame.height, 44, "\(identifier) height")
+            XCTAssertLessThanOrEqual(
+                control.frame.maxY,
+                app.frame.maxY - 140,
+                "\(identifier) must scroll fully above persistent bottom navigation"
+            )
+        }
+
+        let statePicker = app.descendants(matching: .any)["clockPage_statePicker"]
+        XCTAssertEqual(statePicker.label, "Open break, lunch, and end supply run options")
+        XCTAssertEqual(statePicker.value as? String, "Supply run active")
+
+        let statePickerAttachment = XCTAttachment(screenshot: app.screenshot())
+        statePickerAttachment.name = "Supply Run AX5 — State Picker"
+        statePickerAttachment.lifetime = .keepAlways
+        add(statePickerAttachment)
+
+        // Today's Hours must use the same scroll region as the active Supply
+        // Run state. The persistent tab bar occupies the final ~100pt of the
+        // phone viewport, so verify the complete summary can move above it
+        // rather than merely existing behind the bottom chrome.
+        let todayTotal = app.descendants(matching: .any)["clockPage_todayTotal"]
+        XCTAssertTrue(
+            scrollIntoVisibleBounds(todayTotal),
+            "Today's Hours total must scroll fully into the AX5 viewport"
+        )
+        XCTAssertTrue(todayTotal.exists, "Today's Hours total must remain present in the AX5 active Supply Run flow")
+        XCTAssertLessThanOrEqual(
+            todayTotal.frame.maxY,
+            app.frame.maxY - 140,
+            "Today's Hours total must scroll fully above persistent bottom navigation"
+        )
+
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Supply Run AX5 — Today's Hours"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        if app.frame.width < 500 {
+            let subTabMenu = app.descendants(matching: .any)["dashboardSubtabMenu"]
+            XCTAssertTrue(
+                subTabMenu.exists && subTabMenu.isHittable,
+                "The compact-phone AX5 Dashboard section menu must be reachable"
+            )
+            XCTAssertGreaterThanOrEqual(subTabMenu.frame.width, 44)
+            XCTAssertGreaterThanOrEqual(subTabMenu.frame.height, 44)
+            XCTAssertEqual(subTabMenu.label, "Dashboard section")
+            XCTAssertEqual(subTabMenu.value as? String, "Clock")
+
+            subTabMenu.tap()
+            let dailyReport = app.descendants(matching: .any)["subtab_dashboard-report"]
+            XCTAssertTrue(
+                dailyReport.waitForExistence(timeout: 5),
+                "The AX5 Dashboard menu must expose the complete Daily Report destination"
+            )
+            XCTAssertEqual(dailyReport.label, "Daily Report")
+
+            let dailyReportAttachment = XCTAttachment(screenshot: app.screenshot())
+            dailyReportAttachment.name = "Supply Run AX5 — Daily Report Sub-tab"
+            dailyReportAttachment.lifetime = .keepAlways
+            add(dailyReportAttachment)
+        }
+    }
+
     private func waitForClockPage(timeout: TimeInterval = 25) -> Bool {
         waitUntil(timeout: timeout) {
             app.navigationBars["Clock In / Out"].exists
@@ -174,6 +333,76 @@ final class WEI3900ClockFlowQATests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.2))
         } while Date() < deadline
         return false
+    }
+
+    private func scrollIntoVisibleBounds(
+        _ element: XCUIElement,
+        topInset: CGFloat? = nil,
+        bottomInset: CGFloat = 140,
+        maxSwipes: Int = 12
+    ) -> Bool {
+        let effectiveTopInset = max(topInset ?? 180, clockChromeTopInset())
+        // Return to the List's leading edge before looking for another virtualized
+        // row. Otherwise a prior assertion can leave the next control outside
+        // the accessibility tree at AX5 even though it is reachable by scrolling.
+        for _ in 0..<3 {
+            swipeClockList(up: false)
+        }
+
+        for _ in 0..<maxSwipes {
+            if element.exists {
+                let frame = element.frame
+                if frame.minY >= app.frame.minY + effectiveTopInset,
+                   frame.maxY <= app.frame.maxY - bottomInset {
+                    return true
+                }
+
+                if frame.minY < app.frame.minY + effectiveTopInset {
+                    swipeClockList(up: false)
+                } else {
+                    swipeClockList(up: true)
+                }
+            } else {
+                swipeClockList(up: true)
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        }
+
+        return element.exists
+            && element.frame.minY >= app.frame.minY + effectiveTopInset
+            && element.frame.maxY <= app.frame.maxY - bottomInset
+    }
+
+    private func clockChromeTopInset() -> CGFloat {
+        let baseline: CGFloat = 180
+        guard app.frame.width < 500 else { return baseline }
+
+        let sectionMenu = app.descendants(matching: .any)["dashboardSubtabMenu"]
+        guard sectionMenu.exists else { return baseline }
+        // Keep an 8pt painted gap beneath the opaque Clock selector. XCTest's
+        // application bounds alone are insufficient because the selector is
+        // an ancestor's persistent visual chrome, not a system safe area.
+        return max(baseline, sectionMenu.frame.maxY + 8)
+    }
+
+    private func swipeClockList(up: Bool) {
+        // A full application swipe jumps between positions above and below the
+        // AX5 safe viewport. Use a short vertical drag inside the Clock List to
+        // settle a control fully between the sub-tab strip and tab bar.
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: up ? 0.65 : 0.50))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: up ? 0.50 : 0.65))
+        start.press(forDuration: 0.01, thenDragTo: end)
+    }
+
+    private func durationMinutes(in accessibilityValue: String) -> Int? {
+        let expression = try? NSRegularExpression(pattern: #"Duration (\d+)h (\d+)m"#)
+        let range = NSRange(accessibilityValue.startIndex..., in: accessibilityValue)
+        guard let match = expression?.firstMatch(in: accessibilityValue, range: range),
+              let hoursRange = Range(match.range(at: 1), in: accessibilityValue),
+              let minutesRange = Range(match.range(at: 2), in: accessibilityValue),
+              let hours = Int(accessibilityValue[hoursRange]),
+              let minutes = Int(accessibilityValue[minutesRange]) else { return nil }
+        return hours * 60 + minutes
     }
 
     private func makeVisibleAndTap(_ element: XCUIElement) {
