@@ -274,7 +274,7 @@ struct DashboardServiceTests {
                 INSERT INTO break_records
                     (user_id, break_type, started_at, ended_at, duration_minutes, is_paid, auto_filled)
                 VALUES
-                    (?, 'break', datetime('now','-20 minutes'), NULL, NULL, 1, 0)
+                    (?, 'break', datetime('now','localtime','-20 minutes','utc'), NULL, NULL, 1, 0)
                 """, arguments: [env.adminUserId])
         }
 
