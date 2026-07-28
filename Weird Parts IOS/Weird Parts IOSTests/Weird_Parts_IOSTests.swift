@@ -80,6 +80,10 @@ private enum ShortTermPipelineCallbackActionTestError: Error {
     case operationFailed
 }
 
+private enum ManualBackupLedgerReloadTestError: Error {
+    case unavailable
+}
+
 struct Weird_Parts_IOSTests {
 
     private func makeJobListItem(id: Int64, name: String, status: String) -> JobsService.JobListItem {
@@ -1101,26 +1105,29 @@ struct Weird_Parts_IOSTests {
         #expect(!FileManager.default.fileExists(atPath: backupURL.path + "-shm"))
     }
 
-    @Test func manualBackupSidecarCopiesAreNotSwallowedBeforeSuccessState() throws {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let backupsPageURL = repoRoot
-            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSBackupsPage.swift")
-        let source = try String(contentsOf: backupsPageURL, encoding: .utf8)
+    @Test func manualBackupReloadFailureWithholdsCompletionAccessibilityValueAndSurfacesError() throws {
+        let tempRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("IOSManualBackupReloadFailureTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
 
-        #expect(!source.contains("try? FileManager.default.copyItem"), "Manual backup WAL/SHM copy failures must not be swallowed")
-        #expect(!source.contains("try? FileManager.default.removeItem"), "Failed manual backups must not swallow cleanup failures")
-        #expect(source.contains("try IOSBackupFileCopier.copySQLiteSnapshot"), "Manual backup creation should use the throwing SQLite snapshot copier")
-        #expect(source.contains("try IOSBackupFileCopier.pruneBackups"), "Successful manual backup creation should enforce the rolling retention limit")
-        #expect(source.contains("createdURLs.reversed()"), "Partial backup cleanup should remove sidecars before the main database")
-        #expect(source.contains("try IOSBackupFileCopier.removeSQLiteSnapshot(at: destURL)"), "A backup copied before retention failure should be rolled back instead of being left on disk")
-        let snapshotCall = try #require(source.range(of: "try IOSBackupFileCopier.copySQLiteSnapshot"))
-        let pruneCall = try #require(source.range(of: "try IOSBackupFileCopier.pruneBackups"))
-        let successState = try #require(source.range(of: "backupSuccess = true"))
-        #expect(snapshotCall.lowerBound < pruneCall.lowerBound, "Retention should run after the full SQLite snapshot is copied")
-        #expect(pruneCall.lowerBound < successState.lowerBound, "Success state must only be set after retention succeeds")
+        let sourceURL = tempRoot.appendingPathComponent("wiredpart-live.sqlite")
+        let destinationURL = tempRoot.appendingPathComponent("wiredpart-backup-2026-07-24-120000.sqlite")
+        try Data("database".utf8).write(to: sourceURL)
+        var reloadAttemptedAfterSnapshot = false
+
+        let outcome = IOSManualBackupOperation.createSnapshot(
+            from: sourceURL,
+            to: destinationURL,
+            in: tempRoot
+        ) {
+            reloadAttemptedAfterSnapshot = FileManager.default.fileExists(atPath: destinationURL.path)
+            throw ManualBackupLedgerReloadTestError.unavailable
+        }
+
+        #expect(reloadAttemptedAfterSnapshot, "Ledger reload should run only after the snapshot and retention work complete")
+        #expect(outcome.completionAccessibilityValue == nil, "A failed ledger reload must withhold the Backup created accessibility value")
+        #expect(outcome.failure is ManualBackupLedgerReloadTestError, "The ledger reload failure must remain available for the visible backup error state")
     }
 
     @Test func fullDatabaseExportCheckpointsAndIncludesWALChanges() throws {
