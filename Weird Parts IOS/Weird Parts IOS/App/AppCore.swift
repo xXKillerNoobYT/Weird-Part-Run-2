@@ -1011,6 +1011,21 @@ final class AppCore: ObservableObject {
                     )
                 }
 
+                // The interactive Clock In → Start Supply Run → End Supply Run
+                // UI test runs without a simulated GPS fix. Keep the production
+                // default (GPS required) intact and make only this deterministic
+                // test fixture use the company setting's documented opt-out.
+                if ProcessInfo.processInfo.arguments.contains("-UITestingClockInSupplyRunE2E") {
+                    try dbConn.execute(
+                        sql: """
+                            INSERT INTO settings (key, value, category, updated_at)
+                            VALUES ('clock_location_required', 'false', 'company', datetime('now'))
+                            ON CONFLICT(key) DO UPDATE SET
+                                value = 'false', category = 'company', updated_at = datetime('now')
+                            """
+                    )
+                }
+
                 try dbConn.execute(
                     sql: """
                         INSERT OR IGNORE INTO job_parts_orders
