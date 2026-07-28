@@ -151,7 +151,8 @@ extension AppDatabase {
         registerMigration110InspectionTemplateRequiredFlag(&migrator)
         registerMigration111ChatAttachmentStorageRelative(&migrator)
         registerMigration113AIConversationOwners(&migrator)
-        registerMigration114SyncReplayGuard(&migrator)
+        registerMigration114AIConversationRecency(&migrator)
+        registerMigration115SyncReplayGuard(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6102,10 +6103,50 @@ private func registerMigration113AIConversationOwners(_ migrator: inout Database
     }
 }
 
-// MARK: - Migration 114: Durable sync replay guard
+// MARK: - Migration 114: Deterministic AI conversation recency
 
-private func registerMigration114SyncReplayGuard(_ migrator: inout DatabaseMigrator) {
-    migrator.registerMigration("114_sync_replay_guard") { db in
+/// Persists insertion order independently from second-resolution timestamps. Legacy rows
+/// inherit their current SQLite insertion order; new values are assigned by the serialized
+/// database writer when messages are saved. The nullable default preserves rollback writers
+/// that do not know about this column, while readers use rowid for NULL/zero compatibility.
+private func registerMigration114AIConversationRecency(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("114_ai_conversation_recency") { db in
+        try addColumnIfMissing(
+            db,
+            table: "ai_conversation_messages",
+            column: "recency_order",
+            type: .integer
+        )
+        try db.execute(
+            sql: """
+                UPDATE ai_conversation_messages
+                SET recency_order = rowid
+                """
+        )
+        try db.create(
+            index: "idx_ai_conv_msgs_owner_recency",
+            on: "ai_conversation_messages",
+            columns: ["owner_user_id", "created_at", "recency_order"],
+            ifNotExists: true
+        )
+        // Recreate this as a partial unique index so databases where an experimental
+        // version of the column defaulted to zero remain compatible with old writers.
+        // Current writers always persist a positive monotonic value.
+        try db.execute(sql: "DROP INDEX IF EXISTS idx_ai_conv_msgs_recency_order")
+        try db.execute(
+            sql: """
+                CREATE UNIQUE INDEX idx_ai_conv_msgs_recency_order
+                ON ai_conversation_messages (recency_order)
+                WHERE recency_order IS NOT NULL AND recency_order <> 0
+                """
+        )
+    }
+}
+
+// MARK: - Migration 115: Durable sync replay guard
+
+private func registerMigration115SyncReplayGuard(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("115_sync_replay_guard") { db in
         try db.create(table: "_sync_replay_guard", ifNotExists: true) { t in
             t.column("request_id", .text).notNull()
             t.column("device_id", .text).notNull()

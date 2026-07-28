@@ -127,7 +127,18 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         if ProcessInfo.processInfo.environment["WEI_1185_LANDSCAPE"] == "1" {
             XCUIDevice.shared.orientation = .landscapeLeft
         }
+        if shouldDeferLaunchToTestBody {
+            return
+        }
         app.launch()
+    }
+
+    private var shouldDeferLaunchToTestBody: Bool {
+        [
+            "WEI3144JobMaterialsWalkthroughEvidence",
+            "WEI3295Stage8ReportsViewportHarness",
+            "WEI3988BackupRestoreSmokeEvidence",
+        ].contains { name.contains($0) }
     }
 
     private var shouldOpenPartsCategoriesOnLaunch: Bool {
