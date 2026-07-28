@@ -1,29 +1,15 @@
 import Foundation
-#if canImport(Darwin)
-import Darwin
-#elseif canImport(Glibc)
-import Glibc
-#endif
 import Testing
 import GRDB
 @testable import WiredPartCore
 
 @Suite("ReportsService Tests", .serialized)
 struct ReportsServiceTests {
-    private func withDenverTimeZone(_ work: () throws -> Void) throws {
-        let originalTZ = getenv("TZ").map { String(cString: $0) }
-        setenv("TZ", "America/Denver", 1)
-        tzset()
-        defer {
-            if let originalTZ {
-                setenv("TZ", originalTZ, 1)
-            } else {
-                unsetenv("TZ")
-            }
-            tzset()
-        }
-        try work()
-    }
+    private static let denverCalendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Denver") ?? .gmt
+        return calendar
+    }()
 
     // MARK: - Timesheet
 
@@ -53,8 +39,8 @@ struct ReportsServiceTests {
         let env = try E2ETestHelpers.setUp()
         let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-ACTIVE-BREAK", name: "Active Break Summary Job")
         let breakService = BreakService(db: env.db)
-        let clockIn = try Date("2026-03-05T08:00:00Z", strategy: .iso8601)
-        let clockOut = try Date("2026-03-05T17:00:00Z", strategy: .iso8601)
+        let clockIn = try Date("2026-03-05T12:00:00Z", strategy: .iso8601)
+        let clockOut = try Date("2026-03-05T21:00:00Z", strategy: .iso8601)
         let laborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId, at: clockIn)
 
         let breakRecord = try breakService.startBreak(
@@ -65,8 +51,8 @@ struct ReportsServiceTests {
         try env.db.writer.write { db in
             try db.execute(sql: """
                 UPDATE break_records
-                SET started_at = '2026-03-05T12:00:00Z',
-                    ended_at = '2026-03-05T12:30:00Z',
+                SET started_at = '2026-03-05T16:00:00Z',
+                    ended_at = '2026-03-05T16:30:00Z',
                     duration_minutes = 30
                 WHERE id = ?
                 """, arguments: [breakRecord.id])
@@ -88,13 +74,13 @@ struct ReportsServiceTests {
             try db.execute(sql: """
                 INSERT INTO labor_entries
                     (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
-                VALUES (?, ?, '2026-03-05T08:00:00Z', '2026-03-05T16:00:00Z', 7.5, 0.0, 'completed', datetime('now'))
+                VALUES (?, ?, '2026-03-05T12:00:00Z', '2026-03-05T20:00:00Z', 7.5, 0.0, 'completed', datetime('now'))
                 """, arguments: [env.adminUserId, jobId])
             let entryId = db.lastInsertedRowID
             try db.execute(sql: """
                 INSERT INTO break_records
                     (user_id, labor_entry_id, break_type, started_at, ended_at, duration_minutes, is_paid, auto_filled)
-                VALUES (?, ?, 'break', '2026-03-05T12:00:00Z', '2026-03-05T12:30:00Z', 30, 0, 0)
+                VALUES (?, ?, 'break', '2026-03-05T16:00:00Z', '2026-03-05T16:30:00Z', 30, 0, 0)
                 """, arguments: [env.adminUserId, entryId])
             return entryId
         }
@@ -113,23 +99,41 @@ struct ReportsServiceTests {
 
     @Test("Timesheet data buckets UTC evening clock-in into local work day")
     func testTimesheetUsesLocalOperationalDayForUtcClockIn() throws {
-        try withDenverTimeZone {
-            let env = try E2ETestHelpers.setUp()
-            let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-LOCAL-TS", name: "Local Timesheet Job")
-            try env.db.writer.write { db in
-                try db.execute(sql: """
-                    INSERT INTO labor_entries
-                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
-                    VALUES (?, ?, '2026-03-06 03:30:00', '2026-03-06 04:30:00', 1.0, 0.0, 'completed', datetime('now'))
-                    """, arguments: [env.adminUserId, jobId])
-            }
-
-            let localDayRows = try env.reports.getTimesheetData(startDate: "2026-03-05", endDate: "2026-03-05")
-
-            #expect(localDayRows.count == 1)
-            #expect(localDayRows.first?.daysWorked == 1)
-            #expect(abs((localDayRows.first?.totalHours ?? 0) - 1.0) < 0.01)
+        let env = try E2ETestHelpers.setUp()
+        let reports = ReportsService(db: env.db, calendar: Self.denverCalendar)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-LOCAL-TS", name: "Local Timesheet Job")
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, '2026-03-06 03:30:00', '2026-03-06 04:30:00', 1.0, 0.0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, jobId])
         }
+
+        let localDayRows = try reports.getTimesheetData(startDate: "2026-03-05", endDate: "2026-03-05")
+
+        #expect(localDayRows.count == 1)
+        #expect(localDayRows.first?.daysWorked == 1)
+        #expect(abs((localDayRows.first?.totalHours ?? 0) - 1.0) < 0.01)
+    }
+
+    @Test("Report exact-day and range paths reject malformed dates instead of querying normalized days")
+    func testReportsRejectMalformedOperationalDayInputs() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BAD-RANGE", name: "Malformed Range Job")
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, '2026-03-02 12:00:00', '2026-03-02 20:00:00', 8.0, 0.0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, jobId])
+        }
+
+        let exactDayRows = try env.reports.getDailyReportSummary(date: "2026-02-30")
+        let rangeRows = try env.reports.getTimesheetData(startDate: "2026-02-28", endDate: "2026-02-30")
+
+        #expect(exactDayRows.isEmpty)
+        #expect(rangeRows.isEmpty)
     }
 
     @Test("Timesheet correction persists audit row and updates labor entry")
@@ -236,7 +240,6 @@ struct ReportsServiceTests {
 
     @Test("Timesheet correction allocates weekly overtime from current settings instead of request buckets")
     func testTimesheetCorrectionUsesOvertimeSettingsForAdjustedHours() throws {
-        try withDenverTimeZone {
             let env = try E2ETestHelpers.setUp()
             let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-CORR-OT", name: "Correction Overtime Job")
             _ = try env.jobs.updateOvertimeSettings(
@@ -279,7 +282,6 @@ struct ReportsServiceTests {
             }
             #expect(updated?["regular_hours"] as Double? == 2.0)
             #expect(updated?["overtime_hours"] as Double? == 2.0)
-        }
     }
 
     @Test("Timesheet correction history loads by reviewed work period")
@@ -290,7 +292,7 @@ struct ReportsServiceTests {
             try db.execute(sql: """
                 INSERT INTO labor_entries
                     (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
-                VALUES (?, ?, '2026-04-10T08:00:00Z', '2026-04-10T12:00:00Z', 4.0, 0.0, 'completed', datetime('now'))
+                VALUES (?, ?, '2026-04-10T12:00:00Z', '2026-04-10T16:00:00Z', 4.0, 0.0, 'completed', datetime('now'))
                 """, arguments: [env.adminUserId, jobId])
             return db.lastInsertedRowID
         }
@@ -298,8 +300,8 @@ struct ReportsServiceTests {
         _ = try env.reports.saveTimesheetCorrection(
             ReportsService.TimesheetCorrectionRequest(
                 laborEntryId: laborEntryId,
-                adjustedClockIn: "2026-04-10T08:00:00Z",
-                adjustedClockOut: "2026-04-10T13:00:00Z",
+                adjustedClockIn: "2026-04-10T12:00:00Z",
+                adjustedClockOut: "2026-04-10T17:00:00Z",
                 clientPreviewRegularHours: 5.0,
                 clientPreviewOvertimeHours: 0.0,
                 reason: "Verified against supervisor note.",
@@ -322,7 +324,6 @@ struct ReportsServiceTests {
 
     @Test("Timesheet correction history survives entry moving into reviewed period")
     func testTimesheetCorrectionHistorySurvivesMoveIntoReviewedPeriod() throws {
-        try withDenverTimeZone {
             let env = try E2ETestHelpers.setUp()
             let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-HIST-MOVE", name: "History Move Job")
             // Entry originally worked on 2026-04-09 (15:00Z-19:00Z = 09:00-13:00 Denver).
@@ -376,7 +377,6 @@ struct ReportsServiceTests {
                 endDate: "2026-04-11"
             )
             #expect(!unrelatedHistory.contains { $0.segmentId == laborEntryId })
-        }
     }
 
     // MARK: - Daily Report Summary
@@ -390,8 +390,8 @@ struct ReportsServiceTests {
 
     @Test("Daily report summary buckets UTC evening clock-in into local work day")
     func testDailyReportSummaryUsesLocalOperationalDayForUtcClockIn() throws {
-        try withDenverTimeZone {
             let env = try E2ETestHelpers.setUp()
+            let reports = ReportsService(db: env.db, calendar: Self.denverCalendar)
             let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-LOCAL-DR", name: "Local Daily Report Job")
             try env.db.writer.write { db in
                 try db.execute(sql: """
@@ -401,13 +401,12 @@ struct ReportsServiceTests {
                     """, arguments: [env.adminUserId, jobId])
             }
 
-            let rows = try env.reports.getDailyReportSummary(date: "2026-03-05")
+            let rows = try reports.getDailyReportSummary(date: "2026-03-05")
             let row = rows.first(where: { $0.id == jobId })
 
             #expect(row != nil)
             #expect(row?.workerCount == 1)
             #expect(abs((row?.totalHours ?? 0) - 1.5) < 0.01)
-        }
     }
 
     // MARK: - Spending
@@ -925,7 +924,7 @@ struct ReportsServiceTests {
             try db.execute(sql: """
                 INSERT INTO labor_entries
                 (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
-                VALUES (?, ?, '2026-02-01 07:00:00', '2026-02-01 11:00:00', 4.0, 0.0, 'completed', datetime('now'))
+                VALUES (?, ?, '2026-02-01 12:00:00', '2026-02-01 16:00:00', 4.0, 0.0, 'completed', datetime('now'))
                 """, arguments: [env.adminUserId, jobId])
         }
         let rows = try env.reports.getPreBillingData(startDate: "2026-02-01", endDate: "2026-02-01")
@@ -947,7 +946,7 @@ struct ReportsServiceTests {
             try db.execute(sql: """
                 INSERT INTO labor_entries
                 (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
-                VALUES (?, ?, '2026-06-01 07:00:00', '2026-06-01 17:00:00', 8.0, 2.0, 'completed', datetime('now'))
+                VALUES (?, ?, '2026-06-01 12:00:00', '2026-06-01 22:00:00', 8.0, 2.0, 'completed', datetime('now'))
                 """, arguments: [env.adminUserId, jobId])
             try db.execute(sql: """
                 INSERT INTO job_parts
@@ -1048,8 +1047,8 @@ struct ReportsServiceTests {
                 INSERT INTO labor_entries
                 (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
                 VALUES
-                    (?, ?, '2026-06-04 07:00:00', '2026-06-04 11:00:00', 4.0, 0.0, 'completed', datetime('now')),
-                    (?, ?, '2026-06-04 12:00:00', '2026-06-04 16:00:00', 4.0, 0.0, 'completed', datetime('now'))
+                    (?, ?, '2026-06-04 12:00:00', '2026-06-04 16:00:00', 4.0, 0.0, 'completed', datetime('now')),
+                    (?, ?, '2026-06-04 17:00:00', '2026-06-04 21:00:00', 4.0, 0.0, 'completed', datetime('now'))
                 """, arguments: [env.adminUserId, firstJobId, env.adminUserId, secondJobId])
             try db.execute(sql: """
                 INSERT INTO stock_movements
@@ -1156,7 +1155,7 @@ struct ReportsServiceTests {
             try db.execute(sql: """
                 INSERT INTO labor_entries
                 (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
-                VALUES (?, ?, '2026-06-02 07:00:00', '2026-06-02 18:00:00', 8.0, 2.0, 'completed', datetime('now'))
+                VALUES (?, ?, '2026-06-02 12:00:00', '2026-06-02 23:00:00', 8.0, 2.0, 'completed', datetime('now'))
                 """, arguments: [env.adminUserId, jobId])
         }
 
@@ -1184,8 +1183,8 @@ struct ReportsServiceTests {
                 INSERT INTO labor_entries
                 (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
                 VALUES
-                    (?, ?, '2026-06-02 07:00:00', '2026-06-02 18:00:00', 8.0, 2.0, 'completed', datetime('now')),
-                    (?, ?, '2026-06-02 08:00:00', '2026-06-02 12:00:00', 4.0, 1.0, 'completed', datetime('now'))
+                    (?, ?, '2026-06-02 12:00:00', '2026-06-02 23:00:00', 8.0, 2.0, 'completed', datetime('now')),
+                    (?, ?, '2026-06-02 13:00:00', '2026-06-02 17:00:00', 4.0, 1.0, 'completed', datetime('now'))
                 """, arguments: [env.adminUserId, jobId, userId, jobId])
             return userId
         }
@@ -1321,7 +1320,7 @@ struct ReportsServiceTests {
             try db.execute(sql: """
                 INSERT INTO labor_entries
                 (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
-                VALUES (?, ?, '2026-03-05 07:00:00', '2026-03-05 15:00:00', 8.0, 0.0, 'completed', datetime('now'))
+                VALUES (?, ?, '2026-03-05 12:00:00', '2026-03-05 20:00:00', 8.0, 0.0, 'completed', datetime('now'))
                 """, arguments: [env.adminUserId, jobId])
         }
         let rows = try env.reports.getDailyReportSummary(date: "2026-03-05")

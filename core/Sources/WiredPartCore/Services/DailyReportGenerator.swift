@@ -4,9 +4,15 @@ import GRDB
 /// Auto-populates daily reports from system data (clock events, to-dos, parts, Q&A).
 public final class DailyReportGenerator: Sendable {
     private let db: AppDatabase
+    private let operationalDay: OperationalDay
 
-    public init(db: AppDatabase) {
+    public init(
+        db: AppDatabase,
+        calendar: Calendar = .current,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
         self.db = db
+        self.operationalDay = OperationalDay(calendar: calendar, now: now)
     }
 
     // MARK: - Report Data Models
@@ -52,8 +58,11 @@ public final class DailyReportGenerator: Sendable {
     // MARK: - Generate Report
 
     /// Generate daily report data from system records for a user on a job.
-    public func generateReport(userId: Int64, jobId: Int64, date: Date = Date()) throws -> DailyReportData {
-        let dateStr = formatDate(date)
+    public func generateReport(userId: Int64, jobId: Int64, date: Date? = nil) throws -> DailyReportData {
+        let reportDate = date ?? operationalDay.now()
+        let day = operationalDay.interval(containing: reportDate)
+        let dateStr = day.localStartDate
+        let reportTimestamp = operationalDay.utcTimestamp(reportDate)
 
         do { return try db.writer.read { dbConn in
             let userName = try String.fetchOne(dbConn, sql: """
@@ -68,10 +77,12 @@ public final class DailyReportGenerator: Sendable {
             let clockRows = try Row.fetchAll(dbConn, sql: """
                 SELECT clock_in, clock_out, regular_hours, overtime_hours
                 FROM labor_entries
-                WHERE user_id = ? AND job_id = ? AND \(Self.localDateSQL("clock_in")) = ?
+                WHERE user_id = ? AND job_id = ? AND \(day.exactDayPredicate("clock_in"))
                   AND deleted_at IS NULL
                 ORDER BY clock_in ASC
-                """, arguments: [userId, jobId, dateStr])
+                """, arguments: [
+                    userId, jobId, day.localStartDate, day.utcStart, day.utcEnd
+                ])
 
             let clockIn = clockRows.first?["clock_in"] as String?
             let clockOut = clockRows.last?["clock_out"] as String?
@@ -82,7 +93,7 @@ public final class DailyReportGenerator: Sendable {
                 let cin: String = row["clock_in"] ?? ""
                 let cout: String? = row["clock_out"]
                 if let inDate = parseDateTime(cin) {
-                    let outDate = cout.flatMap { parseDateTime($0) } ?? date
+                    let outDate = cout.flatMap { parseDateTime($0) } ?? reportDate
                     totalMinutes += outDate.timeIntervalSince(inDate) / 60
                 }
             }
@@ -90,11 +101,15 @@ public final class DailyReportGenerator: Sendable {
             // Get break minutes from break_records table
             totalBreakMinutes = try Int.fetchOne(dbConn, sql: """
                 SELECT COALESCE(SUM(
-                    CAST((julianday(COALESCE(ended_at, datetime('now'))) - julianday(started_at)) * 1440 AS INTEGER)
+                    CAST((julianday(COALESCE(ended_at, ?)) - julianday(started_at)) * 1440 AS INTEGER)
                 ), 0)
                 FROM break_records
-                WHERE user_id = ? AND date(started_at) = ? AND deleted_at IS NULL
-                """, arguments: [userId, dateStr]) ?? 0
+                WHERE user_id = ?
+                  AND \(day.exactDayPredicate("started_at"))
+                  AND deleted_at IS NULL
+                """, arguments: [
+                    reportTimestamp, userId, dateStr, day.utcStart, day.utcEnd
+                ]) ?? 0
 
             let totalHours = max(0, (totalMinutes - Double(totalBreakMinutes))) / 60.0
 
@@ -194,23 +209,27 @@ public final class DailyReportGenerator: Sendable {
     }
 
     /// Get today's jobs for a user to determine primary job.
-    public func getTodaysJobs(userId: Int64, date: Date = Date()) throws -> [(jobId: Int64, jobName: String, hours: Double)] {
-        let dateStr = formatDate(date)
+    public func getTodaysJobs(userId: Int64, date: Date? = nil) throws -> [(jobId: Int64, jobName: String, hours: Double)] {
+        let reportDate = date ?? operationalDay.now()
+        let day = operationalDay.interval(containing: reportDate)
+        let reportTimestamp = operationalDay.utcTimestamp(reportDate)
         do {
             return try db.writer.read { dbConn in
                 let rows = try Row.fetchAll(dbConn, sql: """
                     SELECT le.job_id,
                            COALESCE(j.job_name, j.job_number, 'Unknown') as job_name,
                            SUM(
-                               (julianday(COALESCE(le.clock_out, datetime('now'))) - julianday(le.clock_in)) * 24
+                               (julianday(COALESCE(le.clock_out, ?)) - julianday(le.clock_in)) * 24
                            ) as total_hours
                     FROM labor_entries le
                     LEFT JOIN jobs j ON j.id = le.job_id AND j.deleted_at IS NULL
-                    WHERE le.user_id = ? AND \(Self.localDateSQL("le.clock_in")) = ?
+                    WHERE le.user_id = ? AND \(day.exactDayPredicate("le.clock_in"))
                       AND le.deleted_at IS NULL
                     GROUP BY le.job_id
                     ORDER BY total_hours DESC
-                    """, arguments: [userId, dateStr])
+                    """, arguments: [
+                        reportTimestamp, userId, day.localStartDate, day.utcStart, day.utcEnd
+                    ])
                 return rows.map { row in
                     (
                         jobId: row["job_id"] as Int64? ?? 0,
@@ -227,17 +246,7 @@ public final class DailyReportGenerator: Sendable {
 
     // MARK: - Helpers
 
-    private func formatDate(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        return f.string(from: date)
-    }
-
-    private func parseDateTime(_ str: String) -> Date? { CoreFormatters.parseDateTime(str) }
-
-    private static func localDateSQL(_ expression: String) -> String {
-        "CASE WHEN length(\(expression)) <= 10 THEN date(\(expression)) ELSE date(\(expression), 'localtime') END"
-    }
+    private func parseDateTime(_ str: String) -> Date? { CoreFormatters.parseDateTimeUTC(str) }
 
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)
