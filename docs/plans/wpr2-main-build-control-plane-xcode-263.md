@@ -1,12 +1,12 @@
 # WPR2 `main` Build Control Plane — Xcode 26.3 Implementation Plan
 
-> **Status:** Draft revision 1 — owner approval required before implementation children are created.
+> **Status:** Draft revision 2 — owner approval required before implementation children are created.
 >
 > **Owner:** CTO
 >
-> **Tracking:** Paperclip WEI-6390; GitHub [#1480](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/1480)
+> **Tracking:** Paperclip WEI-6390; active GitHub [#1480](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/1480)
 >
-> **Baseline inspected:** `origin/main` `2cbfd1deb` on 2026-07-28
+> **Baseline inspected:** current `origin/main` `15b2157b315730b3dd858f55eb3e1040df38beba` on 2026-07-28; `2cbfd1deb` is retained below as the historical gap-diagnosis snapshot.
 
 **Goal:** Make every post-merge `main` SHA independently buildable and testable under the owner-selected Xcode 26.3 contract, with separate fail-closed iPhone and iPad evidence before that SHA is eligible for beta testing.
 
@@ -27,7 +27,7 @@
 
 ## 2. Evidence-based gap diagnosis
 
-### Current state at `origin/main` `2cbfd1deb`
+### Historical gap diagnosis at `origin/main` `2cbfd1deb`
 
 - `.github/workflows/ios-beta-gate.yml` triggers only for `pull_request` to `main` and passes `github.event.pull_request.head.sha` to the iPhone/iPad matrix. It cannot prove the merge result.
 - Main's current check-run list contains maintenance/tracker/autofix checks only; it contains no `iOS Beta Gate (iPhone)` or `iOS Beta Gate (iPad)` record on `2cbfd1deb`.
@@ -35,7 +35,7 @@
 - The existing gate already supplies useful deterministic behavior: a fixed iOS 26.5 runtime, iPhone 16 Pro / iPad Air 13-inch M2 device types, a run-owned simulator and DerivedData directory, exact-SHA assertion, nonzero-test/zero-failure/zero-skip result validation, seven-day artifacts, and no archive/upload.
 - Current shared schemes are `WiredPart-iOS` (unit/regression scope) and `WiredPart-iOS-Stage9-Smokes` (the bounded `Stage9DeterministicUISmokes.xctestplan`). Both are defined in the tracked `Weird Parts.xcworkspace`; the workspace explicitly links the iOS project and local `core` package.
 
-**Conclusion:** the gap is missing post-merge control-plane coverage, not evidence of an app build failure. Adding a `push`-to-`main` workflow while leaving the PR gate intact is the smallest reversible correction.
+**Conclusion:** the historical gap is missing post-merge control-plane coverage, not evidence of an app build failure. The implementation baseline is the current SHA named above; adding a `push`-to-`main` workflow while leaving the PR gate intact is the smallest reversible correction.
 
 ## 3. Version-controlled configuration contract
 
@@ -72,7 +72,7 @@ The implementation must verify the exact Xcode 26.3 build during provisioning an
 
 Both PR and post-merge modes must consume the same descriptor and runner logic. The main workflow must use:
 
-- **Checkout:** `actions/checkout@v4` at `github.sha` for `push`; set `persist-credentials: false`, then assert `git rev-parse HEAD == EXPECTED_SHA` before invoking Xcode.
+- **Checkout and expected SHA:** for `push`, set `EXPECTED_SHA=github.sha`, use `actions/checkout@v4` at that immutable SHA with `persist-credentials: false`, then assert `git rev-parse HEAD == EXPECTED_SHA` before invoking Xcode. For recovery dispatch, use only the validated `inputs.commit_sha` contract in Section 5; do not use `github.sha` as the requested commit.
 - **Workspace and schemes:** `Weird Parts.xcworkspace`; `WiredPart-iOS` for all unit/regression tests with `-skip-testing:"Weird PartsUITests"`; `WiredPart-iOS-Stage9-Smokes` for the bounded Stage 9 UI smoke test plan. The script runs `xcodebuild -list` under the selected Xcode 26.3 and fails if either chosen scheme is unavailable.
 - **Destinations:** run-owned, unique iPhone 16 Pro and iPad Air 13-inch M2 simulators using the descriptor runtime. Boot with `simctl bootstatus -b`; no fallback to a smaller iPad or cached/shared simulator is allowed.
 - **Dependency resolution:** resolve only from the tracked workspace and local `core` package. Use a run-scoped derived-data path under `$RUNNER_TEMP`; do not mutate shared DerivedData, the repo checkout, Xcode project metadata, or SwiftPM state outside the run-scoped directory.
@@ -86,11 +86,11 @@ Both PR and post-merge modes must consume the same descriptor and runner logic. 
 
 `.github/workflows/ios-main-beta-gate.yml`:
 
-- `on: push: branches: [main]` only, with `workflow_dispatch` restricted to a supplied/validated main SHA for recovery; it must never silently test the workflow file's current default branch when a requested SHA differs.
+- `on: push: branches: [main]` plus an explicit `workflow_dispatch` input named `commit_sha` for recovery. Dispatch must reject an empty/non-40-hex input, fetch `origin/main`, and reject a SHA that is not reachable from `origin/main`. It must check out that validated SHA with `persist-credentials: false`, set `EXPECTED_SHA` to the resolved checkout SHA, and bind every lane, metadata file, check annotation, and eligibility record to that SHA. `github.sha` is the expected SHA only in `push` mode; it must never stand in for `inputs.commit_sha` during dispatch.
 - `permissions: contents: read` only; no `pull-requests`, `checks`, `statuses`, deployment, package, or repository-write permissions.
 - concurrency group includes the immutable SHA, so two independent matrix lanes run for the same commit while a newer `main` commit does not cancel its predecessor's evidence.
 - stable post-merge check names: `Main Beta Gate (iPhone)` and `Main Beta Gate (iPad)`. They are intentionally distinct from the required PR check names.
-- each lane checks out and asserts `github.sha`, invokes `verify-wpr2-xcode-toolchain.sh`, then calls the shared runner for its device class.
+- each lane resolves the expected SHA by trigger mode, checks out and asserts that SHA, invokes `verify-wpr2-xcode-toolchain.sh`, then calls the shared runner for its device class.
 
 ### Eligibility record
 
@@ -109,8 +109,8 @@ The runbook must classify from logs/artifacts rather than rerun blindly:
 
 | Class | Examples | Initial owner/action | Eligibility |
 |---|---|---|---|
-| Configuration/toolchain | no Xcode 26.3 bundle, version/build mismatch, missing scheme/runtime/device | FoundingEngineer repairs the descriptor/provisioning path; CTO retains gate control | false |
-| Runner infrastructure | offline runner, <60 GiB free, simulator service outage, artifact transport failure | FoundingEngineer/runner operator supplies a bounded repair; one same-SHA retry only | false until a complete rerun succeeds |
+| Configuration/toolchain | no Xcode 26.3 bundle, version/build mismatch, missing scheme/runtime/device | BackendCoder repairs the descriptor/provisioning path; CTO retains gate control | false |
+| Runner infrastructure | offline runner, <60 GiB free, simulator service outage, artifact transport failure | BackendCoder and the runner operator supply a bounded repair; one same-SHA retry only | false until a complete rerun succeeds |
 | Deterministic test/build | compile failure, test failure, zero tests, unexpected skip, bad xcresult | implementation owner creates/updates one bounded code/test repair linked to GitHub #1480 | false |
 | Control-plane integrity | wrong checkout SHA, malformed record, missing lane, workflow permission/upload violation | CTO owns a dedicated CI repair; do not downgrade the gate | false |
 
@@ -119,7 +119,7 @@ Required signals: queue delay, runner selection, Xcode version/build, free disk,
 ## 7. Ownership, change control, and secrets boundary
 
 - **CTO:** owns this plan, baseline contract, workflow governance, failure classification, and final disposition evidence. CTO does not approve its own implementation evidence.
-- **FoundingEngineer:** owns implementation/configuration/provisioning work on a short-lived main-based branch and cannot modify `main` directly.
+- **BackendCoder:** owns implementation/configuration/provisioning work on a short-lived main-based branch and cannot modify `main` directly.
 - **LocalFirstReviewer → GPTReviewer → ClaudeReviewer:** sequential non-author review of the exact implementation head; any material head change restarts the chain.
 - **SecurityAgent:** independent review of self-hosted-runner trust boundary, `DEVELOPER_DIR` behavior, workflow permissions, artifact privacy, shell injection, and confirmation that no archive/upload or secret flow was added.
 - **UIExpertVerifier:** independent exact-head verification that both device classes are the specified phone/tablet classes and execute nonzero, zero-skip tests. This is CI evidence, not a product UI sign-off.
@@ -146,11 +146,11 @@ The owner must delete the temporary branch/tag immediately after satisfying the 
 
 Do **not** create these implementation issues until the CEO accepts this draft revision through the Paperclip confirmation on WEI-6390. Each child must carry `parentId=WEI-6390`, the current goal, exact `blockedByIssueIds`, and bidirectional GitHub #1480 linkage.
 
-### A. Toolchain and post-merge gate implementation — FoundingEngineer
+### A. Toolchain and post-merge gate implementation — BackendCoder
 
 - **Repo/project:** `xXKillerNoobYT/Weird-Part-Run-2`; a new short-lived branch based on then-current `origin/main`.
 - **Exact scope:** Implement all paths in Section 3; preserve PR workflow behavior and required contexts; add only the smallest tests/self-tests required for the descriptor/parser/refactor.
-- **Acceptance criteria:** Xcode 26.3 is asserted before test work; 26.6 fails ineligible; `push` main workflow uses exact `github.sha`; iPhone/iPad run the shared deterministic contract; no archive/upload/secrets; invalid result states remain red; eligible/ineligible JSON validates by fixture tests.
+- **Acceptance criteria:** Xcode 26.3 is asserted before test work; 26.6 fails ineligible; `push` main workflow uses exact `github.sha`; recovery dispatch validates, checks out, and records only `inputs.commit_sha`; iPhone/iPad run the shared deterministic contract; no archive/upload/secrets; invalid result states remain red; eligible/ineligible JSON validates by fixture tests.
 - **Required evidence:** branch/PR URL linked to GitHub #1480 and WEI-6390; source-policy/self-test output; a trusted exact-head PR canary; post-merge canary evidence only after merge; sanitized artifact URLs and worktree cleanup note.
 - **Review lane:** LocalFirstReviewer → GPTReviewer → ClaudeReviewer; SecurityAgent in parallel after LocalFirst passes.
 - **Pass-up trigger:** all reviewers accept one immutable head and the PR is eligible for serialized merge disposition.
@@ -185,7 +185,7 @@ Only A is initially executable. Later children are first-class blocked dependenc
 - [ ] Project format remains at 2630/CreatedOnToolsVersion 26.3 after implementation and canary.
 - [ ] A runner with only Xcode 26.6 produces a red/ineligible preflight before simulator/build execution.
 - [ ] A provisioned Xcode 26.3 runner records the exact version/build and can list the workspace schemes.
-- [ ] `push` to `main` checks out/asserts `github.sha`, not a PR SHA or moving branch ref.
+- [ ] `push` to `main` checks out/asserts `github.sha`, not a PR SHA or moving branch ref; recovery dispatch validates a reachable `inputs.commit_sha`, checks out that exact SHA, and never substitutes `github.sha`.
 - [ ] Main iPhone and iPad checks are distinct, exact-SHA checks and both use run-owned simulators/DerivedData.
 - [ ] Each lane records nonzero tests with zero failures/skips and a readable xcresult.
 - [ ] A missing lane, bad metadata, wrong SHA, toolchain mismatch, skip, timeout, or failed upload/record is ineligible.
