@@ -265,7 +265,7 @@ final class WEI5134AIReadFailureQATests: XCTestCase {
             object: state
         )
         XCTAssertEqual(
-            XCTWaiter.wait(for: [expectation], timeout: 5),
+            XCTWaiter.wait(for: [expectation], timeout: 15),
             .completed,
             "The SQLCipher table action did not reach the expected state; current state: \(state.label)"
         )

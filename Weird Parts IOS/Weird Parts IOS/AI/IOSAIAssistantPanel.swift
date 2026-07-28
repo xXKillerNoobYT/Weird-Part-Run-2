@@ -480,12 +480,14 @@ struct IOSAIAssistantPanel: View {
             }
         }
         .listStyle(.plain)
+        .accessibilityIdentifier("resumeConversationList")
     }
 
     private var conversationList: some View {
         List {
             conversationRows
         }
+        .accessibilityIdentifier("resumeConversationList")
     }
 
     @ViewBuilder

@@ -166,33 +166,39 @@ final class WEI5159AIPrerequisiteRecoveryQATests: XCTestCase {
             "Resume conversation: WEI-5134 older saved transcript",
         ] {
             let row = app.buttons[label]
-            for _ in 0..<4 where !row.waitForExistence(timeout: 1) {
-                scrollResumeSheet(up: true)
+            for _ in 0..<4 where !row.waitForExistence(timeout: 1) || !row.isHittable {
+                guard scrollResumeSheet(up: true) else { break }
                 scrollCount += 1
             }
-            XCTAssertTrue(row.waitForExistence(timeout: 5), "Last-known row must remain reachable: \(label)")
+            XCTAssertTrue(row.waitForExistence(timeout: 5), "Last-known row must exist: \(label)")
+            XCTAssertTrue(row.isHittable, "Last-known row must be user-reachable: \(label)")
         }
+        // Restore only the movement this assertion made. Global application
+        // swipes can interact with the sheet itself after the List is gone.
         for _ in 0..<scrollCount {
-            scrollResumeSheet(up: false)
+            guard scrollResumeSheet(up: false) else { break }
         }
     }
 
     private func reachableButton(named label: String) -> XCUIElement {
         let button = app.buttons[label]
         for _ in 0..<4 where !button.waitForExistence(timeout: 1) || !button.isHittable {
-            scrollResumeSheet(up: false)
+            guard scrollResumeSheet(up: false) else { break }
         }
-        XCTAssertTrue(button.waitForExistence(timeout: 5), "Expected reachable button: \(label)")
+        XCTAssertTrue(button.waitForExistence(timeout: 5), "Expected button: \(label)")
+        XCTAssertTrue(button.isHittable, "Expected user-reachable button: \(label)")
         return button
     }
 
-    private func scrollResumeSheet(up: Bool) {
-        let list = app.collectionViews.firstMatch
-        if list.exists {
-            up ? list.swipeUp() : list.swipeDown()
-        } else {
-            up ? app.swipeUp() : app.swipeDown()
+    @discardableResult
+    private func scrollResumeSheet(up: Bool) -> Bool {
+        let list = app.collectionViews["resumeConversationList"]
+        guard list.waitForExistence(timeout: 1) else {
+            XCTFail("Resume conversation List disappeared before it could be scrolled.")
+            return false
         }
+        up ? list.swipeUp() : list.swipeDown()
+        return true
     }
 
     private func hittableButton(named label: String) -> XCUIElement {
