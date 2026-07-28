@@ -146,6 +146,21 @@ final class IOSSyncManager {
         syncReviewActionFailed(message)
     }
 
+    /// Publishes the fail-closed state for any LAN pairing failure after pairing starts.
+    /// The caller remains responsible for rethrowing the original error unchanged.
+    func surfaceShopPairingFailure(_ error: Error) {
+        syncStatus = .error
+        syncProgressMessage = nil
+        if error is SyncIdentityStoreError {
+            errorMessage = "Couldn't securely load this device's sync identity. Pairing stopped; try again."
+        } else if let syncError = error as? SyncError {
+            errorMessage = syncError.localizedDescription
+        } else {
+            errorMessage = "Pairing verification failed. Check the shop address and pairing code, then try again."
+        }
+        logger.error("[IOSSyncManager] Shop pairing failed: \(error.localizedDescription)")
+    }
+
     /// Trims a user-entered or persisted shop server address and rejects blank values.
     static func normalizedShopServerAddress(_ address: String?) -> String? {
         let trimmed = address?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -612,13 +627,21 @@ final class IOSSyncManager {
         let myDeviceId = DeviceIdentity.current
         let myDeviceName = Self.advertisedDeviceName
 
-        let response = try await pm.pairViaMultipeer(
-            hostDeviceId: hostDeviceId,
-            myDeviceId: myDeviceId,
-            myDeviceName: myDeviceName,
-            pairingCode: normalizedCode,
-            platform: "iOS"
-        )
+        let response: SyncPairResponse
+        let hostKey: String
+        do {
+            response = try await pm.pairViaMultipeer(
+                hostDeviceId: hostDeviceId,
+                myDeviceId: myDeviceId,
+                myDeviceName: myDeviceName,
+                pairingCode: normalizedCode,
+                platform: "iOS"
+            )
+            hostKey = try Self.validatedBluetoothHostKey(response.serverKeyAgreementPublicKey)
+        } catch {
+            surfaceBluetoothPairingFailure(error)
+            throw error
+        }
 
         syncProgressMessage = "Registering verified device…"
         syncProgressPercent = 0.3
@@ -627,7 +650,8 @@ final class IOSSyncManager {
             db: db,
             peerId: response.serverDeviceId,
             peerName: hostName.isEmpty ? "Paired Device" : hostName,
-            platform: "ios"
+            platform: "ios",
+            keyAgreementPublicKey: hostKey
         )
         if let service = settingsService {
             try service.upsertSettingsMap([
@@ -648,6 +672,23 @@ final class IOSSyncManager {
 
         syncProgressMessage = "Paired over Bluetooth."
         syncProgressPercent = 0.4
+    }
+
+    static func validatedBluetoothHostKey(_ encodedKey: String?) throws -> String {
+        guard let encodedKey,
+              Data(base64Encoded: encodedKey)?.count == 32 else {
+            throw SyncError.pairingVerificationFailed(
+                "The Bluetooth host did not provide a valid 32-byte X25519 public key."
+            )
+        }
+        return encodedKey
+    }
+
+    func surfaceBluetoothPairingFailure(_ error: Error) {
+        syncStatus = .error
+        syncProgressMessage = nil
+        syncProgressPercent = 0
+        errorMessage = error.localizedDescription
     }
 
     /// Enable or disable Bluetooth/Multipeer sync.
@@ -1005,28 +1046,45 @@ final class IOSSyncManager {
         let deviceId = DeviceIdentity.current
         let deviceName = Self.advertisedDeviceName
 
-        guard let db else {
+        guard let db, let pm = peerManager else {
             syncStatus = .error
             syncProgressMessage = nil
             errorMessage = SyncError.noDatabaseAvailable.localizedDescription
             throw SyncError.noDatabaseAvailable
         }
-
-        let pairResponse = try await verifyPairingCodeWithShop(
-            shopAddress: normalizedShopAddress,
-            pairingCode: normalizedPairingCode,
-            deviceId: deviceId,
-            deviceName: deviceName
-        )
+        let pairingIdentity: SyncDeviceIdentity
+        let pairResponse: SyncPairResponse
+        do {
+            pairingIdentity = try await pm.localSyncIdentity(deviceId: deviceId)
+            pairResponse = try await verifyPairingCodeWithShop(
+                shopAddress: normalizedShopAddress,
+                pairingCode: normalizedPairingCode,
+                deviceId: deviceId,
+                deviceName: deviceName,
+                pairingIdentity: pairingIdentity
+            )
+        } catch {
+            surfaceShopPairingFailure(error)
+            throw error
+        }
 
         syncProgressMessage = "Registering verified device..."
         syncProgressPercent = 0.2
 
+        guard let serverKey = pairResponse.serverKeyAgreementPublicKey,
+              Data(base64Encoded: serverKey)?.count == 32 else {
+            let error = SyncError.pairingVerificationFailed("The shop did not provide a trusted LAN key.")
+            syncStatus = .error
+            syncProgressMessage = nil
+            errorMessage = error.localizedDescription
+            throw error
+        }
         try ChangeTracker.registerPeerDevice(
             db: db,
             peerId: pairResponse.serverDeviceId,
             peerName: "Shop Computer",
-            platform: "shop"
+            platform: "shop",
+            keyAgreementPublicKey: serverKey
         )
 
         // Store verified pairing state only after the shop accepts the code and
@@ -1062,10 +1120,18 @@ final class IOSSyncManager {
         shopAddress: String,
         pairingCode: String,
         deviceId: String,
-        deviceName: String
+        deviceName: String,
+        pairingIdentity: SyncDeviceIdentity
     ) async throws -> SyncPairResponse {
         let baseURL = try normalizedShopBaseURL(shopAddress)
         let url = baseURL.appendingPathComponent("sync/pair")
+        let pairingPrivateKey = pairingIdentity.privateKeyB64
+        let pairingPublicKey = pairingIdentity.publicKeyB64
+        let pairingProof = SyncCrypto.pairingProof(
+            normalizedCode: pairingCode,
+            deviceId: deviceId,
+            clientPublicKeyB64: pairingPublicKey
+        )
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -1074,8 +1140,9 @@ final class IOSSyncManager {
         request.httpBody = try JSONEncoder().encode(SyncPairRequest(
             deviceId: deviceId,
             deviceName: deviceName,
-            pairingCode: pairingCode,
-            platform: "iOS"
+            pairingProof: pairingProof,
+            platform: "iOS",
+            keyAgreementPublicKey: pairingPublicKey
         ))
 
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -1092,7 +1159,31 @@ final class IOSSyncManager {
             throw SyncError.pairingVerificationFailed(errorMessage ?? "Pairing verification failed")
         }
 
-        let pairResponse = try JSONDecoder().decode(SyncPairResponse.self, from: data)
+        guard let wrappedResponse = try? JSONDecoder().decode(SyncPairEncryptedResponse.self, from: data),
+              let encryptedPayload = Data(base64Encoded: wrappedResponse.encryptedPayload) else {
+            throw SyncError.pairingVerificationFailed("Pairing response encryption was invalid.")
+        }
+        let sharedKey = try SyncCrypto.derivePairingSharedKeyData(
+            ourPrivateKeyB64: pairingPrivateKey,
+            theirPublicKeyB64: wrappedResponse.serverKeyAgreementPublicKey,
+            normalizedCode: pairingCode,
+            clientPublicKeyB64: pairingPublicKey,
+            serverPublicKeyB64: wrappedResponse.serverKeyAgreementPublicKey
+        )
+        let aad = Data(
+            [
+                "wiredpart-sync-pairing-response-aad-v1",
+                deviceId,
+                pairingPublicKey,
+                wrappedResponse.serverKeyAgreementPublicKey,
+            ].joined(separator: "\n").utf8
+        )
+        let plainResponse = try SyncCrypto.decryptAESGCM(
+            data: encryptedPayload,
+            keyData: sharedKey,
+            aad: aad
+        )
+        let pairResponse = try JSONDecoder().decode(SyncPairResponse.self, from: plainResponse)
         guard pairResponse.accepted else {
             throw SyncError.pairingVerificationFailed("Pairing was not accepted by the shop.")
         }
