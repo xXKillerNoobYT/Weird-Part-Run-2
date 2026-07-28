@@ -569,21 +569,19 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Database Size"].waitForExistence(timeout: 5), "Backup page should show database size")
         captureWEI3988("01-backups-before-create")
 
-        // The Settings craft kit collapses this row into one accessibility
-        // element. Query its stable identifier rather than its hidden visual
-        // child label so this smoke exercises the actual accessible action.
-        let createBackup = app.descendants(matching: .any)["settings-backups-create-backup-button"]
-        XCTAssertTrue(createBackup.waitForExistence(timeout: 10), "Create backup action should be available")
-        XCTAssertTrue(createBackup.isHittable, "Create backup action should be hittable")
+        let createBackup = app.descendants(matching: .any)["settings-backups-create-backup-button"].firstMatch
+        XCTAssertTrue(createBackup.waitForExistence(timeout: 10), "Create Backup Now action should be available")
+        XCTAssertEqual(createBackup.label, "Create backup now", "Backup action should expose its stable accessible name")
         createBackup.tap()
-        let createdBackup = app.descendants(matching: .any)
-            .matching(NSPredicate(
-                format: "identifier == %@ AND value == %@",
-                "settings-backups-create-backup-button",
-                "Backup created"
-            ))
-            .firstMatch
-        XCTAssertTrue(createdBackup.waitForExistence(timeout: 15), "Manual backup action should complete with an accessible success state")
+        let backupCreated = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "Backup created"),
+            object: createBackup
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [backupCreated], timeout: 15),
+            .completed,
+            "Manual backup action should complete with visible and accessible success state"
+        )
         XCTAssertTrue(app.staticTexts["Stored Backups"].waitForExistence(timeout: 5), "Backup count row should remain visible after backup creation")
         captureWEI3988("02-backups-created")
 
@@ -593,20 +591,8 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         captureWEI3988("03-restored-backups-status")
 
         relaunchForWEI3988RestoredTarget(["-UITestingWEI3988PartsCatalog"])
+        XCTAssertTrue(app.staticTexts["WEI-3295 Stage 8 Breaker"].waitForExistence(timeout: 20) || app.staticTexts["WEI-3144 Wire Nut"].waitForExistence(timeout: 20), "Restored parts catalog should show seeded sample parts")
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'part' AND label CONTAINS 'Page' ")).firstMatch.waitForExistence(timeout: 5), "Restored parts catalog should show a non-empty part count")
-        let restoredStage8Part = app.staticTexts["WEI-3295 Stage 8 Breaker"]
-        let restoredMaterialPart = app.staticTexts["WEI-3144 Wire Nut"]
-        if !restoredStage8Part.waitForExistence(timeout: 5), !restoredMaterialPart.exists {
-            // On phone-sized viewports the catalog's initial rows can fill the
-            // visible collection before either seeded proof row is realized.
-            // Scroll the catalog rather than treating a valid off-screen row as
-            // a failed backup restore; the iPad viewport happens to fit more rows.
-            for _ in 0..<4 where !restoredStage8Part.exists && !restoredMaterialPart.exists {
-                app.swipeUp()
-                _ = restoredStage8Part.waitForExistence(timeout: 2)
-            }
-        }
-        XCTAssertTrue(restoredStage8Part.exists || restoredMaterialPart.exists, "Restored parts catalog should show seeded sample parts")
         captureWEI3988("04-restored-parts-catalog")
 
         relaunchForWEI3988RestoredTarget(["-UITestingWEI3988Materials", "-UITestingWEI3144JobMaterials"])
