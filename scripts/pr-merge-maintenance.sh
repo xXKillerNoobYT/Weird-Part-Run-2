@@ -145,7 +145,10 @@ latest_current_head_lane_verdict() {
           end
       end
   ' <<<"$reviews_json" 2>/dev/null)"; then
-    echo "    skip: current-head $lane review evidence was malformed or incomplete — failing closed"
+    # This helper runs inside command substitution; write diagnostics to stderr so
+    # a missing lane remains visible to the merge-maintenance log while the caller
+    # can still capture only a PASS/REVISE verdict on stdout.
+    echo "    skip: current-head $lane review evidence was malformed or incomplete — failing closed" >&2
     return 1
   fi
 
