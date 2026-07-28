@@ -3,19 +3,63 @@ import tempfile
 import unittest
 from pathlib import Path
 
+PASSING_ICON_CONTENTS = (
+    '{\n  "images" : [\n    {\n      "filename" : "AppIcon.png",\n'
+    '      "idiom" : "universal",\n      "platform" : "ios",\n'
+    '      "size" : "1024x1024"\n    }\n  ]\n}\n'
+)
+
+PASSING_PBXPROJ = (
+    "MARKETING_VERSION = 1.0.0;\n"
+    'INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.business";\n'
+)
+
 
 class AppStoreReadinessScriptTests(unittest.TestCase):
-    def test_readiness_script_passes_with_required_files_and_version(self):
-        repo_root = Path(__file__).resolve().parents[1]
-        script = repo_root / "scripts" / "check-app-store-readiness.sh"
-
-        result = subprocess.run(
+    def _run_script(self, root):
+        script = root / "scripts" / "check-app-store-readiness.sh"
+        return subprocess.run(
             ["bash", str(script)],
-            cwd=repo_root,
+            cwd=root,
             text=True,
             capture_output=True,
             check=False,
         )
+
+    def _build_stub_tree(self, tmp_root):
+        """Create a repo stub that passes every readiness check."""
+        repo_root = Path(__file__).resolve().parents[1]
+        script_source = repo_root / "scripts" / "check-app-store-readiness.sh"
+
+        script = tmp_root / "scripts" / "check-app-store-readiness.sh"
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text(script_source.read_text(encoding="utf-8"), encoding="utf-8")
+        script.chmod(0o755)
+
+        (tmp_root / "docs" / "app-store" / "screenshots").mkdir(parents=True, exist_ok=True)
+        (tmp_root / "docs" / "app-store" / "description.md").write_text("stub", encoding="utf-8")
+        (tmp_root / "docs" / "app-store" / "privacy-labels.md").write_text("stub", encoding="utf-8")
+
+        pbxproj = tmp_root / "Weird Parts IOS" / "Weird Parts.xcodeproj" / "project.pbxproj"
+        pbxproj.parent.mkdir(parents=True, exist_ok=True)
+        pbxproj.write_text(PASSING_PBXPROJ, encoding="utf-8")
+
+        appiconset = (
+            tmp_root
+            / "Weird Parts IOS"
+            / "Weird Parts IOS"
+            / "Assets.xcassets"
+            / "AppIcon.appiconset"
+        )
+        appiconset.mkdir(parents=True, exist_ok=True)
+        (appiconset / "Contents.json").write_text(PASSING_ICON_CONTENTS, encoding="utf-8")
+        (appiconset / "AppIcon.png").write_bytes(b"\x89PNG stub")
+
+        return tmp_root, pbxproj, appiconset
+
+    def test_readiness_script_passes_with_required_files_and_version(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        result = self._run_script(repo_root)
 
         self.assertEqual(
             result.returncode,
@@ -24,40 +68,58 @@ class AppStoreReadinessScriptTests(unittest.TestCase):
         )
         self.assertIn("app-store readiness check passed", result.stdout)
 
-    def test_readiness_script_fails_when_marketing_version_drifts(self):
-        repo_root = Path(__file__).resolve().parents[1]
-        script_source = repo_root / "scripts" / "check-app-store-readiness.sh"
-
+    def test_readiness_script_passes_on_complete_stub_tree(self):
         with tempfile.TemporaryDirectory() as tmp:
-            tmp_root = Path(tmp)
-            script = tmp_root / "scripts" / "check-app-store-readiness.sh"
-            script.parent.mkdir(parents=True, exist_ok=True)
-            script.write_text(script_source.read_text(encoding="utf-8"), encoding="utf-8")
-            script.chmod(0o755)
+            tmp_root, _, _ = self._build_stub_tree(Path(tmp))
+            result = self._run_script(tmp_root)
 
-            (tmp_root / "docs" / "app-store" / "screenshots").mkdir(parents=True, exist_ok=True)
-            (tmp_root / "docs" / "app-store" / "description.md").write_text("stub", encoding="utf-8")
-            (tmp_root / "docs" / "app-store" / "privacy-labels.md").write_text("stub", encoding="utf-8")
+        self.assertEqual(
+            result.returncode,
+            0,
+            msg=f"Stub tree should pass.\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}",
+        )
 
-            pbxproj = (
-                tmp_root
-                / "Weird Parts IOS"
-                / "Weird Parts.xcodeproj"
-                / "project.pbxproj"
+    def test_readiness_script_fails_when_marketing_version_drifts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_root, pbxproj, _ = self._build_stub_tree(Path(tmp))
+            pbxproj.write_text(
+                PASSING_PBXPROJ.replace("1.0.0;", "1.0.0.0;"), encoding="utf-8"
             )
-            pbxproj.parent.mkdir(parents=True, exist_ok=True)
-            pbxproj.write_text("MARKETING_VERSION = 1.0.0.0;\n", encoding="utf-8")
-
-            result = subprocess.run(
-                ["bash", str(script)],
-                cwd=tmp_root,
-                text=True,
-                capture_output=True,
-                check=False,
-            )
+            result = self._run_script(tmp_root)
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Invalid MARKETING_VERSION", result.stderr)
+
+    def test_readiness_script_fails_when_icon_slot_is_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_root, _, appiconset = self._build_stub_tree(Path(tmp))
+            (appiconset / "Contents.json").write_text(
+                '{\n  "images" : [\n    {\n      "idiom" : "universal",\n'
+                '      "platform" : "ios",\n      "size" : "1024x1024"\n    }\n  ]\n}\n',
+                encoding="utf-8",
+            )
+            result = self._run_script(tmp_root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no image filename", result.stderr)
+
+    def test_readiness_script_fails_when_icon_file_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_root, _, appiconset = self._build_stub_tree(Path(tmp))
+            (appiconset / "AppIcon.png").unlink()
+            result = self._run_script(tmp_root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing image file", result.stderr)
+
+    def test_readiness_script_fails_when_category_key_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_root, pbxproj, _ = self._build_stub_tree(Path(tmp))
+            pbxproj.write_text("MARKETING_VERSION = 1.0.0;\n", encoding="utf-8")
+            result = self._run_script(tmp_root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("LSApplicationCategoryType", result.stderr)
 
 
 if __name__ == "__main__":
