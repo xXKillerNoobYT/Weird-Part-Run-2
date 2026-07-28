@@ -873,15 +873,50 @@ public actor FoundationModelsService {
         guard ownerUserId > 0 else {
             throw AIConversationPersistenceError.missingAuthenticatedUser
         }
+        guard !messages.isEmpty else { return }
         try await db.writer.write { dbConn in
+            var nextRecencyOrder = try Int64.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT MAX(
+                        COALESCE(
+                            (
+                                SELECT MAX(recency_order)
+                                FROM ai_conversation_messages
+                                WHERE recency_order IS NOT NULL
+                                  AND recency_order <> 0
+                                  AND recency_order > 0
+                            ),
+                            0
+                        ),
+                        COALESCE(
+                            (
+                                SELECT MAX(rowid)
+                                FROM ai_conversation_messages
+                                WHERE recency_order IS NULL OR recency_order = 0
+                            ),
+                            0
+                        )
+                    )
+                    """
+            ) ?? 0
             for msg in messages {
+                nextRecencyOrder += 1
                 try dbConn.execute(
                     sql: """
                         INSERT INTO ai_conversation_messages
-                            (id, conversation_id, owner_user_id, role, content, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?)
+                            (id, conversation_id, owner_user_id, role, content, created_at, recency_order)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                         """,
-                    arguments: [msg.id, msg.conversationId, ownerUserId, msg.role, msg.content, msg.createdAt]
+                    arguments: [
+                        msg.id,
+                        msg.conversationId,
+                        ownerUserId,
+                        msg.role,
+                        msg.content,
+                        msg.createdAt,
+                        nextRecencyOrder,
+                    ]
                 )
             }
         }
@@ -901,7 +936,9 @@ public actor FoundationModelsService {
                     SELECT id, conversation_id, role, content, created_at
                     FROM ai_conversation_messages
                     WHERE conversation_id = ? AND owner_user_id = ?
-                    ORDER BY created_at ASC
+                    ORDER BY created_at ASC,
+                             COALESCE(NULLIF(recency_order, 0), rowid) ASC,
+                             rowid ASC
                     """,
                 arguments: [conversationId, ownerUserId]
             )
@@ -993,16 +1030,26 @@ public actor FoundationModelsService {
             let rows = try Row.fetchAll(
                 dbConn,
                 sql: """
+                    WITH ranked_messages AS (
+                        SELECT conversation_id,
+                               created_at,
+                               content,
+                               COALESCE(NULLIF(recency_order, 0), rowid) AS effective_recency_order,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY conversation_id
+                                   ORDER BY created_at DESC,
+                                            COALESCE(NULLIF(recency_order, 0), rowid) DESC,
+                                            rowid DESC
+                               ) AS message_rank
+                        FROM ai_conversation_messages
+                        WHERE owner_user_id = ?
+                    )
                     SELECT conversation_id,
-                           MAX(created_at) AS last_message_at,
-                           (SELECT content FROM ai_conversation_messages m2
-                            WHERE m2.conversation_id = m1.conversation_id
-                              AND m2.owner_user_id = m1.owner_user_id
-                            ORDER BY created_at DESC LIMIT 1) AS preview
-                    FROM ai_conversation_messages m1
-                    WHERE owner_user_id = ?
-                    GROUP BY owner_user_id, conversation_id
-                    ORDER BY last_message_at DESC
+                           created_at AS last_message_at,
+                           content AS preview
+                    FROM ranked_messages
+                    WHERE message_rank = 1
+                    ORDER BY last_message_at DESC, effective_recency_order DESC
                     """,
                 arguments: [ownerUserId]
             )
@@ -1034,7 +1081,9 @@ public actor FoundationModelsService {
                     SELECT conversation_id
                     FROM ai_conversation_messages
                     WHERE owner_user_id = ?
-                    ORDER BY created_at DESC
+                    ORDER BY created_at DESC,
+                             COALESCE(NULLIF(recency_order, 0), rowid) DESC,
+                             rowid DESC
                     LIMIT 1
                     """,
                 arguments: [ownerUserId]

@@ -202,6 +202,151 @@ struct SyncCryptoTests {
 
     // MARK: - X25519 Key Agreement + AES-GCM
 
+    @Test("Bluetooth pairing proof binds v4 host, client identity, key, and fresh nonce")
+    func testBluetoothPairingProofBindings() {
+        let nonce = SyncCrypto.bluetoothPairingRequestNonce()
+        let secondNonce = SyncCrypto.bluetoothPairingRequestNonce()
+        let (_, clientKey) = SyncCrypto.generateKeyAgreementPair()
+        let proof = SyncCrypto.bluetoothPairingProof(
+            normalizedCode: "ABCD1234",
+            expectedHostDeviceId: "host",
+            clientDeviceId: "client",
+            clientPublicKeyB64: clientKey,
+            requestNonce: nonce
+        )
+
+        #expect(Data(base64Encoded: nonce)?.count == 32)
+        #expect(Data(base64Encoded: secondNonce)?.count == 32)
+        #expect(nonce != secondNonce)
+        #expect(SyncCrypto.verifyBluetoothPairingProof(
+            proof,
+            normalizedCode: "ABCD1234",
+            protocolVersion: 4,
+            expectedHostDeviceId: "host",
+            clientDeviceId: "client",
+            clientPublicKeyB64: clientKey,
+            requestNonce: nonce
+        ))
+        #expect(!SyncCrypto.verifyBluetoothPairingProof(
+            proof,
+            normalizedCode: "ABCD1234",
+            protocolVersion: 4,
+            expectedHostDeviceId: "other-host",
+            clientDeviceId: "client",
+            clientPublicKeyB64: clientKey,
+            requestNonce: nonce
+        ))
+        #expect(!SyncCrypto.verifyBluetoothPairingProof(
+            proof,
+            normalizedCode: "ABCD1234",
+            protocolVersion: 4,
+            expectedHostDeviceId: "host",
+            clientDeviceId: "client",
+            clientPublicKeyB64: clientKey,
+            requestNonce: secondNonce
+        ))
+    }
+
+    @Test("Bluetooth accepted-response authenticator rejects every trust-bearing field mutation")
+    func testBluetoothPairingResponseAuthenticatorBindings() throws {
+        let client = SyncCrypto.generateKeyAgreementPair()
+        let host = SyncCrypto.generateKeyAgreementPair()
+        let values = (
+            code: "ABCD1234",
+            version: 4,
+            nonce: SyncCrypto.bluetoothPairingRequestNonce(),
+            proof: "request-proof",
+            clientId: "client",
+            hostId: "host",
+            companyId: "company",
+            token: "snapshot-token",
+            pairedAt: "2026-07-18T09:00:00Z"
+        )
+        let authenticator = try SyncCrypto.bluetoothPairingResponseAuthenticator(
+            normalizedCode: values.code,
+            ourPrivateKeyB64: host.privateKey,
+            theirPublicKeyB64: client.publicKey,
+            protocolVersion: values.version,
+            requestNonce: values.nonce,
+            requestPairingProof: values.proof,
+            accepted: true,
+            clientDeviceId: values.clientId,
+            clientPublicKeyB64: client.publicKey,
+            hostDeviceId: values.hostId,
+            hostPublicKeyB64: host.publicKey,
+            companyId: values.companyId,
+            snapshotToken: values.token,
+            pairedAt: values.pairedAt
+        )
+
+        func verifies(
+            code: String = "ABCD1234",
+            version: Int = 4,
+            nonce: String? = nil,
+            proof: String = "request-proof",
+            accepted: Bool = true,
+            clientId: String = "client",
+            clientKey: String? = nil,
+            hostId: String = "host",
+            hostKey: String? = nil,
+            companyId: String = "company",
+            token: String = "snapshot-token",
+            pairedAt: String = "2026-07-18T09:00:00Z",
+            mac: String? = nil
+        ) -> Bool {
+            SyncCrypto.verifyBluetoothPairingResponseAuthenticator(
+                mac ?? authenticator,
+                normalizedCode: code,
+                ourPrivateKeyB64: client.privateKey,
+                theirPublicKeyB64: hostKey ?? host.publicKey,
+                protocolVersion: version,
+                requestNonce: nonce ?? values.nonce,
+                requestPairingProof: proof,
+                accepted: accepted,
+                clientDeviceId: clientId,
+                clientPublicKeyB64: clientKey ?? client.publicKey,
+                hostDeviceId: hostId,
+                hostPublicKeyB64: hostKey ?? host.publicKey,
+                companyId: companyId,
+                snapshotToken: token,
+                pairedAt: pairedAt
+            )
+        }
+
+        #expect(verifies())
+        #expect(!verifies(code: "WXYZ1234"))
+        #expect(!verifies(version: 5))
+        #expect(!verifies(nonce: SyncCrypto.bluetoothPairingRequestNonce()))
+        #expect(!verifies(proof: "other-proof"))
+        #expect(!verifies(accepted: false))
+        #expect(!verifies(clientId: "other-client"))
+        #expect(!verifies(clientKey: SyncCrypto.generateKeyAgreementPair().publicKey))
+        #expect(!verifies(hostId: "other-host"))
+        #expect(!verifies(hostKey: SyncCrypto.generateKeyAgreementPair().publicKey))
+        #expect(!verifies(companyId: "other-company"))
+        #expect(!verifies(token: "other-token"))
+        #expect(!verifies(pairedAt: "2026-07-18T09:00:01Z"))
+        #expect(!verifies(mac: "not-base64"))
+        #expect(!verifies(mac: Data(repeating: 0, count: 31).base64EncodedString()))
+        #expect(!SyncCrypto.verifyBluetoothPairingResponseAuthenticator(
+            nil,
+            normalizedCode: values.code,
+            ourPrivateKeyB64: client.privateKey,
+            theirPublicKeyB64: host.publicKey,
+            protocolVersion: values.version,
+            requestNonce: values.nonce,
+            requestPairingProof: values.proof,
+            accepted: true,
+            clientDeviceId: values.clientId,
+            clientPublicKeyB64: client.publicKey,
+            hostDeviceId: values.hostId,
+            hostPublicKeyB64: host.publicKey,
+            companyId: values.companyId,
+            snapshotToken: values.token,
+            pairedAt: values.pairedAt
+        ))
+    }
+
     @Test("generateKeyAgreementPair produces 32-byte base64 keys")
     func testGenerateKeyAgreementPair() {
         let (priv, pub) = SyncCrypto.generateKeyAgreementPair()

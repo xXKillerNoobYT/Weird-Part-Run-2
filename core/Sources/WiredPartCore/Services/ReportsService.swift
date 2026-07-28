@@ -14,9 +14,15 @@ import GRDB
 /// Ported from: Reports & Pre-Billing feature area (Phase 8/11)
 public final class ReportsService: Sendable {
     private let db: AppDatabase
+    private let operationalDay: OperationalDay
 
-    public init(db: AppDatabase) {
+    public init(
+        db: AppDatabase,
+        calendar: Calendar = .current,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
         self.db = db
+        self.operationalDay = OperationalDay(calendar: calendar, now: now)
     }
 
     // =========================================================================
@@ -277,6 +283,9 @@ public final class ReportsService: Sendable {
     ///   - endDate: End date in ISO-8601 format (e.g., "2026-03-15").
     /// - Returns: An array of `TimesheetRow` sorted by user name ascending.
     public func getTimesheetData(startDate: String, endDate: String) throws -> [TimesheetRow] {
+        guard let interval = operationalDay.interval(startDate: startDate, endDate: endDate) else {
+            return []
+        }
         do {
             return try db.writer.read { dbConn -> [TimesheetRow] in
                 let sql = """
@@ -284,18 +293,34 @@ public final class ReportsService: Sendable {
                            COALESCE(u.display_name, u.email, 'Unknown') AS user_name,
                            COALESCE(SUM(le.regular_hours), 0) AS regular_hours,
                            COALESCE(SUM(le.overtime_hours), 0) AS overtime_hours,
-                           COALESCE(SUM(le.regular_hours), 0) + COALESCE(SUM(le.overtime_hours), 0) AS total_hours,
-                           COUNT(DISTINCT \(Self.localDateSQL("le.clock_in"))) AS days_worked
+                           COALESCE(SUM(le.regular_hours), 0) + COALESCE(SUM(le.overtime_hours), 0) AS total_hours
                     FROM labor_entries le
                     LEFT JOIN users u ON u.id = le.user_id AND u.deleted_at IS NULL
                     WHERE le.deleted_at IS NULL
-                      AND \(Self.localDateSQL("le.clock_in")) >= date(?)
-                      AND \(Self.localDateSQL("le.clock_in")) <= date(?)
+                      AND \(interval.rangePredicate("le.clock_in"))
                     GROUP BY le.user_id
                     ORDER BY user_name ASC
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [startDate, endDate])
+                let rows = try Row.fetchAll(
+                    dbConn,
+                    sql: sql,
+                    arguments: StatementArguments(interval.rangeArguments)
+                )
+                let workDayRows = try Row.fetchAll(dbConn, sql: """
+                    SELECT le.user_id, le.clock_in
+                    FROM labor_entries le
+                    WHERE le.deleted_at IS NULL
+                      AND \(interval.rangePredicate("le.clock_in"))
+                    """, arguments: StatementArguments(interval.rangeArguments))
+                var workDaysByUser: [Int64: Set<String>] = [:]
+                for row in workDayRows {
+                    let userId: Int64 = row["user_id"] ?? 0
+                    let timestamp: String = row["clock_in"] ?? ""
+                    if let localDate = operationalDay.dateString(fromPersistedTimestamp: timestamp) {
+                        workDaysByUser[userId, default: []].insert(localDate)
+                    }
+                }
                 return rows.enumerated().map { index, row in
                     let userId: Int64 = row["user_id"] ?? 0
                     return TimesheetRow(
@@ -305,7 +330,7 @@ public final class ReportsService: Sendable {
                         regularHours: row["regular_hours"] ?? 0.0,
                         overtimeHours: row["overtime_hours"] ?? 0.0,
                         totalHours: row["total_hours"] ?? 0.0,
-                        daysWorked: row["days_worked"] ?? 0
+                        daysWorked: workDaysByUser[userId]?.count ?? 0
                     )
                 }
             }
@@ -561,6 +586,9 @@ public final class ReportsService: Sendable {
     /// - Parameter date: The date in ISO-8601 format (e.g., "2026-03-15").
     /// - Returns: An array of `DailyReportSummaryRow` sorted by job name ascending.
     public func getDailyReportSummary(date: String) throws -> [DailyReportSummaryRow] {
+        guard let interval = operationalDay.interval(startDate: date, endDate: date) else {
+            return []
+        }
         do {
             return try db.writer.read { dbConn -> [DailyReportSummaryRow] in
                 let sql = """
@@ -571,12 +599,16 @@ public final class ReportsService: Sendable {
                     JOIN jobs j ON j.id = le.job_id
                     WHERE le.deleted_at IS NULL
                       AND j.deleted_at IS NULL
-                      AND \(Self.localDateSQL("le.clock_in")) = date(?)
+                      AND \(interval.exactDayPredicate("le.clock_in"))
                     GROUP BY j.id
                     ORDER BY j.job_name ASC
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [date])
+                let rows = try Row.fetchAll(
+                    dbConn,
+                    sql: sql,
+                    arguments: StatementArguments(interval.exactArguments)
+                )
                 return rows.map { row in
                     DailyReportSummaryRow(
                         id: row["id"] ?? 0,

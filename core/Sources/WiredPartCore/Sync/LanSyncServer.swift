@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import Network
 import os
 
@@ -124,26 +125,50 @@ public struct SyncKeyResponse: Codable, Sendable {
 public struct SyncPairRequest: Codable, Sendable {
     public var deviceId: String
     public var deviceName: String
-    public var pairingCode: String
+    public var pairingCode: String?
+    public var pairingProof: String?
     public var platform: String?
+    /// Bluetooth pairing protocol version. LAN pairing leaves this nil.
+    public var bluetoothProtocolVersion: Int?
+    /// Fresh per-attempt nonce used only by Bluetooth protocol v4.
+    public var bluetoothRequestNonce: String?
+    /// Host identity the Bluetooth proof expects to answer.
+    public var bluetoothExpectedHostDeviceId: String?
+    /// X25519 public key bound to this device by the one-time pairing proof.
+    public var keyAgreementPublicKey: String?
 
     public init(
         deviceId: String,
         deviceName: String,
-        pairingCode: String,
-        platform: String? = nil
+        pairingCode: String? = nil,
+        pairingProof: String? = nil,
+        platform: String? = nil,
+        bluetoothProtocolVersion: Int? = nil,
+        bluetoothRequestNonce: String? = nil,
+        bluetoothExpectedHostDeviceId: String? = nil,
+        keyAgreementPublicKey: String? = nil
     ) {
         self.deviceId = deviceId
         self.deviceName = deviceName
         self.pairingCode = pairingCode
+        self.pairingProof = pairingProof
         self.platform = platform
+        self.bluetoothProtocolVersion = bluetoothProtocolVersion
+        self.bluetoothRequestNonce = bluetoothRequestNonce
+        self.bluetoothExpectedHostDeviceId = bluetoothExpectedHostDeviceId
+        self.keyAgreementPublicKey = keyAgreementPublicKey
     }
 
     enum CodingKeys: String, CodingKey {
         case deviceId = "device_id"
         case deviceName = "device_name"
         case pairingCode = "pairing_code"
+        case pairingProof = "pairing_proof"
         case platform
+        case bluetoothProtocolVersion = "bluetooth_protocol_version"
+        case bluetoothRequestNonce = "bluetooth_request_nonce"
+        case bluetoothExpectedHostDeviceId = "bluetooth_expected_host_device_id"
+        case keyAgreementPublicKey = "key_agreement_public_key"
     }
 }
 
@@ -153,12 +178,53 @@ public struct SyncPairResponse: Codable, Sendable {
     public var serverDeviceId: String
     public var companyId: String
     public var pairedAt: String
+    /// Bluetooth protocol-v4 transcript fields. LAN pairing leaves these nil.
+    public var bluetoothProtocolVersion: Int? = nil
+    public var bluetoothRequestNonce: String? = nil
+    public var bluetoothRequestPairingProof: String? = nil
+    public var bluetoothClientDeviceId: String? = nil
+    public var bluetoothClientKeyAgreementPublicKey: String? = nil
+    /// One-time-session capability used only by Bluetooth onboarding snapshots.
+    /// LAN pairing leaves this nil.
+    public var bluetoothSnapshotToken: String? = nil
+    /// Server's pairing-bound X25519 identity for future encrypted LAN sync.
+    public var serverKeyAgreementPublicKey: String? = nil
+    /// HMAC-SHA256 over the canonical accepted Bluetooth response transcript.
+    public var bluetoothResponseAuthenticator: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case accepted
         case serverDeviceId = "server_device_id"
         case companyId = "company_id"
         case pairedAt = "paired_at"
+        case bluetoothProtocolVersion = "bluetooth_protocol_version"
+        case bluetoothRequestNonce = "bluetooth_request_nonce"
+        case bluetoothRequestPairingProof = "bluetooth_request_pairing_proof"
+        case bluetoothClientDeviceId = "bluetooth_client_device_id"
+        case bluetoothClientKeyAgreementPublicKey = "bluetooth_client_key_agreement_public_key"
+        case bluetoothSnapshotToken = "bluetooth_snapshot_token"
+        case serverKeyAgreementPublicKey = "server_key_agreement_public_key"
+        case bluetoothResponseAuthenticator = "bluetooth_response_authenticator"
+    }
+}
+
+/// Encrypted response body for accepted POST /sync/pair.
+///
+/// The server public key is left in cleartext so the client can derive the
+/// pairing-response key from both devices' durable X25519 identities and the
+/// pairing-code digest; the accepted pairing payload itself is AES-GCM encrypted.
+public struct SyncPairEncryptedResponse: Codable, Sendable {
+    public let serverKeyAgreementPublicKey: String
+    public let encryptedPayload: String
+
+    public init(serverKeyAgreementPublicKey: String, encryptedPayload: String) {
+        self.serverKeyAgreementPublicKey = serverKeyAgreementPublicKey
+        self.encryptedPayload = encryptedPayload
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case serverKeyAgreementPublicKey = "server_key_agreement_public_key"
+        case encryptedPayload = "encrypted_payload"
     }
 }
 
@@ -178,6 +244,9 @@ public actor SyncServerState {
     public var companyPublicKey: String?     // nil = Phase 4 compat (no cert required)
     public var lastSyncAt: String?
     private var activePairingCodeDigest: Data?
+    private var activePairingCodeNormalized: String?
+    private let db: AppDatabase?
+    private var sessionAuthorizedPeerKeys: [String: String] = [:]
 
     /// X25519 key agreement public key (base64). Shared with peers via GET /sync/key.
     /// Peers use this to derive a shared AES-GCM key for payload encryption.
@@ -189,15 +258,23 @@ public actor SyncServerState {
         deviceId: String,
         deviceName: String,
         companyId: String,
-        companyPublicKey: String? = nil
+        companyPublicKey: String? = nil,
+        db: AppDatabase? = nil,
+        identity: SyncDeviceIdentity? = nil
     ) {
         self.deviceId = deviceId
         self.deviceName = deviceName
         self.companyId = companyId
         self.companyPublicKey = companyPublicKey
-        let (priv, pub) = SyncCrypto.generateKeyAgreementPair()
-        self.kaPrivateKeyB64 = priv
-        self.kaPublicKeyB64 = pub
+        self.db = db
+        if let identity {
+            self.kaPrivateKeyB64 = identity.privateKeyB64
+            self.kaPublicKeyB64 = identity.publicKeyB64
+        } else {
+            let (priv, pub) = SyncCrypto.generateKeyAgreementPair()
+            self.kaPrivateKeyB64 = priv
+            self.kaPublicKeyB64 = pub
+        }
     }
 
     public func appendToInbox(_ changes: [IncomingChange]) {
@@ -226,6 +303,7 @@ public actor SyncServerState {
             throw SyncServerError.invalidPairingCode
         }
         activePairingCodeDigest = SyncCrypto.pairingCodeDigest(normalized)
+        activePairingCodeNormalized = normalized
     }
 
     /// Issue and activate a new one-time pairing code for shop-side display.
@@ -238,6 +316,7 @@ public actor SyncServerState {
     /// Clear the active pairing code after it is used or expires.
     public func clearActivePairingCode() {
         activePairingCodeDigest = nil
+        activePairingCodeNormalized = nil
     }
 
     public func verifyPairingCode(_ code: String) -> Bool {
@@ -251,7 +330,146 @@ public actor SyncServerState {
             return false
         }
         activePairingCodeDigest = nil
+        activePairingCodeNormalized = nil
         return true
+    }
+
+    /// Atomically bind a peer's X25519 identity to a valid one-time pairing code.
+    public func consumePairingCodeAndRegisterPeer(_ request: SyncPairRequest) throws -> Bool {
+        guard activePairingCodeDigest != nil,
+              let normalized = activePairingCodeNormalized,
+              let key = Self.validKeyAgreementPublicKey(request.keyAgreementPublicKey),
+              SyncCrypto.verifyPairingProof(
+                request.pairingProof,
+                normalizedCode: normalized,
+                deviceId: request.deviceId,
+                clientPublicKeyB64: key
+              ) else {
+            return false
+        }
+        try registerAuthorizedPeer(
+            deviceId: request.deviceId,
+            deviceName: request.deviceName,
+            platform: request.platform,
+            keyAgreementPublicKey: key
+        )
+        activePairingCodeDigest = nil
+        activePairingCodeNormalized = nil
+        return true
+    }
+
+    public func normalizedActivePairingCodeForProof(_ request: SyncPairRequest) -> String? {
+        guard activePairingCodeDigest != nil,
+              let normalized = activePairingCodeNormalized,
+              let key = Self.validKeyAgreementPublicKey(request.keyAgreementPublicKey) else {
+            return nil
+        }
+
+        if let version = request.bluetoothProtocolVersion {
+            guard version == SyncCrypto.bluetoothPairingProtocolVersion,
+                  let expectedHostDeviceId = request.bluetoothExpectedHostDeviceId,
+                  let requestNonce = request.bluetoothRequestNonce,
+                  Data(base64Encoded: requestNonce)?.count == 32,
+                  SyncCrypto.verifyBluetoothPairingProof(
+                    request.pairingProof,
+                    normalizedCode: normalized,
+                    protocolVersion: version,
+                    expectedHostDeviceId: expectedHostDeviceId,
+                    clientDeviceId: request.deviceId,
+                    clientPublicKeyB64: key,
+                    requestNonce: requestNonce
+                  ) else {
+                return nil
+            }
+        } else {
+            guard SyncCrypto.verifyPairingProof(
+                request.pairingProof,
+                normalizedCode: normalized,
+                deviceId: request.deviceId,
+                clientPublicKeyB64: key
+            ) else {
+                return nil
+            }
+        }
+        return normalized
+    }
+
+    /// Atomically verify and consume a code-authenticated pairing proof without
+    /// transmitting the one-time code. The normalized code is returned only to
+    /// the host so it can restore the offer if the trusted response is undelivered.
+    public func consumePairingProof(_ request: SyncPairRequest) -> String? {
+        guard let normalized = normalizedActivePairingCodeForProof(request) else {
+            return nil
+        }
+        activePairingCodeDigest = nil
+        activePairingCodeNormalized = nil
+        return normalized
+    }
+
+    public func reserveReplay(
+        requestId: String,
+        deviceId: String,
+        endpoint: String,
+        direction: String,
+        bodyDigest: String
+    ) throws -> Bool {
+        guard let db else { return true }
+        return try db.writer.write { dbConn in
+            // Request ids are durable security state, not a time-limited cache.
+            // Deleting an accepted id would make captured ciphertext valid again.
+            // Keep the reservation for the lifetime of this database; any future
+            // compaction must first introduce authenticated monotonic freshness.
+            try dbConn.execute(
+                sql: """
+                    INSERT OR IGNORE INTO _sync_replay_guard (
+                        request_id, device_id, endpoint, direction, body_digest, created_at
+                    ) VALUES (?, ?, ?, ?, ?, datetime('now'))
+                    """,
+                arguments: [requestId, deviceId, endpoint, direction, bodyDigest]
+            )
+            return (try Int.fetchOne(dbConn, sql: "SELECT changes()") ?? 0) == 1
+        }
+    }
+
+    public func registerAuthorizedPeer(
+        deviceId: String,
+        deviceName: String,
+        platform: String?,
+        keyAgreementPublicKey: String
+    ) throws {
+        guard let key = Self.validKeyAgreementPublicKey(keyAgreementPublicKey) else {
+            throw SyncServerError.invalidPeerKey
+        }
+        if let db {
+            try ChangeTracker.registerPeerDevice(
+                db: db,
+                peerId: deviceId,
+                peerName: deviceName,
+                platform: platform,
+                keyAgreementPublicKey: key
+            )
+        }
+        sessionAuthorizedPeerKeys[deviceId] = key
+    }
+
+    public func authorizedPeerKey(deviceId: String) throws -> String? {
+        guard let db else { return sessionAuthorizedPeerKeys[deviceId] }
+        let encoded = try db.writer.read { dbConn in
+            try String.fetchOne(
+                dbConn,
+                sql: "SELECT certificate FROM _device_registry WHERE device_id = ? AND is_trusted = 1 AND is_deactivated = 0",
+                arguments: [deviceId]
+            )
+        }
+        guard let encoded, encoded.hasPrefix("x25519:") else { return nil }
+        return Self.validKeyAgreementPublicKey(String(encoded.dropFirst("x25519:".count)))
+    }
+
+    private static func validKeyAgreementPublicKey(_ key: String?) -> String? {
+        guard let key,
+              let data = Data(base64Encoded: key),
+              data.count == 32 else { return nil }
+        return key
     }
 
     /// Filter outbox by vector clock (send only what the peer hasn't seen)
@@ -627,6 +845,12 @@ public final class LanSyncServer: Sendable {
             let json = #"{"error":"company_id_required"}"#
             return (403, Data(json.utf8))
         }
+        guard let peerDeviceId = headers["x-sync-device-id"],
+              let authorizedKey = try? await state.authorizedPeerKey(deviceId: peerDeviceId),
+              !authorizedKey.isEmpty else {
+            let json = #"{"error":"paired_device_required"}"#
+            return (403, Data(json.utf8))
+        }
         let pubKey = state.kaPublicKeyB64
         let response = SyncKeyResponse(key: pubKey)
         let encoder = JSONEncoder()
@@ -637,12 +861,25 @@ public final class LanSyncServer: Sendable {
     private static func handlePair(body: Data, state: SyncServerState) async -> (Int, Data) {
         guard let request = try? JSONDecoder().decode(SyncPairRequest.self, from: body),
               !request.deviceId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              !request.deviceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            let json = #"{"error":"invalid_json"}"#
-            return (400, Data(json.utf8))
+              !request.deviceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let senderKey = request.keyAgreementPublicKey,
+              !senderKey.isEmpty else {
+            return (400, Data(#"{"error":"invalid_json"}"#.utf8))
+        }
+        guard let normalizedCode = await state.normalizedActivePairingCodeForProof(request) else {
+            return (403, Data(#"{"error":"invalid_pairing_code"}"#.utf8))
+        }
+        guard let keyData = try? SyncCrypto.derivePairingSharedKeyData(
+                ourPrivateKeyB64: state.kaPrivateKeyB64,
+                theirPublicKeyB64: senderKey,
+                normalizedCode: normalizedCode,
+                clientPublicKeyB64: senderKey,
+                serverPublicKeyB64: state.kaPublicKeyB64
+              ) else {
+            return (400, Data(#"{"error":"invalid_json"}"#.utf8))
         }
 
-        guard await state.consumePairingCode(request.pairingCode) else {
+        guard (try? await state.consumePairingCodeAndRegisterPeer(request)) == true else {
             let json = #"{"error":"invalid_pairing_code"}"#
             return (403, Data(json.utf8))
         }
@@ -651,12 +888,46 @@ public final class LanSyncServer: Sendable {
             accepted: true,
             serverDeviceId: state.deviceId,
             companyId: state.companyId,
-            pairedAt: CoreFormatters.nowISO()
+            pairedAt: CoreFormatters.nowISO(),
+            serverKeyAgreementPublicKey: state.kaPublicKeyB64
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        let data = (try? encoder.encode(response)) ?? Data()
+        guard let plainData = try? encoder.encode(response),
+              let encrypted = try? SyncCrypto.encryptAESGCM(
+                data: plainData,
+                keyData: keyData,
+                aad: pairingAAD(
+                    deviceId: request.deviceId,
+                    clientPublicKey: senderKey,
+                    serverPublicKey: state.kaPublicKeyB64
+                )
+              ) else {
+            return (500, Data(#"{"error":"pairing_encryption_failed"}"#.utf8))
+        }
+        let wrapper = SyncPairEncryptedResponse(
+            serverKeyAgreementPublicKey: state.kaPublicKeyB64,
+            encryptedPayload: encrypted.base64EncodedString()
+        )
+        guard let data = try? encoder.encode(wrapper) else {
+            return (500, Data(#"{"error":"pairing_encryption_failed"}"#.utf8))
+        }
         return (200, data)
+    }
+
+    private static func pairingAAD(
+        deviceId: String,
+        clientPublicKey: String,
+        serverPublicKey: String
+    ) -> Data {
+        Data(
+            [
+                "wiredpart-sync-pairing-response-aad-v1",
+                deviceId,
+                clientPublicKey,
+                serverPublicKey,
+            ].joined(separator: "\n").utf8
+        )
     }
 
     private static func handlePush(
@@ -664,20 +935,34 @@ public final class LanSyncServer: Sendable {
         headers: [String: String],
         state: SyncServerState
     ) async -> (Int, Data) {
-        // Decrypt body if sender used payload encryption
-        let (plainBody, sharedKeyData) = await decryptIfNeeded(
+        let (plainBody, sharedKeyData, senderDeviceId) = await decryptIfNeeded(
             body: body,
             headers: headers,
+            endpoint: "push",
             state: state
         )
-        guard let plainBody else {
+        guard let plainBody, let sharedKeyData, let senderDeviceId else {
             let json = #"{"error":"decryption_failed"}"#
             return (400, Data(json.utf8))
+        }
+        guard (try? await reserveReplay(
+            body: body,
+            headers: headers,
+            endpoint: "push",
+            direction: "request",
+            senderDeviceId: senderDeviceId,
+            state: state
+        )) == true else {
+            return (409, Data(#"{"error":"replay_detected"}"#.utf8))
         }
 
         guard let request = try? JSONDecoder().decode(SyncPushRequest.self, from: plainBody) else {
             let json = #"{"error":"invalid_json"}"#
             return (400, Data(json.utf8))
+        }
+        guard request.deviceId == senderDeviceId else {
+            let json = #"{"error":"device_identity_mismatch"}"#
+            return (403, Data(json.utf8))
         }
 
         // Auth check
@@ -699,7 +984,16 @@ public final class LanSyncServer: Sendable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let responseData = (try? encoder.encode(response)) ?? Data()
-        return encryptIfNeeded(responseData, sharedKeyData: sharedKeyData)
+        return encryptIfNeeded(
+            responseData,
+            sharedKeyData: sharedKeyData,
+            aad: syncAAD(
+                endpoint: "push",
+                direction: "response",
+                deviceId: senderDeviceId,
+                requestId: headers["x-sync-request-id"] ?? ""
+            )
+        )
     }
 
     private static func handlePull(
@@ -707,20 +1001,34 @@ public final class LanSyncServer: Sendable {
         headers: [String: String],
         state: SyncServerState
     ) async -> (Int, Data) {
-        // Decrypt body if sender used payload encryption
-        let (plainBody, sharedKeyData) = await decryptIfNeeded(
+        let (plainBody, sharedKeyData, senderDeviceId) = await decryptIfNeeded(
             body: body,
             headers: headers,
+            endpoint: "pull",
             state: state
         )
-        guard let plainBody else {
+        guard let plainBody, let sharedKeyData, let senderDeviceId else {
             let json = #"{"error":"decryption_failed"}"#
             return (400, Data(json.utf8))
+        }
+        guard (try? await reserveReplay(
+            body: body,
+            headers: headers,
+            endpoint: "pull",
+            direction: "request",
+            senderDeviceId: senderDeviceId,
+            state: state
+        )) == true else {
+            return (409, Data(#"{"error":"replay_detected"}"#.utf8))
         }
 
         guard let request = try? JSONDecoder().decode(SyncPullRequest.self, from: plainBody) else {
             let json = #"{"error":"invalid_json"}"#
             return (400, Data(json.utf8))
+        }
+        guard request.deviceId == senderDeviceId else {
+            let json = #"{"error":"device_identity_mismatch"}"#
+            return (403, Data(json.utf8))
         }
 
         // Auth check
@@ -746,49 +1054,94 @@ public final class LanSyncServer: Sendable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let responseData = (try? encoder.encode(response)) ?? Data()
-        return encryptIfNeeded(responseData, sharedKeyData: sharedKeyData)
+        return encryptIfNeeded(
+            responseData,
+            sharedKeyData: sharedKeyData,
+            aad: syncAAD(
+                endpoint: "pull",
+                direction: "response",
+                deviceId: senderDeviceId,
+                requestId: headers["x-sync-request-id"] ?? ""
+            )
+        )
     }
 
-    /// Decrypt the body if the request carries encryption headers.
-    /// Returns the plain body and the shared key data (for response encryption),
-    /// or (nil, nil) if decryption was attempted but failed.
-    /// If the request is not encrypted, returns (body, nil) unchanged.
+    /// Require an encrypted request from a pairing-bound device/key identity.
     private static func decryptIfNeeded(
         body: Data,
         headers: [String: String],
+        endpoint: String,
         state: SyncServerState
-    ) async -> (plainBody: Data?, sharedKeyData: Data?) {
+    ) async -> (plainBody: Data?, sharedKeyData: Data?, senderDeviceId: String?) {
         guard headers["x-sync-encrypted"] == "1",
               let senderKAKey = headers["x-sync-sender-key"],
-              !senderKAKey.isEmpty else {
-            return (body, nil)  // Not encrypted — pass through
+              !senderKAKey.isEmpty,
+              let senderDeviceId = headers["x-sync-device-id"],
+              let requestId = headers["x-sync-request-id"],
+              !requestId.isEmpty,
+              let authorizedKey = try? await state.authorizedPeerKey(deviceId: senderDeviceId),
+              authorizedKey == senderKAKey else {
+            return (nil, nil, nil)
         }
         let ourPrivateKey = state.kaPrivateKeyB64
         guard let keyData = try? SyncCrypto.deriveSharedKeyData(
             ourPrivateKeyB64: ourPrivateKey,
             theirPublicKeyB64: senderKAKey
-        ) else { return (nil, nil) }
+        ) else { return (nil, nil, nil) }
 
-        guard let plainBody = try? SyncCrypto.decryptAESGCM(data: body, keyData: keyData) else {
-            return (nil, nil)
+        let aad = syncAAD(
+            endpoint: endpoint,
+            direction: "request",
+            deviceId: senderDeviceId,
+            requestId: requestId
+        )
+        guard let plainBody = try? SyncCrypto.decryptAESGCM(data: body, keyData: keyData, aad: aad) else {
+            return (nil, nil, nil)
         }
-        return (plainBody, keyData)
+        return (plainBody, keyData, senderDeviceId)
     }
 
-    /// Encrypt response data if a shared key is available (i.e. request was encrypted).
-    /// If no shared key: request arrived unencrypted, so plaintext response is expected.
-    /// If encryption fails with a key present: fail-closed (500) rather than leaking plaintext.
-    private static func encryptIfNeeded(_ data: Data, sharedKeyData: Data?) -> (Int, Data) {
-        guard let keyData = sharedKeyData else {
-            // No shared key — plaintext session, plaintext response is correct.
-            return (200, data)
-        }
-        guard let encrypted = try? SyncCrypto.encryptAESGCM(data: data, keyData: keyData) else {
+    /// Encrypt every successful sync response; plaintext sessions are rejected above.
+    private static func encryptIfNeeded(_ data: Data, sharedKeyData keyData: Data, aad: Data) -> (Int, Data) {
+        guard let encrypted = try? SyncCrypto.encryptAESGCM(data: data, keyData: keyData, aad: aad) else {
             // Encryption failed despite having a key — fail closed, never send plaintext.
             let errorJson = #"{"error":"encryption_failed"}"#
             return (500, Data(errorJson.utf8))
         }
         return (200, encrypted)
+    }
+
+    static func syncAAD(endpoint: String, direction: String, deviceId: String, requestId: String) -> Data {
+        Data(
+            [
+                "wiredpart-sync-lan-payload-aad-v1",
+                endpoint,
+                direction,
+                deviceId,
+                requestId,
+            ].joined(separator: "\n").utf8
+        )
+    }
+
+    private static func reserveReplay(
+        body: Data,
+        headers: [String: String],
+        endpoint: String,
+        direction: String,
+        senderDeviceId: String,
+        state: SyncServerState
+    ) async throws -> Bool {
+        guard let requestId = headers["x-sync-request-id"], !requestId.isEmpty else {
+            return false
+        }
+        let digest = Data(SHA256.hash(data: body)).base64EncodedString()
+        return try await state.reserveReplay(
+            requestId: requestId,
+            deviceId: senderDeviceId,
+            endpoint: endpoint,
+            direction: direction,
+            bodyDigest: digest
+        )
     }
 
     // MARK: - Auth
@@ -839,6 +1192,7 @@ public final class LanSyncServer: Sendable {
 public enum SyncServerError: Error {
     case failedToBind
     case invalidPairingCode
+    case invalidPeerKey
     case serverNotRunning
 }
 
