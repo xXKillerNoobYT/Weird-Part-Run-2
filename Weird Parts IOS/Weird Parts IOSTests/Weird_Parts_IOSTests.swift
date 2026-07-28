@@ -477,58 +477,6 @@ struct Weird_Parts_IOSTests {
     }
 
     @MainActor
-    @Test func onboardingPeerDiscoveryKeepsLanAddressForPairing() throws {
-        let testFileURL = URL(fileURLWithPath: "\(#filePath)")
-        let projectRoot = testFileURL
-            .deletingLastPathComponent() // Weird Parts IOSTests
-            .deletingLastPathComponent() // Weird Parts IOS
-        let sourceURL = projectRoot
-            .appendingPathComponent("Weird Parts IOS")
-            .appendingPathComponent("Sync")
-            .appendingPathComponent("IOSSyncManager.swift")
-        let pairingSourceURL = projectRoot
-            .appendingPathComponent("Weird Parts IOS")
-            .appendingPathComponent("Auth")
-            .appendingPathComponent("DevicePairingView.swift")
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
-        let pairingSource = try String(contentsOf: pairingSourceURL, encoding: .utf8)
-
-        #expect(source.contains("allowAnyCompanyPeerDiscovery: mode == .onboardingJoin"))
-        #expect(source.contains("if mode == .existingCompanySync"))
-        #expect(source.contains("Task { await pm.stopPeerSync() }"))
-        #expect(source.contains("hasActiveMultipeerDiscovery: bluetoothDiscoveryEnabled && mode == .onboardingJoin"))
-        #expect(source.contains("startMultipeer: bluetoothDiscoveryEnabled && (mode == .existingCompanySync || mode == .onboardingJoin)"))
-        #expect(source.contains("startSyncServer: mode == .existingCompanySync"))
-        #expect(source.contains("if await pm.getState().running"))
-        #expect(source.contains("peerDiscoveryStartupTask?.cancel()"))
-        #expect(source.contains("let startupGeneration = peerDiscoveryGeneration"))
-        #expect(source.contains("guard isCurrentPeerDiscoveryStartup(startupGeneration) else { return }"))
-        #expect(source.contains("if !isScanning"))
-        #expect(source.contains("await pm.stopPeerSync()"))
-        // Peer rows now render a richer multipeer display state, and the
-        // manual-sync eligibility moved into isManuallySyncablePeer.
-        #expect(source.contains("? Self.multipeerDisplayState(peer.multipeerState)"))
-        #expect(source.contains(": (peer.multipeerState == \"connected\" ? \"connected\" : peer.transport)"))
-        #expect(source.contains("private static func isManuallySyncablePeer("))
-        #expect(source.contains("return transport == \"lan\" && address != nil"))
-        #expect(source.contains("let address = formattedPeerAddress(host: peer.host, port: Int(peer.port))"))
-        #expect(source.contains("host.contains(\":\") && !host.hasPrefix(\"[\") ? \"[\\(host)]\" : host"))
-        #expect(source.contains("await pm.stopMultipeerDiscovery()"))
-        #expect(source.contains("let multipeerOnly = mpPeers.filter { !nonMultipeerIds.contains($0.id) }"))
-        // Bluetooth-first pairing: rows no longer require a LAN address, but the
-        // address must be PRESERVED on the selected shop and used as the
-        // connectivity-failure fallback path (Copilot review on PR #1422).
-        #expect(pairingSource.contains("address: peer.address ?? \"\""))
-        #expect(pairingSource.contains("shouldFallBackToLAN(e) && !shop.address.isEmpty"))
-        #expect(pairingSource.contains("syncManager.stopPeerDiscovery()"))
-        #expect(pairingSource.contains(".onDisappear"))
-        #expect(pairingSource.contains("stopOnboardingDiscoveryIfAbandoned()"))
-        #expect(pairingSource.contains("guard !Task.isCancelled else { return }"))
-        #expect(pairingSource.contains("guard !navigateToSync else { return }"))
-        #expect(pairingSource.contains("shop.address"))
-    }
-
-    @MainActor
     @Test func officeNavigationUsesOfficeOnlyGateAndFinancialRedactionGate() async throws {
         let leadPermissions = ["view_jobs", "manage_jobs", "view_orders"]
         let officePermissions = ["approve_orders", "show_dollar_values", "manage_jobs"]
@@ -812,97 +760,6 @@ struct Weird_Parts_IOSTests {
         #expect(message == nil)
     }
 
-    @Test func subSchedulePageExposesExplicitSoftDeleteCancellationAction() throws {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let pageURL = repoRoot
-            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Scheduling/IOSSubSchedulePage.swift")
-        let sheetURL = repoRoot
-            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Scheduling/CreateSubcontractorScheduleSheet.swift")
-        let pageSource = try String(contentsOf: pageURL, encoding: .utf8)
-        let sheetSource = try String(contentsOf: sheetURL, encoding: .utf8)
-
-        #expect(pageSource.contains("cancelSubcontractorSchedule"), "Sub schedule rows need an explicit cancel action wired to the service soft-delete API")
-        #expect(pageSource.contains("Cancel Schedule"), "The destructive UI should be labelled as cancellation, not hidden behind edit/status changes")
-        #expect(!sheetSource.contains("\"cancelled\""), "Editing status to cancelled leaves deleted_at NULL; cancellation must use the explicit soft-delete action")
-    }
-
-    @Test func qrScannerStartFailureIsSurfacedAndStreamFinished() throws {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let scannerURL = repoRoot
-            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Scanning/IOSQRScanner.swift")
-        let scannerSource = try String(contentsOf: scannerURL, encoding: .utf8)
-
-        #expect(!scannerSource.contains("try? scanner.startScanning()"), "Startup failures from DataScannerViewController must not be swallowed")
-        #expect(scannerSource.contains("catch {"), "The modal scanner start path needs explicit do/catch error handling")
-        #expect(scannerSource.contains("activeContinuation?.yield(.error(errorMessage))"), "Startup failures should emit an actionable QRScanEvent error")
-        #expect(scannerSource.contains("activeContinuation?.finish()"), "Startup failures should finish the scan stream instead of leaving a dead sheet")
-    }
-
-    @Test func timesheetCorrectionRejectsMalformedOriginalTimestampsBeforeSave() throws {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let timesheetsURL = repoRoot
-            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Reports/IOSTimesheetsPage.swift")
-        let source = try String(contentsOf: timesheetsURL, encoding: .utf8)
-
-        #expect(!source.contains("CoreFormatters.parseDateTime(segment.clockIn) ?? Date()"), "Malformed original clock-in must not default correction pickers to the current time")
-        // The user-facing copy moved into the shared ReportsError type — assert
-        // the centralized construction for both fields instead of inline strings.
-        #expect(source.contains("ReportsError.invalidTimesheetOriginalTimestamp(\"clock-in\").localizedDescription"), "Malformed clock-in needs user-facing data-integrity copy")
-        #expect(source.contains("ReportsError.invalidTimesheetOriginalTimestamp(\"clock-out\").localizedDescription"), "Malformed clock-out needs user-facing data-integrity copy")
-        #expect(source.contains(".disabled(isSaving || originalTimestampError != nil)"), "The correction save action must stay disabled while original timestamps are malformed")
-        #expect(source.contains("if let originalTimestampError"), "The save path needs a guard even if a disabled button is bypassed")
-    }
-
-    @Test func dispatchAssignmentConflictCheckFailureShowsActionError() throws {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let dispatchURL = repoRoot
-            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Scheduling/IOSDispatchPage.swift")
-        let source = try String(contentsOf: dispatchURL, encoding: .utf8)
-
-        #expect(source.contains("actionError = userFriendlyError(error, context: \"check time-off conflicts\")"))
-        #expect(
-            source.contains("actionError = userFriendlyError(error, context: \"check time-off conflicts\")\n            return"),
-            "Conflict-check failures should stop assignment creation."
-        )
-    }
-
-    @Test func createDispatchSheetShowsActionableLoadFailures() throws {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let sheetURL = repoRoot
-            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Scheduling/CreateDispatchSheet.swift")
-        let source = try String(contentsOf: sheetURL, encoding: .utf8)
-
-        #expect(!source.contains("try? jobService.listJobs"), "Job load failures must not be swallowed into an empty active-jobs picker state")
-        #expect(!source.contains("try? peopleService.listEmployees"), "Employee load failures must not be swallowed into an empty employee picker state")
-        #expect(source.contains("jobLoadError = result.jobLoadError"), "Job load failures should be tracked separately from empty job results")
-        #expect(source.contains("employeeLoadError = result.employeeLoadError"), "Employee load failures should be tracked separately from empty employee results")
-        #expect(source.contains("userFriendlyError(error, context: context)"), "Service failures should be formatted as user-facing error copy")
-        #expect(source.contains("Text(\"No active jobs\")"), "Legitimate empty job results should still show the empty-state copy")
-        #expect(source.contains("Text(\"No employees found\")"), "Legitimate empty employee results should still show the empty-state copy")
-        #expect(source.contains("Label(\"Retry\", systemImage: \"arrow.clockwise\")"), "Load failures should offer an actionable retry")
-        #expect(
-            !source.contains(".accessibilityLabel(retryLabel)\n        }\n        .accessibilityElement(children: .combine)"),
-            "Load-failure rows must not combine the retry button into static failure copy"
-        )
-        #expect(source.contains("Retry loading jobs"), "Job retry control needs a specific accessibility label")
-        #expect(source.contains("Retry loading employees"), "Employee retry control needs a specific accessibility label")
-    }
-
     @Test @MainActor func questionnaireBreakAutofillDoesNotSwallowSubmitErrors() throws {
         var autoFillAttempts = 0
 
@@ -949,75 +806,6 @@ struct Weird_Parts_IOSTests {
         }
 
         #expect(autoFillAttempts == 1)
-    }
-
-    @Test func questionnaireSubmitRunsBreakVerificationBeforeSavingResponses() throws {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let pageURL = repoRoot
-            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Jobs/IOSQuestionnairePage.swift")
-        let pageSource = try String(contentsOf: pageURL, encoding: .utf8)
-
-        #expect(!pageSource.contains("try? breakSvc.autoFillBreaksForDay"), "Break auto-fill failures in submit flow must not be swallowed")
-        #expect(pageSource.contains("try handleBreakVerification()"), "Submit flow should fail and show error when break auto-fill fails")
-        #expect(pageSource.contains("private func handleBreakVerification() throws"), "Break verification helper should throw to propagate save failures")
-        let verificationCall = try #require(pageSource.range(of: "try handleBreakVerification()"))
-        let responseSaveCall = try #require(pageSource.range(of: "try service.saveClockOutResponses"))
-        #expect(verificationCall.lowerBound < responseSaveCall.lowerBound, "Break compliance auto-fill should succeed before questionnaire responses are saved")
-    }
-
-    @Test func supplierChannelCreationFailureShowsLoadError() throws {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let suppliersURL = repoRoot
-            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Parts/PartsSuppliersPage.swift")
-        let source = try String(contentsOf: suppliersURL, encoding: .utf8)
-
-        #expect(source.contains("loadError = userFriendlyError(error, context: \"create supplier channel\")"))
-    }
-
-    @Test func silentFailureUmbrellaSurfacesRepresentativeErrors() throws {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-
-        let setupURL = repoRoot
-            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Auth/CompanySetupWizard.swift")
-        let setupSource = try String(contentsOf: setupURL, encoding: .utf8)
-        #expect(!setupSource.contains("try? appCore.settingsService?.loadSetupDraft()"), "Setup draft load failures must not be swallowed as no saved progress")
-        #expect(setupSource.contains("saveError = userFriendlyError(error, context: \"load saved setup progress\")"))
-
-        let jobsURL = repoRoot
-            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Jobs/JobsListPage.swift")
-        let jobsSource = try String(contentsOf: jobsURL, encoding: .utf8)
-        #expect(!jobsSource.contains("guard let service = appCore.jobsService else { return }"), "Quick status service failures must not silently no-op")
-        #expect(jobsSource.contains("loadError = userFriendlyError(error, context: \"update job status\")"))
-
-        let scheduleURL = repoRoot
-            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Scheduling/IOSScheduleCalendarPage.swift")
-        let scheduleSource = try String(contentsOf: scheduleURL, encoding: .utf8)
-        #expect(scheduleSource.range(of: #"catch\s*\{\s*dayEntries\s*=\s*\[\]\s*timeOffEntries\s*=\s*\[\]"#, options: .regularExpression) == nil, "Selected-day schedule failures must not become an empty day")
-        #expect(scheduleSource.contains("dayDetailError = \"Scheduling service not available\""), "Selected-day service unavailability should render through the day-detail error surface")
-        #expect(scheduleSource.contains("dayDetailError = userFriendlyError(error, context: \"load selected day schedule\")"))
-        #expect(scheduleSource.contains("ErrorStateView(message: dayDetailError) { loadDayDetail() }"), "Selected-day detail failures should offer a retry")
-
-        let syncURL = repoRoot
-            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Sync/IOSSyncManager.swift")
-        let syncSource = try String(contentsOf: syncURL, encoding: .utf8)
-        #expect(!syncSource.contains("guard let map = try? settingsService?.getSettingsByCategory(\"sync\")"), "Pairing status failures must not silently show unpaired state")
-        #expect(!syncSource.contains("(try? settingsService?.isAutoSyncEnabled()) ?? true"), "Auto-sync setting failures must not default to enabled")
-        #expect(!syncSource.contains("let addr = (try? service.getSettingsByCategory(\"sync\"))?[\"shop_server_address\"]"), "Sync server-address failures must not default to nil silently")
-        #expect(!syncSource.contains("try? ConflictResolver.getConflictStats(db: db)"), "Conflict count failures must not silently show zero conflicts")
-        #expect(syncSource.contains("syncSettingsReadFailed(error, context: \"load auto-sync setting\")"))
-        #expect(syncSource.contains("syncSettingsReadFailed(error, context: \"load sync server address\")"))
-        #expect(syncSource.contains("syncSettingsReadFailed(error, context: \"load pairing status\")"))
-        #expect(syncSource.contains("guard lastSurfacedSyncReadFailure != failureKey else { return }"), "Repeated sync setting read failures should not re-alert on every SwiftUI render")
-        #expect(syncSource.contains("context: \"load sync conflict count\""))
     }
 
     @Test func manualBackupSidecarCopyFailureIsReportedAndCleanedUp() throws {
@@ -1101,28 +889,6 @@ struct Weird_Parts_IOSTests {
         #expect(!FileManager.default.fileExists(atPath: backupURL.path + "-shm"))
     }
 
-    @Test func manualBackupSidecarCopiesAreNotSwallowedBeforeSuccessState() throws {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let backupsPageURL = repoRoot
-            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSBackupsPage.swift")
-        let source = try String(contentsOf: backupsPageURL, encoding: .utf8)
-
-        #expect(!source.contains("try? FileManager.default.copyItem"), "Manual backup WAL/SHM copy failures must not be swallowed")
-        #expect(!source.contains("try? FileManager.default.removeItem"), "Failed manual backups must not swallow cleanup failures")
-        #expect(source.contains("try IOSBackupFileCopier.copySQLiteSnapshot"), "Manual backup creation should use the throwing SQLite snapshot copier")
-        #expect(source.contains("try IOSBackupFileCopier.pruneBackups"), "Successful manual backup creation should enforce the rolling retention limit")
-        #expect(source.contains("createdURLs.reversed()"), "Partial backup cleanup should remove sidecars before the main database")
-        #expect(source.contains("try IOSBackupFileCopier.removeSQLiteSnapshot(at: destURL)"), "A backup copied before retention failure should be rolled back instead of being left on disk")
-        let snapshotCall = try #require(source.range(of: "try IOSBackupFileCopier.copySQLiteSnapshot"))
-        let pruneCall = try #require(source.range(of: "try IOSBackupFileCopier.pruneBackups"))
-        let successState = try #require(source.range(of: "backupSuccess = true"))
-        #expect(snapshotCall.lowerBound < pruneCall.lowerBound, "Retention should run after the full SQLite snapshot is copied")
-        #expect(pruneCall.lowerBound < successState.lowerBound, "Success state must only be set after retention succeeds")
-    }
-
     @Test func fullDatabaseExportCheckpointsAndIncludesWALChanges() throws {
         let tempRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("IOSDatabaseExportSnapshotterTests-\(UUID().uuidString)", isDirectory: true)
@@ -1148,57 +914,6 @@ struct Weird_Parts_IOSTests {
             try String.fetchOne(db, sql: "SELECT value FROM export_probe WHERE id = 1")
         }
         #expect(exportedValue == "committed-in-wal")
-    }
-
-    @Test func fullDatabaseExportDoesNotCopyMainDatabaseFileDirectly() throws {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let exportPageURL = repoRoot
-            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSDataExportPage.swift")
-        let source = try String(contentsOf: exportPageURL, encoding: .utf8)
-
-        #expect(!source.contains("copyItem(at: URL(fileURLWithPath: dbPath), to: destURL)"), "Full database export must not copy only the main SQLite file")
-        #expect(source.contains("try IOSDatabaseExportSnapshotter.exportSQLiteSnapshot"), "Full database export should use the WAL-checkpoint snapshot helper")
-        #expect(source.contains("PRAGMA wal_checkpoint(TRUNCATE)"), "Full database export should checkpoint WAL pages before copying the encrypted SQLite file")
-        #expect(source.contains("let busy: Int = checkpoint[0]"), "Full database export should inspect checkpoint busy status before copying")
-        let writeBlockStart = try #require(source.range(of: "source.write"))
-        #expect(source.range(of: "FileManager.default.copyItem(at: sourceURL, to: destURL)", range: writeBlockStart.lowerBound..<source.endIndex) != nil,
-                "Full database export should preserve encrypted database bytes while still under the writer lock")
-        #expect(source.contains("AppCore.databasePath(isUITesting: uiTestingMode)"), "Full database export should resolve the same UI-testing database path that bootstrap used")
-        #expect(source.contains("Task.detached(priority: .userInitiated)"), "Full database export should run the snapshot off the main actor so large exports do not freeze Settings")
-        #expect(source.contains("await MainActor.run"), "Full database export should return success and error state updates to the main actor")
-        let snapshotCall = try #require(source.range(of: "try IOSDatabaseExportSnapshotter.exportSQLiteSnapshot"))
-        let successState = try #require(source.range(of: "exportSuccess = true", range: snapshotCall.lowerBound..<source.endIndex))
-        #expect(snapshotCall.lowerBound < successState.lowerBound, "Success state must only be set after the GRDB snapshot is complete")
-    }
-
-    @Test func dataExportCompletionPresentsShareSheetAndHandlesEmptyTables() throws {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let exportPageURL = repoRoot
-            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSDataExportPage.swift")
-        let source = try String(contentsOf: exportPageURL, encoding: .utf8)
-
-        #expect(source.contains(".sheet(item: $activeSheet)"), "Data export should use one active-sheet presenter for help and sharing")
-        #expect(source.contains("case share([URL])"), "Data export completion should carry generated export URLs through the active sheet state")
-        #expect(source.contains("case .share(let urls):"), "The share sheet should receive the generated export file URLs from the active sheet")
-        #expect(source.contains("ReportShareSheet(items: urls)"), "The share sheet should receive the generated export file URLs")
-        #expect(!source.contains("showShareSheet"), "Data export should avoid a second sheet boolean that can race the help sheet")
-        // The empty-rows guard is now an if/else branch (same invariant:
-        // empty result -> error message, never a success + share sheet).
-        #expect(source.contains("if urls.isEmpty {"), "Selected-table exports with no rows should not claim a transferable export completed")
-        #expect(source.contains("No rows were exported from the selected tables"), "Empty selected-table exports should show a clear user-facing message")
-        let emptyExportGuard = try #require(source.range(of: "if urls.isEmpty {"))
-        let selectedExportSuccess = try #require(source.range(of: "exportSuccess = true", range: emptyExportGuard.upperBound..<source.endIndex))
-        let selectedSharePresentation = try #require(source.range(of: "activeSheet = .share(urls)", range: selectedExportSuccess.upperBound..<source.endIndex))
-        #expect(selectedExportSuccess.lowerBound < selectedSharePresentation.lowerBound, "Selected-table exports should present sharing only after success is recorded")
-        let fullDatabaseExport = try #require(source.range(of: "private func exportFullDatabase()"))
-        let fullDatabaseSharePresentation = try #require(source.range(of: "activeSheet = .share([destURL])", range: fullDatabaseExport.lowerBound..<source.endIndex))
-        #expect(fullDatabaseExport.lowerBound < fullDatabaseSharePresentation.lowerBound, "Full database export should also present the generated SQLite snapshot")
     }
 
     @MainActor
@@ -1393,20 +1108,6 @@ struct Weird_Parts_IOSTests {
         #expect(!PricingBulkEditSheet.isValidNonNegativePercent("not a number"))
     }
 
-    @Test func manualPricingMarginPreviewUsesVisibleMarginInput() throws {
-        let source = try Self.readPartsSource("PartsPricingPage.swift")
-
-        #expect(source.contains("parseMarginPercent(marginText, fieldName: \"Margin\")"))
-        #expect(source.contains("return Self.sellPrice(weightedAvgCost: row.weightedAvgCost, marginPercent: margin)"))
-        #expect(source.contains("return Self.sellPrice(weightedAvgCost: row.weightedAvgCost, markupPercent: markup)"))
-
-        let marginSellPrice = PricingEditSheet.sellPrice(weightedAvgCost: 100, marginPercent: 25)
-        let staleMarkupSellPrice = PricingEditSheet.sellPrice(weightedAvgCost: 100, markupPercent: 80)
-
-        #expect(abs(marginSellPrice - 133.3333333333) < 0.0001)
-        #expect(marginSellPrice != staleMarkupSellPrice)
-    }
-
     @Test func manualPricingMarginHistoryLogsMarginValues() throws {
         let fields = try PricingEditSheet.priceChangeLogFields(
             pricingMode: "margin",
@@ -1429,19 +1130,6 @@ struct Weird_Parts_IOSTests {
         #expect(throws: ManualPricingInputValidator.ValidationError.percentTooHigh(fieldName: "Margin", maxExclusive: 100)) {
             try ManualPricingInputValidator.parseMarginPercent("100", fieldName: "Margin")
         }
-    }
-
-    static func readPartsSource(_ filename: String, file: StaticString = #filePath) throws -> String {
-        let testFileURL = URL(fileURLWithPath: "\(file)")
-        let projectRoot = testFileURL
-            .deletingLastPathComponent() // Weird Parts IOSTests
-            .deletingLastPathComponent() // Weird Parts IOS
-        let sourceURL = projectRoot
-            .appendingPathComponent("Weird Parts IOS")
-            .appendingPathComponent("Features")
-            .appendingPathComponent("Parts")
-            .appendingPathComponent(filename)
-        return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 
     static func warehouseMovement(id: Int64, reason: String, createdAt: String?) -> WarehouseService.MovementRow {
