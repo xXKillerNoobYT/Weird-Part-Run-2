@@ -214,6 +214,86 @@ final class WEI3900ClockFlowQATests: XCTestCase {
         }
     }
 
+    /// GitHub #1450 / WEI-5804: prove the real Clock interaction creates and
+    /// ends a Supply Run. This starts from the ordinary UI-test account instead
+    /// of the active-run fixture so a rendered card is not mistaken for a start
+    /// action succeeding.
+    @MainActor
+    func testClockInStartAndEndSupplyRunUserFlow() throws {
+        app.launchArguments.append("-UITestingClockInSupplyRunE2E")
+        app.launch()
+
+        XCTAssertTrue(waitForClockPage(), "Clock should open through Dashboard > Clock.")
+
+        let statePicker = app.descendants(matching: .any)["clockPage_statePicker"]
+        if !statePicker.exists {
+            clockIntoShopIfPossible()
+        }
+
+        XCTAssertTrue(
+            scrollIntoVisibleBounds(statePicker),
+            "A clocked-in user must be able to reach the Supply Run state picker."
+        )
+        XCTAssertTrue(
+            makeVisibleAndTap(statePicker),
+            "The Supply Run state picker must be scrollable and tappable."
+        )
+
+        let startSupplyRun = app.descendants(matching: .any)["clockPage_startSupplyRun"]
+        XCTAssertTrue(
+            revealInPresentedSheet(startSupplyRun),
+            "The state picker must scroll to expose a Start Supply Run action."
+        )
+        XCTAssertTrue(
+            makeVisibleAndTap(startSupplyRun),
+            "The Start Supply Run action must be scrollable and tappable in the state picker."
+        )
+
+        let activeCard = app.descendants(matching: .any)["clock-active-supply-run-card"]
+        XCTAssertTrue(
+            waitUntil(timeout: 15) {
+                activeCard.exists && (statePicker.value as? String) == "Supply run active"
+            },
+            "Starting a Supply Run must create the active card and update the state-picker accessibility value."
+        )
+        XCTAssertTrue(scrollIntoVisibleBounds(activeCard))
+        XCTAssertEqual(activeCard.label, "Supply Run Active")
+        XCTAssertTrue((activeCard.value as? String)?.contains("Billable while active") == true)
+
+        let activeAttachment = XCTAttachment(screenshot: app.screenshot())
+        activeAttachment.name = "Supply Run E2E — Active"
+        activeAttachment.lifetime = .keepAlways
+        add(activeAttachment)
+
+        XCTAssertTrue(scrollIntoVisibleBounds(statePicker))
+        XCTAssertTrue(
+            makeVisibleAndTap(statePicker),
+            "The active Supply Run state picker must be scrollable and tappable."
+        )
+
+        let endSupplyRun = app.descendants(matching: .any)["clockPage_endSupplyRun"]
+        XCTAssertTrue(
+            revealInPresentedSheet(endSupplyRun),
+            "The active state picker must scroll to expose an End Supply Run action."
+        )
+        XCTAssertTrue(
+            makeVisibleAndTap(endSupplyRun),
+            "The End Supply Run action must be scrollable and tappable in the state picker."
+        )
+
+        XCTAssertTrue(
+            waitUntil(timeout: 15) {
+                !activeCard.exists && (statePicker.value as? String) == "Working"
+            },
+            "Ending a Supply Run must remove the active card and restore the working accessibility state."
+        )
+
+        let endedAttachment = XCTAttachment(screenshot: app.screenshot())
+        endedAttachment.name = "Supply Run E2E — Ended"
+        endedAttachment.lifetime = .keepAlways
+        add(endedAttachment)
+    }
+
     private func waitForClockPage(timeout: TimeInterval = 25) -> Bool {
         waitUntil(timeout: timeout) {
             app.navigationBars["Clock In / Out"].exists
@@ -242,22 +322,15 @@ final class WEI3900ClockFlowQATests: XCTestCase {
     }
 
     private func clockIntoShopIfPossible() {
-        let shopButton = firstExistingElement([
-            app.buttons["Shop / Warehouse"],
-            app.staticTexts["Shop / Warehouse"]
-        ], timeout: 3)
-        guard let shopButton else { return }
+        // This SwiftUI row exports its stable identifier on an outer container
+        // on some iOS runtimes. Query across element types instead of assuming
+        // the visible text itself is the tappable button.
+        let shopButton = app.descendants(matching: .any)["clockPage_shopWarehouse"]
+        guard shopButton.waitForExistence(timeout: 5) else { return }
         makeVisibleAndTap(shopButton)
 
-        if app.buttons["Assign & Clock In"].waitForExistence(timeout: 3) {
-            app.buttons["Assign & Clock In"].tap()
-        }
-
         _ = waitUntil(timeout: 15) {
-            app.staticTexts["Clocked In"].exists
-                || app.staticTexts["Current Status"].exists
-                || app.buttons["Paid Lunch"].exists
-                || app.buttons["Paid Break"].exists
+            app.descendants(matching: .any)["clockPage_statePicker"].exists
         }
     }
 
@@ -405,18 +478,29 @@ final class WEI3900ClockFlowQATests: XCTestCase {
         return hours * 60 + minutes
     }
 
-    private func makeVisibleAndTap(_ element: XCUIElement) {
+    private func revealInPresentedSheet(_ element: XCUIElement, maxSwipes: Int = 8) -> Bool {
+        for _ in 0..<maxSwipes {
+            if element.exists { return true }
+            // The state picker is a virtualized List. On iPad its Supply Run
+            // section starts below the initially exported accessibility tree,
+            // so scroll the presented sheet as a user would before querying it.
+            app.swipeUp()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        }
+        return element.exists
+    }
+
+    @discardableResult
+    private func makeVisibleAndTap(_ element: XCUIElement) -> Bool {
         let deadline = Date().addingTimeInterval(6)
         while element.exists && !element.isHittable && Date() < deadline {
             app.swipeUp()
             RunLoop.current.run(until: Date().addingTimeInterval(0.2))
         }
 
-        if element.isHittable {
-            element.tap()
-        } else {
-            element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        }
+        guard element.isHittable else { return false }
+        element.tap()
+        return true
     }
 
     private func firstExistingElement(_ elements: [XCUIElement], timeout: TimeInterval = 0) -> XCUIElement? {

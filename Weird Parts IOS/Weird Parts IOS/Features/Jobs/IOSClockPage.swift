@@ -914,9 +914,11 @@ struct IOSClockPage: View {
 
     // MARK: - Job Picker (inline, no sheet)
 
-    /// Whether clock-in buttons should be disabled (no location permission).
+    /// Whether clock-in buttons should be disabled by the company GPS policy.
+    /// When the company has opted out of GPS-required clocking, the action
+    /// remains available even if this device has no location permission.
     private var clockInDisabled: Bool {
-        needsLocationPermission || locationManager.permissionDenied
+        isClockLocationRequired && (needsLocationPermission || locationManager.permissionDenied)
     }
 
     @ViewBuilder
@@ -2469,6 +2471,9 @@ private struct BreakStatePickerSheet: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(isOnSupplyRun ? .green : .orange)
+                    .accessibilityIdentifier(
+                        isOnSupplyRun ? "clockPage_endSupplyRun" : "clockPage_startSupplyRun"
+                    )
 
                     Text("Supply runs are billable/clocked-in travel for parts or supplies. End the run when you return to normal work.")
                         .font(.caption)
