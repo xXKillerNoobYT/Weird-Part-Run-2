@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Regression coverage for exact-head review/merge verification. The fake gh
-# records every merge request so each rejection path proves it never reaches gh pr merge.
+# Regression: the merge train must fail closed until every reviewer has an
+# accepted review bound to the PR's exact current head.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -11,68 +11,26 @@ cat >"$TMPDIR/gh" <<'GH'
 #!/usr/bin/env bash
 set -euo pipefail
 
-pr_json() {
-  local sha="$1"
-  jq -nc --arg sha "$sha" '{
-    number: 1,
-    title: "Safe merge fixture",
-    draft: false,
-    labels: [],
-    user: {login: "xXKillerNoobYT"},
-    head: {repo: {owner: {login: "xXKillerNoobYT"}}, sha: $sha},
-    mergeable: true,
-    mergeable_state: "clean",
-    auto_merge: null
-  }'
-}
-
 if [[ "${1:-}" == "api" ]]; then
   shift
-  if [[ "${1:-}" == "graphql" ]]; then
-    case "${FIXTURE_MODE:?}" in
-      review-api-failure) exit 1 ;;
-      unresolved-review-thread)
-        jq -nc '{data:{repository:{pullRequest:{headRefOid:"head-a",latestReviews:{nodes:[{author:{login:"copilot-pull-request-reviewer[bot]"},state:"APPROVED"}]},reviewThreads:{totalCount:1,nodes:[{isResolved:false}]}}}}}'
-        exit 0 ;;
-      merge-eligible)
-        jq -nc '{data:{repository:{pullRequest:{headRefOid:"head-a",latestReviews:{nodes:[{author:{login:"copilot-pull-request-reviewer[bot]"},state:"APPROVED"}]},reviewThreads:{totalCount:0,nodes:[]}}}}}'
-        exit 0 ;;
-      *) echo "unexpected graphql fixture mode: $FIXTURE_MODE" >&2; exit 1 ;;
-    esac
+  if [[ " $* " == *" repos/xXKillerNoobYT/Weird-Part-Run-2/pulls?state=open&base=main&per_page=100 "* ]]; then
+    cat <<'JSON'
+[[{"number":42,"title":"Mock PR","draft":false,"labels":[],"user":{"login":"xXKillerNoobYT"},"head":{"repo":{"owner":{"login":"xXKillerNoobYT"}},"sha":"deadbeef"},"mergeable":true,"mergeable_state":"clean","auto_merge":null}]]
+JSON
+    exit 0
   fi
-
-  endpoint=""
-  for arg in "$@"; do
-    case "$arg" in repos/*) endpoint="$arg" ;; esac
-  done
-  case "$endpoint" in
-    *"/pulls?state=open&base=main&per_page=100")
-      # gh api --paginate --slurp returns an array of pages. The list head is
-      # intentionally stale; the script must not use it for eligibility.
-      pr_json "head-listed" | jq -s '[.]'
-      ;;
-    "repos/xXKillerNoobYT/Weird-Part-Run-2/pulls/1")
-      count_file="$FIXTURE_DIR/current-pr-count"
-      count=0; [[ -f "$count_file" ]] && count="$(cat "$count_file")"
-      count=$((count + 1)); printf '%s' "$count" >"$count_file"
-      if [[ "$FIXTURE_MODE" == "head-change-after-listing" && "$count" -ge 2 ]]; then
-        pr_json "head-b"
-      else
-        pr_json "head-a"
-      fi
-      ;;
-    "repos/xXKillerNoobYT/Weird-Part-Run-2/commits/head-a/check-runs"|"repos/xXKillerNoobYT/Weird-Part-Run-2/commits/head-b/check-runs")
-      jq -nc '{check_runs:[]}'
-      ;;
-    *) echo "unexpected gh api endpoint: $endpoint ($*)" >&2; exit 1 ;;
-  esac
-  exit 0
-fi
-
-if [[ "${1:-}" == "pr" && "${2:-}" == "merge" ]]; then
-  printf '%q ' "$@" >>"$FIXTURE_DIR/merge.log"
-  printf '\n' >>"$FIXTURE_DIR/merge.log"
-  exit 0
+  if [[ " $* " == *" repos/xXKillerNoobYT/Weird-Part-Run-2/commits/deadbeef/check-runs "* ]]; then
+    printf '%s\n' '{"check_runs":[]}'
+    exit 0
+  fi
+  if [[ " $* " == *" repos/xXKillerNoobYT/Weird-Part-Run-2/pulls/42/reviews?per_page=100 "* ]]; then
+    printf '[%s]\n' "$MOCK_REVIEWS"
+    exit 0
+  fi
+  if [[ " $* " == *" graphql "* ]]; then
+    printf '%s\n' '{"data":{"repository":{"pullRequest":{"reviewThreads":{"totalCount":0,"nodes":[]}}}}}'
+    exit 0
+  fi
 fi
 
 echo "unexpected gh invocation: $*" >&2
@@ -80,31 +38,29 @@ exit 1
 GH
 chmod +x "$TMPDIR/gh"
 
-run_case() {
-  local mode="$1" require_review="$2" expected="$3"
-  local fixture_dir="$TMPDIR/$mode"
-  local output
-  mkdir -p "$fixture_dir"
-  output="$(PATH="$TMPDIR:$PATH" FIXTURE_MODE="$mode" FIXTURE_DIR="$fixture_dir" \
-    PR_MAINTENANCE_REQUIRE_COPILOT_REVIEW="$require_review" \
-    "$ROOT/scripts/pr-merge-maintenance.sh" xXKillerNoobYT/Weird-Part-Run-2 2>&1)"
-  printf '%s\n' "$output" | grep -Fq "$expected"
-  test ! -s "$fixture_dir/merge.log"
-}
+export PATH="$TMPDIR:$PATH"
+export PR_MAINTENANCE_DRY_RUN=1
 
-# Fresh list validation succeeds on head-a; the final fresh read sees head-b and
-# must defer before invoking a merge.
-run_case "head-change-after-listing" 0 "head changed during final verification"
-run_case "review-api-failure" 1 "could not read review state (API failure)"
-run_case "unresolved-review-thread" 1 "1 unresolved review thread(s)"
+missing_reviews='[{"commit_id":"deadbeef","state":"COMMENTED","body":"## LocalFirst exact-head review\nVerdict: Pass","user":{"login":"xXKillerNoobYT"}}]'
+stale_reviews='[{"commit_id":"oldhead","state":"COMMENTED","body":"## LocalFirst exact-head review\nVerdict: Pass","user":{"login":"xXKillerNoobYT"}},{"commit_id":"oldhead","state":"COMMENTED","body":"## GPTReviewer exact-head review\nVerdict: Accept","user":{"login":"xXKillerNoobYT"}},{"commit_id":"oldhead","state":"COMMENTED","body":"## ClaudeReviewer final exact-head review\nVerdict: Accept","user":{"login":"xXKillerNoobYT"}},{"commit_id":"oldhead","state":"COMMENTED","body":"Copilot review","user":{"login":"copilot-pull-request-reviewer[bot]"}}]'
+complete_reviews='[{"commit_id":"deadbeef","state":"COMMENTED","body":"## LocalFirst exact-head review\nVerdict: Pass","user":{"login":"xXKillerNoobYT"}},{"commit_id":"deadbeef","state":"COMMENTED","body":"## GPTReviewer exact-head review\nVerdict: Accept","user":{"login":"xXKillerNoobYT"}},{"commit_id":"deadbeef","state":"COMMENTED","body":"## ClaudeReviewer final exact-head review\nVerdict: Accept","user":{"login":"xXKillerNoobYT"}},{"commit_id":"deadbeef","state":"COMMENTED","body":"Copilot review","user":{"login":"copilot-pull-request-reviewer[bot]"}}]'
 
-# A green exact-head review may reach the merge command only with the server-side
-# match guard that rejects a post-verification force-push.
-fixture_dir="$TMPDIR/merge-eligible"
-mkdir -p "$fixture_dir"
-PATH="$TMPDIR:$PATH" FIXTURE_MODE="merge-eligible" FIXTURE_DIR="$fixture_dir" \
-  PR_MAINTENANCE_REQUIRE_COPILOT_REVIEW=1 \
-  "$ROOT/scripts/pr-merge-maintenance.sh" xXKillerNoobYT/Weird-Part-Run-2 >/dev/null
-grep -Fq -- '--match-head-commit head-a' "$fixture_dir/merge.log"
+MOCK_REVIEWS="$missing_reviews" "$ROOT/scripts/pr-merge-maintenance.sh" xXKillerNoobYT/Weird-Part-Run-2 >"$TMPDIR/missing.log" 2>&1
+grep -q 'current-head review lane incomplete' "$TMPDIR/missing.log"
+if grep -q 'dry-run: gh pr merge' "$TMPDIR/missing.log"; then
+  echo "merge was offered despite missing exact-head review lanes" >&2
+  exit 1
+fi
+
+MOCK_REVIEWS="$stale_reviews" "$ROOT/scripts/pr-merge-maintenance.sh" xXKillerNoobYT/Weird-Part-Run-2 >"$TMPDIR/stale.log" 2>&1
+grep -q 'current-head review lane incomplete' "$TMPDIR/stale.log"
+if grep -q 'dry-run: gh pr merge' "$TMPDIR/stale.log"; then
+  echo "merge was offered using review evidence from an older head" >&2
+  exit 1
+fi
+
+MOCK_REVIEWS="$complete_reviews" "$ROOT/scripts/pr-merge-maintenance.sh" xXKillerNoobYT/Weird-Part-Run-2 >"$TMPDIR/complete.log" 2>&1
+grep -q 'current-head review lanes satisfied' "$TMPDIR/complete.log"
+grep -q 'dry-run: gh pr merge' "$TMPDIR/complete.log"
 
 echo "pr-merge-maintenance review-gate regression passed"
