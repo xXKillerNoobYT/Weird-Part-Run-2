@@ -23,6 +23,25 @@ if [[ "${1:-}" == "api" ]]; then
       repos/*) endpoint="$arg" ;;
     esac
   done
+  if [[ "$endpoint" =~ ^repos/xXKillerNoobYT/Weird-Part-Run-2/pulls/[0-9]+$ ]]; then
+    number="${endpoint##*/}"
+    python3 - "$number" <<'PY'
+import json, sys
+n = int(sys.argv[1])
+print(json.dumps({
+    "number": n,
+    "title": f"Mock PR {n}",
+    "draft": True,
+    "labels": [],
+    "user": {"login": "xXKillerNoobYT"},
+    "head": {"repo": {"owner": {"login": "xXKillerNoobYT"}}, "sha": ""},
+    "mergeable": None,
+    "mergeable_state": "unknown",
+    "auto_merge": None,
+}))
+PY
+    exit 0
+  fi
   if [[ "$has_paginate" -ne 1 || "$has_slurp" -ne 1 ]]; then
     echo "expected gh api invocation to include --paginate and --slurp: $*" >&2
     exit 1

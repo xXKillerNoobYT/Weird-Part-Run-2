@@ -78,6 +78,41 @@ run_or_log() {
   "$@"
 }
 
+# The paginated list is only a queue-discovery snapshot. Never make a rebase or
+# merge decision from it: a force-push can change the review/check target after
+# the list request returns. Every candidate is re-read before eligibility and
+# the merge path verifies that exact head again immediately before invoking gh.
+fetch_current_pr() {
+  local number="$1"
+  gh api "repos/$REPO/pulls/$number" | jq -ce '{
+    number:           .number,
+    title:            (.title // ""),
+    isDraft:          (.draft // false),
+    labels:           [(.labels // [])[].name],
+    author:           (.user.login // ""),
+    headOwner:        (.head.repo.owner.login // ""),
+    mergeable:        (if .mergeable == true then "MERGEABLE"
+                       elif .mergeable == false then "CONFLICTING"
+                       else "UNKNOWN" end),
+    mergeStateStatus: ((.mergeable_state // "unknown") | ascii_upcase),
+    autoMerge:        (.auto_merge != null),
+    headSha:          (.head.sha // "")
+  }'
+}
+
+load_pr_snapshot() {
+  local snapshot="$1"
+  title="$(jq -r     '.title'                            <<<"$snapshot")"
+  is_draft="$(jq -r  '.isDraft'                          <<<"$snapshot")"
+  merge_state="$(jq -r '.mergeStateStatus // "UNKNOWN"'  <<<"$snapshot")"
+  mergeable="$(jq -r   '.mergeable // "UNKNOWN"'         <<<"$snapshot")"
+  auto_merge="$(jq -r  '.autoMerge'                      <<<"$snapshot")"
+  labels_json="$(jq -c '.labels'                         <<<"$snapshot")"
+  author="$(jq -r      '.author // ""'                   <<<"$snapshot")"
+  head_owner="$(jq -r  '.headOwner'                      <<<"$snapshot")"
+  head_sha="$(jq -r    '.headSha'                        <<<"$snapshot")"
+}
+
 if [[ -n "$MAX_PRS" && ! "$MAX_PRS" =~ ^[0-9]+$ ]]; then
   echo "error: PR_MAINTENANCE_MAX_PRS must be a positive integer when set, got '$MAX_PRS'" >&2
   exit 1
@@ -139,21 +174,19 @@ repo_name="${REPO##*/}"
 # Pick the FIRST one we can act on and do exactly that one action, then exit.
 while IFS= read -r pr; do
   number="$(jq -r    '.number'                           <<<"$pr")"
-  title="$(jq -r     '.title'                            <<<"$pr")"
-  is_draft="$(jq -r  '.isDraft'                          <<<"$pr")"
-  merge_state="$(jq -r '.mergeStateStatus // "UNKNOWN"'  <<<"$pr")"
-  mergeable="$(jq -r   '.mergeable // "UNKNOWN"'         <<<"$pr")"
-  auto_merge="$(jq -r  '.autoMerge'                      <<<"$pr")"
-  labels_json="$(jq -c '.labels'                         <<<"$pr")"
-  author="$(jq -r      '.author // ""'                     <<<"$pr")"
-  head_owner="$(jq -r  '.headOwner'                      <<<"$pr")"
-  head_sha="$(jq -r    '.headSha'                        <<<"$pr")"
+  # The list record is deliberately not used to choose an action. Refetch first
+  # so every eligibility check below is bound to one current PR snapshot.
+  if ! current_pr="$(fetch_current_pr "$number")"; then
+    echo "    skip: could not refresh current PR state — not acting on stale queue data"
+    continue
+  fi
+  load_pr_snapshot "$current_pr"
 
   echo ""
   echo "--- PR #$number: $title"
-  echo "    author=${author:-<unknown>} state=$merge_state mergeable=$mergeable autoMerge=$auto_merge draft=$is_draft"
+  echo "    refreshed head=${head_sha:0:8} author=${author:-<unknown>} state=$merge_state mergeable=$mergeable autoMerge=$auto_merge draft=$is_draft"
 
-  # --- Skip conditions ---
+  # --- Skip conditions, evaluated from the fresh PR snapshot ---
   if [[ "$is_draft" == "true" ]]; then
     echo "    skip: draft"; continue; fi
 
@@ -170,21 +203,21 @@ while IFS= read -r pr; do
     echo "    skip: has merge conflicts — engineer must resolve first"; continue; fi
 
   # --- Resolve UNKNOWN mergeability before acting ---
-  # The list endpoint returns mergeable_state only when GitHub has it cached;
-  # treating UNKNOWN as BEHIND made the train "rebase" an up-to-date branch
-  # forever (update-branch no-ops, the state never changes, nothing merges).
-  # A single-PR GET forces GitHub to compute mergeability; poll briefly.
+  # Refresh the full PR rather than only mergeable_state so a head change while
+  # GitHub computes mergeability cannot carry stale review/check evidence forward.
   if [[ "$merge_state" == "UNKNOWN" ]]; then
     for _attempt in 1 2 3 4 5; do
-      merge_state="$(gh api "repos/$REPO/pulls/$number" \
-        --jq '(.mergeable_state // "unknown") | ascii_upcase' 2>/dev/null || echo "UNKNOWN")"
+      if ! current_pr="$(fetch_current_pr "$number")"; then
+        break
+      fi
+      load_pr_snapshot "$current_pr"
       [[ "$merge_state" != "UNKNOWN" ]] && break
       sleep 3
     done
     echo "    resolved mergeability: state=$merge_state"
     if [[ "$merge_state" == "UNKNOWN" ]]; then
-      echo "    skip: mergeability still computing — next run retries"; continue; fi
-    if [[ "$merge_state" == "DIRTY" ]]; then
+      echo "    skip: mergeability still computing or refresh failed — next run retries"; continue; fi
+    if [[ "$mergeable" == "CONFLICTING" || "$merge_state" == "DIRTY" ]]; then
       echo "    skip: has merge conflicts — engineer must resolve first"; continue; fi
   fi
 
@@ -203,19 +236,29 @@ while IFS= read -r pr; do
   fi
 
   # --- Check if all required status checks are passing ---
-  if [[ -n "$head_sha" ]]; then
-    failing_checks="$(gh api "repos/$REPO/commits/$head_sha/check-runs" \
-      --jq '[.check_runs[] | select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != null and .status == "completed")] | length' 2>/dev/null || echo "0")"
-    pending_checks="$(gh api "repos/$REPO/commits/$head_sha/check-runs" \
-      --jq '[.check_runs[] | select(.status == "in_progress" or .status == "queued")] | length' 2>/dev/null || echo "0")"
+  if [[ -z "$head_sha" ]]; then
+    echo "    skip: refreshed PR has no head SHA — cannot verify checks"
+    continue
+  fi
+  if ! check_runs="$(gh api "repos/$REPO/commits/$head_sha/check-runs")"; then
+    echo "    skip: could not read checks for refreshed head ${head_sha:0:8} — not merging on unknown check state"
+    continue
+  fi
+  if ! failing_checks="$(jq -er '[.check_runs[] | select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != null and .status == "completed")] | length' <<<"$check_runs")"; then
+    echo "    skip: malformed check response for refreshed head ${head_sha:0:8} — not merging"
+    continue
+  fi
+  if ! pending_checks="$(jq -er '[.check_runs[] | select(.status == "in_progress" or .status == "queued")] | length' <<<"$check_runs")"; then
+    echo "    skip: malformed check response for refreshed head ${head_sha:0:8} — not merging"
+    continue
+  fi
 
-    if [[ "$pending_checks" -gt 0 ]]; then
-      echo "    skip: $pending_checks check(s) still running — waiting for scan to complete"; continue; fi
+  if [[ "$pending_checks" -gt 0 ]]; then
+    echo "    skip: $pending_checks check(s) still running — waiting for scan to complete"; continue; fi
 
-    if [[ "$failing_checks" -gt 0 ]]; then
+  if [[ "$failing_checks" -gt 0 ]]; then
       # Summarise failures and comment once (avoid spamming)
-      failures="$(gh api "repos/$REPO/commits/$head_sha/check-runs" \
-        --jq '[.check_runs[] | select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != null and .status == "completed") | "- \(.name): \(.conclusion)"] | join("\n")' 2>/dev/null || echo "unknown")"
+      failures="$(jq -r '[.check_runs[] | select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != null and .status == "completed") | "- \(.name): \(.conclusion)"] | join("\n")' <<<"$check_runs")"
       echo "    SCAN FAILED — $failing_checks check(s) failing:"
       echo "$failures"
       # Only comment if not already commented recently
@@ -223,7 +266,6 @@ while IFS= read -r pr; do
         --body "🔴 **Merge blocked — required checks failing.**\n\nFailing checks on \`${head_sha:0:8}\`:\n${failures}\n\nPlease fix the issues above and push. The pipeline will retry automatically." 2>/dev/null || true
       echo "    Commented on PR. Skipping — engineer must fix scan failures."
       continue
-    fi
   fi
 
   # Legacy Copilot-only review gate is disabled: this repository uses the
@@ -237,10 +279,13 @@ while IFS= read -r pr; do
     # cannot satisfy the gate.
     # reviews(last: 100) — the MOST RECENT reviews, so a Copilot review is
     # never missed on PRs whose total review history exceeds one page.
-    review_state="$(gh api graphql -f query="query { repository(owner: \"$repo_owner\", name: \"$repo_name\") { pullRequest(number: $number) { latestReviews: reviews(last: 100) { nodes { author { login } state } } reviewThreads(first: 100) { totalCount nodes { isResolved } } } } }" 2>/dev/null || echo "")"
-
-    if [[ -z "$review_state" ]]; then
+    if ! review_state="$(gh api graphql -f query="query { repository(owner: \"$repo_owner\", name: \"$repo_name\") { pullRequest(number: $number) { headRefOid latestReviews: reviews(last: 100) { nodes { author { login } state } } reviewThreads(first: 100) { totalCount nodes { isResolved } } } } }")"; then
       echo "    skip: could not read review state (API failure) — not merging on unknown review status"
+      continue
+    fi
+    review_head="$(jq -r '.data.repository.pullRequest.headRefOid // empty' <<<"$review_state" 2>/dev/null || true)"
+    if [[ "$review_head" != "$head_sha" ]]; then
+      echo "    skip: PR head changed during review verification (${head_sha:0:8} -> ${review_head:0:8}) — deferring"
       continue
     fi
 
@@ -296,11 +341,27 @@ while IFS= read -r pr; do
 
   # --- Ready to merge ---
   if [[ "$merge_state" == "CLEAN" || "$merge_state" == "HAS_HOOKS" ]]; then
-    echo "==> PR #$number is $merge_state with required checks green — merging now (squash)"
-    if run_or_log gh pr merge "$number" --repo "$REPO" --squash --delete-branch --auto; then
+    # A second fresh snapshot closes the list→verify→merge TOCTOU window. The
+    # server-side match guard covers the remaining race after this GET.
+    if ! final_pr="$(fetch_current_pr "$number")"; then
+      echo "    skip: could not refresh final PR state — not invoking merge"
+      continue
+    fi
+    final_head="$(jq -r '.headSha' <<<"$final_pr")"
+    final_state="$(jq -r '.mergeStateStatus // "UNKNOWN"' <<<"$final_pr")"
+    if [[ "$final_head" != "$head_sha" ]]; then
+      echo "    skip: PR head changed during final verification (${head_sha:0:8} -> ${final_head:0:8}) — deferring without merge"
+      continue
+    fi
+    if [[ "$final_state" != "CLEAN" && "$final_state" != "HAS_HOOKS" ]]; then
+      echo "    skip: merge state changed during final verification ($merge_state -> $final_state) — deferring without merge"
+      continue
+    fi
+    echo "==> PR #$number is $final_state at verified head ${head_sha:0:8} — merging now (squash)"
+    if run_or_log gh pr merge "$number" --repo "$REPO" --squash --delete-branch --auto --match-head-commit "$head_sha"; then
       echo "    Merged (or auto-merge queued). Push to $BASE will trigger next run."
     else
-      echo "    Merge failed — may need manual review."
+      echo "    Merge failed — the head may have changed or manual review is needed."
     fi
     exit 0   # ONE action per run — stop here
   fi
