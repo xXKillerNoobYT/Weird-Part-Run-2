@@ -612,7 +612,7 @@ struct IOSMessageThreadView: View {
 /// false`, resolved directly). Returning `nil` for a missing file is what lets
 /// the UI show an explicit "file unavailable" state instead of a dead chip
 /// (#1371 / #1372).
-func resolveAttachmentURL(_ attachment: ChatService.MessageAttachment) -> URL? {
+nonisolated func resolveAttachmentURL(_ attachment: ChatService.MessageAttachment) -> URL? {
     guard let path = attachment.filePath, !path.isEmpty else { return nil }
     if attachment.storageRelative {
         return (try? AttachmentStorage())?.resolveURL(relativePath: path)

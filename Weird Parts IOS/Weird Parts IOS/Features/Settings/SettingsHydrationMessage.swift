@@ -1,6 +1,6 @@
 import Foundation
 
-func settingsHydrationMessage(_ error: Error) -> String {
+nonisolated func settingsHydrationMessage(_ error: Error) -> String {
     if let hydrationError = error as? SettingsHydrationError {
         return hydrationError.localizedDescription
     }
