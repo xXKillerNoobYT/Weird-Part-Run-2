@@ -30,16 +30,26 @@ final class AIFallbackPersistenceRegressionTests: XCTestCase {
             in: assistant
         )
 
-        guard let modelCall = generate.range(of: "let result = await aiService.chatWithTools(")?.lowerBound,
+        guard let uiTestingFailureHook = generate.range(of: "if ProcessInfo.processInfo.arguments.contains(\"-UITestingAIGenerationFailure\")")?.lowerBound,
+              let uiTestingFallback = generate.range(of: "return .fallback(generateFallbackResponse(for: queryText))")?.lowerBound,
+              let modelCall = generate.range(of: "let result = await aiService.chatWithTools(")?.lowerBound,
               let successGate = generate.range(of: "if result.success, let text = result.text, !text.isEmpty")?.lowerBound,
-              let persistedReturn = generate.range(of: "return .persisted(cleanFilterJSON(text))")?.lowerBound,
-              let fallbackReturn = generate.range(of: "return .fallback(generateFallbackResponse(for: queryText))")?.lowerBound else {
-            XCTFail("Generation must distinguish the persisted model-success path from local fallback.")
+              let persistedReturn = generate.range(of: "return .persisted(cleanFilterJSON(text))")?.lowerBound else {
+            XCTFail("Generation must keep its UI-test fallback hook and persisted model-success path explicit.")
             return
         }
+
+        let normalFlow = generate[persistedReturn...]
+        guard let normalFallback = normalFlow.range(of: "return .fallback(generateFallbackResponse(for: queryText))")?.lowerBound else {
+            XCTFail("Generation must retain the normal local fallback after the persisted model-success path.")
+            return
+        }
+
+        XCTAssertLessThan(uiTestingFailureHook, uiTestingFallback)
+        XCTAssertLessThan(uiTestingFallback, modelCall)
         XCTAssertLessThan(modelCall, successGate)
         XCTAssertLessThan(successGate, persistedReturn)
-        XCTAssertLessThan(persistedReturn, fallbackReturn)
+        XCTAssertLessThan(persistedReturn, normalFallback)
         XCTAssertEqual(
             generate.components(separatedBy: "return .persisted").count - 1,
             1,
