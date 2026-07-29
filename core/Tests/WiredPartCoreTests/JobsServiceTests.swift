@@ -1,9 +1,4 @@
 import Foundation
-#if canImport(Darwin)
-import Darwin
-#elseif canImport(Glibc)
-import Glibc
-#endif
 import Testing
 import GRDB
 @testable import WiredPartCore
@@ -481,7 +476,6 @@ struct JobsServiceTests {
 
     @Test("Daily overtime threshold spans multiple labor entries")
     func testDailyOvertimeThresholdSpansMultipleLaborEntries() throws {
-        try withMountainTimeZone {
             let env = try E2ETestHelpers.setUp()
             let firstJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OT-1", name: "First OT Job")
             let secondJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OT-2", name: "Second OT Job")
@@ -516,12 +510,10 @@ struct JobsServiceTests {
 
             #expect(secondEntry?["regular_hours"] as Double? == 2.0)
             #expect(secondEntry?["overtime_hours"] as Double? == 2.0)
-        }
     }
 
     @Test("Weekly overtime settings split hours after configured threshold")
     func testWeeklyOvertimeSettingsSplitHoursAfterThreshold() throws {
-        try withMountainTimeZone {
             let env = try E2ETestHelpers.setUp()
             let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-WEEKLY-OT", name: "Weekly OT")
             _ = try env.jobs.updateOvertimeSettings(
@@ -564,12 +556,10 @@ struct JobsServiceTests {
 
             #expect(saturdayEntry?["regular_hours"] as Double? == 0.0)
             #expect(saturdayEntry?["overtime_hours"] as Double? == 4.0)
-        }
     }
 
     @Test("Labor correction persists actor reason and before after hours")
     func testLaborCorrectionPersistsAudit() throws {
-        try withMountainTimeZone {
             let env = try E2ETestHelpers.setUp()
             let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-CORRECT", name: "Correction Audit")
             let entryId = try env.jobs.clockIn(
@@ -608,12 +598,10 @@ struct JobsServiceTests {
             #expect(corrected?["regular_hours"] as Double? == 8.0)
             #expect(corrected?["overtime_hours"] as Double? == 1.0)
             #expect(corrected?["edited_by"] as Int64? == env.adminUserId)
-        }
     }
 
     @Test("Switching jobs closes current entry and starts next entry at the same instant")
     func testSwitchClockedInJobIsAtomicAndDeterministic() throws {
-        try withMountainTimeZone {
             let env = try E2ETestHelpers.setUp()
             let firstJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-SW-1", name: "Switch From")
             let secondJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-SW-2", name: "Switch To")
@@ -641,12 +629,10 @@ struct JobsServiceTests {
             #expect(secondEntry.status == "clocked_in")
             #expect(active?.id == secondEntryId)
             #expect(active?.jobId == secondJobId)
-        }
     }
 
     @Test("Switching jobs keeps current entry active when target job is not clockable")
     func testSwitchClockedInJobRollsBackWhenTargetIsNotClockable() throws {
-        try withMountainTimeZone {
             let env = try E2ETestHelpers.setUp()
             let firstJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-SW-STAY", name: "Switch Stays Active")
             let closedJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-SW-CLOSED", name: "Closed Switch Target")
@@ -675,12 +661,10 @@ struct JobsServiceTests {
             #expect(originalEntry.clockOut == nil)
             #expect(active?.id == firstEntryId)
             #expect(active?.jobId == firstJobId)
-        }
     }
 
     @Test("Clock out subtracts unpaid breaks but keeps paid breaks compensable")
     func testClockOutBreakPayTreatmentIsDeterministic() throws {
-        try withMountainTimeZone {
             let env = try E2ETestHelpers.setUp()
             let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BREAK-PAY", name: "Break Pay Job")
             let laborEntryId = try env.jobs.clockIn(
@@ -721,7 +705,6 @@ struct JobsServiceTests {
 
             #expect(entry?["regular_hours"] as Double? == 8.0)
             #expect(entry?["overtime_hours"] as Double? == 0.5)
-        }
     }
 
     // MARK: - Team Members
@@ -971,7 +954,6 @@ struct JobsServiceTests {
 
     @Test("Today's clock entries use local-day completed labor")
     func testGetTodaysClockEntriesUsesLocalOperationalDayForCompletedLabor() throws {
-        try withMountainTimeZone {
             let env = try E2ETestHelpers.setUp()
             let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-CLOCK-LOCAL", name: "Local Clock Job")
             let clockIn = Self.utcTimestampFormatter.string(from: try Self.localToday(hour: 22, minute: 30))
@@ -992,7 +974,6 @@ struct JobsServiceTests {
             #expect(group.jobName == "Local Clock Job")
             #expect(group.entries.count == 1)
             #expect(abs(group.totalDuration - 3600) < 1)
-        }
     }
 
     @Test("Today's clock entries reject malformed clock-in timestamps")
@@ -1276,7 +1257,6 @@ struct JobsServiceTests {
 
     @Test("Jobs dashboard KPIs bucket UTC end-of-day labor into local today")
     func testJobsDashboardKPIsUseLocalClockInDateBucket() throws {
-        try withMountainTimeZone {
             let env = try E2ETestHelpers.setUp()
             let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-KPI-LOCAL", name: "Local KPI")
             let clockIn = Self.utcTimestampFormatter.string(from: try Self.localToday(hour: 23, minute: 30))
@@ -1293,7 +1273,6 @@ struct JobsServiceTests {
             let kpis = try env.jobs.getJobsDashboardKPIs()
 
             #expect(kpis.todayLaborHours == 3.0)
-        }
     }
 
     // MARK: - Supply Run Toggle & Labor Notes
@@ -1324,8 +1303,7 @@ struct JobsServiceTests {
     }()
 
     private static func localToday(hour: Int, minute: Int) throws -> Date {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = try #require(TimeZone(identifier: "America/Denver"))
+        let calendar = Calendar.current
         var components = calendar.dateComponents([.year, .month, .day], from: Date())
         components.hour = hour
         components.minute = minute
@@ -1334,8 +1312,7 @@ struct JobsServiceTests {
     }
 
     private static func localWeekday(dayOffset: Int, hour: Int, minute: Int) throws -> Date {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = try #require(TimeZone(identifier: "America/Denver"))
+        var calendar = Calendar.current
         calendar.firstWeekday = 2
         let todayStart = calendar.startOfDay(for: Date())
         let weekday = calendar.component(.weekday, from: todayStart)
@@ -1349,22 +1326,6 @@ struct JobsServiceTests {
         return try #require(calendar.date(from: components))
     }
 
-    private func withMountainTimeZone<T>(_ body: () throws -> T) rethrows -> T {
-        #if canImport(Darwin) || canImport(Glibc)
-        let originalTZ = getenv("TZ").map { String(cString: $0) }
-        setenv("TZ", "America/Denver", 1)
-        tzset()
-        defer {
-            if let originalTZ {
-                setenv("TZ", originalTZ, 1)
-            } else {
-                unsetenv("TZ")
-            }
-            tzset()
-        }
-        #endif
-        return try body()
-    }
 
     // MARK: - Jobs for Customer
 
