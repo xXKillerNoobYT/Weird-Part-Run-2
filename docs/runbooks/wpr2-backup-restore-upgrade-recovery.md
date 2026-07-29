@@ -20,13 +20,12 @@ Real beta data entry remains gated on the final WEI-3990 GO/NO-GO call. The rela
 
 ## Backup locations and naming
 
-There are two backup families in the current app/core code. Keep them separate when collecting evidence.
+There is one durable backup family in the current app/core code. Keep it separate from the bounded SQLCipher migration critical section when collecting evidence.
 
 | Backup type | Trigger | Location | Filename pattern | Retention |
 |---|---|---|---|---|
 | Manual iOS backup | Settings -> Backups -> Create Backup Now | iOS app Documents directory: `WiredPart/Backups/` | `wiredpart-backup-YYYY-MM-DD-HHmmss.sqlite` plus optional matching `-wal` and `-shm` sidecars | UI says rolling local backups; current page copies files and reports stored count |
-| Pre-migration core backup | `AppDatabase.backupDatabase(atPath:)` before migrations | Sibling `Backups/` directory next to the database file | `pre-migration-YYYY-MM-DD_HHmmss.sqlite` plus optional matching `-wal` and `-shm` sidecars | Last 5 pre-migration backups retained |
-| SQLCipher migration safety backup | Encryption migration fallback | Canonical DB path with `.unencrypted.bak` suffix | `<database>.unencrypted.bak` | Cleanup after 7 days by `cleanupStaleUnencryptedBackup` |
+| SQLCipher migration critical section | Encryption upgrade fallback only | Canonical DB path with a temporary `.unencrypted.bak` suffix | `<database>.unencrypted.bak` plus optional sidecars | Removed after the promoted canonical DB passes a keyed SQLCipher recovery open; failed promotion restores this plaintext bundle only to the canonical path |
 
 Expected iOS database path is obtained through `AppCore.databasePath()`: `Documents/WiredPart/wiredpart.sqlite` for normal app runs and `Documents/WiredPart/wiredpart-uitesting.sqlite` only for UI-test runs. The current app bundle identifier is `weirdtoo.Weird-Parts-IOS`; on simulator, use Xcode or `xcrun simctl get_app_container booted weirdtoo.Weird-Parts-IOS data` to locate the app data container, then inspect `Documents/WiredPart/Backups/`.
 

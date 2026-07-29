@@ -77,7 +77,9 @@ extension AppDatabase {
     /// 7. Detach old DB.
     /// 8. Restore the current schema-version record (may have been overwritten by the copy).
     /// 9. Close the new pool.
-    /// 10. Atomic rename: `path` → `path.unencrypted.bak` (preserved), `path.encrypted-tmp` → `path`.
+    /// 10. Atomic rename: `path` → `path.unencrypted.bak`, `path.encrypted-tmp` → `path`.
+    /// 11. Re-open the canonical database with its SQLCipher key, then delete the
+    ///     plaintext rollback database and its SQLite sidecars.
     ///
     /// On any failure the temp file is removed and the original plaintext DB is untouched.
     ///
@@ -253,36 +255,64 @@ extension AppDatabase {
             throw error
         }
 
-        // --- Step 5: Atomic rename ---
-        // Original → .unencrypted.bak (preserved; deleted after 7 days by cleanupStaleBackup).
-        // Temp encrypted → canonical path.
+        // --- Step 5: Atomic promotion and encrypted recovery check ---
+        // Keep the plaintext rollback copy only until the promoted canonical DB is
+        // proven openable with the SQLCipher key.
         try replacePlaintextDatabaseWithEncryptedTemp(atPath: path, tempPath: tempPath, backupPath: bakPath)
+
+        do {
+            try confirmEncryptedRecovery(atPath: path, keyHex: keyHex)
+        } catch {
+            do {
+                try restorePlaintextDatabaseAfterFailedEncryptedRecovery(
+                    atPath: path,
+                    backupPath: bakPath
+                )
+            } catch {
+                throw CipherMigrationError.renameFailed(error)
+            }
+            throw error
+        }
+
+        try removePlaintextRollbackArtifacts(atPath: bakPath)
+    }
+
+    /// Executes the production encrypted-open path for a release upgrade.
+    ///
+    /// Legacy `pre-migration-*` files are removed only after the canonical database
+    /// has migrated and opened with its SQLCipher key, so successful recovery never
+    /// retains a durable readable copy of the pre-encryption database.
+    public static func openEncryptedDatabaseAfterReleaseMigration(
+        atPath path: String,
+        keyHex: String
+    ) throws -> AppDatabase {
+        try migratePlaintextDBIfNeeded(atPath: path, keyHex: keyHex)
+        let database = try openEncryptedDatabase(atPath: path, keyHex: keyHex)
+        try removePlaintextRollbackArtifacts(atPath: path + ".unencrypted.bak")
+        try removeLegacyPreMigrationPlaintextArtifacts(atPath: path)
+        return database
     }
 
     static func replacePlaintextDatabaseWithEncryptedTemp(
         atPath path: String,
         tempPath: String,
         backupPath bakPath: String,
-        fileManager fm: FileManager = .default
+        fileManager fm: FileManager = .default,
+        moveItem: ((String, String) throws -> Void)? = nil
     ) throws {
+        let moveItem = moveItem ?? { sourcePath, destinationPath in
+            try fm.moveItem(atPath: sourcePath, toPath: destinationPath)
+        }
         do {
-            for suffix in ["-wal", "-shm"] { try? fm.removeItem(atPath: path + suffix) }
             for suffix in ["", "-wal", "-shm"] { try? fm.removeItem(atPath: bakPath + suffix) }
             try fm.moveItem(atPath: path, toPath: bakPath)
-            // Touch the backup so the 7-day retention window is measured from the time
-            // of migration, not from the original DB file's last-modified timestamp.
-            // (POSIX rename preserves the source's mtime; we want "age since migration".)
             do {
-                try fm.setAttributes([.modificationDate: Date()], ofItemAtPath: bakPath)
-            } catch {
-                Self.cipherLogger.warning("Failed to touch backup file (7-day window may be inaccurate): \(error.localizedDescription, privacy: .public)")
-            }
-            do {
-                try fm.moveItem(atPath: tempPath, toPath: path)
-            } catch {
-                if fm.fileExists(atPath: bakPath), !fm.fileExists(atPath: path) {
-                    try fm.moveItem(atPath: bakPath, toPath: path)
+                for suffix in ["-wal", "-shm"] where fm.fileExists(atPath: path + suffix) {
+                    try moveItem(path + suffix, bakPath + suffix)
                 }
+                try moveItem(tempPath, path)
+            } catch {
+                try restorePlaintextDatabaseBundle(atPath: path, backupPath: bakPath, fileManager: fm)
                 throw error
             }
         } catch {
@@ -293,30 +323,57 @@ extension AppDatabase {
         }
     }
 
-    // MARK: - Backup Retention
+    private static func confirmEncryptedRecovery(atPath path: String, keyHex: String) throws {
+        let recoveredDatabase = try openEncryptedDatabase(atPath: path, keyHex: keyHex)
+        do {
+            try (recoveredDatabase.writer as? DatabasePool)?.close()
+        } catch {
+            Self.cipherLogger.warning("Encrypted recovery pool close failed after successful open: \(error.localizedDescription, privacy: .public)")
+        }
+    }
 
-    /// Seconds in a day (used for backup retention calculation).
-    private static let secondsPerDay: Double = 86_400
+    private static func restorePlaintextDatabaseAfterFailedEncryptedRecovery(
+        atPath path: String,
+        backupPath bakPath: String,
+        fileManager fm: FileManager = .default
+    ) throws {
+        try restorePlaintextDatabaseBundle(atPath: path, backupPath: bakPath, fileManager: fm)
+    }
 
-    /// Delete the `.unencrypted.bak` file once it is stale (older than `retentionDays`).
-    ///
-    /// Call on every successful app launch after `openEncryptedDatabase` succeeds.
-    /// The backup is retained for at least 7 days so the user can recover data if needed.
-    ///
-    /// - Parameters:
-    ///   - path: Canonical database path (not the backup path).
-    ///   - retentionDays: Number of days to keep the backup. Defaults to 7.
-    public static func cleanupStaleUnencryptedBackup(atPath path: String, retentionDays: Int = 7) {
-        let bakPath = path + ".unencrypted.bak"
+    private static func restorePlaintextDatabaseBundle(
+        atPath path: String,
+        backupPath bakPath: String,
+        fileManager fm: FileManager
+    ) throws {
+        for suffix in ["", "-wal", "-shm"] where fm.fileExists(atPath: bakPath + suffix) {
+            let canonicalPath = path + suffix
+            if fm.fileExists(atPath: canonicalPath) {
+                try fm.removeItem(atPath: canonicalPath)
+            }
+            try fm.moveItem(atPath: bakPath + suffix, toPath: canonicalPath)
+        }
+    }
+
+    private static func removePlaintextRollbackArtifacts(
+        atPath bakPath: String,
+        fileManager fm: FileManager = .default
+    ) throws {
+        for suffix in ["", "-wal", "-shm"] {
+            let artifactPath = bakPath + suffix
+            if fm.fileExists(atPath: artifactPath) {
+                try fm.removeItem(atPath: artifactPath)
+            }
+        }
+    }
+
+    private static func removeLegacyPreMigrationPlaintextArtifacts(atPath path: String) throws {
         let fm = FileManager.default
-        guard fm.fileExists(atPath: bakPath),
-              let attrs = try? fm.attributesOfItem(atPath: bakPath),
-              let modified = attrs[.modificationDate] as? Date else { return }
-        let age = Date().timeIntervalSince(modified)
-        if age >= Double(retentionDays) * Self.secondsPerDay {
-            try? fm.removeItem(atPath: bakPath)
-            try? fm.removeItem(atPath: bakPath + "-wal")
-            try? fm.removeItem(atPath: bakPath + "-shm")
+        let backupDirectory = (path as NSString).deletingLastPathComponent + "/Backups"
+        guard fm.fileExists(atPath: backupDirectory) else { return }
+
+        let names = try fm.contentsOfDirectory(atPath: backupDirectory)
+        for name in names where name.hasPrefix("pre-migration-") {
+            try fm.removeItem(atPath: backupDirectory + "/" + name)
         }
     }
 

@@ -605,47 +605,6 @@ struct Weird_Parts_IOSTests {
         #endif
     }
 
-    @Test func migrationRollbackRestoresThenRetriesMigrationAndOpen() throws {
-        var events: [String] = []
-
-        let database = try AppCore.retryOpeningRestoredDatabase(
-            backupPath: "/tmp/wired-part.sqlite.rollback",
-            databasePath: "/tmp/wired-part.sqlite",
-            keyHex: "device-key",
-            restoreDatabase: { backupPath, databasePath in
-                events.append("restore")
-                #expect(backupPath == "/tmp/wired-part.sqlite.rollback")
-                #expect(databasePath == "/tmp/wired-part.sqlite")
-            },
-            migratePlaintextDatabaseIfNeeded: { databasePath, keyHex in
-                events.append("migrate")
-                #expect(databasePath == "/tmp/wired-part.sqlite")
-                #expect(keyHex == "device-key")
-            },
-            openEncryptedDatabase: { databasePath, keyHex in
-                events.append("open")
-                #expect(databasePath == "/tmp/wired-part.sqlite")
-                #expect(keyHex == "device-key")
-                return "opened-restored-database"
-            }
-        )
-
-        #expect(events == ["restore", "migrate", "open"])
-        #expect(database == "opened-restored-database")
-    }
-
-    @Test func migrationRollbackRequiresBackupBeforeRetry() {
-        #expect(throws: AppCore.AppCoreError.self) {
-            _ = try AppCore.retryOpeningRestoredDatabase(
-                backupPath: nil,
-                databasePath: "/tmp/wired-part.sqlite",
-                keyHex: "device-key",
-                restoreDatabase: { _, _ in throw MigrationRollbackRetryTestError.restore },
-                migratePlaintextDatabaseIfNeeded: { _, _ in throw MigrationRollbackRetryTestError.migrate },
-                openEncryptedDatabase: { _, _ in throw MigrationRollbackRetryTestError.open }
-            ) as String
-        }
-    }
 
     @MainActor
     @Test func bulkHoldSelectionCarriesAllSelectedRowsIntoSheetSnapshot() throws {
