@@ -609,9 +609,18 @@ public final class LanSyncServer: Sendable {
             Task {
                 let (status, body) = await Self.routeHTTPRequest(data: data, state: stateRef, logger: loggerRef)
                 let response = Self.buildHTTPResponse(status: status, body: body)
-                connection.send(content: response, completion: .contentProcessed { _ in
-                    connection.cancel()
-                })
+                // Mark the response as complete before cancelling the connection.
+                // Cancelling an open write can reset the TCP stream after bytes have
+                // reached the client. That made short error responses intermittently
+                // surface as NSURLErrorNetworkConnectionLost on iPhone simulators.
+                connection.send(
+                    content: response,
+                    contentContext: .finalMessage,
+                    isComplete: true,
+                    completion: .contentProcessed { _ in
+                        connection.cancel()
+                    }
+                )
             }
         }
     }

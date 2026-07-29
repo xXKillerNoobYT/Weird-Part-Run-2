@@ -1,0 +1,218 @@
+import XCTest
+@testable import Weird_Parts
+
+/// Regression coverage for GitHub #1467 / WEI-5214: every visible local fallback
+/// turn is owner-scoped, persisted for Resume, and exposes a recoverable save error.
+final class AIFallbackPersistenceRegressionTests: XCTestCase {
+    func testUnavailableModelFallbackIsMarkedForLocalPersistence() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let generate = try TestSourceSlicer.braceBalancedBody(
+            after: "private func generateResponse(for queryText: String) async -> GeneratedResponse",
+            in: assistant
+        )
+        let send = try TestSourceSlicer.braceBalancedBody(
+            after: "private func sendQuery()",
+            in: assistant
+        )
+
+        XCTAssertTrue(generate.contains("if aiAvailability == .available, let db = appCore.db"))
+        XCTAssertTrue(generate.contains("return .fallback(generateFallbackResponse(for: queryText))"))
+        XCTAssertTrue(send.contains("if response.needsLocalPersistence"))
+        XCTAssertTrue(send.contains("await persistFallbackTurn(pendingSave)"))
+        XCTAssertTrue(send.contains("conversationId: sendConversationId"))
+        XCTAssertTrue(send.contains("ownerUserId: sendOwnerUserId"))
+    }
+
+    func testAvailableModelFailureFallsThroughToPersistedFallback() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let generate = try TestSourceSlicer.braceBalancedBody(
+            after: "private func generateResponse(for queryText: String) async -> GeneratedResponse",
+            in: assistant
+        )
+
+        guard let uiTestingFailureHook = generate.range(of: "if ProcessInfo.processInfo.arguments.contains(\"-UITestingAIGenerationFailure\")")?.lowerBound,
+              let uiTestingFallback = generate.range(of: "return .fallback(generateFallbackResponse(for: queryText))")?.lowerBound,
+              let modelCall = generate.range(of: "let result = await aiService.chatWithTools(")?.lowerBound,
+              let successGate = generate.range(of: "if result.success, let text = result.text, !text.isEmpty")?.lowerBound,
+              let persistedReturn = generate.range(of: "return .persisted(cleanFilterJSON(text))")?.lowerBound else {
+            XCTFail("Generation must keep its UI-test fallback hook and persisted model-success path explicit.")
+            return
+        }
+
+        let normalFlow = generate[persistedReturn...]
+        guard let normalFallback = normalFlow.range(of: "return .fallback(generateFallbackResponse(for: queryText))")?.lowerBound else {
+            XCTFail("Generation must retain the normal local fallback after the persisted model-success path.")
+            return
+        }
+
+        XCTAssertLessThan(uiTestingFailureHook, uiTestingFallback)
+        XCTAssertLessThan(uiTestingFallback, modelCall)
+        XCTAssertLessThan(modelCall, successGate)
+        XCTAssertLessThan(successGate, persistedReturn)
+        XCTAssertLessThan(persistedReturn, normalFallback)
+        XCTAssertEqual(
+            generate.components(separatedBy: "return .persisted").count - 1,
+            1,
+            "Only a confirmed model success may claim that the pair was already persisted."
+        )
+    }
+
+    func testFallbackPersistenceUsesAtomicOwnerScopedServiceAndRecoverableWarning() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let persist = try TestSourceSlicer.braceBalancedBody(
+            after: "private func persistFallbackTurn(_ pendingSave: PendingFallbackSave) async",
+            in: assistant
+        )
+
+        XCTAssertTrue(persist.contains("capturedOwnerUserId: pendingSave.ownerUserId"))
+        XCTAssertTrue(persist.contains("currentOwnerUserId: appCore.currentUser?.id"))
+        XCTAssertTrue(persist.contains("pendingSave.conversationId == conversationId"))
+        XCTAssertTrue(persist.contains("pendingSave.conversationRevision == conversationRevision"))
+        XCTAssertTrue(persist.contains("aiService.stageLocalConversation("))
+        XCTAssertTrue(persist.contains("ownerUserId: ownerUserId"))
+        XCTAssertTrue(persist.contains("AIFallbackPersistenceRetryDecision.resolve("))
+        XCTAssertTrue(persist.contains("case .saved:"))
+        XCTAssertTrue(persist.contains("Tap Retry Save"))
+        XCTAssertTrue(assistant.contains("Text(\"Retry Save\")"))
+        XCTAssertGreaterThanOrEqual(
+            assistant.components(separatedBy: ".dsMinTapTarget()").count - 1,
+            2,
+            "Retry Save and Dismiss must use the shared minimum tap-target helper."
+        )
+        XCTAssertTrue(assistant.contains("accessibilityLabel(\"Retry saving conversation turn\")"))
+        XCTAssertTrue(assistant.contains("|| pendingFallbackSave != nil"))
+    }
+
+    func testLifecycleChangesDiscardStaleFallbackRetryPayload() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        for lifecycleFunction in [
+            "private func startNewConversation()",
+            "private func resetForLogout()",
+            "private func clearPersistedConversation(_ cid: String)",
+            "private func resumeConversation(_ id: String)",
+        ] {
+            let body = try TestSourceSlicer.braceBalancedBody(after: lifecycleFunction, in: assistant)
+            XCTAssertTrue(
+                body.contains("pendingFallbackSave = nil"),
+                "\(lifecycleFunction) must not let an old fallback pair save into a new lifecycle."
+            )
+        }
+    }
+
+    func testFallbackWarningActionsCannotDismissAnInFlightRetry() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let actions = try TestSourceSlicer.braceBalancedBody(
+            after: "private var fallbackSaveWarningActions: some View",
+            in: assistant
+        )
+        guard assistant.contains("private func dismissFallbackSaveWarning()") else {
+            XCTFail("The warning needs one guarded dismissal handler shared by its action surface.")
+            return
+        }
+        let dismiss = try TestSourceSlicer.braceBalancedBody(
+            after: "private func dismissFallbackSaveWarning()",
+            in: assistant
+        )
+
+        XCTAssertGreaterThanOrEqual(
+            actions.components(separatedBy: ".disabled(isProcessing)").count - 1,
+            2,
+            "Retry Save and Dismiss must both be disabled while retry persistence is active."
+        )
+        XCTAssertTrue(
+            dismiss.contains("guard !isProcessing else { return }"),
+            "The action handler must preserve the exact retry payload even if dismissal is invoked programmatically."
+        )
+        XCTAssertTrue(dismiss.contains("isUITestingFallbackSaveWarningVisible = false"))
+        XCTAssertTrue(dismiss.contains("consumePendingHelpRequestIfReady()"))
+
+        let retry = try TestSourceSlicer.braceBalancedBody(
+            after: "private func retryFallbackSave()",
+            in: assistant
+        )
+        XCTAssertTrue(retry.contains("isUITestingFallbackSaveWarningVisible = false"))
+        XCTAssertTrue(retry.contains("consumePendingHelpRequestIfReady()"))
+    }
+
+    func testQueuedHelpWaitsForFallbackResolutionAndPersistenceWarningsDoNotReplaceResponses() throws {
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let consumeHelp = try TestSourceSlicer.braceBalancedBody(
+            after: "private func consumePendingHelpRequestIfReady()",
+            in: assistant
+        )
+        XCTAssertTrue(
+            consumeHelp.contains("guard pendingFallbackSave == nil else { return }"),
+            "Help must remain queued until the exact fallback retry payload is saved or dismissed."
+        )
+
+        let send = try TestSourceSlicer.braceBalancedBody(
+            after: "private func sendQuery()",
+            in: assistant
+        )
+        XCTAssertFalse(
+            send.contains("if let conversationPersistenceError"),
+            "A status-only persistence warning must not become assistant output or block generation."
+        )
+        XCTAssertTrue(send.contains("let response = await generateResponse(for: trimmed)"))
+    }
+
+    @MainActor
+    func testOwnerlessFallbackCannotBindToLaterAuthenticatedOwner() throws {
+        let decision = AIFallbackPendingSaveOwnershipDecision.resolve(
+            capturedOwnerUserId: nil,
+            currentOwnerUserId: 42,
+            databaseIsReady: true
+        )
+
+        XCTAssertEqual(decision, .discardStale)
+        XCTAssertNil(decision.ownerUserIdForWrite, "An ownerless turn must never acquire the later signed-in owner.")
+
+        let stableOwnerStorageFailure = AIFallbackPendingSaveOwnershipDecision.resolve(
+            capturedOwnerUserId: 42,
+            currentOwnerUserId: 42,
+            databaseIsReady: false
+        )
+        XCTAssertEqual(stableOwnerStorageFailure, .retryStableOwner)
+
+        let changedOwner = AIFallbackPendingSaveOwnershipDecision.resolve(
+            capturedOwnerUserId: 42,
+            currentOwnerUserId: 84,
+            databaseIsReady: true
+        )
+        XCTAssertEqual(changedOwner, .discardStale)
+        XCTAssertNil(changedOwner.ownerUserIdForWrite)
+
+        let assistant = try Self.readSource("AI/IOSAIAssistantPanel.swift")
+        let persist = try TestSourceSlicer.braceBalancedBody(
+            after: "private func persistFallbackTurn(_ pendingSave: PendingFallbackSave) async",
+            in: assistant
+        )
+        guard let ownershipDecision = persist.range(of: "AIFallbackPendingSaveOwnershipDecision.resolve(")?.lowerBound,
+              let historyWrite = persist.range(of: "aiService.stageLocalConversation(")?.lowerBound else {
+            XCTFail("Fallback persistence must resolve captured ownership before any history write.")
+            return
+        }
+        XCTAssertLessThan(ownershipDecision, historyWrite)
+        XCTAssertTrue(persist.contains("case .discardStale:"))
+        XCTAssertTrue(persist.contains("pendingFallbackSave = nil"))
+        XCTAssertTrue(persist.contains("conversationPersistenceError = nil"))
+
+        let composer = try TestSourceSlicer.braceBalancedBody(
+            after: "private var chatTextEditor: some View",
+            in: assistant
+        )
+        XCTAssertTrue(composer.contains("pendingFallbackSave != nil"))
+        XCTAssertFalse(composer.contains("appCore.currentUser"), "Discarding the unsafe payload must leave the composer usable after login.")
+    }
+
+    private static func readSource(_ relativePath: String, file: StaticString = #filePath) throws -> String {
+        let testFileURL = URL(fileURLWithPath: "\(file)")
+        let projectRoot = testFileURL
+            .deletingLastPathComponent() // Weird Parts IOSTests
+            .deletingLastPathComponent() // Weird Parts IOS
+        let sourceURL = projectRoot
+            .appendingPathComponent("Weird Parts IOS")
+            .appendingPathComponent(relativePath)
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+}
