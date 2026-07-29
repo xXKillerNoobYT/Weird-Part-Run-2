@@ -72,8 +72,13 @@ final class TabBarPreferences: ObservableObject {
             tabOrder = []
         }
 
-        // Load navigation style
-        if let rawStyle = UserDefaults.standard.string(forKey: navStyleKey),
+        // Focused UI verification must be able to exercise the full-sidebar
+        // layout deterministically, regardless of preferences left by an
+        // earlier simulator or Catalyst run.
+        let launchArguments = ProcessInfo.processInfo.arguments
+        if launchArguments.contains("-UITesting"), launchArguments.contains("-UITestingFullSidebar") {
+            navigationStyle = .fullSidebar
+        } else if let rawStyle = UserDefaults.standard.string(forKey: navStyleKey),
            let style = NavigationStyle(rawValue: rawStyle) {
             navigationStyle = style
         } else {
