@@ -132,9 +132,9 @@ struct DatabaseTests {
         #expect(result.indexExists)
     }
 
-    @Test("Schema version is 105")
+    @Test("Schema version is 114")
     func testSchemaVersion() throws {
-        #expect(AppDatabase.schemaVersion == 105)
+        #expect(AppDatabase.schemaVersion == 114)
     }
 
     @Test("Persisted schema version matches AppDatabase schemaVersion")
@@ -145,6 +145,145 @@ struct DatabaseTests {
         }
 
         #expect(persistedVersion == "\(AppDatabase.schemaVersion)")
+    }
+
+    @Test("Migration 114 preserves legacy writers and deterministically reads mixed recency rows")
+    func testMigration114LegacyWriterAndMixedRecencyCompatibility() async throws {
+        var config = Configuration()
+        config.foreignKeysEnabled = true
+        let queue = try DatabaseQueue(configuration: config)
+        var migrator = DatabaseMigrator()
+        AppDatabase.registerMigrations(&migrator)
+        try migrator.migrate(queue, upTo: "113_ai_conversation_owners")
+
+        let tiedTimestamp = "2026-07-17T10:00:00Z"
+        try await queue.write { db in
+            // Simulate a local/experimental schema that added the column early with
+            // the incompatible zero default and partially assigned positive values.
+            try db.execute(
+                sql: "ALTER TABLE ai_conversation_messages ADD COLUMN recency_order INTEGER DEFAULT 0"
+            )
+            for (id, content) in [("legacy-1", "Legacy first"), ("legacy-2", "Legacy second")] {
+                try db.execute(
+                    sql: """
+                        INSERT INTO ai_conversation_messages
+                            (id, conversation_id, owner_user_id, role, content, created_at)
+                        VALUES (?, 'mixed-recency', 41, 'user', ?, ?)
+                        """,
+                    arguments: [id, content, tiedTimestamp]
+                )
+            }
+            try db.execute(
+                sql: "UPDATE ai_conversation_messages SET recency_order = 1 WHERE id = 'legacy-2'"
+            )
+        }
+
+        try migrator.migrate(queue)
+
+        // Simulate opening the upgraded store with a rollback build whose migration
+        // registry ends at 113. GRDB must tolerate the already-applied newer identifier.
+        let rollbackMigrationIdentifiers = try await queue.read { db in
+            try String.fetchAll(
+                db,
+                sql: """
+                    SELECT identifier
+                    FROM grdb_migrations
+                    WHERE identifier <> '114_ai_conversation_recency'
+                    ORDER BY rowid
+                    """
+            )
+        }
+        var rollbackMigrator = DatabaseMigrator()
+        for identifier in rollbackMigrationIdentifiers {
+            rollbackMigrator.registerMigration(identifier) { _ in }
+        }
+        try rollbackMigrator.migrate(queue)
+
+        // A rollback/legacy writer does not know about recency_order. Multiple omitted
+        // values must remain writable even when a pre-existing experimental column still
+        // defaults to zero, so both NULL and zero are valid compatibility states.
+        try await queue.write { db in
+            for (id, content) in [("rollback-zero", "Rollback zero"), ("rollback-null", "Rollback null")] {
+                try db.execute(
+                    sql: """
+                        INSERT INTO ai_conversation_messages
+                            (id, conversation_id, owner_user_id, role, content, created_at)
+                        VALUES (?, 'mixed-recency', 41, 'assistant', ?, ?)
+                        """,
+                    arguments: [id, content, tiedTimestamp]
+                )
+            }
+            try db.execute(sql: "UPDATE ai_conversation_messages SET recency_order = NULL WHERE id = 'rollback-null'")
+        }
+
+        // Reopening applies no destructive repair and records the actual latest schema.
+        let reopened = try AppDatabase(queue)
+        let allocationQueryPlan = try await queue.read { db in
+            try String.fetchAll(
+                db,
+                sql: """
+                    EXPLAIN QUERY PLAN
+                    SELECT MAX(
+                        COALESCE(
+                            (
+                                SELECT MAX(recency_order)
+                                FROM ai_conversation_messages
+                                WHERE recency_order IS NOT NULL
+                                  AND recency_order <> 0
+                                  AND recency_order > 0
+                            ),
+                            0
+                        ),
+                        COALESCE(
+                            (
+                                SELECT MAX(rowid)
+                                FROM ai_conversation_messages
+                                WHERE recency_order IS NULL OR recency_order = 0
+                            ),
+                            0
+                        )
+                    )
+                    """,
+                adapter: RangeRowAdapter(3..<4)
+            )
+        }
+        try await FoundationModelsService.saveMessage(
+            AIConversationMessage(
+                id: "current-writer",
+                conversationId: "mixed-recency",
+                role: "assistant",
+                content: "Current writer",
+                createdAt: tiedTimestamp
+            ),
+            ownerUserId: 41,
+            to: reopened
+        )
+
+        let storedRecency = try await queue.read { db -> (legacy: [Int64], zero: Int64?, null: Int64?, current: Int64?, schema: String?) in
+            (
+                legacy: try Int64.fetchAll(
+                    db,
+                    sql: "SELECT recency_order FROM ai_conversation_messages WHERE id IN ('legacy-1', 'legacy-2') ORDER BY rowid"
+                ),
+                zero: try Int64.fetchOne(db, sql: "SELECT recency_order FROM ai_conversation_messages WHERE id = 'rollback-zero'"),
+                null: try Int64.fetchOne(db, sql: "SELECT recency_order FROM ai_conversation_messages WHERE id = 'rollback-null'"),
+                current: try Int64.fetchOne(db, sql: "SELECT recency_order FROM ai_conversation_messages WHERE id = 'current-writer'"),
+                schema: try String.fetchOne(db, sql: "SELECT value FROM settings WHERE key = 'db_schema_version'")
+            )
+        }
+        let loaded = try await FoundationModelsService.loadConversation(
+            "mixed-recency",
+            ownerUserId: 41,
+            from: reopened
+        )
+
+        #expect(storedRecency.legacy == [1, 2])
+        #expect(storedRecency.zero == 0)
+        #expect(storedRecency.null == nil)
+        #expect(storedRecency.current == 5)
+        #expect(storedRecency.schema == "114")
+        #expect(allocationQueryPlan.contains { $0.contains("USING COVERING INDEX idx_ai_conv_msgs_recency_order") })
+        #expect(loaded.map(\.id) == ["legacy-1", "legacy-2", "rollback-zero", "rollback-null", "current-writer"])
     }
 
     @Test("Migration 095 normalizes duplicate legacy stage sort orders and category maps")

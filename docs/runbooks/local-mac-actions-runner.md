@@ -43,6 +43,33 @@ runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
 
 Keep cloud runners only for intentionally minimal jobs that do not need the Mac runner and are not contributing to PR blockages.
 
+## iOS beta PR gate
+
+Tracking: GitHub #1480 / Paperclip WEI-5356. Design: `docs/plans/ios-beta-pr-gate.md`.
+
+Every same-repository PR targeting `main` must produce both current-head checks:
+
+- `iOS Beta Gate (iPhone)`
+- `iOS Beta Gate (iPad)`
+
+The workflow is `.github/workflows/ios-beta-gate.yml`; deterministic execution is in `scripts/ci/run-ios-beta-gate.sh`. Each lane verifies the checked-out SHA, requires at least 60 GiB free on the runner temp volume, creates a run-owned iOS 26.5 simulator, runs the `WiredPart-iOS` unit/regression phase plus the bounded `WiredPart-iOS-Stage9-Smokes` UI plan, and uploads logs, summaries, metadata, and `.xcresult` evidence even on failure.
+
+Missing, queued, cancelled, stale-head, skipped-test, zero-test, disk-capacity, simulator-runtime, timeout, and runner-offline outcomes are non-mergeable. Do not substitute `Analyze (swift)` or another echo/status-only check for either device lane.
+
+Ordinary PR gates never archive or upload to App Store Connect. TestFlight upload is a separate post-merge `main` operation and requires an authenticated App Store Connect session.
+
+### Disk-capacity response
+
+If either lane reports less than 60 GiB free:
+
+1. Keep the check red and the PR out of the merge queue.
+2. Inspect the runner volume and generated caches/artifacts without deleting live worktrees or unique work.
+3. Perform only evidence-backed safe cleanup; route uncertain or broad deletion through a bounded cleanup issue.
+4. Rerun both device lanes at the unchanged PR head and use the new check/artifact URLs as evidence.
+5. Recheck free space after the run because a successful build can still expose a capacity trend.
+
+Review the gate on every PR. A repeated capacity failure, missing runtime, malformed result bundle, or unavailable runner creates/updates a Paperclip CI blocker after the first reproducible occurrence; do not wait for a merge attempt.
+
 ## Paperclip communication
 
 PR-info, merge, review, and blocker issues should mention this local-runner path whenever CI status is discussed. Do not repeatedly ask Isaac to correct cloud Actions/billing blockers without first checking the local Mac runner.
