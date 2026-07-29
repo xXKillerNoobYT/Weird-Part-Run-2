@@ -28,7 +28,14 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
 
     private func launchApp(contentSizeCategory: UIContentSizeCategory? = nil) -> XCUIApplication {
         let application = XCUIApplication()
-        application.launchArguments = ["-UITesting", "-UITestingAIFallbackSaveWarning"]
+        // The warning assertions require the authenticated app shell. Use the
+        // shared deterministic fixture rather than manually driving login and
+        // first-run routing, which leaves the AX5 smoke outside its scope.
+        application.launchArguments = [
+            "-UITesting",
+            "-UITestingWEI936AutoLogin",
+            "-UITestingAIFallbackSaveWarning",
+        ]
         if let contentSizeCategory {
             application.launchArguments += [
                 "-UIPreferredContentSizeCategoryName",
@@ -42,7 +49,7 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
 
     @MainActor
     private func verifyWarningAndRetryTarget(context: String) throws {
-        try logInIfNeeded()
+        waitForAuthenticatedAppShell()
 
         let assistantButton = app.buttons["aiAssistantButton"]
         XCTAssertTrue(assistantButton.waitForExistence(timeout: 15), "AI Assistant should be available at \(context).")
@@ -89,53 +96,12 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
     }
 
     @MainActor
-    private func logInIfNeeded() throws {
+    private func waitForAuthenticatedAppShell() {
         let assistantButton = app.buttons["aiAssistantButton"]
-        if assistantButton.waitForExistence(timeout: 5), assistantButton.isHittable { return }
-
-        let ownerRow = app.buttons.matching(
-            NSPredicate(format: "identifier BEGINSWITH 'loginUserRow_'")
-        ).firstMatch
-        XCTAssertTrue(ownerRow.waitForExistence(timeout: 30), "UI test owner should be available.")
-        ownerRow.tap()
-
-        let pinField = app.secureTextFields["loginPINField"]
-        XCTAssertTrue(pinField.waitForExistence(timeout: 5), "PIN field should appear.")
-        pinField.tap()
-        pinField.typeText("1234")
-
-        let done = app.buttons["loginPINDoneButton"]
-        if done.waitForExistence(timeout: 2), done.isHittable { done.tap() }
-
-        let signIn = app.buttons["loginSignInButton"]
-        XCTAssertTrue(signIn.waitForExistence(timeout: 5), "Sign In should appear.")
-        signIn.tap()
-
-        let deadline = Date().addingTimeInterval(25)
-        while Date() < deadline {
-            let skip = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Skip'")).firstMatch
-            let gotIt = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Got It'")).firstMatch
-            if gotIt.exists {
-                if gotIt.isHittable {
-                    gotIt.tap()
-                } else {
-                    app.scrollViews.firstMatch.swipeUp()
-                }
-                continue
-            }
-            if skip.exists {
-                if skip.isHittable {
-                    skip.tap()
-                } else {
-                    app.scrollViews.firstMatch.swipeUp()
-                }
-                continue
-            }
-            if app.buttons["aiAssistantButton"].exists,
-               app.buttons["aiAssistantButton"].isHittable { return }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
-        }
-
-        XCTFail("Login should reach the app shell before opening AI Assistant.")
+        XCTAssertTrue(
+            assistantButton.waitForExistence(timeout: 30),
+            "The deterministic UI-test auto-login fixture should reach the authenticated app shell."
+        )
+        XCTAssertTrue(assistantButton.isHittable, "AI Assistant should be actionable from the authenticated app shell.")
     }
 }
