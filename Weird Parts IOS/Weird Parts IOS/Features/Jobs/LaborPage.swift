@@ -344,14 +344,17 @@ struct LaborPage: View {
 
     private func postAIContext() {
         let totalRecentHours = filteredRecentEntries.reduce(0) { $0 + $1.regularHours + $1.overtimeHours }
-        let activeJobs = Set(filteredActiveEntries.map(\.jobName)).sorted().prefix(5).joined(separator: ", ")
+        let activeJobNames = Set(filteredActiveEntries.map(\.jobName)).sorted().prefix(5)
         let context = """
         Labor page. Read-only context.
         Date range: \(dateRange.rawValue), search active: \(!searchText.isEmpty).
         Active entries: \(activeEntries.count), visible active entries: \(filteredActiveEntries.count), recent entries loaded: \(recentEntries.count), visible recent entries: \(filteredRecentEntries.count).
-        Visible recent hours: \(String(format: "%.1f", totalRecentHours)), active jobs shown: \(activeJobs.isEmpty ? "none" : activeJobs).
+        Visible recent hours: \(String(format: "%.1f", totalRecentHours)), active job count: \(activeJobNames.count).
         Clock-in options loaded: users \(users.count), active jobs \(jobOptions.count), clock-in sheet open: \(activeSheet?.id == "clockIn").
         Available read-only guidance: explain active vs recent labor sections, date range filters, search state, and where clock-in/help controls are located. Do not clock anyone in or out directly.
+        \(AIRecordDataEnvelope.make([
+            ("active_job_names", activeJobNames.isEmpty ? "none" : activeJobNames.joined(separator: "; "))
+        ]))
         """
         NotificationCenter.default.post(
             name: .laborPageActive,
