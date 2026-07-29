@@ -275,6 +275,33 @@
 			shellPath = /bin/sh;
 			shellScript = "set -eu\n\nresources_dir=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\"\nmkdir -p \"$resources_dir\"\ncp \"$SRCROOT/Weird Parts IOS/Features/Jobs/IOSClockPage.swift\" \"$resources_dir/ClockSupplyRunCardRegressionClock.swift\"\ncp \"$SRCROOT/Weird Parts IOS/Navigation/IOSMainView.swift\" \"$resources_dir/ClockSupplyRunCardRegressionMain.swift\"\n";
 		};
+		A5C327012F1A4A3D00F5327A /* Bundle QR Scan Source Fixture */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/Weird Parts IOS/Scanning/QRScanSheet.swift",
+			);
+			name = "Bundle QR Scan Source Fixture";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/QRScanSheetSource.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\nmkdir -p \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\"\ncp \"$SRCROOT/Weird Parts IOS/Scanning/QRScanSheet.swift\" \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/QRScanSheetSource.txt\"\n";
+			showEnvVarsInLog = 0;
+	};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		08F2BE2E2F67A53500944E97 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
