@@ -958,20 +958,20 @@ final class AppCore: ObservableObject {
                     throw UITestBootstrapError.partCategoryMissing
                 }
 
-                let fixtureParts: [(code: String, name: String, description: String)] = [
-                    ("UITEST-QA-CONDUIT", "UITesting QA Conduit", "Selectable conduit line for bulk JPO hold QA"),
-                    ("UITEST-QA-WIRE", "UITesting QA Wire", "Selectable wire line for bulk JPO hold QA")
+                let fixtureParts: [(id: Int64, code: String, name: String, description: String)] = [
+                    (900_001, "UITEST-QA-CONDUIT", "UITesting QA Conduit", "Selectable conduit line for bulk JPO hold QA"),
+                    (900_002, "UITEST-QA-WIRE", "UITesting QA Wire", "Selectable wire line for bulk JPO hold QA")
                 ]
                 for part in fixtureParts {
                     try dbConn.execute(
                         sql: """
                             INSERT OR IGNORE INTO parts
-                            (category_id, part_type, code, name, description, unit_of_measure,
+                            (id, category_id, part_type, code, name, description, unit_of_measure,
                              company_cost_price, company_markup_percent, is_active, deleted_at,
                              created_at, updated_at)
-                            VALUES (?, 'general', ?, ?, ?, 'each', 1.0, 0.0, 1, NULL, datetime('now'), datetime('now'))
+                            VALUES (?, ?, 'general', ?, ?, ?, 'each', 1.0, 0.0, 1, NULL, datetime('now'), datetime('now'))
                             """,
-                        arguments: [categoryId, part.code, part.name, part.description]
+                        arguments: [part.id, categoryId, part.code, part.name, part.description]
                     )
                     try dbConn.execute(
                         sql: """
