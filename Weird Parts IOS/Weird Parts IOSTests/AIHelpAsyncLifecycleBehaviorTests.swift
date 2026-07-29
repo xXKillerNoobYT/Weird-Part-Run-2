@@ -10,6 +10,116 @@ import WiredPartCore
 /// exact stale-completion ordering instead of depending on `Task.yield()`.
 @MainActor
 final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
+    func testDatabaseIdentityRejectsResetRebootstrapWhenOwnerIDIsReused() throws {
+        let reusedOwnerUserId: Int64 = 101
+        let databaseBeforeReset = try AppDatabase.openInMemoryDatabase()
+        let databaseAfterRebootstrap = try AppDatabase.openInMemoryDatabase()
+        let requestDatabaseIdentity = AIDatabaseIdentity(databaseBeforeReset)
+
+        XCTAssertEqual(reusedOwnerUserId, 101)
+        XCTAssertTrue(requestDatabaseIdentity.matches(databaseBeforeReset))
+        XCTAssertFalse(
+            requestDatabaseIdentity.matches(databaseAfterRebootstrap),
+            "A completion from the deleted database must stay stale even when rebootstrap reuses the owner ID."
+        )
+    }
+
+    func testHistoryRetryRequiresPositiveOwnerAndDatabasePrerequisites() throws {
+        let database = try AppDatabase.openInMemoryDatabase()
+
+        XCTAssertNil(AIConversationHistoryRetryToken(
+            ownerUserId: nil,
+            database: database,
+            conversationId: "conversation-a",
+            revision: 7
+        ))
+        XCTAssertNil(AIConversationHistoryRetryToken(
+            ownerUserId: 0,
+            database: database,
+            conversationId: "conversation-a",
+            revision: 7
+        ))
+        XCTAssertNil(AIConversationHistoryRetryToken(
+            ownerUserId: 101,
+            database: nil,
+            conversationId: "conversation-a",
+            revision: 7
+        ))
+        XCTAssertNotNil(AIConversationHistoryRetryToken(
+            ownerUserId: 101,
+            database: database,
+            conversationId: "conversation-a",
+            revision: 7
+        ))
+    }
+
+    func testReadScopeReplacementClearsNonEmptyTranscriptAndResumeState() {
+        let priorRows = [
+            IOSAIAssistantPanel.SavedConversation(
+                id: "private-conversation-a",
+                lastMessageAt: "2026-07-17 10:00:00",
+                preview: "private preview"
+            ),
+        ]
+        var scope = AIConversationReadScopeState(
+            didAttemptResume: true,
+            conversationId: "private-conversation-a",
+            conversationRevision: 11,
+            messages: [AssistantMessage(role: .assistant, content: "private transcript")],
+            savedConversations: priorRows
+        )
+
+        scope.replaceScope(newConversationId: "replacement-scope")
+
+        XCTAssertFalse(scope.didAttemptResume)
+        XCTAssertEqual(scope.conversationId, "replacement-scope")
+        XCTAssertEqual(scope.conversationRevision, 12)
+        XCTAssertTrue(scope.messages.isEmpty)
+        XCTAssertTrue(scope.savedConversations.isEmpty)
+    }
+
+    func testHistoryRetryTokenRejectsOwnerDatabaseConversationAndRevisionTransitions() throws {
+        let database = try AppDatabase.openInMemoryDatabase()
+        let replacementDatabase = try AppDatabase.openInMemoryDatabase()
+        let token = try XCTUnwrap(AIConversationHistoryRetryToken(
+            ownerUserId: 101,
+            database: database,
+            conversationId: "conversation-a",
+            revision: 7
+        ))
+
+        XCTAssertTrue(token.matches(
+            ownerUserId: 101,
+            database: database,
+            conversationId: "conversation-a",
+            revision: 7
+        ))
+        XCTAssertFalse(token.matches(
+            ownerUserId: 102,
+            database: database,
+            conversationId: "conversation-a",
+            revision: 7
+        ))
+        XCTAssertFalse(token.matches(
+            ownerUserId: 101,
+            database: replacementDatabase,
+            conversationId: "conversation-a",
+            revision: 7
+        ))
+        XCTAssertFalse(token.matches(
+            ownerUserId: 101,
+            database: database,
+            conversationId: "conversation-b",
+            revision: 7
+        ))
+        XCTAssertFalse(token.matches(
+            ownerUserId: 101,
+            database: database,
+            conversationId: "conversation-a",
+            revision: 8
+        ))
+    }
+
     func testDelayedHelpSuccessAfterNewDoesNotContaminateConversationB() async {
         let box = CoordinatorBox(conversationId: "help-a")
         let delayedHelpA = box.beginHelpCompletion(staged: true)
@@ -244,7 +354,7 @@ final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
 
     func testStaleConversationListReturnAlwaysClearsLoadingAfterNewResumeAndLogout() async {
         for transition in ListTransition.allCases {
-            let box = CoordinatorBox(conversationId: "conversation-a", ownerUserId: 1)
+            let box = CoordinatorBox(conversationId: "conversation-a", ownerUserId: 101)
             let delayedListA = box.beginConversationListLoad(rows: [
                 IOSAIAssistantPanel.SavedConversation(
                     id: "conversation-a",
@@ -274,7 +384,7 @@ final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
     }
 
     func testOverlappingConversationListCompletionCannotInstallStaleRowsOverNewestLoad() async {
-        let box = CoordinatorBox(conversationId: "conversation-a", ownerUserId: 1)
+        let box = CoordinatorBox(conversationId: "conversation-a", ownerUserId: 101)
         let staleList = box.beginConversationListLoad(rows: [
             IOSAIAssistantPanel.SavedConversation(
                 id: "conversation-a",
@@ -308,7 +418,7 @@ final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
     }
 
     func testCurrentConversationListReturnInstallsRowsAndClearsLoading() async {
-        let box = CoordinatorBox(conversationId: "conversation-a", ownerUserId: 1)
+        let box = CoordinatorBox(conversationId: "conversation-a", ownerUserId: 101)
         let currentList = box.beginConversationListLoad(rows: [
             IOSAIAssistantPanel.SavedConversation(
                 id: "conversation-a",
@@ -562,6 +672,143 @@ final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
         ))
     }
 
+    func testMissingPrerequisiteListFailureClearsMatchingLoadAndPreservesRows() {
+        let lastKnownRows = [
+            IOSAIAssistantPanel.SavedConversation(
+                id: "conversation-a",
+                lastMessageAt: "2026-07-16 10:00:00",
+                preview: "last known preview"
+            ),
+        ]
+        var coordinator = AIAssistantLifecycleCoordinator(
+            conversationId: "conversation-a",
+            ownerUserId: nil,
+            savedConversations: lastKnownRows,
+            isLoadingConversations: true,
+            conversationListRequestID: 7
+        )
+
+        XCTAssertFalse(coordinator.finishConversationListPrerequisiteFailure(requestID: 6))
+        XCTAssertTrue(coordinator.isLoadingConversations, "A stale prerequisite failure must not clear the current spinner.")
+        XCTAssertEqual(coordinator.savedConversations, lastKnownRows)
+
+        XCTAssertTrue(coordinator.finishConversationListPrerequisiteFailure(requestID: 7))
+        XCTAssertFalse(coordinator.isLoadingConversations, "The matching prerequisite failure must reveal retryable error UI.")
+        XCTAssertEqual(coordinator.savedConversations, lastKnownRows, "Prerequisite failures must preserve last-known rows.")
+    }
+
+    func testWithdrawingPrerequisitesCancelsListLoadAndRejectsItsLateCompletion() {
+        let lastKnownRows = [
+            IOSAIAssistantPanel.SavedConversation(
+                id: "conversation-a",
+                lastMessageAt: "2026-07-16 10:00:00",
+                preview: "last known preview"
+            ),
+        ]
+        var coordinator = AIAssistantLifecycleCoordinator(
+            conversationId: "conversation-a",
+            ownerUserId: 101,
+            savedConversations: lastKnownRows
+        )
+        let inFlight = coordinator.beginConversationListLoad()
+        let inFlightRequestID = coordinator.conversationListRequestID
+
+        coordinator.cancelConversationListLoad()
+
+        XCTAssertFalse(coordinator.isLoadingConversations, "Withdrawing prerequisites must stop the Resume spinner.")
+        XCTAssertEqual(coordinator.savedConversations, lastKnownRows, "Cancellation must preserve the last-good list.")
+        XCTAssertNotEqual(coordinator.conversationListRequestID, inFlightRequestID)
+        XCTAssertFalse(
+            coordinator.finishConversationListLoad(
+                lifecycle: inFlight,
+                requestID: inFlightRequestID,
+                rows: []
+            ),
+            "A completion from the retired request must not clear preserved rows or mutate current state."
+        )
+        XCTAssertEqual(coordinator.savedConversations, lastKnownRows)
+    }
+
+    func testWithdrawingPrerequisitesFromAnActiveListInstallsRetryableFailureWithoutErasingPriorError() {
+        XCTAssertEqual(
+            AIConversationListReadFailurePolicy.errorAfterPrerequisiteWithdrawal(
+                existingError: nil,
+                retiredActiveLoad: true
+            ),
+            AIConversationListReadFailurePolicy.unavailablePrerequisitesMessage,
+            "An active Resume request withdrawn before completion must expose Retry instead of genuine-empty copy."
+        )
+        XCTAssertEqual(
+            AIConversationListReadFailurePolicy.errorAfterPrerequisiteWithdrawal(
+                existingError: "Earlier read failure",
+                retiredActiveLoad: true
+            ),
+            "Earlier read failure",
+            "Prerequisite withdrawal must preserve the last retryable error."
+        )
+        XCTAssertNil(
+            AIConversationListReadFailurePolicy.errorAfterPrerequisiteWithdrawal(
+                existingError: nil,
+                retiredActiveLoad: false
+            ),
+            "An idle picker must not gain a failure state without an active read to retire."
+        )
+    }
+
+    func testMissingInitializationPrerequisitesStayFailClosedUntilLaterAttemptSucceeds() {
+        XCTAssertTrue(
+            AIAssistantInitializationLoadingPolicy.keepsLoading(
+                afterResumeFailureWith: nil,
+                prerequisitesAvailable: false
+            ),
+            "A panel mounted before DB/user readiness must keep history loading and input disabled."
+        )
+        XCTAssertTrue(
+            AIAssistantInitializationLoadingPolicy.keepsLoading(
+                afterResumeFailureWith: "an older read failure",
+                prerequisitesAvailable: false
+            ),
+            "Missing prerequisites must remain fail-closed even if an older error is still visible."
+        )
+        XCTAssertFalse(
+            AIAssistantInitializationLoadingPolicy.keepsLoading(
+                afterResumeFailureWith: "retryable read failure",
+                prerequisitesAvailable: true
+            ),
+            "A true read failure may stop the spinner because its visible error continues to gate input."
+        )
+    }
+
+    func testFailedHydrationThenResumeCurrentRowRequiresRecoveryLoad() {
+        let action = AIAssistantResumeSelectionPolicy.action(
+            selectedConversationId: "conversation-a",
+            currentConversationId: "conversation-a",
+            hasTranscriptHydrationFailure: true
+        )
+
+        XCTAssertEqual(action, .retryCurrentHydration)
+        XCTAssertNotEqual(action, .noChange)
+    }
+
+    func testCurrentRowWithoutHydrationFailureRemainsNoOp() {
+        XCTAssertEqual(
+            AIAssistantResumeSelectionPolicy.action(
+                selectedConversationId: "conversation-a",
+                currentConversationId: "conversation-a",
+                hasTranscriptHydrationFailure: false
+            ),
+            .noChange
+        )
+        XCTAssertEqual(
+            AIAssistantResumeSelectionPolicy.action(
+                selectedConversationId: "conversation-b",
+                currentConversationId: "conversation-a",
+                hasTranscriptHydrationFailure: true
+            ),
+            .switchConversation
+        )
+    }
+
     func testHelpHandoffWaitsForAuthenticatedInitializationToFinish() {
         var readiness = AIHelpHandoffReadinessCoordinator()
 
@@ -608,7 +855,7 @@ private final class CoordinatorBox {
 
     init(
         conversationId: String = "conversation-a",
-        ownerUserId: Int64? = 1,
+        ownerUserId: Int64? = 101,
         conversationRevision: UInt = 0,
         messages: [AssistantMessage] = []
     ) {

@@ -147,9 +147,9 @@
       "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
       "rule": {
         "contains": [
-          "FoundationModelsService.latestConversationId(\n            ownerUserId: ownerUserId",
-          "FoundationModelsService.listConversations(\n            ownerUserId: ownerUserId",
-          "let ownerUserId = appCore.currentUser?.id",
+          "FoundationModelsService.latestConversationId(\n                ownerUserId: ownerUserId",
+          "FoundationModelsService.listConversations(\n                ownerUserId: ownerUserId",
+          "let ownerUserId = appCore.aiConversationReadOwnerUserId",
           "savedConversations = []",
           "No Saved Conversations",
           "accessibilityLabel(\"Resume a past conversation\")",
@@ -171,8 +171,8 @@
       "rule": {
         "contains": [
           "private var resumePrerequisiteToken: ResumePrerequisiteToken",
-          "ownerUserId: appCore.currentUser?.id",
-          "isDatabaseReady: appCore.db != nil"
+          "ownerUserId: appCore.aiConversationReadOwnerUserId",
+          "databaseIdentity: appCore.aiConversationReadDatabase.map(ObjectIdentifier.init)"
         ]
       }
     },
@@ -202,7 +202,7 @@
           "@State private var conversationLoadTask: Task<Void, Never>?",
           "savedConversations.removeAll()",
           "@State private var isLoadingConversationHistory = false",
-          ".disabled(\n                isProcessing\n                    || isClearingConversation\n                    || isLoadingConversationHistory\n                    || pendingFallbackSave != nil\n            )",
+          ".disabled(\n                isProcessing\n                    || isClearingConversation\n                    || isLoadingConversationHistory\n                    || pendingFallbackSave != nil\n                    || conversationHistoryReadError != nil\n            )",
           "Text(renderedMarkdown(message.content))",
           "Text(renderedMarkdown(conversation.preview))",
           "markdown: normalized",
@@ -248,7 +248,7 @@
           "@State private var conversationLoadTask: Task<Void, Never>?",
           "savedConversations.removeAll()",
           "@State private var isLoadingConversationHistory = false",
-          ".disabled(\n                isProcessing\n                    || isClearingConversation\n                    || isLoadingConversationHistory\n                    || pendingFallbackSave != nil\n            )",
+          ".disabled(\n                isProcessing\n                    || isClearingConversation\n                    || isLoadingConversationHistory\n                    || pendingFallbackSave != nil\n                    || conversationHistoryReadError != nil\n            )",
           "Text(renderedMarkdown(message.content))",
           "Text(renderedMarkdown(conversation.preview))",
           "markdown: normalized",
@@ -301,7 +301,7 @@
       "rule": {
         "contains": [
           "@State private var isLoadingConversationHistory = false",
-          ".disabled(\n                isProcessing\n                    || isClearingConversation\n                    || isLoadingConversationHistory\n                    || pendingFallbackSave != nil\n            )",
+          ".disabled(\n                isProcessing\n                    || isClearingConversation\n                    || isLoadingConversationHistory\n                    || pendingFallbackSave != nil\n                    || conversationHistoryReadError != nil\n            )",
           "Text(renderedMarkdown(message.content))",
           "Text(renderedMarkdown(conversation.preview))",
           "markdown: normalized",
