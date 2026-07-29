@@ -283,6 +283,62 @@ public enum ConflictResolver {
         return result
     }
 
+    /// Apply a batch in one database transaction or roll the entire batch back.
+    ///
+    /// Initial Bluetooth snapshots use this stricter contract: reporting an apply
+    /// failure while retaining a successful prefix would leave onboarding with a
+    /// partial company snapshot. Normal ongoing sync keeps the best-effort API above.
+    static func resolveAndApplyChangesAtomically(
+        db: AppDatabase,
+        changes: [IncomingChange],
+        localDeviceId: String? = nil
+    ) throws -> MergeResult {
+        let localDevice = localDeviceId ?? DeviceIdentity.current
+
+        return try db.writer.write { dbConn in
+            var result = MergeResult()
+            try dbConn.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
+            defer { try? dbConn.execute(sql: "DELETE FROM _sync_apply_guard") }
+
+            for change in changes {
+                guard isAllowedTable(change.tableName) else {
+                    result.skipped += 1
+                    continue
+                }
+
+                do {
+                    switch change.operation.uppercased() {
+                    case "DELETE":
+                        try applyDelete(db: dbConn, change: change, localDeviceId: localDevice)
+                        result.applied += 1
+                    case "INSERT":
+                        let conflictCount = try applyInsert(
+                            db: dbConn,
+                            change: change,
+                            localDeviceId: localDevice
+                        )
+                        result.applied += 1
+                        result.conflicts += conflictCount
+                    case "UPDATE":
+                        let conflictCount = try applyUpdate(
+                            db: dbConn,
+                            change: change,
+                            localDeviceId: localDevice
+                        )
+                        result.applied += 1
+                        result.conflicts += conflictCount
+                    default:
+                        result.skipped += 1
+                    }
+                } catch ApplyError.missingLocalRecord {
+                    result.skipped += 1
+                }
+            }
+
+            return result
+        }
+    }
+
     /// Get unreviewed conflicts for admin review.
     public static func getUnreviewedConflicts(
         db: AppDatabase,

@@ -151,7 +151,9 @@ extension AppDatabase {
         registerMigration110InspectionTemplateRequiredFlag(&migrator)
         registerMigration111ChatAttachmentStorageRelative(&migrator)
         registerMigration113AIConversationOwners(&migrator)
-        registerMigration113TeamMutationAttribution(&migrator)
+        registerMigration114AIConversationRecency(&migrator)
+        registerMigration115SyncReplayGuard(&migrator)
+        registerMigration116TeamMutationAttribution(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6102,12 +6104,72 @@ private func registerMigration113AIConversationOwners(_ migrator: inout Database
     }
 }
 
-// MARK: - Migration 113: Team mutation actor attribution
+// MARK: - Migration 114: Deterministic AI conversation recency
+
+/// Persists insertion order independently from second-resolution timestamps. Legacy rows
+/// inherit their current SQLite insertion order; new values are assigned by the serialized
+/// database writer when messages are saved. The nullable default preserves rollback writers
+/// that do not know about this column, while readers use rowid for NULL/zero compatibility.
+private func registerMigration114AIConversationRecency(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("114_ai_conversation_recency") { db in
+        try addColumnIfMissing(
+            db,
+            table: "ai_conversation_messages",
+            column: "recency_order",
+            type: .integer
+        )
+        try db.execute(
+            sql: """
+                UPDATE ai_conversation_messages
+                SET recency_order = rowid
+                """
+        )
+        try db.create(
+            index: "idx_ai_conv_msgs_owner_recency",
+            on: "ai_conversation_messages",
+            columns: ["owner_user_id", "created_at", "recency_order"],
+            ifNotExists: true
+        )
+        // Recreate this as a partial unique index so databases where an experimental
+        // version of the column defaulted to zero remain compatible with old writers.
+        // Current writers always persist a positive monotonic value.
+        try db.execute(sql: "DROP INDEX IF EXISTS idx_ai_conv_msgs_recency_order")
+        try db.execute(
+            sql: """
+                CREATE UNIQUE INDEX idx_ai_conv_msgs_recency_order
+                ON ai_conversation_messages (recency_order)
+                WHERE recency_order IS NOT NULL AND recency_order <> 0
+                """
+        )
+    }
+}
+
+// MARK: - Migration 115: Durable sync replay guard
+
+private func registerMigration115SyncReplayGuard(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("115_sync_replay_guard") { db in
+        try db.create(table: "_sync_replay_guard", ifNotExists: true) { t in
+            t.column("request_id", .text).notNull()
+            t.column("device_id", .text).notNull()
+            t.column("endpoint", .text).notNull()
+            t.column("direction", .text).notNull()
+            t.column("body_digest", .text).notNull()
+            t.column("created_at", .datetime).notNull()
+            t.primaryKey(["device_id", "endpoint", "direction", "request_id"])
+        }
+        try db.create(index: "idx_sync_replay_guard_device_created",
+                      on: "_sync_replay_guard",
+                      columns: ["device_id", "created_at"],
+                      ifNotExists: true)
+    }
+}
+
+// MARK: - Migration 116: Team mutation actor attribution
 
 /// Records the authorized actor for every team and membership mutation. Existing
 /// rows remain nullable because their historical actor cannot be reconstructed.
-private func registerMigration113TeamMutationAttribution(_ migrator: inout DatabaseMigrator) {
-    migrator.registerMigration("113_team_mutation_attribution") { db in
+private func registerMigration116TeamMutationAttribution(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("116_team_mutation_attribution") { db in
         try addColumnIfMissing(db, table: "employee_teams", column: "created_by", type: .integer)
         try addColumnIfMissing(db, table: "employee_teams", column: "updated_by", type: .integer)
         try addColumnIfMissing(db, table: "employee_teams", column: "deleted_by", type: .integer)
