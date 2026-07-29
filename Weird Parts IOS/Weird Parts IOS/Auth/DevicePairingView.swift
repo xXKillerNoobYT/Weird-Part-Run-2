@@ -335,9 +335,9 @@ struct DevicePairingView: View {
     /// used, and retrying the same code over LAN would just burn the attempt.
     private func shouldFallBackToLAN(_ error: MultipeerPairingError) -> Bool {
         switch error {
-        case .connectionTimeout, .responseTimeout, .sendFailed, .notAvailable:
+        case .connectionTimeout, .responseTimeout, .sendFailed, .notAvailable, .transportStopped:
             return true
-        case .rejected:
+        case .rejected, .requestAlreadyInProgress, .protocolUpgradeRequired, .responseVerificationFailed:
             return false
         }
     }
@@ -354,6 +354,14 @@ struct DevicePairingView: View {
             return "Lost the Bluetooth connection while pairing. Move the devices closer and try again."
         case .notAvailable:
             return "Bluetooth sync isn't running yet. Go back, wait a moment, then try again."
+        case .requestAlreadyInProgress:
+            return "This device is already pairing or syncing. Wait for that attempt to finish, then try again."
+        case .transportStopped:
+            return "Bluetooth sync stopped before pairing finished. Turn Bluetooth sync back on and try again."
+        case .protocolUpgradeRequired:
+            return "The other device uses an older sync protocol. Update both devices before pairing again."
+        case .responseVerificationFailed:
+            return "The Bluetooth pairing response could not be authenticated. Update both devices, restart pairing, and enter the new code."
         }
     }
 
