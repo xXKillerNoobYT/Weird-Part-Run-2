@@ -19,6 +19,8 @@
     {
       "parallelizable" : false,
       "selectedTests" : [
+        "AIFallbackRetryAccessibilityUITests/testRetrySaveExportsMinimumTargetAtDefaultDynamicType()",
+        "AIFallbackRetryAccessibilityUITests/testRetrySaveExportsMinimumTargetAndWarningFitsAX5DynamicType()",
         "Weird_Parts_IOSUITests/testWEI3144JobMaterialsWalkthroughEvidence()",
         "Weird_Parts_IOSUITests/testWEI3295Stage8ReportsViewportHarness()",
         "Weird_Parts_IOSUITests/testWEI3988BackupRestoreSmokeEvidence()"

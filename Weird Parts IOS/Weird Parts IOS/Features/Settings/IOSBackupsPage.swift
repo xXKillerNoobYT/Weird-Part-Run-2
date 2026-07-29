@@ -1,5 +1,6 @@
 import SwiftUI
 import WiredPartCore
+import GRDB
 
 enum IOSBackupFileCopier {
     nonisolated static let retainedBackupLimit = 7
@@ -50,6 +51,33 @@ enum IOSBackupFileCopier {
                 throw CleanupFailure(originalError: error, cleanupError: cleanupError)
             }
             throw error
+        }
+    }
+
+    /// Creates a complete SQLite snapshot while holding the application's writer lock.
+    /// A raw main-file/WAL copy can observe the files at different points in time, which
+    /// produces a restore that is structurally valid but missing recently committed rows.
+    nonisolated static func checkpointAndCopySQLiteSnapshot(
+        from source: any DatabaseWriter,
+        sourceURL: URL,
+        to destURL: URL
+    ) throws {
+        try removeSQLiteSnapshot(at: destURL)
+        try source.write { db in
+            guard let checkpoint = try Row.fetchOne(db, sql: "PRAGMA wal_checkpoint(TRUNCATE)") else {
+                throw NSError(domain: "IOSBackupFileCopier", code: 1, userInfo: [
+                    NSLocalizedDescriptionKey: "Database checkpoint did not return a result."
+                ])
+            }
+            let busy: Int = checkpoint[0]
+            let log: Int = checkpoint[1]
+            let checkpointed: Int = checkpoint[2]
+            guard busy == 0, checkpointed == log else {
+                throw NSError(domain: "IOSBackupFileCopier", code: 2, userInfo: [
+                    NSLocalizedDescriptionKey: "Database is busy. Try again in a moment."
+                ])
+            }
+            try FileManager.default.copyItem(at: sourceURL, to: destURL)
         }
     }
 
@@ -354,7 +382,7 @@ struct IOSBackupsPage: View {
         backupSuccess = false
         errorMessage = nil
 
-        guard let sourcePath = dbPath, let dir = backupDir else {
+        guard let sourcePath = dbPath, let dir = backupDir, let database = appCore.db else {
             errorMessage = "Cannot locate database or backup directory."
             isCreatingBackup = false
             return

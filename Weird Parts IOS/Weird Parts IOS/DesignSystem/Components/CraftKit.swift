@@ -46,6 +46,45 @@ extension View {
     // chips ≈20pt), not a missing primitive.
 }
 
+/// Inline instruction banner for temporary modes or high-risk review flows.
+///
+/// The Panel Schedule Builder uses a visible move-mode banner so the user always
+/// knows what the next tap will do. Reuse this for cross-app draft-import work
+/// instead of scattering one-off `Text(...).background(...)` banners that drift
+/// on tap target, VoiceOver, and dark-mode behavior.
+struct PanelQualityInstructionBanner: View {
+    let message: String
+    var icon: String = "info.circle"
+    var tint: Color = DS.SemanticColor.info
+    var accessibilityIdentifier: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
+            Image(systemName: icon)
+                .fixedSize()
+                .accessibilityHidden(true)
+            Text(message)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, DS.Space.sm)
+        .padding(.vertical, DS.Space.xs)
+        // Reuse the shared target floor even though the banner is informational:
+        // Catalyst scales SwiftUI geometry before exposing its AX frame, so a raw
+        // 44pt frame renders below 44pt there. `dsMinTapTarget()` centralizes the
+        // compensated Catalyst dimension while remaining 44pt on iOS/iPadOS.
+        .dsMinTapTarget()
+        .background(tint.opacity(0.08), in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(message)
+        .accessibilityIdentifier(accessibilityIdentifier)
+    }
+}
+
 /// Stable accessibility-identifier suffix: the record id when present, else a
 /// kebab slug of the given name (alphanumerics separated by single dashes,
 /// "unnamed" if nothing survives). Never a literal `0` — nil-id records would
