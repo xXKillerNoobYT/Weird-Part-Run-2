@@ -13,6 +13,7 @@ struct IOSMainView: View {
     @EnvironmentObject private var tabPrefs: TabBarPreferences
     @EnvironmentObject private var badgeManager: BadgeCountManager
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var selectedModuleId: String = "dashboard"
     @State private var showLogoutConfirm = false
     @State private var showAIAssistant = false
@@ -628,6 +629,17 @@ struct IOSMainView: View {
     private var fullSidebarActions: some View {
         VStack(spacing: DS.Space.xxs) {
             Button {
+                if aiDisplayMode == .sheet {
+                    activeSidebarSheet = .aiAssistant
+                }
+                showAIAssistant = true
+            } label: {
+                sidebarActionRow(icon: "sparkles", label: "AI Assistant")
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("sidebarAIAssistantButton")
+
+            Button {
                 activeSidebarSheet = .tabEditor
             } label: {
                 sidebarActionRow(icon: "square.grid.2x2", label: "Edit Tabs")
@@ -647,15 +659,19 @@ struct IOSMainView: View {
 
     @ViewBuilder
     private func sidebarActionRow(icon: String, label: String) -> some View {
-        HStack(spacing: DS.Space.sm) {
+        HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center, spacing: DS.Space.sm) {
             Image(systemName: icon)
                 .frame(width: 24)
             Text(label)
                 .font(.caption)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                .fixedSize(horizontal: false, vertical: dynamicTypeSize.isAccessibilitySize)
+                .layoutPriority(1)
             Spacer()
         }
         .padding(.horizontal, DS.Space.md)
         .padding(.vertical, DS.Space.sm)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         .foregroundStyle(.secondary)
         .contentShape(Rectangle())
     }
