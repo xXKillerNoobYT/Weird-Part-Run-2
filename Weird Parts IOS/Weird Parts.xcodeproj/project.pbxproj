@@ -139,6 +139,7 @@
 				08F2BE412F67A53700944E97 /* Frameworks */,
 				AB5655010000000000000001 /* Generate Supply Run regression source snapshots */,
 				08F2BE422F67A53700944E97 /* Resources */,
+				A5C327012F1A4A3D00F5327A /* Bundle QR Scan Source Fixture */,
 			);
 			buildRules = (
 			);
