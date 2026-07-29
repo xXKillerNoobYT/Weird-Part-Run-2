@@ -295,14 +295,26 @@ while IFS= read -r pr; do
   fi
 
   # --- Ready to merge ---
-  if [[ "$merge_state" == "CLEAN" || "$merge_state" == "HAS_HOOKS" || "$merge_state" == "BLOCKED" ]]; then
-    echo "==> PR #$number is CLEAN, checks pass, Copilot review satisfied — merging now (squash)"
+  if [[ "$merge_state" == "CLEAN" || "$merge_state" == "HAS_HOOKS" ]]; then
+    echo "==> PR #$number is $merge_state with required checks green — merging now (squash)"
     if run_or_log gh pr merge "$number" --repo "$REPO" --squash --delete-branch --auto; then
       echo "    Merged (or auto-merge queued). Push to $BASE will trigger next run."
     else
       echo "    Merge failed — may need manual review."
     fi
     exit 0   # ONE action per run — stop here
+  fi
+
+  # BLOCKED past this point means branch protection still refuses the merge
+  # even though no skip condition above caught a cause — typically a required
+  # check context that was never delivered for this head (cancelled/superseded
+  # run), which no re-merge attempt can fix. Treating BLOCKED as mergeable
+  # queued an auto-merge that never fired and exited, head-of-line blocking
+  # the train on the same PR every run (observed stuck on #1431 for days).
+  # Skipping is free: it does not consume this run's one action.
+  if [[ "$merge_state" == "BLOCKED" ]]; then
+    echo "    skip: BLOCKED by branch protection (likely an undelivered required check) — needs a re-run of its checks, moving on"
+    continue
   fi
 
   echo "    skip: unhandled state '$merge_state'"

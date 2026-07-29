@@ -14,9 +14,15 @@ import GRDB
 /// Ported from: `src/pages/DashboardPage.tsx` aggregate queries
 public final class DashboardService: Sendable {
     private let db: AppDatabase
+    private let operationalDay: OperationalDay
 
-    public init(db: AppDatabase) {
+    public init(
+        db: AppDatabase,
+        calendar: Calendar = .current,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
         self.db = db
+        self.operationalDay = OperationalDay(calendar: calendar, now: now)
     }
 
     // MARK: - Result Types
@@ -583,14 +589,19 @@ public final class DashboardService: Sendable {
 
     /// Fetch hours worked today for a specific user, including active clock session.
     public func getMyHoursToday(userId: Int64) throws -> MyHoursToday {
+        let now = operationalDay.now()
+        let nowTimestamp = operationalDay.utcTimestamp(now)
+        let day = operationalDay.interval(containing: now)
         do {
             return try db.writer.read { conn in
                 // Total completed hours today
                 var totalHours = try Double.fetchOne(conn, sql: """
                     SELECT COALESCE(SUM(regular_hours + overtime_hours), 0)
                     FROM labor_entries
-                    WHERE user_id = ? AND \(Self.localDateSQL("clock_in")) = date('now', 'localtime') AND deleted_at IS NULL
-                    """, arguments: [userId]) ?? 0
+                    WHERE user_id = ? AND \(day.exactDayPredicate("clock_in")) AND deleted_at IS NULL
+                    """, arguments: [
+                        userId, day.localStartDate, day.utcStart, day.utcEnd
+                    ]) ?? 0
 
                 // Active clock-in session
                 var clockInTime: String?
@@ -613,11 +624,11 @@ public final class DashboardService: Sendable {
 
                     // Add active session elapsed time
                     let activeHours = try Double.fetchOne(conn, sql: """
-                        SELECT (julianday('now') - julianday(clock_in)) * 24
+                        SELECT (julianday(?) - MAX(julianday(clock_in), julianday(?))) * 24
                         FROM labor_entries
                         WHERE user_id = ? AND clock_out IS NULL AND deleted_at IS NULL
                         ORDER BY clock_in DESC LIMIT 1
-                        """, arguments: [userId]) ?? 0
+                        """, arguments: [nowTimestamp, day.utcStart, userId]) ?? 0
                     totalHours += max(0, activeHours)
                 }
 
@@ -626,15 +637,20 @@ public final class DashboardService: Sendable {
                     SELECT COALESCE(j.job_name, 'Shop / Warehouse') AS job_name,
                            SUM(
                              CASE WHEN le.clock_out IS NOT NULL THEN le.regular_hours + le.overtime_hours
-                                  ELSE (julianday('now') - julianday(le.clock_in)) * 24
+                                  ELSE (julianday(?) - MAX(julianday(le.clock_in), julianday(?))) * 24
                              END
                            ) AS total_hours
                     FROM labor_entries le
                     LEFT JOIN jobs j ON j.id = le.job_id AND j.deleted_at IS NULL
-                    WHERE le.user_id = ? AND \(Self.localDateSQL("le.clock_in")) = date('now', 'localtime') AND le.deleted_at IS NULL
+                    WHERE le.user_id = ?
+                      AND (le.clock_out IS NULL OR \(day.exactDayPredicate("le.clock_in")))
+                      AND le.deleted_at IS NULL
                     GROUP BY le.job_id
                     ORDER BY total_hours DESC
-                    """, arguments: [userId])
+                    """, arguments: [
+                        nowTimestamp, day.utcStart, userId,
+                        day.localStartDate, day.utcStart, day.utcEnd
+                    ])
                 let jobBreakdown = breakdownRows.map { row in
                     JobTimeBreakdown(
                         jobName: row["job_name"] ?? "Shop / Warehouse",
@@ -652,14 +668,16 @@ public final class DashboardService: Sendable {
                                     CAST((julianday(ended_at) - julianday(started_at)) * 1440 AS INTEGER)
                                 )
                             ELSE
-                                CAST((julianday('now') - julianday(started_at)) * 1440 AS INTEGER)
+                                CAST((julianday(?) - julianday(started_at)) * 1440 AS INTEGER)
                         END
                     ), 0)
                     FROM break_records
                     WHERE user_id = ?
-                      AND \(Self.localDateSQL("started_at")) = date('now', 'localtime')
+                      AND \(day.exactDayPredicate("started_at"))
                       AND deleted_at IS NULL
-                    """, arguments: [userId]) ?? 0
+                    """, arguments: [
+                        nowTimestamp, userId, day.localStartDate, day.utcStart, day.utcEnd
+                    ]) ?? 0
 
                 return MyHoursToday(
                     totalHours: totalHours,
@@ -793,24 +811,28 @@ public final class DashboardService: Sendable {
 
     /// Fetch labor hours for the past 7 days.
     public func getLaborChartData() throws -> [LaborDayRow] {
+        let referenceDate = operationalDay.now()
         do {
             return try db.writer.read { conn in
-                let isoFormatter = DateFormatter()
-                isoFormatter.dateFormat = "yyyy-MM-dd"
-
                 var results: [LaborDayRow] = []
                 for i in (0..<7).reversed() {
-                    let date = Calendar.current.date(byAdding: .day, value: -i, to: Date()) ?? Date()
-                    let dateStr = isoFormatter.string(from: date)
-                    let regular = try Double.fetchOne(conn, sql: """
-                        SELECT COALESCE(SUM(regular_hours), 0) FROM labor_entries
-                        WHERE \(Self.localDateSQL("clock_in")) = ? AND deleted_at IS NULL
-                        """, arguments: [dateStr]) ?? 0
-                    let overtime = try Double.fetchOne(conn, sql: """
-                        SELECT COALESCE(SUM(overtime_hours), 0) FROM labor_entries
-                        WHERE \(Self.localDateSQL("clock_in")) = ? AND deleted_at IS NULL
-                        """, arguments: [dateStr]) ?? 0
-                    results.append(LaborDayRow(dateString: dateStr, regularHours: regular, overtimeHours: overtime))
+                    let date = operationalDay.calendar.date(
+                        byAdding: .day,
+                        value: -i,
+                        to: referenceDate
+                    ) ?? referenceDate
+                    let day = operationalDay.interval(containing: date)
+                    let row = try Row.fetchOne(conn, sql: """
+                        SELECT COALESCE(SUM(regular_hours), 0) AS regular_hours,
+                               COALESCE(SUM(overtime_hours), 0) AS overtime_hours
+                        FROM labor_entries
+                        WHERE \(day.exactDayPredicate("clock_in")) AND deleted_at IS NULL
+                        """, arguments: StatementArguments(day.exactArguments))
+                    results.append(LaborDayRow(
+                        dateString: day.localStartDate,
+                        regularHours: row?["regular_hours"] ?? 0,
+                        overtimeHours: row?["overtime_hours"] ?? 0
+                    ))
                 }
                 return results
             }
