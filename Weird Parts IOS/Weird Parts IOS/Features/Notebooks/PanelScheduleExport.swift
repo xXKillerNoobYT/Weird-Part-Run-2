@@ -6,11 +6,14 @@ import WiredPartCore
 
 enum PanelScheduleExportError: LocalizedError {
     case outputPathUnavailable
+    case panelSettingsRequireRepair(PanelScheduleValidationError)
 
     var errorDescription: String? {
         switch self {
         case .outputPathUnavailable:
             return "The generated PDF could not be validated."
+        case .panelSettingsRequireRepair(let error):
+            return "Correct the panel settings before exporting. \(error.localizedDescription)"
         }
     }
 }
@@ -52,13 +55,14 @@ struct PanelSchedulePDFExporter {
     let options: PanelScheduleExportOptions
 
     func writeToTemporaryFile(fileManager: FileManager = .default) throws -> URL {
-        // Persist-time normalization (clamped totalSpaces, pruned out-of-range
-        // circuits) is the closest equivalent to a "validated" schedule on
-        // current main — `PanelSchedule` does not expose a `validated()`
-        // throwing method here, unlike the donor branch's later panel-editing
-        // lane. Rendering against the normalized copy keeps the export in
-        // sync with what `PanelScheduleBuilder`'s Save action persists.
+        // A safe-loaded legacy type/size mismatch deliberately retains circuits
+        // outside the normalized display range until the user corrects panel
+        // settings. Rendering only visible rows would silently omit those
+        // circuits from the PDF, so fail closed with the actionable model error.
         let normalizedSchedule = schedule.normalizedForPersistence()
+        if let validationError = normalizedSchedule.panelSettingsValidationError {
+            throw PanelScheduleExportError.panelSettingsRequireRepair(validationError)
+        }
 
         let directory = fileManager.temporaryDirectory.appendingPathComponent("PanelSchedules", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
