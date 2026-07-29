@@ -602,8 +602,19 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         captureWEI3988("03-restored-backups-status")
 
         relaunchForWEI3988RestoredTarget(["-UITestingWEI3988PartsCatalog"])
-        XCTAssertTrue(app.staticTexts["WEI-3295 Stage 8 Breaker"].waitForExistence(timeout: 20) || app.staticTexts["WEI-3144 Wire Nut"].waitForExistence(timeout: 20), "Restored parts catalog should show seeded sample parts")
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'part' AND label CONTAINS 'Page' ")).firstMatch.waitForExistence(timeout: 5), "Restored parts catalog should show a non-empty part count")
+        let restoredStage8Part = app.staticTexts["WEI-3295 Stage 8 Breaker"]
+        let restoredMaterialPart = app.staticTexts["WEI-3144 Wire Nut"]
+        if !restoredStage8Part.waitForExistence(timeout: 5), !restoredMaterialPart.exists {
+            // The phone catalog lazily realizes visible rows. Search the rendered
+            // catalog before failing the restore assertion when seeded proof rows
+            // begin below the initial viewport.
+            for _ in 0..<4 where !restoredStage8Part.exists && !restoredMaterialPart.exists {
+                app.swipeUp()
+                _ = restoredStage8Part.waitForExistence(timeout: 2)
+            }
+        }
+        XCTAssertTrue(restoredStage8Part.exists || restoredMaterialPart.exists, "Restored parts catalog should show seeded sample parts")
         captureWEI3988("04-restored-parts-catalog")
 
         relaunchForWEI3988RestoredTarget(["-UITestingWEI3988Materials", "-UITestingWEI3144JobMaterials"])

@@ -1089,6 +1089,33 @@ struct Weird_Parts_IOSTests {
         #expect(outcome.failure is ManualBackupLedgerReloadTestError, "The ledger reload failure must remain available for the visible backup error state")
     }
 
+    @Test func manualBackupCheckpointIncludesWALChanges() throws {
+        let tempRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("IOSBackupCheckpointTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let sourceURL = tempRoot.appendingPathComponent("wiredpart-live.sqlite")
+        let destinationURL = tempRoot.appendingPathComponent("wiredpart-backup.sqlite")
+        let source = try DatabasePool(path: sourceURL.path)
+        try source.write { db in
+            try db.execute(sql: "PRAGMA journal_mode = WAL")
+            try db.execute(sql: "PRAGMA wal_autocheckpoint = 0")
+            try db.execute(sql: "CREATE TABLE backup_probe(id INTEGER PRIMARY KEY, value TEXT NOT NULL)")
+            try db.execute(sql: "INSERT INTO backup_probe(value) VALUES (?)", arguments: ["committed-in-wal"])
+        }
+
+        #expect(FileManager.default.fileExists(atPath: sourceURL.path + "-wal"), "Test fixture should keep committed data in a WAL sidecar")
+        try IOSBackupFileCopier.checkpointAndCopySQLiteSnapshot(from: source, sourceURL: sourceURL, to: destinationURL)
+        #expect(!FileManager.default.fileExists(atPath: destinationURL.path + "-wal"), "Checkpointed snapshots should not depend on a copied WAL sidecar")
+
+        let restored = try DatabaseQueue(path: destinationURL.path)
+        let restoredValue = try restored.read { db in
+            try String.fetchOne(db, sql: "SELECT value FROM backup_probe WHERE id = 1")
+        }
+        #expect(restoredValue == "committed-in-wal")
+    }
+
     @Test func fullDatabaseExportCheckpointsAndIncludesWALChanges() throws {
         let tempRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("IOSDatabaseExportSnapshotterTests-\(UUID().uuidString)", isDirectory: true)
