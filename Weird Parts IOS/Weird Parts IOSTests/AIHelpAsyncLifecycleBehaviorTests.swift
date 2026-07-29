@@ -1,5 +1,6 @@
 import XCTest
 @testable import Weird_Parts
+import WiredPartCore
 
 /// Behavioral async-lifecycle coverage for WEI-5062 / PR #1460.
 ///
@@ -185,7 +186,7 @@ final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
         XCTAssertFalse(box.messages.contains { $0.content.contains("stale Help A") })
     }
 
-    func testCurrentHelpFailureStillSurfacesBeforeSending() async {
+    func testCurrentHelpFailureRemainsAWarningWithoutBlockingOrReplacingTheNextResponse() async {
         let box = CoordinatorBox(conversationId: "help-a")
         let delayedHelpA = box.beginHelpCompletion(
             staged: false,
@@ -206,7 +207,7 @@ final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
         )
         XCTAssertEqual(box.messages.map(\.content), [
             "Follow-up question",
-            "This Help conversation is visible now but could not be saved: current Help persistence failure",
+            "Generated response for help-a",
         ])
     }
 
@@ -326,6 +327,241 @@ final class AIHelpAsyncLifecycleBehaviorTests: XCTestCase {
         XCTAssertEqual(box.savedConversations.map(\.preview), ["current preview"])
     }
 
+    func testHelpHandoffWaitsForSuspendedFallbackPersistenceAndLeavesComposerUsable() async {
+        let box = FallbackHelpHandoffBox(conversationId: "conversation-a", ownerUserId: 42)
+        let delayedFallback = box.beginFallbackPersistence(
+            userPrompt: "Fallback question",
+            assistantResponse: "Fallback response"
+        )
+
+        let persistenceTask = box.finishFallbackPersistenceAfterGate(delayedFallback)
+        await delayedFallback.gate.waitUntilEntered()
+        box.queueHelpHandoff(
+            requestID: "help-during-fallback",
+            userPrompt: "Help question",
+            assistantResponse: "Help response"
+        )
+
+        XCTAssertFalse(box.consumeQueuedHelpHandoff())
+        XCTAssertFalse(box.isComposerUsable)
+        XCTAssertTrue(box.hasPendingFallbackRetry)
+
+        await delayedFallback.gate.release()
+        await persistenceTask.value
+
+        XCTAssertTrue(box.consumeQueuedHelpHandoff())
+        XCTAssertTrue(box.isComposerUsable)
+        XCTAssertFalse(box.hasPendingFallbackRetry)
+        XCTAssertNil(box.persistenceError)
+        XCTAssertEqual(box.visibleTranscript.map(\.content), [
+            "Fallback question",
+            "Fallback response",
+            "Help question",
+            "Help response",
+        ])
+        XCTAssertEqual(
+            box.persistedTranscript,
+            box.visibleTranscript,
+            "The fallback pair must settle before Help takes ownership of the same conversation transcript."
+        )
+        XCTAssertTrue(box.persistedTranscript.allSatisfy {
+            $0.conversationId == "conversation-a" && $0.ownerUserId == 42
+        })
+    }
+
+    func testHelpHandoffWaitsForSuspendedGenerationAndKeepsVisibleReloadedAndStagedHistoryEqual() async throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+        let service = FoundationModelsService()
+        let gate = AsyncGate()
+        let conversationId = "help-during-generation"
+        let ownerUserId: Int64 = 42
+        var readiness = AIHelpHandoffReadinessCoordinator()
+        let initialization = readiness.beginInitialization()
+        XCTAssertTrue(readiness.finishInitialization(initialization))
+        let sendLifecycle = readiness.beginSendLifecycle()
+        var visibleTranscript: [AIConversationMessage] = []
+
+        let generationTask = Task { @MainActor in
+            await gate.enterAndWaitForRelease()
+            let outcome = try await service.stageLocalConversation(
+                conversationId,
+                ownerUserId: ownerUserId,
+                userPrompt: "Suspended model question",
+                assistantResponse: "Persisted model response",
+                in: db
+            )
+            XCTAssertEqual(outcome, .persistedAndStaged)
+            visibleTranscript.append(contentsOf: [
+                AIConversationMessage(conversationId: conversationId, role: "user", content: "Suspended model question"),
+                AIConversationMessage(conversationId: conversationId, role: "assistant", content: "Persisted model response"),
+            ])
+            XCTAssertTrue(readiness.finishSendLifecycle(sendLifecycle))
+        }
+
+        await gate.waitUntilEntered()
+        readiness.queueHelpRequest(id: "help-arrived-during-generation")
+        XCTAssertNil(
+            readiness.consumeQueuedHelpRequest(),
+            "Help must remain queued for the complete generation and model-persistence lifecycle."
+        )
+
+        await gate.release()
+        try await generationTask.value
+        XCTAssertEqual(readiness.consumeQueuedHelpRequest(), "help-arrived-during-generation")
+
+        let helpStaged = try await service.stageHelpConversation(
+            conversationId,
+            ownerUserId: ownerUserId,
+            userPrompt: "Help question",
+            assistantResponse: "Help response",
+            in: db
+        )
+        XCTAssertTrue(helpStaged)
+        visibleTranscript.append(contentsOf: [
+            AIConversationMessage(conversationId: conversationId, role: "user", content: "Help question"),
+            AIConversationMessage(conversationId: conversationId, role: "assistant", content: "Help response"),
+        ])
+
+        let reloaded = try await FoundationModelsService.loadConversation(
+            conversationId,
+            ownerUserId: ownerUserId,
+            from: db
+        )
+        let otherOwnerReload = try await FoundationModelsService.loadConversation(
+            conversationId,
+            ownerUserId: ownerUserId + 1,
+            from: db
+        )
+        let stagedModelHistory = await service.currentMessageHistory()
+
+        XCTAssertEqual(reloaded.map(\.role), visibleTranscript.map(\.role))
+        XCTAssertEqual(reloaded.map(\.content), visibleTranscript.map(\.content))
+        XCTAssertEqual(stagedModelHistory.map(\.role), visibleTranscript.map(\.role))
+        XCTAssertEqual(stagedModelHistory.map(\.content), visibleTranscript.map(\.content))
+        XCTAssertTrue(reloaded.allSatisfy { $0.conversationId == conversationId })
+        XCTAssertTrue(otherOwnerReload.isEmpty, "The completed lifecycle must remain isolated to the sending owner.")
+    }
+
+    func testPersistedButNotStagedFallbackClearsRetryInsteadOfDuplicatingDurablePair() async throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+        let service = FoundationModelsService()
+        let gate = AsyncGate()
+        let conversationId = "fallback-ui-post-write-race"
+        let ownerUserId: Int64 = 42
+
+        let persistenceTask = Task {
+            try await service.stageLocalConversation(
+                conversationId,
+                ownerUserId: ownerUserId,
+                userPrompt: "Fallback question",
+                assistantResponse: "Fallback response",
+                in: db,
+                afterPersisting: {
+                    await gate.enterAndWaitForRelease()
+                }
+            )
+        }
+
+        await gate.waitUntilEntered()
+        await service.clearConversation()
+        await gate.release()
+
+        let outcome = try await persistenceTask.value
+        let retryDecision = AIFallbackPersistenceRetryDecision.resolve(
+            outcome: outcome,
+            lifecycleIsCurrent: false
+        )
+        let reloaded = try await FoundationModelsService.loadConversation(
+            conversationId,
+            ownerUserId: ownerUserId,
+            from: db
+        )
+        let stagedHistory = await service.currentMessageHistory()
+
+        XCTAssertEqual(outcome, .persistedButNotStaged)
+        XCTAssertEqual(retryDecision, .saved)
+        XCTAssertEqual(reloaded.map(\.role), ["user", "assistant"])
+        XCTAssertEqual(reloaded.map(\.content), ["Fallback question", "Fallback response"])
+        XCTAssertTrue(stagedHistory.isEmpty)
+    }
+
+    func testHelpHandoffClearsFailedFallbackRetryAfterSuspension() async {
+        let box = FallbackHelpHandoffBox(conversationId: "conversation-a", ownerUserId: 42)
+        let delayedFallback = box.beginFallbackPersistence(
+            userPrompt: "Unsaved fallback question",
+            assistantResponse: "Unsaved fallback response",
+            errorDescription: "simulated storage failure"
+        )
+
+        let persistenceTask = box.finishFallbackPersistenceAfterGate(delayedFallback)
+        await delayedFallback.gate.waitUntilEntered()
+        box.queueHelpHandoff(
+            requestID: "help-after-failed-fallback",
+            userPrompt: "Help question",
+            assistantResponse: "Help response"
+        )
+        await delayedFallback.gate.release()
+        await persistenceTask.value
+
+        XCTAssertTrue(box.hasPendingFallbackRetry)
+        XCTAssertNotNil(box.persistenceError)
+        XCTAssertFalse(
+            box.consumeQueuedHelpHandoff(),
+            "Queued Help must wait while the failed fallback pair remains recoverable."
+        )
+        XCTAssertTrue(box.dismissFallbackWarningAndConsumeQueuedHelp())
+        XCTAssertTrue(box.isComposerUsable)
+        XCTAssertFalse(box.hasPendingFallbackRetry)
+        XCTAssertNil(box.persistenceError)
+        XCTAssertEqual(box.persistedTranscript.map(\.content), ["Help question", "Help response"])
+        XCTAssertTrue(box.persistedTranscript.allSatisfy {
+            $0.conversationId == "conversation-a" && $0.ownerUserId == 42
+        })
+    }
+
+    func testDismissAttemptDuringSuspendedRetrySuccessPreservesPayloadUntilCompletion() async {
+        let box = FallbackRetryWarningBox()
+        let delayedRetry = box.beginRetryPersistence()
+        let retryTask = box.finishRetryPersistenceAfterGate(delayedRetry)
+        await delayedRetry.gate.waitUntilEntered()
+
+        XCTAssertFalse(box.attemptDismissWarning())
+        XCTAssertFalse(box.areWarningActionsEnabled)
+        XCTAssertTrue(box.hasPendingFallbackRetry)
+
+        await delayedRetry.gate.release()
+        await retryTask.value
+
+        XCTAssertTrue(box.areWarningActionsEnabled)
+        XCTAssertFalse(box.hasPendingFallbackRetry)
+        XCTAssertNil(box.persistenceError)
+    }
+
+    func testDismissAttemptDuringSuspendedRetryFailureRetainsRecoverableExactPair() async {
+        let box = FallbackRetryWarningBox()
+        let delayedRetry = box.beginRetryPersistence(errorDescription: "simulated retry storage failure")
+        let retryTask = box.finishRetryPersistenceAfterGate(delayedRetry)
+        await delayedRetry.gate.waitUntilEntered()
+
+        XCTAssertFalse(box.attemptDismissWarning())
+        XCTAssertFalse(box.areWarningActionsEnabled)
+        XCTAssertEqual(box.pendingPair, FallbackRetryWarningBox.Pair(
+            userPrompt: "Exact retry question",
+            assistantResponse: "Exact retry response"
+        ))
+
+        await delayedRetry.gate.release()
+        await retryTask.value
+
+        XCTAssertTrue(box.areWarningActionsEnabled)
+        XCTAssertTrue(box.hasPendingFallbackRetry)
+        XCTAssertEqual(box.persistenceError, "simulated retry storage failure")
+        XCTAssertEqual(box.pendingPair, FallbackRetryWarningBox.Pair(
+            userPrompt: "Exact retry question",
+            assistantResponse: "Exact retry response"
+        ))
+    }
+
     func testHelpHandoffWaitsForAuthenticatedInitializationToFinish() {
         var readiness = AIHelpHandoffReadinessCoordinator()
 
@@ -428,11 +664,7 @@ private final class CoordinatorBox {
 
     func sendInCurrentConversation(_ text: String = "Conversation B question") {
         messages.append(AssistantMessage(role: .user, content: text))
-        if let conversationPersistenceError {
-            messages.append(AssistantMessage(role: .assistant, content: conversationPersistenceError))
-        } else {
-            messages.append(AssistantMessage(role: .assistant, content: "Generated response for \(coordinator.conversationId)"))
-        }
+        messages.append(AssistantMessage(role: .assistant, content: "Generated response for \(coordinator.conversationId)"))
     }
 
     func beginConversationListLoad(
@@ -466,6 +698,164 @@ private struct DelayedConversationListCompletion {
     let lifecycle: AIConversationLifecycleSnapshot
     let requestID: UInt
     let rows: [IOSAIAssistantPanel.SavedConversation]
+    let gate = AsyncGate()
+}
+
+@MainActor
+private final class FallbackHelpHandoffBox {
+    struct OwnedTurn: Equatable {
+        let conversationId: String
+        let ownerUserId: Int64
+        let content: String
+    }
+
+    private let conversationId: String
+    private let ownerUserId: Int64
+    private var readiness = AIHelpHandoffReadinessCoordinator()
+    private var queuedHelp: (userPrompt: String, assistantResponse: String)?
+    private(set) var visibleTranscript: [OwnedTurn] = []
+    private(set) var persistedTranscript: [OwnedTurn] = []
+    private(set) var hasPendingFallbackRetry = false
+    private(set) var persistenceError: String?
+    private var isProcessing = false
+
+    var isComposerUsable: Bool {
+        !isProcessing && !hasPendingFallbackRetry
+    }
+
+    init(conversationId: String, ownerUserId: Int64) {
+        self.conversationId = conversationId
+        self.ownerUserId = ownerUserId
+        let initialization = readiness.beginInitialization()
+        XCTAssertTrue(readiness.finishInitialization(initialization))
+    }
+
+    func beginFallbackPersistence(
+        userPrompt: String,
+        assistantResponse: String,
+        errorDescription: String? = nil
+    ) -> DelayedFallbackPersistence {
+        visibleTranscript.append(contentsOf: ownedTurns(userPrompt, assistantResponse))
+        hasPendingFallbackRetry = true
+        isProcessing = true
+        return DelayedFallbackPersistence(
+            requestID: readiness.beginSendLifecycle(),
+            userPrompt: userPrompt,
+            assistantResponse: assistantResponse,
+            errorDescription: errorDescription
+        )
+    }
+
+    func finishFallbackPersistenceAfterGate(_ delayedPersistence: DelayedFallbackPersistence) -> Task<Void, Never> {
+        Task { @MainActor in
+            await delayedPersistence.gate.enterAndWaitForRelease()
+            if let errorDescription = delayedPersistence.errorDescription {
+                persistenceError = errorDescription
+            } else {
+                persistedTranscript.append(contentsOf: ownedTurns(
+                    delayedPersistence.userPrompt,
+                    delayedPersistence.assistantResponse
+                ))
+                hasPendingFallbackRetry = false
+                persistenceError = nil
+            }
+            XCTAssertTrue(readiness.finishSendLifecycle(delayedPersistence.requestID))
+            isProcessing = false
+        }
+    }
+
+    func queueHelpHandoff(
+        requestID: String,
+        userPrompt: String,
+        assistantResponse: String
+    ) {
+        queuedHelp = (userPrompt, assistantResponse)
+        readiness.queueHelpRequest(id: requestID)
+    }
+
+    @discardableResult
+    func consumeQueuedHelpHandoff() -> Bool {
+        guard !hasPendingFallbackRetry,
+              readiness.consumeQueuedHelpRequest() != nil,
+              let queuedHelp else { return false }
+        self.queuedHelp = nil
+        hasPendingFallbackRetry = false
+        persistenceError = nil
+        let helpTurns = ownedTurns(queuedHelp.userPrompt, queuedHelp.assistantResponse)
+        visibleTranscript.append(contentsOf: helpTurns)
+        persistedTranscript.append(contentsOf: helpTurns)
+        return true
+    }
+
+    @discardableResult
+    func dismissFallbackWarningAndConsumeQueuedHelp() -> Bool {
+        guard !isProcessing else { return false }
+        hasPendingFallbackRetry = false
+        persistenceError = nil
+        return consumeQueuedHelpHandoff()
+    }
+
+    private func ownedTurns(_ userPrompt: String, _ assistantResponse: String) -> [OwnedTurn] {
+        [userPrompt, assistantResponse].map {
+            OwnedTurn(conversationId: conversationId, ownerUserId: ownerUserId, content: $0)
+        }
+    }
+}
+
+private struct DelayedFallbackPersistence {
+    let requestID: UInt
+    let userPrompt: String
+    let assistantResponse: String
+    let errorDescription: String?
+    let gate = AsyncGate()
+}
+
+@MainActor
+private final class FallbackRetryWarningBox {
+    struct Pair: Equatable {
+        let userPrompt: String
+        let assistantResponse: String
+    }
+
+    private(set) var pendingPair: Pair? = Pair(
+        userPrompt: "Exact retry question",
+        assistantResponse: "Exact retry response"
+    )
+    private(set) var persistenceError: String? = "initial storage failure"
+    private var isProcessing = false
+
+    var areWarningActionsEnabled: Bool { !isProcessing }
+    var hasPendingFallbackRetry: Bool { pendingPair != nil }
+
+    func beginRetryPersistence(errorDescription: String? = nil) -> DelayedRetryPersistence {
+        precondition(pendingPair != nil)
+        isProcessing = true
+        return DelayedRetryPersistence(errorDescription: errorDescription)
+    }
+
+    func attemptDismissWarning() -> Bool {
+        guard !isProcessing else { return false }
+        pendingPair = nil
+        persistenceError = nil
+        return true
+    }
+
+    func finishRetryPersistenceAfterGate(_ delayedRetry: DelayedRetryPersistence) -> Task<Void, Never> {
+        Task { @MainActor in
+            await delayedRetry.gate.enterAndWaitForRelease()
+            if let errorDescription = delayedRetry.errorDescription {
+                persistenceError = errorDescription
+            } else {
+                pendingPair = nil
+                persistenceError = nil
+            }
+            isProcessing = false
+        }
+    }
+}
+
+private struct DelayedRetryPersistence {
+    let errorDescription: String?
     let gate = AsyncGate()
 }
 
