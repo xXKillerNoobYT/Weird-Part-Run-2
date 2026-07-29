@@ -77,6 +77,16 @@ struct WiredPartIOSApp: App {
         ProcessInfo.processInfo.arguments.contains("-UITestingWEI3041Timesheets")
     }
 
+    /// Auto-login fixtures need the authenticated shell on their first launch.
+    /// AppCore seeds first-run defaults while bootstrapping, so routing through
+    /// those persisted defaults can expose onboarding before SwiftUI observes
+    /// the update on a fresh simulator.
+    private var shouldOpenAuthenticatedShellForUITest: Bool {
+        let arguments = ProcessInfo.processInfo.arguments
+        return arguments.contains("-UITesting")
+            && arguments.contains("-UITestingWEI936AutoLogin")
+    }
+
     private var shouldShowWEI936WelcomeFixture: Bool {
         ProcessInfo.processInfo.arguments.contains("-UITestingWEI936Welcome")
     }
@@ -207,6 +217,11 @@ struct WiredPartIOSApp: App {
                             IOSTimesheetsPage()
                                 .environmentObject(appCore)
                         }
+                    } else if shouldOpenAuthenticatedShellForUITest {
+                        IOSMainView()
+                            .environmentObject(appCore)
+                            .environmentObject(tabPrefs)
+                            .environmentObject(appCore.badgeCountManager)
                     } else if isAdmin && !hasCompletedCompanySetup {
                         CompanySetupWizard()
                             .environmentObject(appCore)
