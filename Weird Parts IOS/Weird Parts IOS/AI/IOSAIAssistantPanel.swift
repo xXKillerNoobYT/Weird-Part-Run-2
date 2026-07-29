@@ -180,9 +180,24 @@ struct IOSAIAssistantPanel: View {
     @State private var notebooksListContext: String?
     @State private var settingsContext: String?
 
-    /// Tracks which page the user is currently on, mapped to a HelpContentRegistry page ID.
-    /// Updated whenever a page-active notification fires, cleared on page-inactive.
-    @State private var activePageId: String?
+    /// Minimal route identity supplied by IOSContentRouter for every navigable
+    /// AppTab, including pages that do not need a dedicated data payload.
+    @State private var routeContext: String?
+    @State private var activeRoutePath: String?
+    @State private var activeRouteInstanceId: String?
+    @State private var activeRouteInstanceOrder: UInt64?
+
+    /// Route identity is the fallback. A dedicated deep/sheet screen wins while
+    /// it is active, so a route refresh cannot replace the visible Help target.
+    @State private var routePageId: String?
+    @State private var dedicatedPageId: String?
+
+    private var activePageId: String? {
+        AIPageIdentityResolver.resolve(
+            dedicatedPageId: dedicatedPageId,
+            routePageId: routePageId
+        )
+    }
 
     /// Unique ID for the current conversation thread. Changing this starts a fresh session.
     @State private var conversationId: String = UUID().uuidString
@@ -776,6 +791,9 @@ struct IOSAIAssistantPanel: View {
         .onChange(of: resumePrerequisiteToken) { _, newPrerequisites in
             resetConversationReadScopeIfNeeded(for: newPrerequisites)
         }
+        .onAppear {
+            NotificationCenter.default.post(name: .requestCurrentPageContext, object: nil)
+        }
         .onChange(of: pendingHelpRequestToken) { _, _ in
             consumePendingHelpRequestIfReady()
         }
@@ -889,7 +907,14 @@ struct IOSAIAssistantPanel: View {
             fleetMyTruckContext: $fleetMyTruckContext
 
         ))
-        .modifier(ActivePageIdTracker(activePageId: $activePageId))
+        .modifier(RoutePageContextObserver(
+            routeContext: $routeContext,
+            activeRoutePath: $activeRoutePath,
+            activeRouteInstanceId: $activeRouteInstanceId,
+            activeRouteInstanceOrder: $activeRouteInstanceOrder,
+            routePageId: $routePageId
+        ))
+        .modifier(ActivePageIdTracker(activePageId: $dedicatedPageId))
         .onReceive(NotificationCenter.default.publisher(for: .appDidLogout)) { _ in
             resetForLogout()
         }
@@ -1502,7 +1527,11 @@ struct IOSAIAssistantPanel: View {
         let pageId = userInfo["pageId"] as? String
 
         if let pageId, HelpContentRegistry.helpFor(pageId) != nil {
-            activePageId = pageId
+            if dedicatedPageId != nil {
+                dedicatedPageId = pageId
+            } else {
+                routePageId = pageId
+            }
         }
 
         query = ""
@@ -1738,7 +1767,12 @@ struct IOSAIAssistantPanel: View {
     /// session, otherwise the new session instructions could still include the
     /// previous user's page state.
     private func clearVolatilePageContext() {
-        activePageId = nil
+        dedicatedPageId = nil
+        routePageId = nil
+        routeContext = nil
+        activeRoutePath = nil
+        activeRouteInstanceId = nil
+        activeRouteInstanceOrder = nil
         catalogContext = nil
         pricingContext = nil
         suppliersContext = nil
@@ -2199,6 +2233,9 @@ struct IOSAIAssistantPanel: View {
         if aiAvailability == .available, let db = appCore.db {
             // Use Foundation Models with tool calling for real database access
             var navContext = buildNavigationContext(permissions: appCore.permissions)
+            if dedicatedPageId == nil, let ctx = routeContext {
+                navContext += "\n\nCurrent Route Context (READ-ONLY): \(ctx)"
+            }
             if let ctx = catalogContext {
                 navContext += "\n\nCatalog Page Context: \(ctx)"
                 navContext += " You can set catalog filters by responding with a JSON action block."
@@ -2664,6 +2701,96 @@ struct IOSAIAssistantPanel: View {
 }
 
 // MARK: - Page Context Observer Modifiers
+
+enum AIPageIdentityResolver {
+    static func resolve(dedicatedPageId: String?, routePageId: String?) -> String? {
+        dedicatedPageId ?? routePageId
+    }
+}
+
+struct AIRoutePageContextState: Equatable {
+    var routeContext: String?
+    var activeRoutePath: String?
+    var activeRouteInstanceId: String?
+    var activeRouteInstanceOrder: UInt64?
+    var routePageId: String?
+
+    mutating func activate(context: String, path: String, instanceId: String, instanceOrder: UInt64, pageId: String) {
+        guard activeRouteInstanceOrder.map({ instanceOrder >= $0 }) ?? true else { return }
+        routeContext = context
+        activeRoutePath = path
+        activeRouteInstanceId = instanceId
+        activeRouteInstanceOrder = instanceOrder
+        routePageId = pageId
+    }
+
+    mutating func deactivate(matchingPath path: String, instanceId: String) {
+        guard path == activeRoutePath, instanceId == activeRouteInstanceId else { return }
+        routeContext = nil
+        activeRoutePath = nil
+        activeRouteInstanceId = nil
+        activeRouteInstanceOrder = nil
+        routePageId = nil
+    }
+}
+
+/// Receives the minimal route identity that covers every current route. A
+/// per-router instance token prevents a late inactive event from an old router
+/// clearing a newer page.
+private struct RoutePageContextObserver: ViewModifier {
+    @Binding var routeContext: String?
+    @Binding var activeRoutePath: String?
+    @Binding var activeRouteInstanceId: String?
+    @Binding var activeRouteInstanceOrder: UInt64?
+    @Binding var routePageId: String?
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .routePageActive)) { notification in
+                guard let context = notification.userInfo?["context"] as? String,
+                      let path = notification.userInfo?["path"] as? String,
+                      let instanceId = notification.userInfo?["instanceId"] as? String,
+                      let instanceOrder = notification.userInfo?["instanceOrder"] as? UInt64,
+                      let pageId = notification.userInfo?["pageId"] as? String else { return }
+                var state = AIRoutePageContextState(
+                    routeContext: routeContext,
+                    activeRoutePath: activeRoutePath,
+                    activeRouteInstanceId: activeRouteInstanceId,
+                    activeRouteInstanceOrder: activeRouteInstanceOrder,
+                    routePageId: routePageId
+                )
+                state.activate(
+                    context: context,
+                    path: path,
+                    instanceId: instanceId,
+                    instanceOrder: instanceOrder,
+                    pageId: pageId
+                )
+                routeContext = state.routeContext
+                activeRoutePath = state.activeRoutePath
+                activeRouteInstanceId = state.activeRouteInstanceId
+                activeRouteInstanceOrder = state.activeRouteInstanceOrder
+                routePageId = state.routePageId
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .routePageInactive)) { notification in
+                guard let path = notification.userInfo?["path"] as? String,
+                      let instanceId = notification.userInfo?["instanceId"] as? String else { return }
+                var state = AIRoutePageContextState(
+                    routeContext: routeContext,
+                    activeRoutePath: activeRoutePath,
+                    activeRouteInstanceId: activeRouteInstanceId,
+                    activeRouteInstanceOrder: activeRouteInstanceOrder,
+                    routePageId: routePageId
+                )
+                state.deactivate(matchingPath: path, instanceId: instanceId)
+                routeContext = state.routeContext
+                activeRoutePath = state.activeRoutePath
+                activeRouteInstanceId = state.activeRouteInstanceId
+                activeRouteInstanceOrder = state.activeRouteInstanceOrder
+                routePageId = state.routePageId
+            }
+    }
+}
 
 /// Groups the original 5 Parts page notification observers to keep chatBody type-checker happy.
 private struct PartsPageContextObservers: ViewModifier {
@@ -3619,8 +3746,6 @@ private struct ActivePageIdTrackerFleetToolsNotebooksTail: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .toolRegistryPageInactive)) { _ in if activePageId == "tools-registry" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .notebooksListPageActive)) { _ in activePageId = "notebooks-all" }
             .onReceive(NotificationCenter.default.publisher(for: .notebooksListPageInactive)) { _ in if activePageId == "notebooks-all" { activePageId = nil } }
-            .onReceive(NotificationCenter.default.publisher(for: .settingsPageActive)) { _ in activePageId = "settings-app-config" }
-            .onReceive(NotificationCenter.default.publisher(for: .settingsPageInactive)) { _ in if activePageId == "settings-app-config" { activePageId = nil } }
     }
 }
 
