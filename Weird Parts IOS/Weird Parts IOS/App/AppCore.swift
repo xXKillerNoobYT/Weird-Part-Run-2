@@ -109,11 +109,6 @@ final class AppCore: ObservableObject {
             // Cmd+R rebuild. Clean builds already delete the simulator
             // sandbox, so migrations create tables from scratch naturally.
             let result = try await Task.detached(priority: .userInitiated) {
-                // Production safety: back up before migration so we can roll back
-                #if !DEBUG
-                let backupPath = AppDatabase.backupDatabase(atPath: path)
-                #endif
-
                 let database: AppDatabase
                 do {
 // SQLCipher: derive a device-bound bootstrap key from the Keychain.
@@ -124,10 +119,10 @@ final class AppCore: ObservableObject {
                     // Migration path: if the DB file is still plaintext (pre-SQLCipher binary),
                     // `migratePlaintextDBIfNeeded` converts it in-place before opening.
                     let keyHex = try Self.deviceBootstrapKeyHex()
-                    try AppDatabase.migratePlaintextDBIfNeeded(atPath: path, keyHex: keyHex)
-                    database = try AppDatabase.openEncryptedDatabase(atPath: path, keyHex: keyHex)
-                    // Remove the .unencrypted.bak file after it has been retained for 7 days.
-                    AppDatabase.cleanupStaleUnencryptedBackup(atPath: path)
+                    database = try AppDatabase.openEncryptedDatabaseAfterReleaseMigration(
+                        atPath: path,
+                        keyHex: keyHex
+                    )
                 } catch {
                     #if DEBUG && targetEnvironment(simulator)
                     if Self.shouldResetLocalDatabaseAfterCipherOpenFailure(error) {
@@ -141,28 +136,7 @@ final class AppCore: ObservableObject {
                         throw error
                     }
                     #else
-                    #if !DEBUG
-                    // Migration failed — restore the pre-migration backup and retry once.
-                    // A successful restore leaves the old schema/data on disk; reopening it
-                    // lets normal startup migrations run again instead of surfacing the
-                    // original, now-recovered failure to the user.
-                    do {
-                        database = try Self.retryOpeningRestoredDatabase(
-                            backupPath: backupPath,
-                            databasePath: path,
-                            keyHex: try Self.deviceBootstrapKeyHex(),
-                            restoreDatabase: AppDatabase.restoreDatabase(from:to:),
-                            migratePlaintextDatabaseIfNeeded: AppDatabase.migratePlaintextDBIfNeeded(atPath:keyHex:),
-                            openEncryptedDatabase: AppDatabase.openEncryptedDatabase(atPath:keyHex:)
-                        )
-                        self.logger.error("[AppCore] Migration failed, restored from backup, and retry open succeeded. Original error: \(error.localizedDescription)")
-                    } catch {
-                        self.logger.error("[AppCore] Migration failed; restore/retry also failed. Retry error: \(error.localizedDescription)")
-                        throw error
-                    }
-                    #else
                     throw error
-                    #endif
                     #endif
                 }
 
@@ -390,22 +364,6 @@ final class AppCore: ObservableObject {
         #endif
     }
 
-    nonisolated static func retryOpeningRestoredDatabase<Database>(
-        backupPath: String?,
-        databasePath: String,
-        keyHex: String,
-        restoreDatabase: (String, String) throws -> Void,
-        migratePlaintextDatabaseIfNeeded: (String, String) throws -> Void,
-        openEncryptedDatabase: (String, String) throws -> Database
-    ) throws -> Database {
-        guard let backupPath else {
-            throw AppCoreError.missingMigrationRollbackBackup
-        }
-
-        try restoreDatabase(backupPath, databasePath)
-        try migratePlaintextDatabaseIfNeeded(databasePath, keyHex)
-        return try openEncryptedDatabase(databasePath, keyHex)
-    }
 
     // MARK: - Auth Actions
 
@@ -809,25 +767,25 @@ final class AppCore: ObservableObject {
 
     enum AppCoreError: LocalizedError {
         case noDocumentsDirectory
-        case missingMigrationRollbackBackup
 
         var errorDescription: String? {
             switch self {
             case .noDocumentsDirectory:
                 return "Unable to locate app storage directory. Please restart the app."
-            case .missingMigrationRollbackBackup:
-                return "Unable to restore the app database because no migration rollback backup is available."
             }
         }
     }
 
     enum UITestBootstrapError: LocalizedError {
         case partCategoryMissing
+        case fixturePartMissing(String)
 
         var errorDescription: String? {
             switch self {
             case .partCategoryMissing:
                 "UI test bootstrap failed because the required active part category fixture is missing."
+            case .fixturePartMissing(let code):
+                "UI test bootstrap failed because the required active part fixture \(code) is missing."
             }
         }
     }
@@ -901,15 +859,6 @@ final class AppCore: ObservableObject {
                     """,
                 arguments: ["jobs", "1002", "priority_label", priorityLocal, priorityRemote, "remote", "UITEST-LOCAL", "UITEST-REMOTE", now, now]
             )
-            try dbConn.execute(
-                sql: """
-                    INSERT INTO _conflict_log
-                    (table_name, record_id, field_name, local_value, remote_value, winner, local_device, remote_device, local_ts, remote_ts, reviewed)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-                    """,
-                arguments: ["parts", "2001", "unit_cost", "17.45", "21.90", "remote", "UITEST-LOCAL", "UITEST-REMOTE", now, now]
-            )
-
             // WEI-1752 / WEI-881 QA fixture: the -UITesting runtime must expose a
             // selectable active job, at least one category, and a deterministic JPO
             // with 2+ selectable line items so the bulk hold/chat smoke can run
@@ -966,6 +915,29 @@ final class AppCore: ObservableObject {
                         arguments: [categoryId, part.name, part.description, part.code]
                     )
                 }
+
+                // The critical conflict must reference a real row and a real
+                // synced column. The previous synthetic parts #2001/unit_cost
+                // pair matched neither, so choosing the local loser failed while
+                // choosing the already-applied remote winner appeared to work.
+                guard let conflictPartId = try Int64.fetchOne(
+                    dbConn,
+                    sql: "SELECT id FROM parts WHERE code = 'UITEST-QA-CONDUIT' AND is_active = 1 AND deleted_at IS NULL"
+                ) else {
+                    throw UITestBootstrapError.fixturePartMissing("UITEST-QA-CONDUIT")
+                }
+                try dbConn.execute(
+                    sql: "UPDATE parts SET company_cost_price = 21.90 WHERE id = ?",
+                    arguments: [conflictPartId]
+                )
+                try dbConn.execute(
+                    sql: """
+                        INSERT INTO _conflict_log
+                        (table_name, record_id, field_name, local_value, remote_value, winner, local_device, remote_device, local_ts, remote_ts, reviewed)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                        """,
+                    arguments: ["parts", String(conflictPartId), "company_cost_price", "17.45", "21.90", "remote", "UITEST-LOCAL", "UITEST-REMOTE", now, now]
+                )
 
                 try dbConn.execute(
                     sql: """

@@ -26,7 +26,8 @@ struct AppDatabaseCipherTests {
         let fm = FileManager.default
         for p in paths {
             for suffix in ["", "-wal", "-shm", ".encrypted-tmp", ".encrypted-tmp-wal",
-                           ".encrypted-tmp-shm", ".unencrypted.bak"] {
+                           ".encrypted-tmp-shm", ".unencrypted.bak", ".unencrypted.bak-wal",
+                           ".unencrypted.bak-shm"] {
                 try? fm.removeItem(atPath: p + suffix)
             }
         }
@@ -130,8 +131,8 @@ struct AppDatabaseCipherTests {
                 "Schema version should match after migration of empty DB")
     }
 
-    @Test("testPopulatedUnencryptedDBMigratesAllTablesWithRowCountVerification — user data preserved")
-    func testPopulatedUnencryptedDBMigratesAllTablesWithRowCountVerification() throws {
+    @Test("testReleaseMigrationRemovesPlaintextArtifactsAndPreservesFixture — production recovery is keyed-only")
+    func testReleaseMigrationRemovesPlaintextArtifactsAndPreservesFixture() throws {
         let path = tmpPath("populated")
         defer { cleanup(path) }
 
@@ -159,13 +160,45 @@ struct AppDatabaseCipherTests {
         }
         try (plainDB.writer as? DatabasePool)?.close()
 
-        // 2. Migrate to encrypted.
+        // 2. Simulate the legacy release pre-migration snapshot, including the
+        // plaintext bundle that older production builds left in Backups/.
+        let legacyBackupPath = try #require(AppDatabase.backupDatabase(atPath: path))
+        #expect(FileManager.default.fileExists(atPath: legacyBackupPath))
+
+        // 3. Run the shared release helper used by AppCore. It must only remove
+        // plaintext artifacts after the keyed canonical open succeeds.
         let salt = Data(repeating: 0x33, count: 32)
         let keyHex = CipherKeyManager.deriveKey(pin: "2222", salt: salt)
-        try AppDatabase.migratePlaintextDBIfNeeded(atPath: path, keyHex: keyHex)
+        let encDB = try AppDatabase.openEncryptedDatabaseAfterReleaseMigration(atPath: path, keyHex: keyHex)
 
-        // 3. Verify data is present in the encrypted DB.
-        let encDB = try AppDatabase.openEncryptedDatabase(atPath: path, keyHex: keyHex)
+        // 4. The plaintext rollback database and its sidecars must be gone once
+        // the promoted canonical DB has passed encrypted recovery.
+        let fm = FileManager.default
+        for suffix in ["", "-wal", "-shm"] {
+            #expect(!fm.fileExists(atPath: path + ".unencrypted.bak" + suffix),
+                    "Plaintext rollback artifact must be removed after encrypted recovery: \(suffix)")
+        }
+
+        let backupDirectory = (path as NSString).deletingLastPathComponent + "/Backups"
+        let persistedPreMigrationArtifacts = (try? fm.contentsOfDirectory(atPath: backupDirectory))?
+            .filter { $0.hasPrefix("pre-migration-") } ?? []
+        #expect(persistedPreMigrationArtifacts.isEmpty,
+                "Release recovery must not retain plaintext pre-migration DB/WAL/SHM artifacts")
+
+        // 5. The migrated canonical DB must reject an unkeyed SQLite read.
+        var unkeyedReadFailed = false
+        do {
+            let unkeyedPool = try DatabaseQueue(path: path)
+            defer { try? unkeyedPool.close() }
+            try unkeyedPool.read { db in
+                _ = try Row.fetchOne(db, sql: "SELECT 1 FROM sqlite_master LIMIT 1")
+            }
+        } catch {
+            unkeyedReadFailed = true
+        }
+        #expect(unkeyedReadFailed, "Migrated canonical DB must not be readable without its SQLCipher key")
+
+        // 6. Verify the same populated fixture is present with the correct key.
         let testValue: String? = try encDB.writer.read { db in
             try String.fetchOne(db, sql: "SELECT value FROM settings WHERE key = 'cipher_migration_test'")
         }
@@ -233,6 +266,57 @@ struct AppDatabaseCipherTests {
         #expect(legacyCategory?["description"] == "legacy category row")
         #expect((legacyCategory?["sort_order"] as Int?) == 0)
         #expect((legacyCategory?["is_active"] as Int?) == 1)
+    }
+
+    @Test("testResumeAfterInterruptedPromotionRemovesPlaintextRollbackArtifacts — keyed reopen cleans stale rollback bundle")
+    func testResumeAfterInterruptedPromotionRemovesPlaintextRollbackArtifacts() throws {
+        let path = tmpPath("interrupted-promotion")
+        let plaintextFixturePath = path + ".plaintext-fixture"
+        defer {
+            cleanup(path, plaintextFixturePath)
+        }
+
+        let plainDB = try AppDatabase.openDatabase(atPath: path)
+        try plainDB.writer.write { db in
+            try db.execute(sql: """
+                INSERT OR REPLACE INTO settings (key, value, category)
+                VALUES ('interrupted_promotion_sentinel', 'survives_resume', 'test')
+            """)
+        }
+        try (plainDB.writer as? DatabasePool)?.close()
+
+        let fm = FileManager.default
+        try fm.copyItem(atPath: path, toPath: plaintextFixturePath)
+
+        let salt = Data(repeating: 0x77, count: 32)
+        let keyHex = CipherKeyManager.deriveKey(pin: "6666", salt: salt)
+        try AppDatabase.migratePlaintextDBIfNeeded(atPath: path, keyHex: keyHex)
+
+        // Model a process interruption after encrypted promotion/recovery but before
+        // rollback cleanup by staging the plaintext rollback bundle left by that window.
+        let rollbackPath = path + ".unencrypted.bak"
+        try fm.copyItem(atPath: plaintextFixturePath, toPath: rollbackPath)
+        try Data("plaintext WAL artifact".utf8).write(to: URL(fileURLWithPath: rollbackPath + "-wal"))
+        try Data("plaintext SHM artifact".utf8).write(to: URL(fileURLWithPath: rollbackPath + "-shm"))
+
+        let resumedDatabase = try AppDatabase.openEncryptedDatabaseAfterReleaseMigration(
+            atPath: path,
+            keyHex: keyHex
+        )
+        let sentinel: String? = try resumedDatabase.writer.read { db in
+            try String.fetchOne(
+                db,
+                sql: "SELECT value FROM settings WHERE key = 'interrupted_promotion_sentinel'"
+            )
+        }
+        #expect(sentinel == "survives_resume", "Canonical database must remain keyed-readable after resume")
+
+        for suffix in ["", "-wal", "-shm"] {
+            #expect(
+                !fm.fileExists(atPath: rollbackPath + suffix),
+                "Interrupted-promotion plaintext rollback artifact must be removed on keyed resume: \(suffix)"
+            )
+        }
     }
 
     @Test("testIdempotencyAlreadyEncryptedSkipsMigration — second call is a no-op")
@@ -335,26 +419,65 @@ struct AppDatabaseCipherTests {
         let missingTempPath = path + ".encrypted-tmp"
         defer { cleanup(path) }
 
-        let plainDB = try AppDatabase.openDatabase(atPath: path)
-        try plainDB.writer.write { db in
+        let initializedDatabase = try AppDatabase.openDatabase(atPath: path)
+        try (initializedDatabase.writer as? DatabasePool)?.close()
+
+        let writer = try DatabaseQueue(path: path)
+        try writer.writeWithoutTransaction { db in
+            try db.execute(sql: "PRAGMA journal_mode = WAL")
+            try db.execute(sql: "PRAGMA wal_autocheckpoint = 0")
             try db.execute(sql: """
                 INSERT OR REPLACE INTO settings (key, value, category)
                 VALUES ('promotion_rollback_sentinel', 'original_value', 'test')
             """)
         }
-        try (plainDB.writer as? DatabasePool)?.close()
+
+        // Keep a second connection open while the writer closes so the committed
+        // sentinel remains in the plaintext WAL instead of being checkpointed into
+        // the base file before the promotion attempt.
+        let reader = try DatabaseQueue(path: path)
+        _ = try reader.read { db in
+            try String.fetchOne(db, sql: "SELECT value FROM settings WHERE key = 'promotion_rollback_sentinel'")
+        }
+        try writer.close()
+        #expect(FileManager.default.fileExists(atPath: path + "-wal"),
+                "Regression setup must retain the committed sentinel in the source WAL")
+        let sourceWAL = try Data(contentsOf: URL(fileURLWithPath: path + "-wal"))
+        #expect(FileManager.default.fileExists(atPath: path + "-shm"),
+                "Regression setup must retain the source SHM sidecar")
+        let sourceSHM = try Data(contentsOf: URL(fileURLWithPath: path + "-shm"))
+        #expect(!sourceWAL.isEmpty, "Regression setup must capture the source WAL bundle")
+
+        enum ExpectedSidecarMoveFailure: Error {
+            case injected
+        }
 
         do {
             try AppDatabase.replacePlaintextDatabaseWithEncryptedTemp(
                 atPath: path,
                 tempPath: missingTempPath,
-                backupPath: path + ".unencrypted.bak"
+                backupPath: path + ".unencrypted.bak",
+                moveItem: { sourcePath, destinationPath in
+                    if sourcePath == path + "-shm" && destinationPath == path + ".unencrypted.bak-shm" {
+                        throw ExpectedSidecarMoveFailure.injected
+                    }
+                    try FileManager.default.moveItem(atPath: sourcePath, toPath: destinationPath)
+                }
             )
-            Issue.record("Promotion should throw when the encrypted temp database is missing")
+            Issue.record("Promotion should throw when the SHM rollback move fails")
         } catch {
             #expect(FileManager.default.fileExists(atPath: path), "Original plaintext DB must be restored to the canonical path")
             #expect(!FileManager.default.fileExists(atPath: path + ".unencrypted.bak"), "Rollback should not leave the only good copy stranded at the backup path")
+            #expect(
+                try Data(contentsOf: URL(fileURLWithPath: path + "-wal")) == sourceWAL,
+                "Failed promotion must restore the original WAL bytes with the canonical plaintext database"
+            )
+            #expect(
+                try Data(contentsOf: URL(fileURLWithPath: path + "-shm")) == sourceSHM,
+                "Failed promotion must preserve the original SHM bytes with the canonical plaintext database"
+            )
 
+            try reader.close()
             let checkPool = try DatabasePool(path: path)
             let sentinel: String? = try checkPool.read { db in
                 try String.fetchOne(db, sql: "SELECT value FROM settings WHERE key = 'promotion_rollback_sentinel'")
