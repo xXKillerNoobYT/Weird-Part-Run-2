@@ -50,10 +50,7 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
     @MainActor
     private func verifyWarningAndRetryTarget(context: String) throws {
         waitForAuthenticatedAppShell()
-
-        let assistantButton = app.buttons["aiAssistantButton"]
-        XCTAssertTrue(assistantButton.waitForExistence(timeout: 15), "AI Assistant should be available at \(context).")
-        assistantButton.tap()
+        openAssistant(context: context)
 
         let warningTitle = app.descendants(matching: .any).matching(
             NSPredicate(format: "label == %@", "Conversation turn was not saved")
@@ -97,11 +94,52 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
 
     @MainActor
     private func waitForAuthenticatedAppShell() {
-        let assistantButton = app.buttons["aiAssistantButton"]
-        XCTAssertTrue(
-            assistantButton.waitForExistence(timeout: 30),
-            "The deterministic UI-test auto-login fixture should reach the authenticated app shell."
-        )
-        XCTAssertTrue(assistantButton.isHittable, "AI Assistant should be actionable from the authenticated app shell.")
+        let dashboardTab = app.descendants(matching: .any)["tab_dashboard"]
+        guard dashboardTab.waitForExistence(timeout: 30) else {
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = "Authenticated shell precondition failure"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            XCTFail("The deterministic UI-test auto-login fixture should reach the authenticated app shell.")
+            return
+        }
+        XCTAssertTrue(dashboardTab.isHittable, "Dashboard should be actionable from the authenticated app shell.")
+    }
+
+    @MainActor
+    private func openAssistant(context: String) {
+        if !name.contains("AX5") {
+            let assistantButton = app.descendants(matching: .any)["aiAssistantButton"]
+            XCTAssertTrue(assistantButton.waitForExistence(timeout: 15), "AI Assistant should be available at \(context).")
+            XCTAssertTrue(assistantButton.isHittable, "AI Assistant should be actionable at \(context).")
+            assistantButton.tap()
+            return
+        }
+
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            let assistantButton = app.descendants(matching: .any)["sidebarAIAssistantButton"]
+            XCTAssertTrue(assistantButton.waitForExistence(timeout: 15), "AI Assistant should be available from the iPad sidebar at \(context).")
+            XCTAssertTrue(assistantButton.isHittable, "AI Assistant should be actionable from the iPad sidebar at \(context).")
+            assistantButton.tap()
+            return
+        }
+
+        // AX5 intentionally suppresses the floating control so it cannot
+        // overlap dashboard content. Reach the same assistant through the
+        // visible More-tab action instead of treating that accessibility layout
+        // choice as an authentication failure.
+        let moreTab = app.tabBars.buttons["More"]
+        XCTAssertTrue(moreTab.waitForExistence(timeout: 15), "More should be available at \(context).")
+        XCTAssertTrue(moreTab.isHittable, "More should be actionable at \(context).")
+        moreTab.tap()
+        XCTAssertTrue(app.navigationBars["More"].waitForExistence(timeout: 15), "More should open at \(context).")
+
+        // At AX5, More lists overflow modules before account actions. Scroll the
+        // user-visible list once to reveal the existing assistant action.
+        app.swipeUp()
+        let assistantButton = app.buttons["AI Assistant"]
+        XCTAssertTrue(assistantButton.waitForExistence(timeout: 15), "AI Assistant should be available from More at \(context).")
+        XCTAssertTrue(assistantButton.isHittable, "AI Assistant should be actionable from More at \(context).")
+        assistantButton.tap()
     }
 }
