@@ -18,6 +18,20 @@ enum ConflictSeverity {
 /// Classification of which conflicts need what level of attention.
 enum SyncConflictClassifier {
 
+    /// Persisted/synced financial and stock fields that always require an
+    /// explicit local/remote decision. This set includes current schema names and
+    /// legacy aliases retained for conflict rows created by older app versions.
+    private static let criticalFields: Set<String> = [
+        "qty", "stock", "cost", "price", "total", "budget",
+        "forecast_adu_30", "min_stock", "target_stock", "max_stock",
+        "min_stock_level", "target_stock_level", "max_stock_level",
+        "current_stock", "committed_qty", "on_order_qty",
+        "unit_cost", "company_cost_price", "sell_price", "markup_percent",
+        "company_markup_percent",
+        "regular_hours", "overtime_hours", "total_hours",
+        "amount", "balance", "rate", "hourly_rate",
+    ]
+
     /// Classify a conflict based on its field name and values.
     static func classify(_ conflict: ConflictLogEntry) -> ConflictSeverity {
         let field = conflict.fieldName.lowercased()
@@ -30,25 +44,12 @@ enum SyncConflictClassifier {
         if trivialFields.contains(field) { return .trivial }
 
         // Critical: financial, stock, pricing — human must decide
-        let criticalFields: Set<String> = [
-            "qty", "stock", "cost", "price", "total", "budget",
-            "forecast_adu_30", "min_stock", "target_stock", "max_stock",
-            "current_stock", "committed_qty", "on_order_qty",
-            "unit_cost", "sell_price", "markup_percent",
-            "regular_hours", "overtime_hours", "total_hours",
-            "amount", "balance", "rate", "hourly_rate",
-        ]
         if criticalFields.contains(field) { return .critical }
 
         // Hard: text content where both edits could have value
-        let textFields: Set<String> = [
-            "notes", "description", "content", "reason", "comment",
-            "body", "summary", "instructions", "message", "details",
-            "remarks", "observation",
-        ]
         let localHasContent = !(conflict.localValue ?? "").isEmpty
         let remoteHasContent = !(conflict.remoteValue ?? "").isEmpty
-        if textFields.contains(field) && localHasContent && remoteHasContent {
+        if ConflictResolver.isTextResolutionField(field) && localHasContent && remoteHasContent {
             return .hard
         }
 
