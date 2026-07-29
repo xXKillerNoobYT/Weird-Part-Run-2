@@ -2,7 +2,7 @@ import SwiftUI
 import WiredPartCore
 
 /// Data about a single area, used across wizard steps 3-9.
-struct WizardAreaInfo: Identifiable {
+nonisolated struct WizardAreaInfo: Identifiable, Sendable {
     let id: Int64
     let areaCode: String
     let fullLocationCode: String
@@ -11,7 +11,7 @@ struct WizardAreaInfo: Identifiable {
 }
 
 /// Load all areas for a floor plan with context info (unit name, level code).
-func loadAllWizardAreas(floorPlanId: Int64, service: WarehouseService) throws -> [WizardAreaInfo] {
+nonisolated func loadAllWizardAreas(floorPlanId: Int64, service: WarehouseService) throws -> [WizardAreaInfo] {
     let units = try service.listStorageUnits(floorPlanId: floorPlanId)
     var areas: [WizardAreaInfo] = []
     for unit in units {

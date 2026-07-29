@@ -113,26 +113,31 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
             sheetScroll.swipeUp()
         }
 
-        let useThisButtons = app.buttons.matching(NSPredicate(format: "label == 'Use This'"))
-        if useThisButtons.count > 0 {
-            useThisButtons.element(boundBy: useThisButtons.count - 1).tap()
+        let useLocalButtons = app.buttons.matching(
+            NSPredicate(format: "identifier == 'syncConflictUseLocalValue'")
+        )
+        if useLocalButtons.count > 0 {
+            useLocalButtons.element(boundBy: useLocalButtons.count - 1).tap()
         } else {
-            XCTFail("No 'Use This' buttons found on the conflict review sheet")
+            XCTFail("No local-value choice found on the conflict review sheet")
         }
 
-        let alert = app.alerts["Confirm Critical Write Decision"]
-        if alert.waitForExistence(timeout: 5) {
+        if waitForCriticalConfirmation() {
             capture("04-critical-alert-presented")
 
-            alert.buttons["Cancel"].tap()
+            criticalConfirmationButton(named: "Cancel").tap()
             capture("05-critical-cancel-returned")
 
-            let useThisAgain = app.buttons.matching(NSPredicate(format: "label == 'Use This'"))
-            if useThisAgain.count > 0 {
-                useThisAgain.element(boundBy: useThisAgain.count - 1).tap()
-                if alert.waitForExistence(timeout: 5) {
-                    alert.buttons["Confirm"].tap()
+            let useRemoteButtons = app.buttons.matching(
+                NSPredicate(format: "identifier == 'syncConflictUseRemoteValue'")
+            )
+            if useRemoteButtons.count > 0 {
+                useRemoteButtons.element(boundBy: useRemoteButtons.count - 1).tap()
+                if waitForCriticalConfirmation() {
+                    criticalConfirmationButton(named: "Confirm").tap()
                 }
+            } else {
+                XCTFail("No remote-value choice found after cancelling the critical decision")
             }
             capture("06-critical-confirm-completed")
         } else {
@@ -141,6 +146,140 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
             capture("05-critical-cancel-returned-SKIPPED")
             capture("06-critical-confirm-completed-SKIPPED")
         }
+    }
+
+    func testCriticalLocalResolutionHasAccessibleTargetAndRemovesConflict() throws {
+        try assertCriticalResolution(
+            choiceIdentifier: "syncConflictUseLocalValue",
+            appearance: "Light",
+            screenshotName: "critical-local-resolved"
+        )
+    }
+
+    func testCriticalRemoteResolutionHasAccessibleTargetAndRemovesConflict() throws {
+        try assertCriticalResolution(
+            choiceIdentifier: "syncConflictUseRemoteValue",
+            appearance: "Dark",
+            screenshotName: "critical-remote-resolved"
+        )
+    }
+
+    private func assertCriticalResolution(
+        choiceIdentifier: String,
+        appearance: String,
+        screenshotName: String
+    ) throws {
+        guard isManualCaptureOptedIn else {
+            throw XCTSkip("Conflict fixture capture is not opted in.")
+        }
+
+        app.launchArguments.append(
+            appearance == "Light" ? "-UITestingAppearanceLight" : "-UITestingAppearanceDark"
+        )
+        print("WEI-4928 appearance: \(appearance)")
+        app.launch()
+        let user = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'loginUserRow_'"))
+            .firstMatch
+        XCTAssertTrue(user.waitForExistence(timeout: 12))
+        user.tap()
+        let pin = app.secureTextFields["loginPINField"]
+        XCTAssertTrue(pin.waitForExistence(timeout: 5))
+        pin.tap()
+        pin.typeText("1234")
+        app.buttons["loginSignInButton"].tap()
+
+        let review = app.buttons["syncConflictBanner"]
+        XCTAssertTrue(review.waitForExistence(timeout: 12))
+        review.tap()
+        _ = app.buttons["Done"].waitForExistence(timeout: 5)
+        let unitCost = app.staticTexts["Unit Cost"]
+        // Accessibility-sized text can make each long fixture row span several
+        // screens. Keep scrolling without a per-swipe timeout until the target
+        // row is materialized, while retaining a finite failure bound.
+        for _ in 0..<40 where !unitCost.exists {
+            swipeConflictListUp()
+        }
+        guard unitCost.exists else {
+            XCTFail("Unit Cost critical row did not become visible after scrolling the conflict list")
+            capture("\(screenshotName)-critical-row-missing")
+            return
+        }
+
+        let choice = app.buttons[choiceIdentifier]
+        for _ in 0..<40 where !choice.isHittable {
+            swipeConflictListUp()
+        }
+        guard choice.exists, choice.isHittable else {
+            XCTFail("Conflict choice must exist on-screen and be hittable before tapping")
+            capture("\(screenshotName)-choice-missing")
+            return
+        }
+        XCTAssertGreaterThanOrEqual(choice.frame.width, 43.9)
+        XCTAssertGreaterThanOrEqual(choice.frame.height, 43.9)
+        print("WEI-4928 \(choiceIdentifier) AX frame: \(choice.frame)")
+        choice.tap()
+
+        XCTAssertTrue(waitForCriticalConfirmation())
+        capture("\(screenshotName)-confirmation")
+        criticalConfirmationButton(named: "Cancel").tap()
+        XCTAssertTrue(unitCost.waitForExistence(timeout: 5), "Cancelling must preserve the unresolved Unit Cost row")
+        capture("\(screenshotName)-cancelled")
+
+        choice.tap()
+        XCTAssertTrue(waitForCriticalConfirmation())
+        criticalConfirmationButton(named: "Confirm").tap()
+        XCTAssertTrue(waitForNonExistence(unitCost, timeout: 8))
+        XCTAssertFalse(app.alerts["Sync conflict action failed"].exists)
+        capture(screenshotName)
+    }
+
+    private func waitForCriticalConfirmation(timeout: TimeInterval = 5) -> Bool {
+        let title = "Confirm Critical Write Decision"
+        let alert = app.alerts[title]
+        let staticText = app.staticTexts[title]
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if alert.exists || staticText.exists {
+                return true
+            }
+            RunLoop.current.run(until: min(Date().addingTimeInterval(0.05), deadline))
+        } while Date() < deadline
+        return false
+    }
+
+    private func waitForNonExistence(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"),
+            object: element
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    private func swipeConflictListUp() {
+        // The dashboard keeps scrollable views in the hierarchy behind the
+        // review sheet. Target the identified List rather than the app-wide
+        // center so a long selectable value cannot consume the gesture on iPad.
+        let conflictList = app.descendants(matching: .any)["syncConflictReviewList"]
+        XCTAssertTrue(conflictList.waitForExistence(timeout: 5), "Sync conflict list must exist before scrolling")
+        let start = conflictList.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
+        let end = conflictList.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
+        start.press(forDuration: 0.05, thenDragTo: end)
+    }
+
+    private func criticalConfirmationButton(named name: String) -> XCUIElement {
+        let alertButton = app.alerts["Confirm Critical Write Decision"].buttons[name]
+        if alertButton.exists {
+            return alertButton
+        }
+
+        let matches = app.buttons.matching(NSPredicate(format: "identifier == %@ OR label == %@", name, name))
+        for index in 0..<matches.count {
+            let candidate = matches.element(boundBy: index)
+            if candidate.isHittable {
+                return candidate
+            }
+        }
+        return matches.firstMatch
     }
 
     private func capture(_ name: String) {

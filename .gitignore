@@ -90,5 +90,6 @@ docs/github-issue-fisher/*
 =
 [object Object]/
 .playwright-mcp/
+graphify-out/
 docs/testing/artifacts/
 .worktrees/
