@@ -4,9 +4,15 @@ import GRDB
 /// Service for job estimation: questions, responses, calculation, reviews, and AI learning.
 public final class JobEstimationService: Sendable {
     private let db: AppDatabase
+    private let operationalDay: OperationalDay
 
-    public init(db: AppDatabase) {
+    public init(
+        db: AppDatabase,
+        calendar: Calendar = .current,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
         self.db = db
+        self.operationalDay = OperationalDay(calendar: calendar, now: now)
     }
 
     // =========================================================================
@@ -872,24 +878,35 @@ public final class JobEstimationService: Sendable {
                 SELECT COUNT(*) FROM users WHERE deleted_at IS NULL
                 """) ?? 1
 
-            // Average productive hours per worker per day from last 6 months
-            let sixMonthsAgo = Calendar.current.date(byAdding: .month, value: -6, to: Date()) ?? Date()
-            let f = DateFormatter()
-            f.dateFormat = "yyyy-MM-dd"
-            let sinceDate = f.string(from: sixMonthsAgo)
-
-            let avgHoursPerDay = try Double.fetchOne(dbConn, sql: """
-                SELECT AVG(daily_hours) FROM (
-                    SELECT \(Self.localDateSQL("clock_in")) as work_date, SUM(regular_hours + overtime_hours) as daily_hours
-                    FROM labor_entries
-                    WHERE clock_in >= ? AND deleted_at IS NULL AND (regular_hours + overtime_hours) > 0
-                    GROUP BY user_id, \(Self.localDateSQL("clock_in"))
-                )
-                """, arguments: [sinceDate]) ?? 8.0
+            let now = operationalDay.now()
+            let sixMonthsAgo = operationalDay.calendar.date(
+                byAdding: .month,
+                value: -6,
+                to: now
+            ) ?? now
+            let historyStart = operationalDay.interval(containing: sixMonthsAgo)
+            let laborRows = try Row.fetchAll(dbConn, sql: """
+                SELECT user_id, clock_in, regular_hours + overtime_hours AS hours
+                FROM labor_entries
+                WHERE \(historyStart.startsAtOrAfterPredicate("clock_in"))
+                  AND deleted_at IS NULL
+                  AND (regular_hours + overtime_hours) > 0
+                """, arguments: StatementArguments(historyStart.startArguments))
+            var dailyHours: [String: Double] = [:]
+            for row in laborRows {
+                let userId: Int64 = row["user_id"] ?? 0
+                let clockIn: String = row["clock_in"] ?? ""
+                guard let localDate = operationalDay.dateString(fromPersistedTimestamp: clockIn) else {
+                    continue
+                }
+                dailyHours["\(userId):\(localDate)", default: 0] += row["hours"] ?? 0.0
+            }
+            let avgHoursPerDay = dailyHours.isEmpty
+                ? 8.0
+                : dailyHours.values.reduce(0, +) / Double(dailyHours.count)
 
             // Working days in current month (approx 22)
-            let calendar = Calendar.current
-            let now = Date()
+            let calendar = operationalDay.calendar
             let range = calendar.range(of: .day, in: .month, for: now) ?? 1..<31
             let weekdays = (range).reduce(0) { count, day in
                 var comps = calendar.dateComponents([.year, .month], from: now)
@@ -913,9 +930,6 @@ public final class JobEstimationService: Sendable {
 
     private static func nowString() -> String { CoreFormatters.nowISO() }
 
-    private static func localDateSQL(_ expression: String) -> String {
-        "CASE WHEN length(\(expression)) <= 10 THEN date(\(expression)) ELSE date(\(expression), 'localtime') END"
-    }
 
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)

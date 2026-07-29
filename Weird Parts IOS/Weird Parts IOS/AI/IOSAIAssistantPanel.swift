@@ -42,6 +42,10 @@ struct IOSAIAssistantPanel: View {
     @State private var conversationPersistenceError: String?
     @State private var aiAvailability: AIAvailability = .notSupported
     @State private var pendingFilterActivation: AIFilterActivationCommand?
+#if DEBUG
+    @State private var uiTestPurchaseOrdersFilter = "all"
+    @State private var uiTestJPOsFilter = "all"
+#endif
     @State private var catalogContext: String?
     @State private var pricingContext: String?
     @State private var suppliersContext: String?
@@ -442,6 +446,11 @@ struct IOSAIAssistantPanel: View {
             if displayMode == .sheet {
                 availabilityHeader
             }
+#if DEBUG
+            if AIFilterCommandUITestFixture.isEnabled {
+                aiFilterCommandFixtureControls
+            }
+#endif
             clearConversationStatus
             messagesArea
             inputBar
@@ -478,13 +487,13 @@ struct IOSAIAssistantPanel: View {
             ),
             titleVisibility: .visible
         ) {
-            Button("Clear Filter", role: .destructive) {
+            Button("Apply Filter Change", role: .destructive) {
                 if let command = pendingFilterActivation {
                     appCore.aiFilterRegistry.activateFilter(pageId: command.pageId, value: command.value)
                 }
                 pendingFilterActivation = nil
             }
-            Button("Cancel", role: .cancel) {
+            Button("Keep Current Filter") {
                 pendingFilterActivation = nil
             }
         } message: {
@@ -576,7 +585,108 @@ struct IOSAIAssistantPanel: View {
         .onReceive(NotificationCenter.default.publisher(for: .appDidLogout)) { _ in
             resetForLogout()
         }
+#if DEBUG
+        .onAppear {
+            configureAIFilterCommandFixtureIfNeeded()
+        }
+        .onDisappear {
+            guard AIFilterCommandUITestFixture.isEnabled else { return }
+            appCore.aiFilterRegistry.deregister(pageId: AIFilterCommandUITestFixture.purchaseOrdersPageId)
+            appCore.aiFilterRegistry.deregister(pageId: AIFilterCommandUITestFixture.jposPageId)
+        }
+#endif
     }
+
+#if DEBUG
+    @ViewBuilder
+    private var aiFilterCommandFixtureControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Assistant filter command fixture")
+                .font(.caption)
+                .fontWeight(.semibold)
+            Text("Purchase orders: \(uiTestPurchaseOrdersFilter)")
+                .accessibilityIdentifier("aiFilterFixturePurchaseOrdersValue")
+            Text("JPOs: \(uiTestJPOsFilter)")
+                .accessibilityIdentifier("aiFilterFixtureJPOsValue")
+            HStack {
+                Button("Apply Draft Filter") {
+                    runAIFilterCommandFixture(
+                        pageId: AIFilterCommandUITestFixture.purchaseOrdersPageId,
+                        value: "draft",
+                        userQuery: "Filter purchase orders to draft"
+                    )
+                }
+                .accessibilityIdentifier("aiFilterFixtureApplyDraft")
+
+                Button("Show All Filters") {
+                    runAIFilterCommandFixture(
+                        pageId: AIFilterCommandUITestFixture.purchaseOrdersPageId,
+                        value: "all",
+                        userQuery: "Filter purchase orders to all"
+                    )
+                }
+                .accessibilityIdentifier("aiFilterFixtureShowAll")
+            }
+            HStack {
+                Button("Clear Filter Fixture") {
+                    runAIFilterCommandFixture(
+                        pageId: AIFilterCommandUITestFixture.purchaseOrdersPageId,
+                        value: "clear",
+                        userQuery: "Filter purchase orders to clear"
+                    )
+                }
+                .accessibilityIdentifier("aiFilterFixtureClear")
+
+                Button("Clear All Filters Fixture") {
+                    runAIFilterCommandFixture(
+                        pageId: AIFilterCommandUITestFixture.purchaseOrdersPageId,
+                        value: "clear-all",
+                        userQuery: "Filter purchase orders to clear-all"
+                    )
+                }
+                .accessibilityIdentifier("aiFilterFixtureClearAll")
+            }
+            Button("Try Unauthorized Filter Command") {
+                runAIFilterCommandFixture(
+                    pageId: AIFilterCommandUITestFixture.jposPageId,
+                    value: "draft",
+                    userQuery: "Filter purchase orders to draft"
+                )
+            }
+            .accessibilityIdentifier("aiFilterFixtureUnauthorized")
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("aiFilterCommandFixture")
+    }
+
+    private func configureAIFilterCommandFixtureIfNeeded() {
+        guard AIFilterCommandUITestFixture.isEnabled else { return }
+        let purchaseOrdersFilter = $uiTestPurchaseOrdersFilter
+        let jposFilter = $uiTestJPOsFilter
+        appCore.aiFilterRegistry.register(
+            pageId: AIFilterCommandUITestFixture.purchaseOrdersPageId,
+            filterName: "Fixture Purchase Order Status",
+            options: AIFilterCommandUITestFixture.options,
+            activate: { value in purchaseOrdersFilter.wrappedValue = value }
+        )
+        appCore.aiFilterRegistry.register(
+            pageId: AIFilterCommandUITestFixture.jposPageId,
+            filterName: "Fixture JPO Status",
+            options: AIFilterCommandUITestFixture.options,
+            activate: { value in jposFilter.wrappedValue = value }
+        )
+    }
+
+    private func runAIFilterCommandFixture(pageId: String, value: String, userQuery: String) {
+        applyAuthorizedFilterCommands(
+            from: AIFilterCommandUITestFixture.response(pageId: pageId, value: value),
+            userQuery: userQuery
+        )
+    }
+#endif
 
     // MARK: - Availability Header
 

@@ -93,6 +93,12 @@ struct WiredPartIOSApp: App {
         ProcessInfo.processInfo.arguments.contains("-UITestingPanelScheduleBuilderFixture")
     }
 
+    private var shouldShowAIFilterCommandFixture: Bool {
+        let arguments = ProcessInfo.processInfo.arguments
+        return arguments.contains("-UITesting")
+            && arguments.contains("-UITestingAIFilterCommandFixture")
+    }
+
     private var stage8ReportsUITestTarget: Stage8ReportsUITestTarget? {
         Stage8ReportsUITestTarget(processArguments: ProcessInfo.processInfo.arguments)
     }
@@ -136,6 +142,13 @@ struct WiredPartIOSApp: App {
                         .navigationTitle("Panel Schedule")
                         .navigationBarTitleDisplayMode(.inline)
                     }
+                } else if shouldShowAIFilterCommandFixture {
+                    #if DEBUG
+                    AIFilterCommandUITestFixtureHost()
+                        .environmentObject(appCore)
+                    #else
+                    EmptyView()
+                    #endif
                 } else if shouldShowWEI3140ImportPreviewFixture {
                     #if DEBUG
                     WEI3140ImportPreviewFixtureView()

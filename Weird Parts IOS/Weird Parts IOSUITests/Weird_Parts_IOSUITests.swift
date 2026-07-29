@@ -127,7 +127,18 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         if ProcessInfo.processInfo.environment["WEI_1185_LANDSCAPE"] == "1" {
             XCUIDevice.shared.orientation = .landscapeLeft
         }
+        if shouldDeferLaunchToTestBody {
+            return
+        }
         app.launch()
+    }
+
+    private var shouldDeferLaunchToTestBody: Bool {
+        [
+            "WEI3144JobMaterialsWalkthroughEvidence",
+            "WEI3295Stage8ReportsViewportHarness",
+            "WEI3988BackupRestoreSmokeEvidence",
+        ].contains { name.contains($0) }
     }
 
     private var shouldOpenPartsCategoriesOnLaunch: Bool {
@@ -569,10 +580,19 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Database Size"].waitForExistence(timeout: 5), "Backup page should show database size")
         captureWEI3988("01-backups-before-create")
 
-        let createBackup = app.buttons["Create Backup Now"].firstMatch
+        let createBackup = app.descendants(matching: .any)["settings-backups-create-backup-button"].firstMatch
         XCTAssertTrue(createBackup.waitForExistence(timeout: 10), "Create Backup Now action should be available")
+        XCTAssertEqual(createBackup.label, "Create backup now", "Backup action should expose its stable accessible name")
         createBackup.tap()
-        XCTAssertTrue(app.buttons["Backup Created!"].waitForExistence(timeout: 15), "Manual backup action should complete with visible success state")
+        let backupCreated = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "Backup created"),
+            object: createBackup
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [backupCreated], timeout: 15),
+            .completed,
+            "Manual backup action should complete with visible and accessible success state"
+        )
         XCTAssertTrue(app.staticTexts["Stored Backups"].waitForExistence(timeout: 5), "Backup count row should remain visible after backup creation")
         captureWEI3988("02-backups-created")
 
