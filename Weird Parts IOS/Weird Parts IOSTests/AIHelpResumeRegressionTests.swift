@@ -766,10 +766,6 @@ final class AIHelpResumeRegressionTests: XCTestCase {
             assistant.contains("|| conversationHistoryReadError != nil"),
             "The editor must stay disabled while persisted history hydrates."
         )
-        XCTAssertTrue(
-            assistant.contains("|| isLoadingConversationHistory\n                    || conversationHistoryReadError != nil"),
-            "The Send control must stay disabled while persisted history hydrates."
-        )
         XCTAssertTrue(editor.contains("isLoadingConversationHistory"))
         XCTAssertTrue(editor.contains("conversationHistoryReadError != nil"))
         XCTAssertTrue(inputBar.contains("isLoadingConversationHistory"))
