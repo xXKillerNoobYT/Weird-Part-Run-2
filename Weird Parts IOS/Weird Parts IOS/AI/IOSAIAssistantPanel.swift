@@ -9,6 +9,55 @@ enum AIDisplayMode: String, Sendable {
     case overlay // Floating panel, app remains navigable
 }
 
+enum AIFallbackPersistenceRetryDecision: Equatable {
+    case saved
+    case retryable
+    case discardStale
+
+    static func resolve(
+        outcome: AIConversationStagingOutcome,
+        lifecycleIsCurrent: Bool
+    ) -> Self {
+        switch outcome {
+        case .persistedAndStaged, .persistedButNotStaged:
+            return .saved
+        case .notPersisted:
+            return lifecycleIsCurrent ? .retryable : .discardStale
+        }
+    }
+}
+
+enum AIFallbackPendingSaveOwnershipDecision: Equatable {
+    case persist(ownerUserId: Int64)
+    case retryStableOwner
+    case discardStale
+
+    static func resolve(
+        capturedOwnerUserId: Int64?,
+        currentOwnerUserId: Int64?,
+        databaseIsReady: Bool
+    ) -> Self {
+        guard let capturedOwnerUserId, capturedOwnerUserId > 0 else {
+            return .discardStale
+        }
+        guard let currentOwnerUserId, currentOwnerUserId > 0 else {
+            return .retryStableOwner
+        }
+        guard currentOwnerUserId == capturedOwnerUserId else {
+            return .discardStale
+        }
+        guard databaseIsReady else {
+            return .retryStableOwner
+        }
+        return .persist(ownerUserId: capturedOwnerUserId)
+    }
+
+    var ownerUserIdForWrite: Int64? {
+        guard case .persist(let ownerUserId) = self else { return nil }
+        return ownerUserId
+    }
+}
+
 // MARK: - AI Assistant Panel
 
 /// Floating AI assistant panel accessible from any page in the app.
@@ -26,6 +75,7 @@ enum AIDisplayMode: String, Sendable {
 struct IOSAIAssistantPanel: View {
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @Binding var displayMode: AIDisplayMode
     @Binding var isVisible: Bool
@@ -40,6 +90,10 @@ struct IOSAIAssistantPanel: View {
     @State private var clearConversationError: String?
     @State private var clearConversationRetryId: String?
     @State private var conversationPersistenceError: String?
+    @State private var pendingFallbackSave: PendingFallbackSave?
+    @State private var didInjectUITestFallbackWriteFailure = false
+    @State private var isUITestingFallbackSaveWarningVisible = ProcessInfo.processInfo.arguments.contains("-UITesting")
+        && ProcessInfo.processInfo.arguments.contains("-UITestingAIFallbackSaveWarning")
     @State private var aiAvailability: AIAvailability = .notSupported
     @State private var pendingFilterActivation: AIFilterActivationCommand?
 #if DEBUG
@@ -147,9 +201,39 @@ struct IOSAIAssistantPanel: View {
         pendingHelpRequest?["requestID"] as? String
     }
 
+    private var uiTestingFallbackSaveError: String? {
+        guard isUITestingFallbackSaveWarningVisible else { return nil }
+        return "Simulated storage write failure for UI verification."
+    }
+
+    private var hasFallbackSaveWarning: Bool {
+        conversationPersistenceError != nil || uiTestingFallbackSaveError != nil
+    }
+
     private struct ResumePrerequisiteToken: Hashable {
         let ownerUserId: Int64?
         let isDatabaseReady: Bool
+    }
+
+    private struct PendingFallbackSave: Equatable, Sendable {
+        let conversationId: String
+        let ownerUserId: Int64?
+        let conversationRevision: UInt
+        let userPrompt: String
+        let assistantResponse: String
+    }
+
+    private struct GeneratedResponse: Sendable {
+        let text: String
+        let needsLocalPersistence: Bool
+
+        static func persisted(_ text: String) -> Self {
+            Self(text: text, needsLocalPersistence: false)
+        }
+
+        static func fallback(_ text: String) -> Self {
+            Self(text: text, needsLocalPersistence: true)
+        }
     }
 
     /// Restarts assistant initialization when a panel mounted during startup/login
@@ -443,7 +527,7 @@ struct IOSAIAssistantPanel: View {
     @ViewBuilder
     private var chatBody: some View {
         VStack(spacing: 0) {
-            if displayMode == .sheet {
+            if displayMode == .sheet && !(dynamicTypeSize.isAccessibilitySize && hasFallbackSaveWarning) {
                 availabilityHeader
             }
 #if DEBUG
@@ -452,13 +536,20 @@ struct IOSAIAssistantPanel: View {
             }
 #endif
             clearConversationStatus
+                .layoutPriority(hasFallbackSaveWarning ? 2 : 0)
             messagesArea
             inputBar
         }
         .task(id: resumePrerequisiteToken) {
             let initialization = helpHandoffReadiness.beginInitialization()
             isLoadingConversationHistory = true
-            aiAvailability = aiService.checkAvailability()
+            if ProcessInfo.processInfo.arguments.contains("-UITestingAIGenerationFailure") {
+                aiAvailability = .available
+            } else if ProcessInfo.processInfo.arguments.contains("-UITestingAIUnavailable") {
+                aiAvailability = .notSupported
+            } else {
+                aiAvailability = aiService.checkAvailability()
+            }
             await resumeLastConversationIfNeeded()
             await loadCurrentConversation()
             guard !Task.isCancelled,
@@ -766,25 +857,69 @@ struct IOSAIAssistantPanel: View {
             .frame(maxWidth: .infinity)
             .background(Color.red.opacity(0.12))
             .accessibilityElement(children: .contain)
-        } else if let conversationPersistenceError {
-            HStack(alignment: .center, spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-                    .accessibilityHidden(true)
-                Text(conversationPersistenceError)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 8)
-                Button("Dismiss") {
-                    self.conversationPersistenceError = nil
+        } else if let conversationPersistenceError = conversationPersistenceError ?? uiTestingFallbackSaveError {
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 8) {
+                        fallbackSaveWarningMessage(conversationPersistenceError)
+                        fallbackSaveWarningActions
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                } else {
+                    HStack(alignment: .top, spacing: 8) {
+                        fallbackSaveWarningMessage(conversationPersistenceError)
+                        Spacer(minLength: 8)
+                        fallbackSaveWarningActions
+                    }
                 }
-                .font(.caption)
-                .accessibilityLabel("Dismiss conversation save warning")
             }
             .padding(8)
             .frame(maxWidth: .infinity)
             .background(Color.orange.opacity(0.12))
             .accessibilityElement(children: .contain)
+        }
+    }
+
+    private func fallbackSaveWarningMessage(_ error: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Conversation turn was not saved")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(error)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var fallbackSaveWarningActions: some View {
+        VStack(spacing: 4) {
+            if pendingFallbackSave != nil || uiTestingFallbackSaveError != nil {
+                Button {
+                    retryFallbackSave()
+                } label: {
+                    Text("Retry Save")
+                        .font(.caption)
+                }
+                .dsMinTapTarget()
+                .disabled(isProcessing)
+                .accessibilityLabel("Retry saving conversation turn")
+            }
+            Button {
+                dismissFallbackSaveWarning()
+            } label: {
+                Text("Dismiss")
+                    .font(.caption)
+            }
+            .dsMinTapTarget()
+            .disabled(isProcessing)
+            .accessibilityLabel("Dismiss conversation save warning")
         }
     }
 
@@ -869,6 +1004,7 @@ struct IOSAIAssistantPanel: View {
                     || isProcessing
                     || isClearingConversation
                     || isLoadingConversationHistory
+                    || pendingFallbackSave != nil
             )
         }
         .padding(.horizontal)
@@ -896,7 +1032,12 @@ struct IOSAIAssistantPanel: View {
                             .fill(Color(.secondarySystemGroupedBackground))
                     )
             )
-            .disabled(isProcessing || isClearingConversation || isLoadingConversationHistory)
+            .disabled(
+                isProcessing
+                    || isClearingConversation
+                    || isLoadingConversationHistory
+                    || pendingFallbackSave != nil
+            )
             .onKeyPress(.return, phases: .down) { keyPress in
                 if keyPress.modifiers.contains(.shift) {
                     // Shift+Enter: allow default (insert newline)
@@ -927,26 +1068,143 @@ struct IOSAIAssistantPanel: View {
         let sendConversationId = conversationId
         let sendOwnerUserId = appCore.currentUser?.id
         let sendConversationRevision = conversationRevision
+        // Acquire the Help exclusion synchronously so a handoff delivered before the
+        // task starts cannot invalidate a response after it commits to SQLite.
+        let sendLifecycleRequestID = helpHandoffReadiness.beginSendLifecycle()
 
         Task {
+            defer {
+                _ = helpHandoffReadiness.finishSendLifecycle(sendLifecycleRequestID)
+                isProcessing = false
+                consumePendingHelpRequestIfReady()
+            }
             await pendingHelpPersistence?.value
 
             guard conversationId == sendConversationId,
                   appCore.currentUser?.id == sendOwnerUserId,
                   conversationRevision == sendConversationRevision else { return }
 
-            if let conversationPersistenceError {
-                messages.append(AssistantMessage(role: .assistant, content: conversationPersistenceError))
-                isProcessing = false
-                return
-            }
-
             let response = await generateResponse(for: trimmed)
             guard conversationId == sendConversationId,
                   appCore.currentUser?.id == sendOwnerUserId,
                   conversationRevision == sendConversationRevision else { return }
-            messages.append(AssistantMessage(role: .assistant, content: response))
-            isProcessing = false
+            messages.append(AssistantMessage(role: .assistant, content: response.text))
+            if response.needsLocalPersistence {
+                let pendingSave = PendingFallbackSave(
+                    conversationId: sendConversationId,
+                    ownerUserId: sendOwnerUserId,
+                    conversationRevision: sendConversationRevision,
+                    userPrompt: trimmed,
+                    assistantResponse: response.text
+                )
+                pendingFallbackSave = pendingSave
+                await persistFallbackTurn(pendingSave)
+            }
+        }
+    }
+
+    private func retryFallbackSave() {
+        guard !isProcessing else { return }
+        guard let pendingFallbackSave else {
+            guard uiTestingFallbackSaveError != nil else { return }
+            isUITestingFallbackSaveWarningVisible = false
+            consumePendingHelpRequestIfReady()
+            return
+        }
+        isProcessing = true
+        let sendLifecycleRequestID = helpHandoffReadiness.beginSendLifecycle()
+        Task {
+            defer {
+                _ = helpHandoffReadiness.finishSendLifecycle(sendLifecycleRequestID)
+                isProcessing = false
+                consumePendingHelpRequestIfReady()
+            }
+            await persistFallbackTurn(pendingFallbackSave)
+        }
+    }
+
+    private func dismissFallbackSaveWarning() {
+        guard !isProcessing else { return }
+        pendingFallbackSave = nil
+        conversationPersistenceError = nil
+        isUITestingFallbackSaveWarningVisible = false
+        consumePendingHelpRequestIfReady()
+    }
+
+    private func persistFallbackTurn(_ pendingSave: PendingFallbackSave) async {
+        guard pendingSave.conversationId == conversationId,
+              pendingSave.conversationRevision == conversationRevision else {
+            pendingFallbackSave = nil
+            conversationPersistenceError = nil
+            return
+        }
+        guard self.pendingFallbackSave == pendingSave else { return }
+
+        if ProcessInfo.processInfo.arguments.contains("-UITestingAIFailFirstFallbackWrite"),
+           !didInjectUITestFallbackWriteFailure {
+            didInjectUITestFallbackWriteFailure = true
+            conversationPersistenceError = "Resume will not include this turn yet: simulated storage write failure. Tap Retry Save to try again."
+            return
+        }
+
+        let db = appCore.db
+        let ownershipDecision = AIFallbackPendingSaveOwnershipDecision.resolve(
+            capturedOwnerUserId: pendingSave.ownerUserId,
+            currentOwnerUserId: appCore.currentUser?.id,
+            databaseIsReady: db != nil
+        )
+        switch ownershipDecision {
+        case .discardStale:
+            pendingFallbackSave = nil
+            conversationPersistenceError = nil
+            return
+        case .retryStableOwner:
+            conversationPersistenceError = "Resume will not include this turn yet because the database or signed-in user is unavailable. Restore access, then tap Retry Save."
+            return
+        case .persist:
+            break
+        }
+        guard let ownerUserId = ownershipDecision.ownerUserIdForWrite,
+              let db else { return }
+
+        do {
+            let outcome = try await aiService.stageLocalConversation(
+                pendingSave.conversationId,
+                ownerUserId: ownerUserId,
+                userPrompt: pendingSave.userPrompt,
+                assistantResponse: pendingSave.assistantResponse,
+                in: db
+            )
+            guard self.pendingFallbackSave == pendingSave else { return }
+            let lifecycleIsCurrent = pendingSave.conversationId == conversationId
+                && pendingSave.conversationRevision == conversationRevision
+                && appCore.currentUser?.id == ownerUserId
+            switch AIFallbackPersistenceRetryDecision.resolve(
+                outcome: outcome,
+                lifecycleIsCurrent: lifecycleIsCurrent
+            ) {
+            case .saved:
+                pendingFallbackSave = nil
+                conversationPersistenceError = nil
+            case .retryable:
+                conversationPersistenceError = "The conversation changed while this turn was being saved. Retry the question in the current conversation."
+            case .discardStale:
+                pendingFallbackSave = nil
+                conversationPersistenceError = nil
+            }
+        } catch {
+            guard self.pendingFallbackSave == pendingSave else { return }
+            switch AIFallbackPendingSaveOwnershipDecision.resolve(
+                capturedOwnerUserId: pendingSave.ownerUserId,
+                currentOwnerUserId: appCore.currentUser?.id,
+                databaseIsReady: appCore.db != nil
+            ) {
+            case .discardStale:
+                pendingFallbackSave = nil
+                conversationPersistenceError = nil
+            case .persist, .retryStableOwner:
+                conversationPersistenceError = "Resume will not include this turn yet: \(error.localizedDescription). Tap Retry Save to try again."
+            }
         }
     }
 
@@ -960,6 +1218,7 @@ struct IOSAIAssistantPanel: View {
             )
             self.pendingHelpRequest = nil
         }
+        guard pendingFallbackSave == nil else { return }
         guard helpHandoffReadiness.consumeQueuedHelpRequest() != nil,
               let request = queuedHelpRequest else { return }
         queuedHelpRequest = nil
@@ -968,7 +1227,9 @@ struct IOSAIAssistantPanel: View {
 
     /// Seeds a read-only help turn locally. No model or network response is required.
     private func handleHelpHandoff(_ userInfo: [AnyHashable: Any]) {
-        guard !isClearingConversation else {
+        guard !isClearingConversation,
+              !isProcessing,
+              pendingFallbackSave == nil else {
             queuedHelpRequest = userInfo
             helpHandoffReadiness.queueHelpRequest(
                 id: userInfo["requestID"] as? String ?? UUID().uuidString
@@ -985,10 +1246,7 @@ struct IOSAIAssistantPanel: View {
         }
 
         query = ""
-        if isProcessing {
-            conversationRevision &+= 1
-        }
-        isProcessing = false
+        conversationPersistenceError = nil
 
         let response: String
         if let pageId, let entry = HelpContentRegistry.helpFor(pageId) {
@@ -1102,6 +1360,7 @@ struct IOSAIAssistantPanel: View {
         clearConversationError = nil
         clearConversationRetryId = nil
         conversationPersistenceError = nil
+        pendingFallbackSave = nil
         Task { await pendingHelpPersistence?.value }
         Task { await aiService.clearConversation() }
         conversationId = UUID().uuidString
@@ -1120,6 +1379,7 @@ struct IOSAIAssistantPanel: View {
         clearConversationError = nil
         clearConversationRetryId = nil
         conversationPersistenceError = nil
+        pendingFallbackSave = nil
         isClearingConversation = false
         Task { await pendingHelpPersistence?.value }
         Task { await aiService.clearConversation() }
@@ -1237,6 +1497,7 @@ struct IOSAIAssistantPanel: View {
         conversationRevision &+= 1
         isProcessing = false
         isClearingConversation = true
+        pendingFallbackSave = nil
         clearConversationError = nil
         clearConversationRetryId = cid
 
@@ -1436,6 +1697,7 @@ struct IOSAIAssistantPanel: View {
 
     private func resumeConversation(_ id: String) {
         conversationPersistenceError = nil
+        pendingFallbackSave = nil
         guard id != conversationId else {
             showConversationPicker = false
             return
@@ -1457,7 +1719,10 @@ struct IOSAIAssistantPanel: View {
 
     /// Generates a response using Foundation Models with tool calling when available,
     /// falls back to basic keyword matching.
-    private func generateResponse(for queryText: String) async -> String {
+    private func generateResponse(for queryText: String) async -> GeneratedResponse {
+        if ProcessInfo.processInfo.arguments.contains("-UITestingAIGenerationFailure") {
+            return .fallback(generateFallbackResponse(for: queryText))
+        }
         if aiAvailability == .available, let db = appCore.db {
             // Use Foundation Models with tool calling for real database access
             var navContext = buildNavigationContext(permissions: appCore.permissions)
@@ -1686,37 +1951,37 @@ struct IOSAIAssistantPanel: View {
             )
             if result.success, let text = result.text, !text.isEmpty {
                 applyAuthorizedFilterCommands(from: text, userQuery: queryText)
-                return cleanFilterJSON(text)
+                return .persisted(cleanFilterJSON(text))
             }
         }
 
         // Fallback: if on the catalog page, try to handle filter requests locally
         if catalogContext != nil {
-            return handleCatalogFallback(for: queryText)
+            return .fallback(handleCatalogFallback(for: queryText))
         }
 
         // Fallback: if on the pricing page, provide pricing-specific help
         if let ctx = pricingContext {
-            return handlePricingFallback(for: queryText, context: ctx)
+            return .fallback(handlePricingFallback(for: queryText, context: ctx))
         }
 
         // Fallback: if on the suppliers page, provide supplier-specific help
         if let ctx = suppliersContext {
-            return handleSuppliersFallback(for: queryText, context: ctx)
+            return .fallback(handleSuppliersFallback(for: queryText, context: ctx))
         }
 
         // Fallback: if on the companions page, provide companions-specific help
         if companionsContext != nil {
-            return "I can help you with companion rules, voting polls, and co-occurrence data. On-device AI is required for full functionality — please check Settings > AI to enable Apple Foundation Models."
+            return .fallback("I can help you with companion rules, voting polls, and co-occurrence data. On-device AI is required for full functionality — please check Settings > AI to enable Apple Foundation Models.")
         }
 
         // Fallback: if user asks about help / how to use the current page, use HelpContentRegistry
         if let helpResponse = generateHelpContentResponse(for: queryText) {
-            return helpResponse
+            return .fallback(helpResponse)
         }
 
         // Fallback: basic keyword matching
-        return generateFallbackResponse(for: queryText)
+        return .fallback(generateFallbackResponse(for: queryText))
     }
 
     /// Handles pricing-specific queries when Foundation Models aren't available.
@@ -3019,6 +3284,8 @@ struct AIHelpPersistenceCompletion: Equatable, Sendable {
 struct AIHelpHandoffReadinessCoordinator {
     private(set) var isReadyForHelpHandoff = false
     private var initializationRequestID: UInt = 0
+    private var sendLifecycleRequestID: UInt = 0
+    private var activeSendLifecycleRequestID: UInt?
     private var queuedHelpRequestID: String?
 
     mutating func beginInitialization() -> UInt {
@@ -3042,8 +3309,21 @@ struct AIHelpHandoffReadinessCoordinator {
         queuedHelpRequestID = id
     }
 
+    mutating func beginSendLifecycle() -> UInt {
+        sendLifecycleRequestID &+= 1
+        activeSendLifecycleRequestID = sendLifecycleRequestID
+        return sendLifecycleRequestID
+    }
+
+    mutating func finishSendLifecycle(_ requestID: UInt) -> Bool {
+        guard activeSendLifecycleRequestID == requestID else { return false }
+        activeSendLifecycleRequestID = nil
+        return true
+    }
+
     mutating func consumeQueuedHelpRequest() -> String? {
-        guard isReadyForHelpHandoff else { return nil }
+        guard isReadyForHelpHandoff,
+              activeSendLifecycleRequestID == nil else { return nil }
         defer { queuedHelpRequestID = nil }
         return queuedHelpRequestID
     }
