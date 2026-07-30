@@ -34,6 +34,9 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
             "-UITesting",
             "-UITestingWEI936AutoLogin",
             "-UITestingAIFallbackSaveWarning",
+            // AX5 on iPad must exercise the persistent full-sidebar action,
+            // never a navStyle_<userId> preference left by another test run.
+            "-UITestingFullSidebar",
         ]
         if let contentSizeCategory {
             application.launchArguments += [
