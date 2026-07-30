@@ -1,0 +1,37 @@
+code,category,name,brand,supplier,quantity,unit,cost_price,notes
+F-07-001,Fasteners,Strut Strap #8,Minerallac,Lighting Retrofit Bid,8,ea,0.95,Fixture row 1; verify supplier/category mapping before import.
+W-07-002,Wire,8 AWG THHN Copper Wire 500 ft spool,Southwire,Lighting Retrofit Bid,11,ft,0.29,Fixture row 2; verify supplier/category mapping before import.
+C-07-003,Conduit,2 in EMT Conduit 10 ft,Allied Tube,Lighting Retrofit Bid,14,stick,6.75,Fixture row 3; verify supplier/category mapping before import.
+F-07-004,Fittings,EMT Set-Screw Connector #11,Bridgeport,Lighting Retrofit Bid,17,ea,1.53,Fixture row 4; verify supplier/category mapping before import.
+B-07-005,Breakers,20A 1-pole QO Plug-On Breaker,Square D,Lighting Retrofit Bid,20,ea,15.93,Fixture row 5; verify supplier/category mapping before import.
+B-07-006,Boxes,Steel Device Box #1,Raco,Lighting Retrofit Bid,23,ea,3.61,Fixture row 6; verify supplier/category mapping before import.
+L-07-007,Lighting,LED Flat Panel #2,Lithonia,Lighting Retrofit Bid,26,ea,63.18,Fixture row 7; verify supplier/category mapping before import.
+D-07-008,Devices,Decorator Receptacle #3,Leviton,Lighting Retrofit Bid,29,ea,4.47,Fixture row 8; verify supplier/category mapping before import.
+F-07-009,Fasteners,Strut Strap #4,Minerallac,Lighting Retrofit Bid,32,ea,0.90,Fixture row 9; verify supplier/category mapping before import.
+W-07-010,Wire,12 AWG THHN Copper Wire 500 ft spool,Southwire,Lighting Retrofit Bid,35,ft,0.27,Fixture row 10; verify supplier/category mapping before import.
+C-07-011,Conduit,1 in EMT Conduit 10 ft,Allied Tube,Lighting Retrofit Bid,38,stick,10.80,Fixture row 11; verify supplier/category mapping before import.
+F-07-012,Fittings,EMT Set-Screw Connector #7,Bridgeport,Lighting Retrofit Bid,41,ea,1.42,Fixture row 12; verify supplier/category mapping before import.
+B-07-013,Breakers,50A 1-pole QO Plug-On Breaker,Square D,Lighting Retrofit Bid,44,ea,14.89,Fixture row 13; verify supplier/category mapping before import.
+B-07-014,Boxes,Steel Device Box #9,Raco,Lighting Retrofit Bid,47,ea,3.39,Fixture row 14; verify supplier/category mapping before import.
+L-07-015,Lighting,LED Flat Panel #10,Lithonia,Lighting Retrofit Bid,2,ea,59.54,Fixture row 15; verify supplier/category mapping before import.
+D-07-016,Devices,Decorator Receptacle #11,Leviton,Lighting Retrofit Bid,5,ea,4.23,Fixture row 16; verify supplier/category mapping before import.
+F-07-017,Fasteners,Strut Strap #12,Minerallac,Lighting Retrofit Bid,8,ea,0.85,Fixture row 17; verify supplier/category mapping before import.
+W-07-018,Wire,6 AWG THHN Copper Wire 500 ft spool,Southwire,Lighting Retrofit Bid,11,ft,0.26,Fixture row 18; verify supplier/category mapping before import.
+C-07-019,Conduit,1/2 in EMT Conduit 10 ft,Allied Tube,Lighting Retrofit Bid,14,stick,10.29,Fixture row 19; verify supplier/category mapping before import.
+F-07-020,Fittings,EMT Set-Screw Connector #3,Bridgeport,Lighting Retrofit Bid,17,ea,2.27,Fixture row 20; verify supplier/category mapping before import.
+B-07-021,Breakers,30A 1-pole QO Plug-On Breaker,Square D,Lighting Retrofit Bid,20,ea,13.85,Fixture row 21; verify supplier/category mapping before import.
+B-07-022,Boxes,Steel Device Box #5,Raco,Lighting Retrofit Bid,23,ea,3.17,Fixture row 22; verify supplier/category mapping before import.
+L-07-023,Lighting,LED Flat Panel #6,Lithonia,Lighting Retrofit Bid,26,ea,55.89,Fixture row 23; verify supplier/category mapping before import.
+D-07-024,Devices,Decorator Receptacle #7,Leviton,Lighting Retrofit Bid,29,ea,3.98,Fixture row 24; verify supplier/category mapping before import.
+F-07-025,Fasteners,Strut Strap #8,Minerallac,Lighting Retrofit Bid,32,ea,0.81,Fixture row 25; verify supplier/category mapping before import.
+W-07-026,Wire,10 AWG THHN Copper Wire 500 ft spool,Southwire,Lighting Retrofit Bid,35,ft,0.25,Fixture row 26; verify supplier/category mapping before import.
+C-07-027,Conduit,1-1/4 in EMT Conduit 10 ft,Allied Tube,Lighting Retrofit Bid,38,stick,9.79,Fixture row 27; verify supplier/category mapping before import.
+F-07-028,Fittings,EMT Set-Screw Connector #11,Bridgeport,Lighting Retrofit Bid,41,ea,2.17,Fixture row 28; verify supplier/category mapping before import.
+B-07-029,Breakers,15A 1-pole QO Plug-On Breaker,Square D,Lighting Retrofit Bid,44,ea,22.16,Fixture row 29; verify supplier/category mapping before import.
+B-07-030,Boxes,Steel Device Box #1,Raco,Lighting Retrofit Bid,47,ea,2.95,Fixture row 30; verify supplier/category mapping before import.
+L-07-031,Lighting,LED Flat Panel #2,Lithonia,Lighting Retrofit Bid,2,ea,52.24,Fixture row 31; verify supplier/category mapping before import.
+D-07-032,Devices,Decorator Receptacle #3,Leviton,Lighting Retrofit Bid,5,ea,3.74,Fixture row 32; verify supplier/category mapping before import.
+F-07-033,Fasteners,Strut Strap #4,Minerallac,Lighting Retrofit Bid,8,ea,0.76,Fixture row 33; verify supplier/category mapping before import.
+W-07-034,Wire,14 AWG THHN Copper Wire 500 ft spool,Southwire,Lighting Retrofit Bid,11,ft,0.23,Fixture row 34; verify supplier/category mapping before import.
+C-07-035,Conduit,3/4 in EMT Conduit 10 ft,Allied Tube,Lighting Retrofit Bid,14,stick,9.28,Fixture row 35; verify supplier/category mapping before import.
+F-07-036,Fittings,EMT Set-Screw Connector #7,Bridgeport,Lighting Retrofit Bid,17,ea,2.06,Fixture row 36; verify supplier/category mapping before import.
