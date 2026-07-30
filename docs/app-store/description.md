@@ -15,12 +15,12 @@ Parts, Jobs & Warehouse Ops
 
 ## Promotional Text (170 chars max — editable without review)
 ```
-Run your whole parts operation from your pocket: catalog, purchasing, warehouse moves, job costing, fleet and tools — all offline-first, synced device to device.
+Built for electricians on remote sites: parts, panels, jobs and purchasing that work with zero bars — everything offline, synced device to device when you're back.
 ```
 
 ## Description (4000 chars max)
 ```
-WiredPart puts a contractor's entire parts and field operation in one app — built to work offline first, with your data staying on your own devices.
+WiredPart is built for electricians first — especially crews working remote sites with little or no cell or Wi-Fi service. Every feature works completely offline: the basement mechanical room, the desert substation, the cabin job at the end of a dirt road. Your catalog, your jobs, your orders — all of it lives on your device and syncs directly to your other devices when they're near each other. No cloud. No account. No signal required, ever.
 
 PARTS & INVENTORY
 • Full parts catalog with categories, brands, suppliers, and pricing tiers
@@ -53,18 +53,21 @@ PEOPLE & SCHEDULING
 REPORTS & PRE-BILLING
 • Six report pages with period locking and bookkeeper exports
 
-BUILT DIFFERENT
-• Offline-first: everything works with no connection at all
+BUILT FOR THE FIELD
+• Offline-first: every feature works with zero connectivity — designed for
+  remote job sites where there is no service to lose
 • Your data stays yours: stored encrypted on your device, synced directly
   between your own devices over Bluetooth and local Wi-Fi — no cloud account,
   no server, no tracking
 • On-device AI assistant (Apple Intelligence) for natural-language help and
-  filters — nothing sent to outside services
+  filters — nothing sent to outside services, works with no signal
+• Panel schedules, QR part labels, and printable pro documents made for
+  electrical work specifically
 ```
 
 ## Keywords (100 chars max, comma-separated, no spaces after commas)
 ```
-parts,inventory,warehouse,contractor,electrician,purchase order,job costing,fleet,tools,audit
+electrician,offline,parts,inventory,warehouse,panel schedule,purchase order,job costing,contractor
 ```
 
 ## Categories
