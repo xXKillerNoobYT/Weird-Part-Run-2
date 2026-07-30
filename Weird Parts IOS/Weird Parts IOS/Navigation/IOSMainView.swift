@@ -612,6 +612,7 @@ struct IOSMainView: View {
             .padding(.leading, DS.Space.md + 24 + DS.Space.sm)
             .padding(.trailing, DS.Space.md)
             .padding(.vertical, DS.Space.xs + 2)
+            .frame(minHeight: 44)
             .background(
                 RoundedRectangle(cornerRadius: DS.Radius.sm)
                     .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
@@ -620,9 +621,11 @@ struct IOSMainView: View {
         }
         .buttonStyle(.plain)
         .contentShape(Rectangle())
-        .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("subtab_\(tab.id)")
         .accessibilityLabel(tab.label)
+        .accessibilityValue(isSelected ? "Selected" : "Not selected")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityRemoveTraits(isSelected ? [] : .isSelected)
         .accessibilityHint("Open the \(tab.label) section")
     }
 
@@ -926,18 +929,22 @@ struct ModuleHostView: View {
             ScrollView {
                 VStack(spacing: DS.Space.xxs) {
                     ForEach(visibleTabsList) { tab in
+                        let isSelected = tab.id == selectedTabId
+
                         Button {
                             dsAnimate(DS.Anim.fast) {
                                 selectedTabId = tab.id
                             }
                         } label: {
-                            sidebarRow(tab: tab, selected: tab.id == selectedTabId)
+                            sidebarRow(tab: tab, selected: isSelected)
                         }
                         .buttonStyle(.plain)
                         .contentShape(Rectangle())
-                        .accessibilityElement(children: .ignore)
                         .accessibilityIdentifier("subtab_\(tab.id)")
                         .accessibilityLabel(tab.label)
+                        .accessibilityValue(isSelected ? "Selected" : "Not selected")
+                        .accessibilityAddTraits(isSelected ? .isSelected : [])
+                        .accessibilityRemoveTraits(isSelected ? [] : .isSelected)
                         .accessibilityHint("Open the \(tab.label) warehouse section")
                     }
                 }
@@ -978,6 +985,7 @@ struct ModuleHostView: View {
         }
         .padding(.horizontal, DS.Space.md)
         .padding(.vertical, DS.Space.sm + 2)
+        .frame(minHeight: 44)
         .background(
             RoundedRectangle(cornerRadius: DS.Radius.md)
                 .fill(selected ? Color.accentColor.opacity(0.12) : Color.clear)
@@ -1054,9 +1062,11 @@ struct ModuleHostView: View {
                         // give automation a plain, explicitly-sized hit region.
                         .buttonStyle(.plain)
                         .contentShape(Rectangle())
-                        .accessibilityElement(children: .ignore)
                         .accessibilityIdentifier("subtab_\(tab.id)")
                         .accessibilityLabel(tab.label)
+                        .accessibilityValue(isSelected(tab) ? "Selected" : "Not selected")
+                        .accessibilityAddTraits(isSelected(tab) ? .isSelected : [])
+                        .accessibilityRemoveTraits(isSelected(tab) ? [] : .isSelected)
                         .id(tab.id)
                     }
                 }
