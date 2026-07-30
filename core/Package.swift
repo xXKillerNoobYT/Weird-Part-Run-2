@@ -34,7 +34,10 @@ let package = Package(
         ),
         .testTarget(
             name: "WiredPartCoreTests",
-            dependencies: ["WiredPartCore"]
+            dependencies: ["WiredPartCore"],
+            resources: [
+                .copy("Resources/parts-import-fixtures"),
+            ]
         ),
     ]
 )
