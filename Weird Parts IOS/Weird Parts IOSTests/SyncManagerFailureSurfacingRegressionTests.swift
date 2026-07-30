@@ -45,14 +45,16 @@ final class SyncManagerFailureSurfacingRegressionTests: XCTestCase {
             "AI merge requests with missing IDs must show an error instead of silently doing nothing."
         )
         XCTAssertTrue(
-            reviewSource.contains("@State private var actionError: String?") &&
-                reviewSource.contains(".alert(\"Sync conflict action failed\"") &&
+            reviewSource.contains("@State private var activeAlert: ActiveAlert?") &&
+                reviewSource.contains("case actionError(String)") &&
+                reviewSource.contains("case .actionError: return \"Sync conflict action failed\"") &&
+                reviewSource.contains("presentActionError") &&
                 reviewSource.contains("conflict id is missing"),
             "The review page should present a visible recovery message for corrupt/id-less conflict rows."
         )
         XCTAssertTrue(
             managerSource.contains("@discardableResult\n    func markConflictReviewed(conflictId: Int64) -> Bool") &&
-                managerSource.contains("@discardableResult\n    func markAllConflictsReviewed() -> Bool"),
+                managerSource.contains("@discardableResult\n    func markAutoResolvableConflictsReviewed() -> Bool"),
             "Review actions should return success/failure so the UI only removes rows after a confirmed write."
         )
         XCTAssertTrue(
@@ -66,6 +68,36 @@ final class SyncManagerFailureSurfacingRegressionTests: XCTestCase {
             managerSource.contains("conflicts = try ConflictResolver.getUnreviewedConflicts(db: db)") &&
                 managerSource.contains("context: \"load unreviewed sync conflicts before marking reviewed\""),
             "Accept All must fail visibly if the conflict list cannot be read before writes start."
+        )
+        XCTAssertTrue(
+            reviewSource.contains("Button(\"Accept Auto-Resolved\")") &&
+                reviewSource.contains("if !autoResolvableConflicts.isEmpty"),
+            "The bulk action should only appear when auto-resolvable conflicts remain, and its label must reflect that hard/critical rows stay pending."
+        )
+        XCTAssertFalse(
+            reviewSource.contains("Button(\"Accept All\")"),
+            "The review page should not advertise a misleading Accept All action once hard/critical conflicts require explicit human choice."
+        )
+        XCTAssertFalse(
+            reviewSource.contains("conflict.id ?? -1") || reviewSource.contains("aiResolutions[conflict.id ?? 0]"),
+            "Review state should not collapse nil-id conflicts onto shared sentinel keys."
+        )
+        XCTAssertTrue(
+            reviewSource.contains("ForEach(group.conflicts, id: \\.key)") &&
+                reviewSource.contains("let rowKey = conflict.id.map") &&
+                reviewSource.contains("?? \"missing-\\(index)"),
+            "Multiple id-less rows need deterministic, collision-free SwiftUI identities."
+        )
+        XCTAssertTrue(
+            reviewSource.contains("if conflict.id != nil") &&
+                reviewSource.contains("syncConflictActionUnavailable"),
+            "Corrupt id-less rows must explain that actions are unavailable instead of exposing impossible controls."
+        )
+        XCTAssertTrue(
+            reviewSource.contains("Task { @MainActor in") &&
+                reviewSource.contains("await Task.yield()") &&
+                reviewSource.contains(".alert(\n                Text(activeAlert?.title ?? \"Sync conflict action\")"),
+            "Critical confirmations should stay on MainActor and use the Text-title alert overload for dynamic titles."
         )
     }
 

@@ -33,12 +33,44 @@ final class WarehouseTabStripRegressionTests: XCTestCase {
         )
     }
 
+    func testModuleHostSubTabPickerExportsButtonIdentityAndSelectionState() throws {
+        let source = try Self.readIOSMainViewSource()
+        let picker = try Self.section(
+            from: "private var subTabPicker",
+            through: "/// Gradient scrim shown at a sub-tab strip edge",
+            in: source
+        )
+
+        XCTAssertTrue(
+            picker.contains(".accessibilityIdentifier(\"subtab_\\(tab.id)\")") &&
+                picker.contains(".accessibilityLabel(tab.label)"),
+            "Each horizontal sub-tab Button needs a stable subtab_<id> identity and its visible name."
+        )
+        XCTAssertFalse(
+            picker.contains(".accessibilityElement(children: .ignore)"),
+            "Creating an accessibility wrapper around a sub-tab can export its identifier as Other instead of Button."
+        )
+        XCTAssertTrue(
+            picker.contains(".accessibilityValue(isSelected(tab) ? \"Selected\" : \"Not selected\")") &&
+                picker.contains(".accessibilityAddTraits(isSelected(tab) ? .isSelected : [])") &&
+                picker.contains(".accessibilityRemoveTraits(isSelected(tab) ? [] : .isSelected)"),
+            "The active horizontal sub-tab should add selected state and every inactive chip should explicitly remove it."
+        )
+    }
+
     private static func lineContaining(_ needle: String, in source: String) throws -> String {
         guard let line = source.split(separator: "\n").first(where: { $0.contains(needle) }) else {
             XCTFail("Missing expected source line containing \(needle)")
             return ""
         }
         return String(line)
+    }
+
+    private static func section(from startNeedle: String, through endNeedle: String, in source: String) throws -> String {
+        let start = try XCTUnwrap(source.range(of: startNeedle))
+        let tail = source[start.lowerBound...]
+        let end = try XCTUnwrap(tail.range(of: endNeedle))
+        return String(tail[..<end.lowerBound])
     }
 
     private static func readNavigationConfigSource(

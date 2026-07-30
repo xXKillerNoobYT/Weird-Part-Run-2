@@ -1,5 +1,11 @@
 import SwiftUI
 import WiredPartCore
+import OSLog
+
+private let aiConversationLog = Logger(
+    subsystem: "com.wiredpart.ios",
+    category: "AIConversationHistory"
+)
 
 // MARK: - AI Display Mode
 
@@ -94,6 +100,8 @@ struct IOSAIAssistantPanel: View {
     @State private var didInjectUITestFallbackWriteFailure = false
     @State private var isUITestingFallbackSaveWarningVisible = ProcessInfo.processInfo.arguments.contains("-UITesting")
         && ProcessInfo.processInfo.arguments.contains("-UITestingAIFallbackSaveWarning")
+    @State private var conversationHistoryReadError: String?
+    @State private var conversationHistoryRetry: ConversationHistoryRetry?
     @State private var aiAvailability: AIAvailability = .notSupported
     @State private var pendingFilterActivation: AIFilterActivationCommand?
 #if DEBUG
@@ -172,9 +180,24 @@ struct IOSAIAssistantPanel: View {
     @State private var notebooksListContext: String?
     @State private var settingsContext: String?
 
-    /// Tracks which page the user is currently on, mapped to a HelpContentRegistry page ID.
-    /// Updated whenever a page-active notification fires, cleared on page-inactive.
-    @State private var activePageId: String?
+    /// Minimal route identity supplied by IOSContentRouter for every navigable
+    /// AppTab, including pages that do not need a dedicated data payload.
+    @State private var routeContext: String?
+    @State private var activeRoutePath: String?
+    @State private var activeRouteInstanceId: String?
+    @State private var activeRouteInstanceOrder: UInt64?
+
+    /// Route identity is the fallback. A dedicated deep/sheet screen wins while
+    /// it is active, so a route refresh cannot replace the visible Help target.
+    @State private var routePageId: String?
+    @State private var dedicatedPageId: String?
+
+    private var activePageId: String? {
+        AIPageIdentityResolver.resolve(
+            dedicatedPageId: dedicatedPageId,
+            routePageId: routePageId
+        )
+    }
 
     /// Unique ID for the current conversation thread. Changing this starts a fresh session.
     @State private var conversationId: String = UUID().uuidString
@@ -186,14 +209,17 @@ struct IOSAIAssistantPanel: View {
     @State private var savedConversations: [SavedConversation] = []
     @State private var showConversationPicker = false
     @State private var isLoadingConversations = false
+    @State private var conversationListReadError: String?
     /// Prevents a prompt from racing ahead of persisted transcript hydration.
     @State private var isLoadingConversationHistory = false
     @State private var helpHandoffReadiness = AIHelpHandoffReadinessCoordinator()
     @State private var queuedHelpRequest: [AnyHashable: Any]?
     @State private var helpPersistenceTask: Task<Void, Never>?
     @State private var conversationLoadTask: Task<Void, Never>?
+    @State private var conversationHistoryRetryTask: Task<Void, Never>?
     @State private var conversationListTask: Task<Void, Never>?
     @State private var conversationListRequestID: UInt = 0
+    @State private var activeResumePrerequisiteToken: ResumePrerequisiteToken?
 
     /// Constant-size identity used to notice a new Help handoff without rebuilding
     /// a token from the potentially large visible Help body during view updates.
@@ -212,7 +238,7 @@ struct IOSAIAssistantPanel: View {
 
     private struct ResumePrerequisiteToken: Hashable {
         let ownerUserId: Int64?
-        let isDatabaseReady: Bool
+        let databaseIdentity: ObjectIdentifier?
     }
 
     private struct PendingFallbackSave: Equatable, Sendable {
@@ -236,12 +262,17 @@ struct IOSAIAssistantPanel: View {
         }
     }
 
+    private enum ConversationHistoryRetry {
+        case latestConversationLookup
+        case transcriptHydration
+    }
+
     /// Restarts assistant initialization when a panel mounted during startup/login
     /// gains the prerequisites needed to resume authenticated conversation history.
     private var resumePrerequisiteToken: ResumePrerequisiteToken {
         ResumePrerequisiteToken(
-            ownerUserId: appCore.currentUser?.id,
-            isDatabaseReady: appCore.db != nil
+            ownerUserId: appCore.aiConversationReadOwnerUserId,
+            databaseIdentity: appCore.aiConversationReadDatabase.map(ObjectIdentifier.init)
         )
     }
 
@@ -474,34 +505,28 @@ struct IOSAIAssistantPanel: View {
     @ViewBuilder
     private var conversationPicker: some View {
         NavigationStack {
-            Group {
-                if isLoadingConversations {
-                    ProgressView("Loading conversations…")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if savedConversations.isEmpty {
-                    ContentUnavailableView(
-                        "No Saved Conversations",
-                        systemImage: "clock.arrow.circlepath",
-                        description: Text("Chats you have with the assistant will appear here so you can pick them back up later.")
-                    )
-                } else {
-                    List(savedConversations) { conversation in
-                        Button {
-                            resumeConversation(conversation.id)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(renderedMarkdown(conversation.preview))
-                                    .font(.subheadline)
-                                    .lineLimit(2)
-                                    .foregroundStyle(.primary)
-                                Text(conversationTimestamp(conversation.lastMessageAt))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                            .contentShape(Rectangle())
-                        }
-                        .accessibilityLabel("Resume conversation: \(plainText(fromMarkdown: conversation.preview))")
+            VStack(spacing: 0) {
+                #if DEBUG && targetEnvironment(simulator)
+                if appCore.isWEI5134AIReadFailureUITestingMode
+                    || appCore.isWEI5159AIPrerequisiteRecoveryUITestingMode {
+                    aiReadRecoveryQAControls
+                }
+                #endif
+
+                Group {
+                    if isLoadingConversations {
+                        ProgressView("Loading conversations…")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if let conversationListReadError {
+                        conversationListReadFailure(message: conversationListReadError)
+                    } else if savedConversations.isEmpty {
+                        ContentUnavailableView(
+                            "No Saved Conversations",
+                            systemImage: "clock.arrow.circlepath",
+                            description: Text("Chats you have with the assistant will appear here so you can pick them back up later.")
+                        )
+                    } else {
+                        conversationList
                     }
                 }
             }
@@ -517,6 +542,193 @@ struct IOSAIAssistantPanel: View {
         .presentationDragIndicator(.visible)
     }
 
+    private func conversationListReadFailure(message: String) -> some View {
+        List {
+            Section {
+                VStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+
+                    Text("Saved Conversations Could Not Be Loaded")
+                        .font(.headline)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text(message)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("savedConversationListReadFailureMessage")
+
+                    Button {
+                        presentConversationPicker()
+                    } label: {
+                        Text("Retry")
+                            .frame(minWidth: 45, minHeight: 45)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityLabel("Retry loading saved conversations")
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .listRowBackground(Color.clear)
+            }
+
+            if !savedConversations.isEmpty {
+                Section {
+                    conversationRows
+                }
+            }
+        }
+        .listStyle(.plain)
+    }
+
+    private var conversationList: some View {
+        List {
+            conversationRows
+        }
+    }
+
+    @ViewBuilder
+    private var conversationRows: some View {
+        ForEach(savedConversations) { conversation in
+            Button {
+                resumeConversation(conversation.id)
+            } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(renderedMarkdown(conversation.preview))
+                        .font(.subheadline)
+                        .lineLimit(2)
+                        .foregroundStyle(.primary)
+                    Text(conversationTimestamp(conversation.lastMessageAt))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Resume conversation: \(plainText(fromMarkdown: conversation.preview))")
+        }
+    }
+
+    #if DEBUG && targetEnvironment(simulator)
+    @ViewBuilder
+    private var aiReadRecoveryQAControls: some View {
+        if appCore.isWEI5134AIReadFailureUITestingMode {
+            wei5134AIReadFailureQAControls
+        }
+        if appCore.isWEI5159AIPrerequisiteRecoveryUITestingMode {
+            wei5159AIPrerequisiteRecoveryQAControls
+        }
+    }
+
+    @ViewBuilder
+    private var wei5134AIReadFailureQAControls: some View {
+        let isTransitioning = appCore.wei5134AIReadFailureQAState == "WEI5134 QA table state: breaking"
+            || appCore.wei5134AIReadFailureQAState == "WEI5134 QA table state: restoring"
+
+        VStack(alignment: .leading, spacing: 4) {
+            Text("AI history recovery test controls")
+                .font(.caption)
+                .fontWeight(.semibold)
+
+            HStack(spacing: 12) {
+                Button {
+                    appCore.setWEI5134AIConversationTableBroken(true)
+                } label: {
+                    Text("Break AI history")
+                        .frame(minWidth: 45, minHeight: 45)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.bordered)
+                .disabled(isTransitioning)
+                .accessibilityLabel("WEI5134 break AI conversation table")
+
+                Button {
+                    appCore.setWEI5134AIConversationTableBroken(false)
+                } label: {
+                    Text("Restore AI history")
+                        .frame(minWidth: 45, minHeight: 45)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isTransitioning)
+                .accessibilityLabel("WEI5134 restore AI conversation table")
+            }
+
+            Text(appCore.wei5134AIReadFailureQAState)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("wei5134QAState")
+                .accessibilityLabel(appCore.wei5134AIReadFailureQAState)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground))
+    }
+
+    @ViewBuilder
+    private var wei5159AIPrerequisiteRecoveryQAControls: some View {
+        let prerequisitesAvailable = appCore.wei5159AIPrerequisitesAvailable
+
+        VStack(alignment: .leading, spacing: 4) {
+            Text("AI prerequisite recovery test controls")
+                .font(.caption)
+                .fontWeight(.semibold)
+
+            HStack(spacing: 12) {
+                Button {
+                    appCore.setWEI5159AIPrerequisitesAvailable(false)
+                } label: {
+                    Text("Withhold prerequisites")
+                        .frame(minWidth: 45, minHeight: 45)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.bordered)
+                .disabled(!prerequisitesAvailable)
+                .accessibilityLabel("WEI5159 withhold AI conversation prerequisites")
+
+                Button {
+                    appCore.setWEI5159AIPrerequisitesAvailable(true)
+                } label: {
+                    Text("Restore prerequisites")
+                        .frame(minWidth: 45, minHeight: 45)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(prerequisitesAvailable)
+                .accessibilityLabel("WEI5159 restore AI conversation prerequisites")
+
+                Button {
+                    appCore.setWEI5159AIConversationListSuspended(true)
+                } label: {
+                    Text("Suspend next Resume load")
+                        .frame(minWidth: 45, minHeight: 45)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.bordered)
+                .disabled(!prerequisitesAvailable || appCore.wei5159AIConversationListSuspended)
+                .accessibilityLabel("WEI5159 suspend next saved conversation load")
+            }
+
+            Text(appCore.wei5159AIPrerequisiteQAState)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("wei5159QAState")
+                .accessibilityLabel(appCore.wei5159AIPrerequisiteQAState)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground))
+    }
+    #endif
+
     private func conversationTimestamp(_ iso: String) -> String {
         guard let date = CoreFormatters.parseISO(iso) else { return "" }
         return date.formatted(date: .abbreviated, time: .shortened)
@@ -530,17 +742,27 @@ struct IOSAIAssistantPanel: View {
             if displayMode == .sheet && !(dynamicTypeSize.isAccessibilitySize && hasFallbackSaveWarning) {
                 availabilityHeader
             }
+#if DEBUG && targetEnvironment(simulator)
+            if (appCore.isWEI5134AIReadFailureUITestingMode
+                || appCore.isWEI5159AIPrerequisiteRecoveryUITestingMode)
+                && !showConversationPicker {
+                aiReadRecoveryQAControls
+            }
+#endif
 #if DEBUG
             if AIFilterCommandUITestFixture.isEnabled {
                 aiFilterCommandFixtureControls
             }
 #endif
+            conversationReadStatus
             clearConversationStatus
                 .layoutPriority(hasFallbackSaveWarning ? 2 : 0)
             messagesArea
             inputBar
         }
         .task(id: resumePrerequisiteToken) {
+            let initializationPrerequisites = resumePrerequisiteToken
+            resetConversationReadScopeIfNeeded(for: initializationPrerequisites)
             let initialization = helpHandoffReadiness.beginInitialization()
             isLoadingConversationHistory = true
             if ProcessInfo.processInfo.arguments.contains("-UITestingAIGenerationFailure") {
@@ -550,14 +772,27 @@ struct IOSAIAssistantPanel: View {
             } else {
                 aiAvailability = aiService.checkAvailability()
             }
-            await resumeLastConversationIfNeeded()
+            guard await resumeLastConversationIfNeeded() else {
+                guard resumePrerequisiteToken == initializationPrerequisites else { return }
+                isLoadingConversationHistory = AIAssistantInitializationLoadingPolicy.keepsLoading(
+                    afterResumeFailureWith: conversationHistoryReadError,
+                    prerequisitesAvailable: initializationPrerequisites.databaseIdentity != nil
+                        && (initializationPrerequisites.ownerUserId ?? 0) > 0
+                )
+                return
+            }
             await loadCurrentConversation()
             guard !Task.isCancelled,
+                  resumePrerequisiteToken == initializationPrerequisites,
+                  conversationHistoryReadError == nil,
                   helpHandoffReadiness.finishInitialization(initialization) else { return }
             consumePendingHelpRequestIfReady()
         }
-        .onChange(of: resumePrerequisiteToken) { _, _ in
-            helpHandoffReadiness.invalidateInitialization()
+        .onChange(of: resumePrerequisiteToken) { _, newPrerequisites in
+            resetConversationReadScopeIfNeeded(for: newPrerequisites)
+        }
+        .onAppear {
+            NotificationCenter.default.post(name: .requestCurrentPageContext, object: nil)
         }
         .onChange(of: pendingHelpRequestToken) { _, _ in
             consumePendingHelpRequestIfReady()
@@ -672,7 +907,14 @@ struct IOSAIAssistantPanel: View {
             fleetMyTruckContext: $fleetMyTruckContext
 
         ))
-        .modifier(ActivePageIdTracker(activePageId: $activePageId))
+        .modifier(RoutePageContextObserver(
+            routeContext: $routeContext,
+            activeRoutePath: $activeRoutePath,
+            activeRouteInstanceId: $activeRouteInstanceId,
+            activeRouteInstanceOrder: $activeRouteInstanceOrder,
+            routePageId: $routePageId
+        ))
+        .modifier(ActivePageIdTracker(activePageId: $dedicatedPageId))
         .onReceive(NotificationCenter.default.publisher(for: .appDidLogout)) { _ in
             resetForLogout()
         }
@@ -814,6 +1056,35 @@ struct IOSAIAssistantPanel: View {
         .padding(8)
         .frame(maxWidth: .infinity)
         .background(Color(.secondarySystemGroupedBackground))
+    }
+
+    @ViewBuilder
+    private var conversationReadStatus: some View {
+        if let conversationHistoryReadError {
+            HStack(alignment: .center, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .accessibilityHidden(true)
+                Text(conversationHistoryReadError)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 8)
+                Button {
+                    retryConversationHistoryRead()
+                } label: {
+                    Text("Retry")
+                        .font(.caption)
+                        .frame(minWidth: 45, minHeight: 45)
+                        .contentShape(Rectangle())
+                }
+                .disabled(isLoadingConversationHistory)
+                .accessibilityLabel("Retry loading conversation history")
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity)
+            .background(Color.orange.opacity(0.12))
+            .accessibilityElement(children: .contain)
+        }
     }
 
     @ViewBuilder
@@ -1005,6 +1276,7 @@ struct IOSAIAssistantPanel: View {
                     || isClearingConversation
                     || isLoadingConversationHistory
                     || pendingFallbackSave != nil
+                    || conversationHistoryReadError != nil
             )
         }
         .padding(.horizontal)
@@ -1037,6 +1309,7 @@ struct IOSAIAssistantPanel: View {
                     || isClearingConversation
                     || isLoadingConversationHistory
                     || pendingFallbackSave != nil
+                    || conversationHistoryReadError != nil
             )
             .onKeyPress(.return, phases: .down) { keyPress in
                 if keyPress.modifiers.contains(.shift) {
@@ -1056,7 +1329,8 @@ struct IOSAIAssistantPanel: View {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,
               !isClearingConversation,
-              !isLoadingConversationHistory else { return }
+              !isLoadingConversationHistory,
+              conversationHistoryReadError == nil else { return }
 
         clearConversationError = nil
         clearConversationRetryId = nil
@@ -1242,7 +1516,11 @@ struct IOSAIAssistantPanel: View {
         let pageId = userInfo["pageId"] as? String
 
         if let pageId, HelpContentRegistry.helpFor(pageId) != nil {
-            activePageId = pageId
+            if dedicatedPageId != nil {
+                dedicatedPageId = pageId
+            } else {
+                routePageId = pageId
+            }
         }
 
         query = ""
@@ -1322,7 +1600,7 @@ struct IOSAIAssistantPanel: View {
     private func currentLifecycleCoordinator() -> AIAssistantLifecycleCoordinator<SavedConversation> {
         AIAssistantLifecycleCoordinator(
             conversationId: conversationId,
-            ownerUserId: appCore.currentUser?.id,
+            ownerUserId: appCore.aiConversationReadOwnerUserId,
             conversationRevision: conversationRevision,
             conversationPersistenceError: conversationPersistenceError,
             savedConversations: savedConversations,
@@ -1331,11 +1609,84 @@ struct IOSAIAssistantPanel: View {
         )
     }
 
-    private func cancelConversationListLoad() {
+    private func cancelConversationListLoad(clearError: Bool = true) {
         conversationListTask?.cancel()
         conversationListTask = nil
-        conversationListRequestID &+= 1
+        var lifecycleCoordinator = currentLifecycleCoordinator()
+        lifecycleCoordinator.cancelConversationListLoad()
+        conversationListRequestID = lifecycleCoordinator.conversationListRequestID
+        isLoadingConversations = lifecycleCoordinator.isLoadingConversations
+        savedConversations = lifecycleCoordinator.savedConversations
+        if clearError {
+            conversationListReadError = nil
+        }
+    }
+
+    private func cancelConversationHistoryRetryTask() {
+        conversationHistoryRetryTask?.cancel()
+        conversationHistoryRetryTask = nil
+    }
+
+    /// A database or authenticated-owner replacement is a privacy boundary. Clear
+    /// every visible/resumable conversation value before the keyed initialization
+    /// reads from the replacement scope, even when that scope reuses numeric IDs.
+    private func resetConversationReadScopeIfNeeded(for prerequisites: ResumePrerequisiteToken) {
+        guard activeResumePrerequisiteToken != prerequisites else { return }
+        guard prerequisites.databaseIdentity != nil,
+              (prerequisites.ownerUserId ?? 0) > 0 else {
+            helpHandoffReadiness.invalidateInitialization()
+            cancelConversationHistoryRetryTask()
+            conversationLoadTask?.cancel()
+            conversationLoadTask = nil
+            let wasLoadingConversationList = isLoadingConversations
+            cancelConversationListLoad(clearError: false)
+            conversationListReadError = AIConversationListReadFailurePolicy.errorAfterPrerequisiteWithdrawal(
+                existingError: conversationListReadError,
+                retiredActiveLoad: wasLoadingConversationList
+            )
+            isLoadingConversationHistory = true
+            isProcessing = false
+            return
+        }
+        let isReplacingMountedScope = activeResumePrerequisiteToken != nil
+        activeResumePrerequisiteToken = prerequisites
+        guard isReplacingMountedScope else { return }
+
+        helpHandoffReadiness.invalidateInitialization()
+        cancelConversationHistoryRetryTask()
+        conversationLoadTask?.cancel()
+        conversationLoadTask = nil
+        cancelConversationListLoad()
+        let pendingHelpPersistence = cancelHelpPersistenceTask()
+
+        var scopeState = AIConversationReadScopeState(
+            didAttemptResume: didAttemptResume,
+            conversationId: conversationId,
+            conversationRevision: conversationRevision,
+            messages: messages,
+            savedConversations: savedConversations
+        )
+        scopeState.replaceScope(newConversationId: UUID().uuidString)
+        didAttemptResume = scopeState.didAttemptResume
+        conversationId = scopeState.conversationId
+        conversationRevision = scopeState.conversationRevision
+        messages = scopeState.messages
+        savedConversations = scopeState.savedConversations
+
+        isLoadingConversationHistory = true
         isLoadingConversations = false
+        showConversationPicker = false
+        conversationHistoryReadError = nil
+        conversationHistoryRetry = nil
+        conversationListReadError = nil
+        conversationPersistenceError = nil
+        clearConversationError = nil
+        clearConversationRetryId = nil
+        isProcessing = false
+        isClearingConversation = false
+        clearVolatilePageContext()
+        Task { await pendingHelpPersistence?.value }
+        Task { await aiService.clearConversation() }
     }
 
     @discardableResult
@@ -1351,6 +1702,7 @@ struct IOSAIAssistantPanel: View {
     /// Start a brand-new conversation — clears the AI session, resets messages, generates a new ID.
     private func startNewConversation() {
         let pendingHelpPersistence = cancelHelpPersistenceTask()
+        cancelConversationHistoryRetryTask()
         conversationLoadTask?.cancel()
         conversationLoadTask = nil
         cancelConversationListLoad()
@@ -1361,6 +1713,8 @@ struct IOSAIAssistantPanel: View {
         clearConversationRetryId = nil
         conversationPersistenceError = nil
         pendingFallbackSave = nil
+        conversationHistoryReadError = nil
+        conversationHistoryRetry = nil
         Task { await pendingHelpPersistence?.value }
         Task { await aiService.clearConversation() }
         conversationId = UUID().uuidString
@@ -1370,6 +1724,7 @@ struct IOSAIAssistantPanel: View {
     /// Clear volatile assistant state when the app logs out, without deleting persisted history.
     private func resetForLogout() {
         let pendingHelpPersistence = cancelHelpPersistenceTask()
+        cancelConversationHistoryRetryTask()
         conversationLoadTask?.cancel()
         conversationLoadTask = nil
         cancelConversationListLoad()
@@ -1380,6 +1735,9 @@ struct IOSAIAssistantPanel: View {
         clearConversationRetryId = nil
         conversationPersistenceError = nil
         pendingFallbackSave = nil
+        conversationHistoryReadError = nil
+        conversationHistoryRetry = nil
+        conversationListReadError = nil
         isClearingConversation = false
         Task { await pendingHelpPersistence?.value }
         Task { await aiService.clearConversation() }
@@ -1398,7 +1756,12 @@ struct IOSAIAssistantPanel: View {
     /// session, otherwise the new session instructions could still include the
     /// previous user's page state.
     private func clearVolatilePageContext() {
-        activePageId = nil
+        dedicatedPageId = nil
+        routePageId = nil
+        routeContext = nil
+        activeRoutePath = nil
+        activeRouteInstanceId = nil
+        activeRouteInstanceOrder = nil
         catalogContext = nil
         pricingContext = nil
         suppliersContext = nil
@@ -1490,6 +1853,7 @@ struct IOSAIAssistantPanel: View {
             return
         }
 
+        cancelConversationHistoryRetryTask()
         conversationLoadTask?.cancel()
         conversationLoadTask = nil
         cancelConversationListLoad()
@@ -1500,6 +1864,8 @@ struct IOSAIAssistantPanel: View {
         pendingFallbackSave = nil
         clearConversationError = nil
         clearConversationRetryId = cid
+        conversationHistoryReadError = nil
+        conversationHistoryRetry = nil
 
         let pendingHelpPersistence = cancelHelpPersistenceTask()
         Task {
@@ -1552,13 +1918,20 @@ struct IOSAIAssistantPanel: View {
         conversationLoadTask?.cancel()
         isLoadingConversationHistory = true
         let loadConversationId = conversationId
-        let loadOwnerUserId = appCore.currentUser?.id
+        guard let loadOwnerUserId = appCore.aiConversationReadOwnerUserId,
+              loadOwnerUserId > 0,
+              let loadDatabase = appCore.aiConversationReadDatabase else {
+            conversationLoadTask = nil
+            return Task {}
+        }
+        let loadDatabaseIdentity = AIDatabaseIdentity(loadDatabase)
         let loadConversationRevision = conversationRevision
         let task = Task {
             await loadSavedMessages()
             guard !Task.isCancelled,
                   conversationId == loadConversationId,
-                  appCore.currentUser?.id == loadOwnerUserId,
+                  appCore.aiConversationReadOwnerUserId == loadOwnerUserId,
+                  loadDatabaseIdentity.matches(appCore.aiConversationReadDatabase),
                   conversationRevision == loadConversationRevision else { return }
             isLoadingConversationHistory = false
             conversationLoadTask = nil
@@ -1569,12 +1942,12 @@ struct IOSAIAssistantPanel: View {
 
     /// Load previously saved messages for the current conversation from the DB.
     private func loadSavedMessages() async {
-        guard let db = appCore.db,
-              let ownerUserId = appCore.currentUser?.id,
+        guard let db = appCore.aiConversationReadDatabase,
+              let ownerUserId = appCore.aiConversationReadOwnerUserId,
               ownerUserId > 0 else {
-            addWelcomeMessageIfNeeded()
             return
         }
+        let databaseIdentity = AIDatabaseIdentity(db)
         let loadConversationId = conversationId
         let loadConversationRevision = conversationRevision
         do {
@@ -1585,8 +1958,11 @@ struct IOSAIAssistantPanel: View {
             )
             guard !Task.isCancelled,
                   conversationId == loadConversationId,
-                  appCore.currentUser?.id == ownerUserId,
+                  appCore.aiConversationReadOwnerUserId == ownerUserId,
+                  databaseIdentity.matches(appCore.aiConversationReadDatabase),
                   conversationRevision == loadConversationRevision else { return }
+            conversationHistoryReadError = nil
+            conversationHistoryRetry = nil
             if saved.isEmpty {
                 addWelcomeMessageIfNeeded()
             } else {
@@ -1600,9 +1976,14 @@ struct IOSAIAssistantPanel: View {
         } catch {
             guard !Task.isCancelled,
                   conversationId == loadConversationId,
-                  appCore.currentUser?.id == ownerUserId,
+                  appCore.aiConversationReadOwnerUserId == ownerUserId,
+                  databaseIdentity.matches(appCore.aiConversationReadDatabase),
                   conversationRevision == loadConversationRevision else { return }
-            addWelcomeMessageIfNeeded()
+            conversationHistoryReadError = "Stored messages could not be loaded. Your saved conversation is still on this device; retry to restore it."
+            conversationHistoryRetry = .transcriptHydration
+            aiConversationLog.error(
+                "Transcript hydration failed for owner \(ownerUserId, privacy: .private), conversation \(loadConversationId, privacy: .private): \(error.localizedDescription, privacy: .private)"
+            )
         }
     }
 
@@ -1615,25 +1996,111 @@ struct IOSAIAssistantPanel: View {
 
     // MARK: - Conversation Resume
 
-    private func resumeLastConversationIfNeeded() async {
-        guard !didAttemptResume else { return }
-        guard let db = appCore.db,
-              let ownerUserId = appCore.currentUser?.id,
-              ownerUserId > 0 else { return }
-        didAttemptResume = true
+    private func resumeLastConversationIfNeeded() async -> Bool {
+        guard !didAttemptResume else { return true }
+        guard let db = appCore.aiConversationReadDatabase,
+              let ownerUserId = appCore.aiConversationReadOwnerUserId,
+              ownerUserId > 0 else { return false }
+        let databaseIdentity = AIDatabaseIdentity(db)
         let lookupConversationId = conversationId
         let lookupConversationRevision = conversationRevision
-        if let latest = try? await FoundationModelsService.latestConversationId(
-            ownerUserId: ownerUserId,
-            from: db
-        ) {
+        do {
+            let latest = try await FoundationModelsService.latestConversationId(
+                ownerUserId: ownerUserId,
+                from: db
+            )
             guard !Task.isCancelled,
                   conversationId == lookupConversationId,
-                  appCore.currentUser?.id == ownerUserId,
-                  conversationRevision == lookupConversationRevision else { return }
-            conversationRevision &+= 1
-            conversationId = latest
+                  appCore.aiConversationReadOwnerUserId == ownerUserId,
+                  databaseIdentity.matches(appCore.aiConversationReadDatabase),
+                  conversationRevision == lookupConversationRevision else { return false }
+            didAttemptResume = true
+            conversationHistoryReadError = nil
+            conversationHistoryRetry = nil
+            if let latest {
+                conversationRevision &+= 1
+                conversationId = latest
+            }
+            return true
+        } catch {
+            guard !Task.isCancelled,
+                  conversationId == lookupConversationId,
+                  appCore.aiConversationReadOwnerUserId == ownerUserId,
+                  databaseIdentity.matches(appCore.aiConversationReadDatabase),
+                  conversationRevision == lookupConversationRevision else { return false }
+            didAttemptResume = false
+            conversationHistoryReadError = "Conversation history could not be checked. Retry to restore your latest saved conversation."
+            conversationHistoryRetry = .latestConversationLookup
+            aiConversationLog.error(
+                "Latest conversation lookup failed for owner \(ownerUserId, privacy: .private): \(error.localizedDescription, privacy: .private)"
+            )
+            return false
         }
+    }
+
+    private func retryConversationHistoryRead() {
+        guard !isLoadingConversationHistory else { return }
+        guard let retry = conversationHistoryRetry,
+              let retryDatabase = appCore.aiConversationReadDatabase,
+              let retryToken = AIConversationHistoryRetryToken(
+                ownerUserId: appCore.aiConversationReadOwnerUserId,
+                database: retryDatabase,
+                conversationId: conversationId,
+                revision: conversationRevision
+              ) else { return }
+        cancelConversationHistoryRetryTask()
+        isLoadingConversationHistory = true
+        conversationHistoryReadError = nil
+
+        let task = Task {
+            let initialization = helpHandoffReadiness.beginInitialization()
+            var completionToken = retryToken
+            switch retry {
+            case .latestConversationLookup:
+                didAttemptResume = false
+                guard await resumeLastConversationIfNeeded() else {
+                    guard retryToken.matches(
+                        ownerUserId: appCore.aiConversationReadOwnerUserId,
+                        database: appCore.aiConversationReadDatabase,
+                        conversationId: conversationId,
+                        revision: conversationRevision,
+                        isCancelled: Task.isCancelled
+                    ) else { return }
+                    isLoadingConversationHistory = AIAssistantInitializationLoadingPolicy.keepsLoading(
+                        afterResumeFailureWith: conversationHistoryReadError,
+                        prerequisitesAvailable: true
+                    )
+                    conversationHistoryRetryTask = nil
+                    return
+                }
+                guard retryToken.matchesPrerequisites(
+                    ownerUserId: appCore.aiConversationReadOwnerUserId,
+                    database: appCore.aiConversationReadDatabase,
+                    isCancelled: Task.isCancelled
+                ), let currentToken = AIConversationHistoryRetryToken(
+                    ownerUserId: appCore.aiConversationReadOwnerUserId,
+                    database: appCore.aiConversationReadDatabase,
+                    conversationId: conversationId,
+                    revision: conversationRevision
+                ) else { return }
+                completionToken = currentToken
+                await loadCurrentConversation()
+            case .transcriptHydration:
+                await loadCurrentConversation()
+            }
+            guard !Task.isCancelled,
+                  completionToken.matches(
+                    ownerUserId: appCore.aiConversationReadOwnerUserId,
+                    database: appCore.aiConversationReadDatabase,
+                    conversationId: conversationId,
+                    revision: conversationRevision
+                  ),
+                  conversationHistoryReadError == nil,
+                  helpHandoffReadiness.finishInitialization(initialization) else { return }
+            conversationHistoryRetryTask = nil
+            consumePendingHelpRequestIfReady()
+        }
+        conversationHistoryRetryTask = task
     }
 
     private func presentConversationPicker() {
@@ -1641,6 +2108,7 @@ struct IOSAIAssistantPanel: View {
         conversationListTask?.cancel()
         conversationListRequestID &+= 1
         let requestID = conversationListRequestID
+        isLoadingConversations = true
         conversationListTask = Task {
             await loadConversationList(requestID: requestID)
             guard !Task.isCancelled, conversationListRequestID == requestID else { return }
@@ -1649,30 +2117,39 @@ struct IOSAIAssistantPanel: View {
     }
 
     private func loadConversationList(requestID: UInt) async {
+        guard let db = appCore.aiConversationReadDatabase,
+              let ownerUserId = appCore.aiConversationReadOwnerUserId,
+              ownerUserId > 0 else {
+            var lifecycleCoordinator = currentLifecycleCoordinator()
+            guard lifecycleCoordinator.finishConversationListPrerequisiteFailure(requestID: requestID) else { return }
+            isLoadingConversations = lifecycleCoordinator.isLoadingConversations
+            savedConversations = lifecycleCoordinator.savedConversations
+            conversationListReadError = "The database or signed-in user is unavailable. Try again after signing in and the app finishes loading."
+            return
+        }
+        let databaseIdentity = AIDatabaseIdentity(db)
         defer {
-            if conversationListRequestID == requestID {
+            if conversationListRequestID == requestID,
+               databaseIdentity.matches(appCore.aiConversationReadDatabase) {
                 isLoadingConversations = false
             }
-        }
-
-        guard let db = appCore.db,
-              let ownerUserId = appCore.currentUser?.id,
-              ownerUserId > 0 else {
-            if conversationListRequestID == requestID {
-                savedConversations = []
-            }
-            return
         }
         var lifecycleCoordinator = currentLifecycleCoordinator()
         let listLifecycle = lifecycleCoordinator.beginConversationListLoad(requestID: requestID)
         isLoadingConversations = lifecycleCoordinator.isLoadingConversations
-        if let rows = try? await FoundationModelsService.listConversations(
-            ownerUserId: ownerUserId,
-            from: db
-        ) {
+        #if DEBUG && targetEnvironment(simulator)
+        await appCore.waitForWEI5159AIConversationListLoadReleaseIfNeeded()
+        guard !Task.isCancelled else { return }
+        #endif
+        do {
+            let rows = try await FoundationModelsService.listConversations(
+                ownerUserId: ownerUserId,
+                from: db
+            )
             let conversationRows = rows.map {
                 SavedConversation(id: $0.id, lastMessageAt: $0.lastMessageAt, preview: $0.preview)
             }
+            guard databaseIdentity.matches(appCore.aiConversationReadDatabase) else { return }
             lifecycleCoordinator = currentLifecycleCoordinator()
             guard lifecycleCoordinator.finishConversationListLoad(
                 lifecycle: listLifecycle,
@@ -1682,27 +2159,47 @@ struct IOSAIAssistantPanel: View {
             ) else { return }
             isLoadingConversations = lifecycleCoordinator.isLoadingConversations
             savedConversations = lifecycleCoordinator.savedConversations
-        } else {
+            conversationListReadError = nil
+        } catch {
+            guard databaseIdentity.matches(appCore.aiConversationReadDatabase) else { return }
             lifecycleCoordinator = currentLifecycleCoordinator()
             guard lifecycleCoordinator.finishConversationListLoad(
                 lifecycle: listLifecycle,
                 requestID: requestID,
-                rows: [],
+                rows: savedConversations,
                 isCancelled: Task.isCancelled
             ) else { return }
             isLoadingConversations = lifecycleCoordinator.isLoadingConversations
             savedConversations = lifecycleCoordinator.savedConversations
+            conversationListReadError = "Saved conversations could not be read. Your last loaded conversations are unchanged; retry to refresh them."
+            aiConversationLog.error(
+                "Conversation list lookup failed for owner \(ownerUserId, privacy: .private): \(error.localizedDescription, privacy: .private)"
+            )
         }
     }
 
     private func resumeConversation(_ id: String) {
+        let selectionAction = AIAssistantResumeSelectionPolicy.action(
+            selectedConversationId: id,
+            currentConversationId: conversationId,
+            hasTranscriptHydrationFailure: conversationHistoryRetry == .transcriptHydration
+        )
+        showConversationPicker = false
+        switch selectionAction {
+        case .retryCurrentHydration:
+            beginCurrentConversationLoad()
+            return
+        case .noChange:
+            return
+        case .switchConversation:
+            break
+        }
         conversationPersistenceError = nil
         pendingFallbackSave = nil
-        guard id != conversationId else {
-            showConversationPicker = false
-            return
-        }
+        conversationHistoryReadError = nil
+        conversationHistoryRetry = nil
         let pendingHelpPersistence = cancelHelpPersistenceTask()
+        cancelConversationHistoryRetryTask()
         conversationLoadTask?.cancel()
         cancelConversationListLoad()
         isLoadingConversationHistory = false
@@ -1713,7 +2210,6 @@ struct IOSAIAssistantPanel: View {
         Task { await pendingHelpPersistence?.value }
         conversationId = id
         messages = []
-        showConversationPicker = false
         beginCurrentConversationLoad()
     }
 
@@ -1726,6 +2222,9 @@ struct IOSAIAssistantPanel: View {
         if aiAvailability == .available, let db = appCore.db {
             // Use Foundation Models with tool calling for real database access
             var navContext = buildNavigationContext(permissions: appCore.permissions)
+            if dedicatedPageId == nil, let ctx = routeContext {
+                navContext += "\n\nCurrent Route Context (READ-ONLY): \(ctx)"
+            }
             if let ctx = catalogContext {
                 navContext += "\n\nCatalog Page Context: \(ctx)"
                 navContext += " You can set catalog filters by responding with a JSON action block."
@@ -2191,6 +2690,96 @@ struct IOSAIAssistantPanel: View {
 }
 
 // MARK: - Page Context Observer Modifiers
+
+enum AIPageIdentityResolver {
+    static func resolve(dedicatedPageId: String?, routePageId: String?) -> String? {
+        dedicatedPageId ?? routePageId
+    }
+}
+
+struct AIRoutePageContextState: Equatable {
+    var routeContext: String?
+    var activeRoutePath: String?
+    var activeRouteInstanceId: String?
+    var activeRouteInstanceOrder: UInt64?
+    var routePageId: String?
+
+    mutating func activate(context: String, path: String, instanceId: String, instanceOrder: UInt64, pageId: String) {
+        guard activeRouteInstanceOrder.map({ instanceOrder >= $0 }) ?? true else { return }
+        routeContext = context
+        activeRoutePath = path
+        activeRouteInstanceId = instanceId
+        activeRouteInstanceOrder = instanceOrder
+        routePageId = pageId
+    }
+
+    mutating func deactivate(matchingPath path: String, instanceId: String) {
+        guard path == activeRoutePath, instanceId == activeRouteInstanceId else { return }
+        routeContext = nil
+        activeRoutePath = nil
+        activeRouteInstanceId = nil
+        activeRouteInstanceOrder = nil
+        routePageId = nil
+    }
+}
+
+/// Receives the minimal route identity that covers every current route. A
+/// per-router instance token prevents a late inactive event from an old router
+/// clearing a newer page.
+private struct RoutePageContextObserver: ViewModifier {
+    @Binding var routeContext: String?
+    @Binding var activeRoutePath: String?
+    @Binding var activeRouteInstanceId: String?
+    @Binding var activeRouteInstanceOrder: UInt64?
+    @Binding var routePageId: String?
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .routePageActive)) { notification in
+                guard let context = notification.userInfo?["context"] as? String,
+                      let path = notification.userInfo?["path"] as? String,
+                      let instanceId = notification.userInfo?["instanceId"] as? String,
+                      let instanceOrder = notification.userInfo?["instanceOrder"] as? UInt64,
+                      let pageId = notification.userInfo?["pageId"] as? String else { return }
+                var state = AIRoutePageContextState(
+                    routeContext: routeContext,
+                    activeRoutePath: activeRoutePath,
+                    activeRouteInstanceId: activeRouteInstanceId,
+                    activeRouteInstanceOrder: activeRouteInstanceOrder,
+                    routePageId: routePageId
+                )
+                state.activate(
+                    context: context,
+                    path: path,
+                    instanceId: instanceId,
+                    instanceOrder: instanceOrder,
+                    pageId: pageId
+                )
+                routeContext = state.routeContext
+                activeRoutePath = state.activeRoutePath
+                activeRouteInstanceId = state.activeRouteInstanceId
+                activeRouteInstanceOrder = state.activeRouteInstanceOrder
+                routePageId = state.routePageId
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .routePageInactive)) { notification in
+                guard let path = notification.userInfo?["path"] as? String,
+                      let instanceId = notification.userInfo?["instanceId"] as? String else { return }
+                var state = AIRoutePageContextState(
+                    routeContext: routeContext,
+                    activeRoutePath: activeRoutePath,
+                    activeRouteInstanceId: activeRouteInstanceId,
+                    activeRouteInstanceOrder: activeRouteInstanceOrder,
+                    routePageId: routePageId
+                )
+                state.deactivate(matchingPath: path, instanceId: instanceId)
+                routeContext = state.routeContext
+                activeRoutePath = state.activeRoutePath
+                activeRouteInstanceId = state.activeRouteInstanceId
+                activeRouteInstanceOrder = state.activeRouteInstanceOrder
+                routePageId = state.routePageId
+            }
+    }
+}
 
 /// Groups the original 5 Parts page notification observers to keep chatBody type-checker happy.
 private struct PartsPageContextObservers: ViewModifier {
@@ -3146,8 +3735,6 @@ private struct ActivePageIdTrackerFleetToolsNotebooksTail: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .toolRegistryPageInactive)) { _ in if activePageId == "tools-registry" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .notebooksListPageActive)) { _ in activePageId = "notebooks-all" }
             .onReceive(NotificationCenter.default.publisher(for: .notebooksListPageInactive)) { _ in if activePageId == "notebooks-all" { activePageId = nil } }
-            .onReceive(NotificationCenter.default.publisher(for: .settingsPageActive)) { _ in activePageId = "settings-app-config" }
-            .onReceive(NotificationCenter.default.publisher(for: .settingsPageInactive)) { _ in if activePageId == "settings-app-config" { activePageId = nil } }
     }
 }
 
@@ -3276,6 +3863,80 @@ struct AIConversationLifecycleSnapshot: Equatable, Sendable {
     }
 }
 
+struct AIDatabaseIdentity: Equatable, Sendable {
+    private let objectIdentifier: ObjectIdentifier
+
+    init(_ database: AppDatabase) {
+        objectIdentifier = ObjectIdentifier(database)
+    }
+
+    func matches(_ database: AppDatabase?) -> Bool {
+        database.map(ObjectIdentifier.init) == objectIdentifier
+    }
+}
+
+struct AIConversationHistoryRetryToken: Equatable, Sendable {
+    let ownerUserId: Int64
+    let databaseIdentity: AIDatabaseIdentity
+    let conversationId: String
+    let revision: UInt
+
+    init?(
+        ownerUserId: Int64?,
+        database: AppDatabase?,
+        conversationId: String,
+        revision: UInt
+    ) {
+        guard let ownerUserId, ownerUserId > 0, let database else { return nil }
+        self.ownerUserId = ownerUserId
+        databaseIdentity = AIDatabaseIdentity(database)
+        self.conversationId = conversationId
+        self.revision = revision
+    }
+
+    func matchesPrerequisites(
+        ownerUserId currentOwnerUserId: Int64?,
+        database currentDatabase: AppDatabase?,
+        isCancelled: Bool = false
+    ) -> Bool {
+        !isCancelled
+            && ownerUserId == currentOwnerUserId
+            && databaseIdentity.matches(currentDatabase)
+    }
+
+    func matches(
+        ownerUserId currentOwnerUserId: Int64?,
+        database currentDatabase: AppDatabase?,
+        conversationId currentConversationId: String,
+        revision currentRevision: UInt,
+        isCancelled: Bool = false
+    ) -> Bool {
+        matchesPrerequisites(
+            ownerUserId: currentOwnerUserId,
+            database: currentDatabase,
+            isCancelled: isCancelled
+        )
+            && conversationId == currentConversationId
+            && revision == currentRevision
+    }
+}
+
+struct AIConversationReadScopeState<Message, ConversationRow> {
+    private(set) var didAttemptResume: Bool
+    private(set) var conversationId: String
+    private(set) var conversationRevision: UInt
+    private(set) var messages: [Message]
+    private(set) var savedConversations: [ConversationRow]
+
+    mutating func replaceScope(newConversationId: String) {
+        didAttemptResume = false
+        conversationId = newConversationId
+        conversationRevision &+= 1
+        messages.removeAll()
+        savedConversations.removeAll()
+    }
+}
+
 struct AIHelpPersistenceCompletion: Equatable, Sendable {
     let persistenceError: String?
 }
@@ -3326,6 +3987,53 @@ struct AIHelpHandoffReadinessCoordinator {
               activeSendLifecycleRequestID == nil else { return nil }
         defer { queuedHelpRequestID = nil }
         return queuedHelpRequestID
+    }
+}
+
+enum AIAssistantResumeSelectionAction: Equatable {
+    case noChange
+    case retryCurrentHydration
+    case switchConversation
+}
+
+enum AIAssistantResumeSelectionPolicy {
+    static func action(
+        selectedConversationId: String,
+        currentConversationId: String,
+        hasTranscriptHydrationFailure: Bool
+    ) -> AIAssistantResumeSelectionAction {
+        guard selectedConversationId == currentConversationId else {
+            return .switchConversation
+        }
+        return hasTranscriptHydrationFailure ? .retryCurrentHydration : .noChange
+    }
+}
+
+enum AIAssistantInitializationLoadingPolicy {
+    /// Missing persistence prerequisites are a startup wait, not a readable empty
+    /// conversation. Keep the composer fail-closed until the prerequisite-keyed
+    /// task runs again. A real read failure has visible Retry UI, so it may stop
+    /// the spinner while the existing error gate continues to disable input.
+    static func keepsLoading(
+        afterResumeFailureWith readError: String?,
+        prerequisitesAvailable: Bool
+    ) -> Bool {
+        !prerequisitesAvailable || readError == nil
+    }
+}
+
+enum AIConversationListReadFailurePolicy {
+    static let unavailablePrerequisitesMessage = "The database or signed-in user is unavailable. Try again after signing in and the app finishes loading."
+
+    /// A withdrawn prerequisite is a read failure only when it retires an active
+    /// Resume request. Preserve any older recovery error and leave idle pickers
+    /// alone so they do not acquire a failure state without a read attempt.
+    static func errorAfterPrerequisiteWithdrawal(
+        existingError: String?,
+        retiredActiveLoad: Bool
+    ) -> String? {
+        guard existingError == nil, retiredActiveLoad else { return existingError }
+        return unavailablePrerequisitesMessage
     }
 }
 
@@ -3426,6 +4134,17 @@ struct AIAssistantLifecycleCoordinator<Row: Sendable> {
         }
         isLoadingConversations = true
         return snapshot()
+    }
+
+    mutating func cancelConversationListLoad() {
+        conversationListRequestID &+= 1
+        isLoadingConversations = false
+    }
+
+    mutating func finishConversationListPrerequisiteFailure(requestID: UInt) -> Bool {
+        guard requestID == conversationListRequestID else { return false }
+        isLoadingConversations = false
+        return true
     }
 
     mutating func finishConversationListLoad(

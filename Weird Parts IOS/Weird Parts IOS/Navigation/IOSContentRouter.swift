@@ -1,5 +1,56 @@
+import Foundation
 import SwiftUI
 import WiredPartCore
+
+struct AIRouteIdentity: Equatable {
+    let path: String
+    let pageId: String
+    let instanceId: String
+    let instanceOrder: UInt64
+}
+
+/// Establishes a stable owner order when SwiftUI creates router instances.
+/// Lifecycle callbacks can arrive out of order during a route replacement, so
+/// callback arrival order must not decide which router owns AI/Help context.
+private enum AIRouteContextInstanceOrder {
+    private final class Counter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: UInt64 = 0
+
+        func next() -> UInt64 {
+            lock.lock()
+            defer { lock.unlock() }
+            value &+= 1
+            return value
+        }
+    }
+
+    private static let counter = Counter()
+
+    static func next() -> UInt64 {
+        counter.next()
+    }
+}
+
+struct AIRouteContextLifecycle {
+    private(set) var publishedIdentity: AIRouteIdentity?
+    let instanceId = UUID().uuidString
+    let instanceOrder = AIRouteContextInstanceOrder.next()
+
+    mutating func activate(path: String, pageId: String) {
+        publishedIdentity = AIRouteIdentity(
+            path: path,
+            pageId: pageId,
+            instanceId: instanceId,
+            instanceOrder: instanceOrder
+        )
+    }
+
+    mutating func deactivate() -> AIRouteIdentity? {
+        defer { publishedIdentity = nil }
+        return publishedIdentity
+    }
+}
 
 /// Routes a URL-style path to the appropriate native view.
 ///
@@ -9,8 +60,177 @@ struct IOSContentRouter: View {
     let path: String
     @EnvironmentObject private var appCore: AppCore
 
+    private struct RouteDescriptor {
+        let moduleLabel: String
+        let pageLabel: String
+        let pageId: String
+    }
+
+    /// The last route identity actually published to the assistant. Keeping this
+    /// separate from the current path lets an unregistered/placeholder path
+    /// deactivate the prior registered route instead of silently retaining it.
+    @State private var routeContextLifecycle = AIRouteContextLifecycle()
+
+
     var body: some View {
         routedView
+            .onAppear { postRouteContext() }
+            .onChange(of: path) { _, _ in postRouteContext() }
+            .onReceive(NotificationCenter.default.publisher(for: .requestCurrentPageContext)) { _ in
+                postRouteContext()
+            }
+            .onDisappear { postRouteInactive() }
+    }
+
+    private var routeDescriptor: RouteDescriptor? {
+        for module in appModules {
+            if let tab = module.tabs.first(where: { $0.path == path }) {
+                return RouteDescriptor(
+                    moduleLabel: module.label,
+                    pageLabel: tab.label,
+                    pageId: tab.id
+                )
+            }
+        }
+        guard let pageId = deepRoutePageId else { return nil }
+        for module in appModules {
+            if let tab = module.tabs.first(where: { $0.id == pageId }) {
+                return RouteDescriptor(
+                    moduleLabel: module.label,
+                    pageLabel: tab.label,
+                    pageId: pageId
+                )
+            }
+        }
+        let tokens = pageId.split(separator: "-").map(String.init)
+        let moduleLabel = tokens.first?.capitalized ?? "App"
+        let pageLabel = tokens.dropFirst().map { token in
+            switch token.lowercased() {
+            case "ai": return "AI"
+            case "pdf": return "PDF"
+            case "qa": return "Q&A"
+            default: return token.capitalized
+            }
+        }.joined(separator: " ")
+        return RouteDescriptor(
+            moduleLabel: moduleLabel,
+            pageLabel: pageLabel.isEmpty ? pageId : pageLabel,
+            pageId: pageId
+        )
+    }
+
+    /// Canonical identity for every explicit router path that is not an AppTab.
+    /// The coverage verifier compares this registry with the routed switch and
+    /// inventory, so a new deep link or alias cannot silently miss AI/Help context.
+    private var deepRoutePageId: String? {
+        switch path {
+        case "/chat/messages": return "chat-channels"
+        case "/chat/qa": return "chat-questions"
+        case "/jobs/clock": return "dashboard-clock"
+        case "/warehouse/network": return "devices-network"
+        case "/trucks/inspections": return "fleet-inspections"
+        case "/trucks/maintenance": return "fleet-maintenance"
+        case "/trucks/mileage": return "fleet-mileage"
+        case "/fleet/gps", "/trucks/gps": return "fleet-tracking"
+        case "/fleet/trailer-locations": return "fleet-trailer-locations"
+        case "/trucks/trailers": return "fleet-trailers"
+        case "/fleet/truck-tools": return "fleet-truck-tools"
+        case "/trucks/fleet": return "fleet-vehicles"
+        case "/jobs/daily-reports": return "jobs-daily-reports"
+        case "/jobs/detail": return "jobs-detail"
+        case "/jobs/active": return "jobs-list"
+        case "/jobs/questionnaire": return "jobs-questionnaire"
+        case "/notebooks/list", "/notebooks/general": return "notebooks-all"
+        case "/orders/requests": return "orders-jpos"
+        case "/orders/unified-order": return "orders-staging"
+        case "/people/directory": return "people-employees"
+        case "/reports/bookkeeper": return "reports-bookkeeper"
+        case "/reports/daily-summary", "/reports/overview": return "reports-daily-summary"
+        case "/reports/labor-overview": return "reports-labor"
+        case "/reports/pre-billing": return "reports-prebilling"
+        case "/reports/profitability": return "reports-profitability"
+        case "/reports/public": return "reports-public"
+        case "/reports/spending": return "reports-spending"
+        case "/reports/timesheets": return "reports-timesheets"
+        case "/scheduling/my-schedule": return "scheduling-calendar"
+        case "/scheduling/dispatch-admin": return "scheduling-dispatch"
+        case "/settings/about": return "settings-about"
+        case "/settings/ai-config": return "settings-ai-config"
+        case "/settings/audit-log": return "settings-audit"
+        case "/settings/audit-settings": return "settings-audit-settings"
+        case "/settings/backups": return "settings-backups"
+        case "/settings/billing", "/settings/billing-pay-settings": return "settings-billing"
+        case "/settings/bluetooth": return "settings-bluetooth"
+        case "/settings/bootstrap", "/settings/bootstrap-admin": return "settings-bootstrap"
+        case "/settings/break-lunch": return "settings-breaks"
+        case "/settings/bug-report", "/settings/feedback", "/settings/report-a-bug": return "settings-bug-report"
+        case "/settings/clockout", "/settings/clock-out-questions": return "settings-clockout"
+        case "/settings/company", "/settings/company-profiles": return "settings-company"
+        case "/settings/daily-report-templates": return "settings-daily-report-templates"
+        case "/settings/device-management": return "settings-device-management"
+        case "/settings/dispatch-preferences": return "settings-dispatch-preferences"
+        case "/settings/export", "/settings/data-export": return "settings-export"
+        case "/settings/forecast-config": return "settings-forecast-config"
+        case "/settings/integrations": return "settings-integrations"
+        case "/settings/job-estimation-questions": return "settings-job-estimation-questions"
+        case "/settings/keys", "/settings/key-management": return "settings-keys"
+        case "/settings/notification-prefs": return "settings-notifications"
+        case "/settings/org-thresholds": return "settings-org-thresholds"
+        case "/settings/pdf", "/settings/pdf-settings": return "settings-pdf"
+        case "/settings/pretrip-checklists": return "settings-pretrip-checklists"
+        case "/settings/remote-sync": return "settings-remote-sync"
+        case "/settings/report-templates": return "settings-report-templates"
+        case "/settings/reset", "/settings/database-reset": return "settings-reset"
+        case "/settings/security-admin": return "settings-security"
+        case "/settings/shared-channels": return "settings-shared-channels"
+        case "/settings/supplier-bridge": return "settings-supplier-bridge"
+        case "/settings/tool-policies": return "settings-tool-policies"
+        case "/settings/updates", "/settings/update-protocol": return "settings-updates"
+        case "/tools/checkout": return "tools-checkouts"
+        default: return nil
+        }
+    }
+
+    /// Publish only route identity. Page-specific visible counts and filters stay
+    /// in dedicated notifications; this fallback deliberately excludes record
+    /// values, private notes, credentials, and mutation identifiers.
+    private func postRouteContext() {
+        guard let descriptor = routeDescriptor else {
+            postRouteInactive()
+            return
+        }
+        routeContextLifecycle.activate(
+            path: path,
+            pageId: descriptor.pageId
+        )
+        let context = "Module: \(descriptor.moduleLabel); Page: \(descriptor.pageLabel); Route: \(path)"
+        NotificationCenter.default.post(
+            name: .routePageActive,
+            object: nil,
+            userInfo: [
+                "context": context,
+                "path": path,
+                "pageId": descriptor.pageId,
+                "instanceId": routeContextLifecycle.instanceId,
+                "instanceOrder": routeContextLifecycle.instanceOrder,
+                "module": descriptor.moduleLabel,
+                "page": descriptor.pageLabel,
+            ]
+        )
+    }
+
+    private func postRouteInactive() {
+        guard let identity = routeContextLifecycle.deactivate() else { return }
+        NotificationCenter.default.post(
+            name: .routePageInactive,
+            object: nil,
+            userInfo: [
+                "path": identity.path,
+                "pageId": identity.pageId,
+                "instanceId": identity.instanceId,
+                "instanceOrder": identity.instanceOrder,
+            ]
+        )
     }
 
     @ViewBuilder
