@@ -17,6 +17,7 @@ struct PanelScheduleBuilder: View {
     // Print PDF button, so the iPad popover presentation of
     // UIPrintInteractionController has a source to point at.
     @State private var exportMenuAnchorRect: CGRect = .zero
+    private let moveModeBannerHorizontalReservation = DS.Space.sm * 6
 
     private enum ActiveSheet: Identifiable {
         case circuitEditor
@@ -35,14 +36,31 @@ struct PanelScheduleBuilder: View {
     @State private var activeSheet: ActiveSheet?
 
     var body: some View {
-        VStack(spacing: 0) {
-            panelHeader
-            Divider()
-            ScrollView {
-                panelGrid
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                panelHeader
+                Divider()
+                if let movingCircuit = movingCircuitDescription {
+                    // Keep move guidance outside the scroll content. The panel grid
+                    // has a wider intrinsic width on compact phones, which otherwise
+                    // made the banner inherit that width and clip both horizontal edges.
+                    PanelQualityInstructionBanner(
+                        message: "Move \(movingCircuit): tap a destination space or drag it onto the grid.",
+                        accessibilityIdentifier: "panelScheduleMoveModeBanner"
+                    )
+                    // Reserve both the explicit banner margin and the compact root's
+                    // inherited horizontal inset before fixing the banner width.
+                    .frame(width: max(geometry.size.width - moveModeBannerHorizontalReservation, 0), alignment: .leading)
+                    .padding(.horizontal, DS.Space.sm)
+                    .padding(.top, DS.Space.sm)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+                ScrollView {
+                    panelGrid
+                }
+                Divider()
+                panelToolbar
             }
-            Divider()
-            panelToolbar
         }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
@@ -126,18 +144,6 @@ struct PanelScheduleBuilder: View {
 
     private var panelGrid: some View {
         VStack(spacing: DS.Space.sm) {
-            // Move-mode banner lives OUTSIDE the bordered grid so it never breaks
-            // the panel frame's clean edges.
-            if let movingCircuit = movingCircuitDescription {
-                Text("Move \(movingCircuit): tap a destination space or drag it onto the grid.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, DS.Space.sm)
-                    .padding(.vertical, DS.Space.xs)
-                    .background(DS.SemanticColor.info.opacity(0.08), in: RoundedRectangle(cornerRadius: DS.Radius.sm))
-            }
-
             // The grid itself: opaque cells laid over a grid-line-colored backing,
             // so the 1pt gaps render as intentional, uniform panel lines — then the
             // whole panel is clipped + stroked for a clean rounded outer edge (the

@@ -240,11 +240,59 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         )
     }
 
-    private func relaunchForPanelScheduleBuilderFixture() {
+    @MainActor
+    func testPanelScheduleMoveBannerFitsCompactWidthAndExposesFullInstruction() throws {
+        try assertPanelScheduleMoveBanner(appearance: "Light")
+    }
+
+    @MainActor
+    func testPanelScheduleMoveBannerFitsCompactWidthInDarkMode() throws {
+        try assertPanelScheduleMoveBanner(appearance: "Dark")
+    }
+
+    @MainActor
+    private func assertPanelScheduleMoveBanner(appearance: String) throws {
+        relaunchForPanelScheduleBuilderFixture(appearance: appearance)
+
+        let circuit = app.buttons["Circuit 1, Office lighting"]
+        XCTAssertTrue(circuit.waitForExistence(timeout: 20))
+        circuit.press(forDuration: 1)
+        let move = app.buttons["Move Circuit"]
+        XCTAssertTrue(move.waitForExistence(timeout: 5))
+        move.tap()
+
+        let banner = app.descendants(matching: .any)["panelScheduleMoveModeBanner"]
+        XCTAssertTrue(banner.waitForExistence(timeout: 5))
+        XCTAssertEqual(banner.identifier, "panelScheduleMoveModeBanner")
+        XCTAssertEqual(
+            banner.label,
+            "Move Office lighting: tap a destination space or drag it onto the grid."
+        )
+        XCTAssertGreaterThanOrEqual(
+            banner.frame.height,
+            43.9,
+            "The rendered banner AX frame must preserve the documented 44pt floor, allowing only floating-point noise."
+        )
+        XCTAssertGreaterThanOrEqual(banner.frame.minX, app.frame.minX)
+        XCTAssertLessThanOrEqual(banner.frame.maxX, app.frame.maxX)
+        print("WEI-4939 \(appearance) panelScheduleMoveModeBanner AX frame: \(banner.frame)")
+
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = "panel-schedule-move-banner-\(appearance.lowercased())-\(Int(app.frame.width))x\(Int(app.frame.height))"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    private func relaunchForPanelScheduleBuilderFixture(appearance: String? = nil) {
         app?.terminate()
         app = XCUIApplication()
         configureUITestingEnvironment(app)
         app.launchArguments += ["-UITestingPanelScheduleBuilderFixture"]
+        if let appearance {
+            app.launchArguments.append(
+                appearance == "Dark" ? "-UITestingAppearanceDark" : "-UITestingAppearanceLight"
+            )
+        }
         app.launch()
     }
 
@@ -602,8 +650,19 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         captureWEI3988("03-restored-backups-status")
 
         relaunchForWEI3988RestoredTarget(["-UITestingWEI3988PartsCatalog"])
-        XCTAssertTrue(app.staticTexts["WEI-3295 Stage 8 Breaker"].waitForExistence(timeout: 20) || app.staticTexts["WEI-3144 Wire Nut"].waitForExistence(timeout: 20), "Restored parts catalog should show seeded sample parts")
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'part' AND label CONTAINS 'Page' ")).firstMatch.waitForExistence(timeout: 5), "Restored parts catalog should show a non-empty part count")
+        let restoredStage8Part = app.staticTexts["WEI-3295 Stage 8 Breaker"]
+        let restoredMaterialPart = app.staticTexts["WEI-3144 Wire Nut"]
+        if !restoredStage8Part.waitForExistence(timeout: 5), !restoredMaterialPart.exists {
+            // The phone catalog lazily realizes visible rows. Search the rendered
+            // catalog before failing the restore assertion when seeded proof rows
+            // begin below the initial viewport.
+            for _ in 0..<4 where !restoredStage8Part.exists && !restoredMaterialPart.exists {
+                app.swipeUp()
+                _ = restoredStage8Part.waitForExistence(timeout: 2)
+            }
+        }
+        XCTAssertTrue(restoredStage8Part.exists || restoredMaterialPart.exists, "Restored parts catalog should show seeded sample parts")
         captureWEI3988("04-restored-parts-catalog")
 
         relaunchForWEI3988RestoredTarget(["-UITestingWEI3988Materials", "-UITestingWEI3144JobMaterials"])
@@ -816,6 +875,9 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             "-UITestingWEI936AutoLogin",
             "-UITestingWarehouseLocations"
         ]
+        #if targetEnvironment(macCatalyst)
+        app.launchArguments.append("-UITestingFullSidebar")
+        #endif
         app.launch()
 
         XCTAssertTrue(
@@ -833,11 +895,65 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             selectedLocationsSubtab.isHittable,
             "Selected off-screen Warehouse Locations sub-tab should be auto-scrolled into the narrow iPhone viewport"
         )
+        XCTAssertEqual(selectedLocationsSubtab.label, "Locations")
+        let minimumSubtabTarget: CGFloat = 44
+        XCTAssertGreaterThanOrEqual(selectedLocationsSubtab.frame.width, minimumSubtabTarget)
+        XCTAssertGreaterThanOrEqual(selectedLocationsSubtab.frame.height, minimumSubtabTarget)
+        XCTAssertTrue(selectedLocationsSubtab.isSelected)
+        XCTAssertEqual(selectedLocationsSubtab.value as? String, "Selected")
+
+        let auditSubtab = app.buttons["subtab_warehouse-audit"]
+        XCTAssertTrue(
+            auditSubtab.waitForExistence(timeout: 10),
+            "Warehouse navigation should expose Audit as a native Button"
+        )
+        XCTAssertFalse(auditSubtab.isSelected, "Audit must not export Selected while Locations content is visible")
+        XCTAssertEqual(auditSubtab.value as? String, "Not selected")
 
         XCTAssertTrue(
             app.buttons["Shelving"].waitForExistence(timeout: 10) ||
                 app.staticTexts["UITesting Shelf A"].waitForExistence(timeout: 10),
             "Warehouse Locations content should render after the auto-scrolled selected sub-tab is visible"
+        )
+
+        let initiallySelectedWarehouseTabs = app.buttons
+            .matching(NSPredicate(format: "identifier BEGINSWITH 'subtab_warehouse-'"))
+            .allElementsBoundByIndex
+            .filter { $0.isSelected }
+        XCTAssertEqual(
+            initiallySelectedWarehouseTabs.map(\.identifier),
+            ["subtab_warehouse-locations"],
+            "Only Locations should expose selected state for the direct route"
+        )
+
+        let inventorySubtab = app.buttons["subtab_warehouse-inventory"]
+        XCTAssertTrue(inventorySubtab.waitForExistence(timeout: 10))
+        XCTAssertTrue(inventorySubtab.isHittable)
+        inventorySubtab.tap()
+
+        XCTAssertTrue(
+            app.searchFields["Search parts..."].waitForExistence(timeout: 10) ||
+                app.staticTexts["Default Warehouse"].waitForExistence(timeout: 10),
+            "Selecting Inventory should replace Locations content with the Inventory page"
+        )
+        let selectedInventorySubtab = app.buttons["subtab_warehouse-inventory"]
+        XCTAssertTrue(selectedInventorySubtab.waitForExistence(timeout: 10))
+        XCTAssertTrue(selectedInventorySubtab.isHittable, "The newly selected Inventory chip should remain revealed")
+        XCTAssertTrue(selectedInventorySubtab.isSelected)
+        XCTAssertEqual(selectedInventorySubtab.value as? String, "Selected")
+        let deselectedLocationsSubtab = app.buttons["subtab_warehouse-locations"]
+        XCTAssertTrue(deselectedLocationsSubtab.waitForExistence(timeout: 10))
+        XCTAssertFalse(deselectedLocationsSubtab.isSelected)
+        XCTAssertEqual(deselectedLocationsSubtab.value as? String, "Not selected")
+
+        let selectedWarehouseTabsAfterTap = app.buttons
+            .matching(NSPredicate(format: "identifier BEGINSWITH 'subtab_warehouse-'"))
+            .allElementsBoundByIndex
+            .filter { $0.isSelected }
+        XCTAssertEqual(
+            selectedWarehouseTabsAfterTap.map(\.identifier),
+            ["subtab_warehouse-inventory"],
+            "Selection changes must leave exactly one warehouse chip selected"
         )
 
         let screenshot = XCUIScreen.main.screenshot()

@@ -93,6 +93,12 @@ struct WiredPartIOSApp: App {
         ProcessInfo.processInfo.arguments.contains("-UITestingPanelScheduleBuilderFixture")
     }
 
+    private var shouldShowAIFilterCommandFixture: Bool {
+        let arguments = ProcessInfo.processInfo.arguments
+        return arguments.contains("-UITesting")
+            && arguments.contains("-UITestingAIFilterCommandFixture")
+    }
+
     private var stage8ReportsUITestTarget: Stage8ReportsUITestTarget? {
         Stage8ReportsUITestTarget(processArguments: ProcessInfo.processInfo.arguments)
     }
@@ -113,6 +119,16 @@ struct WiredPartIOSApp: App {
 
     /// Resolved color scheme from the user's theme setting.
     private var resolvedColorScheme: ColorScheme? {
+        let processArguments = ProcessInfo.processInfo.arguments
+        if processArguments.contains("-UITesting"),
+           processArguments.contains("-UITestingAppearanceLight") {
+            return .light
+        }
+        if processArguments.contains("-UITesting"),
+           processArguments.contains("-UITestingAppearanceDark") {
+            return .dark
+        }
+
         switch appCore.theme.themeMode {
         case "light": return .light
         case "dark": return .dark
@@ -136,6 +152,13 @@ struct WiredPartIOSApp: App {
                         .navigationTitle("Panel Schedule")
                         .navigationBarTitleDisplayMode(.inline)
                     }
+                } else if shouldShowAIFilterCommandFixture {
+                    #if DEBUG
+                    AIFilterCommandUITestFixtureHost()
+                        .environmentObject(appCore)
+                    #else
+                    EmptyView()
+                    #endif
                 } else if shouldShowWEI3140ImportPreviewFixture {
                     #if DEBUG
                     WEI3140ImportPreviewFixtureView()

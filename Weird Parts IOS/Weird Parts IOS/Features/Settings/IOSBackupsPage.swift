@@ -1,5 +1,6 @@
 import SwiftUI
 import WiredPartCore
+import GRDB
 
 enum IOSBackupFileCopier {
     nonisolated static let retainedBackupLimit = 7
@@ -53,6 +54,33 @@ enum IOSBackupFileCopier {
         }
     }
 
+    /// Creates a complete SQLite snapshot while holding the application's writer lock.
+    /// A raw main-file/WAL copy can observe the files at different points in time, which
+    /// produces a restore that is structurally valid but missing recently committed rows.
+    nonisolated static func checkpointAndCopySQLiteSnapshot(
+        from source: any DatabaseWriter,
+        sourceURL: URL,
+        to destURL: URL
+    ) throws {
+        try removeSQLiteSnapshot(at: destURL)
+        try source.write { db in
+            guard let checkpoint = try Row.fetchOne(db, sql: "PRAGMA wal_checkpoint(TRUNCATE)") else {
+                throw NSError(domain: "IOSBackupFileCopier", code: 1, userInfo: [
+                    NSLocalizedDescriptionKey: "Database checkpoint did not return a result."
+                ])
+            }
+            let busy: Int = checkpoint[0]
+            let log: Int = checkpoint[1]
+            let checkpointed: Int = checkpoint[2]
+            guard busy == 0, checkpointed == log else {
+                throw NSError(domain: "IOSBackupFileCopier", code: 2, userInfo: [
+                    NSLocalizedDescriptionKey: "Database is busy. Try again in a moment."
+                ])
+            }
+            try FileManager.default.copyItem(at: sourceURL, to: destURL)
+        }
+    }
+
     nonisolated static func removeSQLiteSnapshot(at snapshotURL: URL) throws {
         for url in [snapshotURL, URL(fileURLWithPath: snapshotURL.path + "-wal"), URL(fileURLWithPath: snapshotURL.path + "-shm")] {
             if FileManager.default.fileExists(atPath: url.path) {
@@ -75,6 +103,53 @@ enum IOSBackupFileCopier {
         let backupsToRemove = try manualBackupSnapshotFiles(in: directoryURL).dropFirst(maxCount)
         for backupURL in backupsToRemove {
             try removeSQLiteSnapshot(at: backupURL)
+        }
+    }
+}
+
+enum IOSManualBackupOperation {
+    enum Outcome {
+        case completed
+        case failed(Error)
+
+        nonisolated var completionAccessibilityValue: String? {
+            switch self {
+            case .completed:
+                return "Backup created"
+            case .failed:
+                return nil
+            }
+        }
+
+        nonisolated var failure: Error? {
+            guard case let .failed(error) = self else { return nil }
+            return error
+        }
+    }
+
+    nonisolated static func createSnapshot(
+        from sourceURL: URL,
+        to destinationURL: URL,
+        in backupDirectory: URL,
+        reloadLedger: () throws -> Void
+    ) -> Outcome {
+        do {
+            try IOSBackupFileCopier.copySQLiteSnapshot(from: sourceURL, to: destinationURL)
+            do {
+                try IOSBackupFileCopier.pruneBackups(in: backupDirectory)
+            } catch {
+                do {
+                    try IOSBackupFileCopier.removeSQLiteSnapshot(at: destinationURL)
+                } catch let cleanupError {
+                    return .failed(IOSBackupFileCopier.CleanupFailure(originalError: error, cleanupError: cleanupError))
+                }
+                return .failed(error)
+            }
+
+            try reloadLedger()
+            return .completed
+        } catch {
+            return .failed(error)
         }
     }
 }
@@ -134,7 +209,14 @@ struct IOSBackupsPage: View {
                 ("How to Use It", "Tap 'Create Backup Now' to snapshot the current database. Automatic backups run daily. Up to 7 rolling backups are retained. Database restore must be done from the desktop application."),
             ])
         }
-        .task { if canManageSettings { loadData() } }
+        .task {
+            guard canManageSettings else { return }
+            do {
+                try loadData()
+            } catch {
+                errorMessage = userFriendlyError(error, context: "load backup status")
+            }
+        }
         .alert("Restore Not Available", isPresented: $showRestoreAlert) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -268,7 +350,7 @@ struct IOSBackupsPage: View {
 
     // MARK: - Data Loading
 
-    private func loadData() {
+    private func loadData() throws {
         // DB size
         if let path = dbPath,
            let attrs = try? FileManager.default.attributesOfItem(atPath: path),
@@ -279,16 +361,17 @@ struct IOSBackupsPage: View {
         }
 
         // Scan backups
-        if let dir = backupDir,
-           let backups = try? IOSBackupFileCopier.manualBackupSnapshotFiles(in: dir) {
-            backupCount = backups.count
-            if let newest = backups.first {
-                lastBackupTime = newest.lastPathComponent
-                    .replacingOccurrences(of: "wiredpart-backup-", with: "")
-                    .replacingOccurrences(of: ".sqlite", with: "")
-            } else {
-                lastBackupTime = nil
-            }
+        guard let dir = backupDir else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        let backups = try IOSBackupFileCopier.manualBackupSnapshotFiles(in: dir)
+        backupCount = backups.count
+        if let newest = backups.first {
+            lastBackupTime = newest.lastPathComponent
+                .replacingOccurrences(of: "wiredpart-backup-", with: "")
+                .replacingOccurrences(of: ".sqlite", with: "")
+        } else {
+            lastBackupTime = nil
         }
     }
 
@@ -299,7 +382,7 @@ struct IOSBackupsPage: View {
         backupSuccess = false
         errorMessage = nil
 
-        guard let sourcePath = dbPath, let dir = backupDir else {
+        guard let sourcePath = dbPath, let dir = backupDir, let database = appCore.db else {
             errorMessage = "Cannot locate database or backup directory."
             isCreatingBackup = false
             return
@@ -320,28 +403,19 @@ struct IOSBackupsPage: View {
         let backupName = "wiredpart-backup-\(timestamp).sqlite"
         let destURL = dir.appendingPathComponent(backupName)
 
-        do {
-            let sourceURL = URL(fileURLWithPath: sourcePath)
-            try IOSBackupFileCopier.copySQLiteSnapshot(from: sourceURL, to: destURL)
-            do {
-                try IOSBackupFileCopier.pruneBackups(in: dir)
-            } catch {
-                do {
-                    try IOSBackupFileCopier.removeSQLiteSnapshot(at: destURL)
-                } catch let cleanupError {
-                    throw IOSBackupFileCopier.CleanupFailure(originalError: error, cleanupError: cleanupError)
-                }
-                throw error
-            }
-
+        switch IOSManualBackupOperation.createSnapshot(
+            from: URL(fileURLWithPath: sourcePath),
+            to: destURL,
+            in: dir,
+            reloadLedger: loadData
+        ) {
+        case .completed:
             backupSuccess = true
-            loadData()
-
             Task {
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
                 backupSuccess = false
             }
-        } catch {
+        case let .failed(error):
             errorMessage = userFriendlyError(error, context: "manage backups")
         }
         isCreatingBackup = false

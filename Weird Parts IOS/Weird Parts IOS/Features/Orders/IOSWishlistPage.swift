@@ -851,9 +851,8 @@ struct IOSWishlistPage: View {
             // Auto-approval is a WRITE: if it throws, items that policy says should
             // auto-approve silently stay pending. Surface it as a banner (#1335)
             // while still loading the sections below so the page stays usable.
-            // Capture the raw error here and map it to user-facing copy inside
-            // MainActor.run — userFriendlyError is main-actor-isolated and must
-            // not be called from the detached task itself.
+            // Capture the raw error here, then map it while applying the related
+            // SwiftUI state update in MainActor.run below.
             var autoApprovalFailure: (any Error)?
             do {
                 _ = try service.processAutoApprovals(byUserId: currentUserId)

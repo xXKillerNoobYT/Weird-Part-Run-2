@@ -242,34 +242,41 @@ public enum ConflictResolver {
             }
 
             do {
-                try db.writer.write { dbConn in
+                let outcome = try db.writer.write { dbConn -> (applied: Int, conflicts: Int, skipped: Int) in
                     // Echo guard: while this transaction applies a PEER's change,
                     // the change-tracking triggers (migration 112) must not log
                     // the write — otherwise every applied change would be re-
                     // pushed back to the peer forever. The guard row lives only
                     // inside this transaction (rolled back with it on failure).
                     try dbConn.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
-                    defer { try? dbConn.execute(sql: "DELETE FROM _sync_apply_guard") }
+
+                    let outcome: (applied: Int, conflicts: Int, skipped: Int)
 
                     switch change.operation.uppercased() {
                     case "DELETE":
                         try applyDelete(db: dbConn, change: change, localDeviceId: localDevice)
-                        result.applied += 1
+                        outcome = (1, 0, 0)
 
                     case "INSERT":
                         let conflictCount = try applyInsert(db: dbConn, change: change, localDeviceId: localDevice)
-                        result.applied += 1
-                        result.conflicts += conflictCount
+                        outcome = (1, conflictCount, 0)
 
                     case "UPDATE":
                         let conflictCount = try applyUpdate(db: dbConn, change: change, localDeviceId: localDevice)
-                        result.applied += 1
-                        result.conflicts += conflictCount
+                        outcome = (1, conflictCount, 0)
 
                     default:
-                        result.skipped += 1
+                        outcome = (0, 0, 1)
                     }
+
+                    // Cleanup participates in the transaction: failure rolls back
+                    // the peer write instead of silently disabling local tracking.
+                    try dbConn.execute(sql: "DELETE FROM _sync_apply_guard")
+                    return outcome
                 }
+                result.applied += outcome.applied
+                result.conflicts += outcome.conflicts
+                result.skipped += outcome.skipped
             } catch ApplyError.missingLocalRecord {
                 // Fix #220: UPDATE for a record we don't have yet — count as skipped,
                 // not errored. A follow-up full-record resync should re-deliver it.
@@ -281,6 +288,62 @@ public enum ConflictResolver {
         }
 
         return result
+    }
+
+    /// Apply a batch in one database transaction or roll the entire batch back.
+    ///
+    /// Initial Bluetooth snapshots use this stricter contract: reporting an apply
+    /// failure while retaining a successful prefix would leave onboarding with a
+    /// partial company snapshot. Normal ongoing sync keeps the best-effort API above.
+    static func resolveAndApplyChangesAtomically(
+        db: AppDatabase,
+        changes: [IncomingChange],
+        localDeviceId: String? = nil
+    ) throws -> MergeResult {
+        let localDevice = localDeviceId ?? DeviceIdentity.current
+
+        return try db.writer.write { dbConn in
+            var result = MergeResult()
+            try dbConn.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
+            defer { try? dbConn.execute(sql: "DELETE FROM _sync_apply_guard") }
+
+            for change in changes {
+                guard isAllowedTable(change.tableName) else {
+                    result.skipped += 1
+                    continue
+                }
+
+                do {
+                    switch change.operation.uppercased() {
+                    case "DELETE":
+                        try applyDelete(db: dbConn, change: change, localDeviceId: localDevice)
+                        result.applied += 1
+                    case "INSERT":
+                        let conflictCount = try applyInsert(
+                            db: dbConn,
+                            change: change,
+                            localDeviceId: localDevice
+                        )
+                        result.applied += 1
+                        result.conflicts += conflictCount
+                    case "UPDATE":
+                        let conflictCount = try applyUpdate(
+                            db: dbConn,
+                            change: change,
+                            localDeviceId: localDevice
+                        )
+                        result.applied += 1
+                        result.conflicts += conflictCount
+                    default:
+                        result.skipped += 1
+                    }
+                } catch ApplyError.missingLocalRecord {
+                    result.skipped += 1
+                }
+            }
+
+            return result
+        }
     }
 
     /// Get unreviewed conflicts for admin review.
@@ -304,9 +367,12 @@ public enum ConflictResolver {
     ) throws {
         try db.writer.write { dbConn in
             try dbConn.execute(
-                sql: "UPDATE _conflict_log SET reviewed = 1 WHERE id = ?",
+                sql: "UPDATE _conflict_log SET reviewed = 1 WHERE id = ? AND reviewed = 0",
                 arguments: [conflictId]
             )
+            guard dbConn.changesCount == 1 else {
+                throw ConflictReviewError.conflictNotPending(conflictId)
+            }
         }
     }
 
@@ -320,25 +386,212 @@ public enum ConflictResolver {
 
     public enum ConflictReviewError: Error, LocalizedError, Sendable {
         case missingConflictId
+        case conflictNotPending(Int64)
         case tableNotAllowed(String)
         case invalidRecordId(String)
         case unknownField(table: String, field: String)
+        case fieldNotTextResolvable(table: String, field: String)
+        case missingLiveRecord(table: String, recordId: String)
+        case staleConflict(Int64)
         case deletionConflict
 
         public var errorDescription: String? {
             switch self {
             case .missingConflictId:
                 return "This sync conflict is missing its id. Reload conflicts and try again."
+            case .conflictNotPending(let id):
+                return "Sync conflict \(id) is no longer pending. Reload conflicts and try again."
             case .tableNotAllowed(let table):
                 return "The conflicted table \"\(table)\" is not a synced table, so its value cannot be edited from review."
             case .invalidRecordId(let id):
                 return "The conflicted record id \"\(id)\" is not valid."
             case .unknownField(let table, let field):
                 return "The field \"\(field)\" no longer exists on \"\(table)\", so this conflict can only be dismissed."
+            case .fieldNotTextResolvable(let table, let field):
+                return "The field \"\(field)\" on \"\(table)\" is not approved for merged-text resolution."
+            case .missingLiveRecord(let table, let recordId):
+                return "The conflicted \"\(table)\" record \(recordId) no longer exists. Reload conflicts and try again."
+            case .staleConflict(let id):
+                return "Sync conflict \(id) is stale because the live value changed after it was recorded. Reload conflicts and review the newer value."
             case .deletionConflict:
                 return "One side of this conflict deleted the record. Restoring a deleted record isn't supported from review yet — recreate it manually if needed."
             }
         }
+    }
+
+    /// Text fields for which a reviewer may persist an AI/device/manual String.
+    /// This is intentionally narrower than the table whitelist: arbitrary text
+    /// must never become a generic write primitive for financial or control data.
+    private static let textResolutionFields: Set<String> = [
+        "notes", "description", "content", "reason", "comment",
+        "body", "summary", "instructions", "message", "details",
+        "remarks", "observation",
+    ]
+
+    /// Shared field-policy check used by both conflict classification and the
+    /// persistence boundary so the UI cannot offer a write the core will reject.
+    public static func isTextResolutionField(_ fieldName: String) -> Bool {
+        textResolutionFields.contains(fieldName.lowercased())
+    }
+
+    /// Persist an explicit merged-text choice and review the conflict atomically.
+    ///
+    /// The conflict row is reloaded inside the transaction, so callers cannot
+    /// alter its table/field metadata. The live write, timestamp bump, audit/change
+    /// log, and reviewed flag either all commit or all roll back.
+    public static func applyTextConflictResolution(
+        db: AppDatabase,
+        conflict: ConflictLogEntry,
+        selectedValue: String
+    ) throws {
+        guard let conflictId = conflict.id else {
+            throw ConflictReviewError.missingConflictId
+        }
+
+        try db.writer.write { dbConn in
+            guard let persisted = try ConflictLogEntry.fetchOne(dbConn, key: conflictId),
+                  persisted.reviewed == 0 else {
+                throw ConflictReviewError.conflictNotPending(conflictId)
+            }
+            guard isAllowedTable(persisted.tableName) else {
+                throw ConflictReviewError.tableNotAllowed(persisted.tableName)
+            }
+            guard isTextResolutionField(persisted.fieldName) else {
+                throw ConflictReviewError.fieldNotTextResolvable(
+                    table: persisted.tableName,
+                    field: persisted.fieldName
+                )
+            }
+            guard let recordId = Int64(persisted.recordId) else {
+                throw ConflictReviewError.invalidRecordId(persisted.recordId)
+            }
+            if persisted.localValue == "(DELETED)" || persisted.remoteValue == "(DELETED)" {
+                throw ConflictReviewError.deletionConflict
+            }
+
+            let columns = try String.fetchAll(
+                dbConn,
+                sql: "SELECT name FROM pragma_table_info(?)",
+                arguments: [persisted.tableName]
+            )
+            guard columns.contains(persisted.fieldName) else {
+                throw ConflictReviewError.unknownField(
+                    table: persisted.tableName,
+                    field: persisted.fieldName
+                )
+            }
+
+            let oldValue = try String.fetchOne(
+                dbConn,
+                sql: "SELECT [\(persisted.fieldName)] FROM [\(persisted.tableName)] WHERE id = ?",
+                arguments: [recordId]
+            )
+            let exists = try Bool.fetchOne(
+                dbConn,
+                sql: "SELECT EXISTS(SELECT 1 FROM [\(persisted.tableName)] WHERE id = ?)",
+                arguments: [recordId]
+            ) ?? false
+            guard exists else {
+                throw ConflictReviewError.missingLiveRecord(
+                    table: persisted.tableName,
+                    recordId: persisted.recordId
+                )
+            }
+
+            // LWW already wrote the recorded winner before review. Refuse to
+            // overwrite any subsequent edit with a decision made from stale
+            // conflict text. Optional equality deliberately distinguishes SQL
+            // NULL from every non-NULL String; legacy "(NULL)" rows normalize to
+            // the same representation as a persisted NULL.
+            let recordedWinner = persisted.winner.lowercased() == "local"
+                ? persisted.localValue
+                : persisted.remoteValue
+            let expectedLiveValue = recordedWinner == "(NULL)" ? nil : recordedWinner
+            guard oldValue == expectedLiveValue else {
+                throw ConflictReviewError.staleConflict(conflictId)
+            }
+
+            let normalizedSelectedValue: String? = selectedValue == "(NULL)" ? nil : selectedValue
+
+            // Selecting the value that LWW already persisted is review-only. Do
+            // not bump updated_at or create sync traffic for a semantic no-op.
+            if normalizedSelectedValue == oldValue {
+                try dbConn.execute(
+                    sql: "UPDATE _conflict_log SET reviewed = 1 WHERE id = ? AND reviewed = 0",
+                    arguments: [conflictId]
+                )
+                guard dbConn.changesCount == 1 else {
+                    throw ConflictReviewError.conflictNotPending(conflictId)
+                }
+                return
+            }
+
+            // Suppress generic table triggers because this transaction writes one
+            // richer change entry containing both the selected and replaced text.
+            try dbConn.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
+
+            if columns.contains("updated_at") {
+                try dbConn.execute(
+                    sql: "UPDATE [\(persisted.tableName)] SET [\(persisted.fieldName)] = ?, updated_at = ? WHERE id = ?",
+                    arguments: [normalizedSelectedValue, CoreFormatters.nowISO(), recordId]
+                )
+            } else {
+                try dbConn.execute(
+                    sql: "UPDATE [\(persisted.tableName)] SET [\(persisted.fieldName)] = ? WHERE id = ?",
+                    arguments: [normalizedSelectedValue, recordId]
+                )
+            }
+
+            let changedJSON = try jsonString([persisted.fieldName: normalizedSelectedValue ?? NSNull()])
+            let oldJSON = try jsonString([persisted.fieldName: oldValue ?? NSNull()])
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO _change_log
+                        (device_id, table_name, record_id, operation, changed_fields, old_values)
+                    VALUES (?, ?, ?, 'UPDATE', ?, ?)
+                    """,
+                arguments: [
+                    DeviceIdentity.current,
+                    persisted.tableName,
+                    recordId,
+                    changedJSON,
+                    oldJSON,
+                ]
+            )
+
+            try dbConn.execute(
+                sql: "UPDATE _conflict_log SET reviewed = 1 WHERE id = ? AND reviewed = 0",
+                arguments: [conflictId]
+            )
+            guard dbConn.changesCount == 1 else {
+                throw ConflictReviewError.conflictNotPending(conflictId)
+            }
+
+            // A cleanup failure must abort and roll back the transaction. Silently
+            // leaving this row behind would disable change-tracking triggers.
+            try dbConn.execute(sql: "DELETE FROM _sync_apply_guard")
+        }
+    }
+
+    private static func jsonString(_ object: [String: Any]) throws -> String {
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    private static func valuesEquivalent(
+        _ lhs: String?,
+        _ rhs: String?,
+        numericAffinity: Bool
+    ) -> Bool {
+        if lhs == rhs { return true }
+        guard numericAffinity,
+              let lhs,
+              let rhs,
+              let lhsNumber = Decimal(string: lhs),
+              let rhsNumber = Decimal(string: rhs) else {
+            return false
+        }
+        return lhsNumber == rhsNumber
     }
 
     /// Apply the reviewer's chosen value to the live record, then mark the
@@ -364,72 +617,101 @@ public enum ConflictResolver {
             throw ConflictReviewError.missingConflictId
         }
 
-        let chosen = (choice == .keepLocal) ? conflict.localValue : conflict.remoteValue
-        let winnerIsChosen =
-            (choice == .keepLocal && conflict.winner.lowercased() == "local") ||
-            (choice == .keepRemote && conflict.winner.lowercased() == "remote")
-
-        if !winnerIsChosen {
-            // Deletion conflicts store a sentinel, not a field value — a field-level
-            // UPDATE cannot resurrect a deleted row.
-            if chosen == "(DELETED)" || conflict.localValue == "(DELETED)" || conflict.remoteValue == "(DELETED)" {
+        try db.writer.write { dbConn in
+            guard let persisted = try ConflictLogEntry.fetchOne(dbConn, key: conflictId),
+                  persisted.reviewed == 0 else {
+                throw ConflictReviewError.conflictNotPending(conflictId)
+            }
+            guard isAllowedTable(persisted.tableName) else {
+                throw ConflictReviewError.tableNotAllowed(persisted.tableName)
+            }
+            guard let recordId = Int64(persisted.recordId) else {
+                throw ConflictReviewError.invalidRecordId(persisted.recordId)
+            }
+            if persisted.localValue == "(DELETED)" || persisted.remoteValue == "(DELETED)" {
                 throw ConflictReviewError.deletionConflict
             }
-            guard isAllowedTable(conflict.tableName) else {
-                throw ConflictReviewError.tableNotAllowed(conflict.tableName)
+
+            let columns = try String.fetchAll(
+                dbConn,
+                sql: "SELECT name FROM pragma_table_info(?)",
+                arguments: [persisted.tableName]
+            )
+            guard columns.contains(persisted.fieldName) else {
+                throw ConflictReviewError.unknownField(table: persisted.tableName, field: persisted.fieldName)
             }
-            guard let recordId = Int64(conflict.recordId) else {
-                throw ConflictReviewError.invalidRecordId(conflict.recordId)
+            let declaredType = try String.fetchOne(
+                dbConn,
+                sql: "SELECT type FROM pragma_table_info(?) WHERE name = ?",
+                arguments: [persisted.tableName, persisted.fieldName]
+            )?.uppercased() ?? ""
+            let numericAffinity = ["INT", "REAL", "FLOA", "DOUB", "NUM", "DEC"]
+                .contains { declaredType.contains($0) }
+
+            let oldValue = try String.fetchOne(
+                dbConn,
+                sql: "SELECT [\(persisted.fieldName)] FROM [\(persisted.tableName)] WHERE id = ?",
+                arguments: [recordId]
+            )
+            let exists = try Bool.fetchOne(
+                dbConn,
+                sql: "SELECT EXISTS(SELECT 1 FROM [\(persisted.tableName)] WHERE id = ?)",
+                arguments: [recordId]
+            ) ?? false
+            guard exists else {
+                throw ConflictReviewError.missingLiveRecord(table: persisted.tableName, recordId: persisted.recordId)
             }
 
-            try db.writer.write { dbConn in
-                // Guard against the change-tracking triggers double-logging: this
-                // path records its own change entry via trackChange below.
+            let recordedWinner = persisted.winner.lowercased() == "local"
+                ? persisted.localValue
+                : persisted.remoteValue
+            let expectedLiveValue = recordedWinner == "(NULL)" ? nil : recordedWinner
+            guard valuesEquivalent(oldValue, expectedLiveValue, numericAffinity: numericAffinity) else {
+                throw ConflictReviewError.staleConflict(conflictId)
+            }
+
+            let chosen = (choice == .keepLocal) ? persisted.localValue : persisted.remoteValue
+            let writeValue: String? = chosen == "(NULL)" ? nil : chosen
+            if !valuesEquivalent(writeValue, oldValue, numericAffinity: numericAffinity) {
+                // Suppress generic triggers because this transaction records the
+                // selected and replaced values in one richer change entry.
                 try dbConn.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
-                defer { try? dbConn.execute(sql: "DELETE FROM _sync_apply_guard") }
-
-                // Whitelist the field against the table's real columns — conflict
-                // rows come from sync and must not be able to inject SQL.
-                let columns = try String.fetchAll(
-                    dbConn,
-                    sql: "SELECT name FROM pragma_table_info(?)",
-                    arguments: [conflict.tableName]
-                )
-                guard columns.contains(conflict.fieldName) else {
-                    throw ConflictReviewError.unknownField(table: conflict.tableName, field: conflict.fieldName)
-                }
-
-                let writeValue: String? = (chosen == "(NULL)") ? nil : chosen
                 if columns.contains("updated_at") {
                     try dbConn.execute(
-                        sql: "UPDATE [\(conflict.tableName)] SET [\(conflict.fieldName)] = ?, updated_at = ? WHERE id = ?",
+                        sql: "UPDATE [\(persisted.tableName)] SET [\(persisted.fieldName)] = ?, updated_at = ? WHERE id = ?",
                         arguments: [writeValue, CoreFormatters.nowISO(), recordId]
                     )
                 } else {
                     try dbConn.execute(
-                        sql: "UPDATE [\(conflict.tableName)] SET [\(conflict.fieldName)] = ? WHERE id = ?",
+                        sql: "UPDATE [\(persisted.tableName)] SET [\(persisted.fieldName)] = ? WHERE id = ?",
                         arguments: [writeValue, recordId]
                     )
                 }
+
+                let changedJSON = try jsonString([persisted.fieldName: writeValue ?? NSNull()])
+                let oldJSON = try jsonString([persisted.fieldName: oldValue ?? NSNull()])
+                try dbConn.execute(
+                    sql: """
+                        INSERT INTO _change_log
+                            (device_id, table_name, record_id, operation, changed_fields, old_values)
+                        VALUES (?, ?, ?, 'UPDATE', ?, ?)
+                        """,
+                    arguments: [DeviceIdentity.current, persisted.tableName, recordId, changedJSON, oldJSON]
+                )
             }
 
-            // Propagate the human decision to peers like any other local edit.
-            // recordId is the guard-validated Int64 from above — never a 0
-            // fallback. A nil chosen value means SQL NULL, same as the "(NULL)"
-            // sentinel: NSNull here makes jsonEncode drop the field, leaving a
-            // bare change entry whose enriched record_data carries the real NULL
-            // to peers — NOT an empty string (Copilot review on PR #1422).
-            let chosenIsNull = (chosen == nil || chosen == "(NULL)")
-            try ChangeTracker.trackChange(
-                db: db,
-                tableName: conflict.tableName,
-                recordId: recordId,
-                operation: .update,
-                changedFields: [conflict.fieldName: (chosenIsNull ? NSNull() : chosen! as Any)]
+            try dbConn.execute(
+                sql: "UPDATE _conflict_log SET reviewed = 1 WHERE id = ? AND reviewed = 0",
+                arguments: [conflictId]
             )
-        }
+            guard dbConn.changesCount == 1 else {
+                throw ConflictReviewError.conflictNotPending(conflictId)
+            }
 
-        try markConflictReviewed(db: db, conflictId: conflictId)
+            // Cleanup participates in the same transaction as the live write,
+            // audit row, and review flag; failure rolls all of them back.
+            try dbConn.execute(sql: "DELETE FROM _sync_apply_guard")
+        }
     }
 
     /// Get conflict statistics.

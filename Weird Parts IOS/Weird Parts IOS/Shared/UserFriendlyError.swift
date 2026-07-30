@@ -17,7 +17,7 @@ import WiredPartCore
 ///   "load trailer details", "load trailer locations", "load trailers",
 ///   "load truck tools", "load vehicle details", "load vehicles",
 ///   "load inspection data", "save inspection"
-func userFriendlyError(_ error: Error, context: String = "load data") -> String {
+nonisolated func userFriendlyError(_ error: Error, context: String = "load data") -> String {
     if let jobsError = error as? JobsService.JobsError,
        case .invalidClockTimestamp = jobsError {
         return "A saved clock entry has an invalid timestamp. Ask an admin to review the timesheet before using today's hours."
