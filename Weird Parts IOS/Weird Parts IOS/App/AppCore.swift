@@ -1105,6 +1105,13 @@ final class AppCore: ObservableObject {
             try seedDispatchBoardUITestingFixtures(db: db)
         }
 
+        // QR handoff tests create a real movement draft during their flow. Reset
+        // it once at launch so one XCTest case cannot alter another's starting
+        // state, while preserving the draft for the in-process scan handoff.
+        if ProcessInfo.processInfo.arguments.contains("-UITestingClearMovementWizardDraft") {
+            MovementWizardDraftStore.clear(userId: fixtureUserId)
+        }
+
         if suppressPostLoginOnboarding {
             UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
             UserDefaults.standard.set(true, forKey: "hasSeenModuleTour")
