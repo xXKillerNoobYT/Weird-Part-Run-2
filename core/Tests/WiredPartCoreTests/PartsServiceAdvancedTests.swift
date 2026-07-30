@@ -335,12 +335,9 @@ struct PartsServiceAdvancedTests {
 
     @Test("committed CRLF CSV fixtures preview and import every manifest row")
     func testCommittedCRLFFixturesPreviewAndImportEveryManifestRow() throws {
-        let repositoryRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let fixtureRoot = repositoryRoot.appendingPathComponent("docs/testing/parts-import-fixtures")
+        let fixtureRoot = try #require(
+            Bundle.module.url(forResource: "parts-import-fixtures", withExtension: nil)
+        )
         let manifestData = try Data(contentsOf: fixtureRoot.appendingPathComponent("manifest.json"))
         let manifest = try #require(JSONSerialization.jsonObject(with: manifestData) as? [String: Any])
         let files = try #require(manifest["files"] as? [[String: Any]])
