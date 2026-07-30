@@ -4472,6 +4472,516 @@
           "rows: rows.map"
         ]
       }
+    },
+    {
+      "id": "verification-my-verifications-submit-sheet",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/VerificationSubmitSheetRegressionTests.swift:testMyVerificationsPageOpensSubmitSheet",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Warehouse/IOSMyVerificationsPage.swift",
+      "invariant": "Migrated XCTest static source contract.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "IOSVerificationSubmitSheet("
+        ]
+      }
+    },
+    {
+      "id": "verification-audit-navigation",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/VerificationSubmitSheetRegressionTests.swift:testAuditPageExposesMyVerificationsNavigationLink",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Warehouse/IOSAuditPage.swift",
+      "invariant": "Migrated XCTest static source contract.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "IOSMyVerificationsPage()",
+          "My Verification Assignments"
+        ]
+      }
+    },
+    {
+      "id": "walking-path-confirmation",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/WalkingPathClearConfirmationRegressionTests.swift:testClearingSavedPathRequiresConfirmation",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Warehouse/WizardStepWalkingPath.swift",
+      "invariant": "Migrated XCTest static source contract.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "showClearConfirm = true",
+          "\"Clear walking path?\"",
+          "Button(\"Clear saved path\", role: .destructive) { clearSavedPath() }"
+        ],
+        "scoped": [
+          {
+            "start": "func clearPath(",
+            "end": "func clearSavedPath(",
+            "rule": {
+              "contains": [
+                "showClearConfirm = true"
+              ],
+              "not_contains": [
+                "saveStops"
+              ]
+            }
+          },
+          {
+            "start": "func clearSavedPath(",
+            "end": "func ",
+            "rule": {
+              "contains": [
+                "discardPendingUndo()"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "walking-path-preview-and-undo",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/WalkingPathClearConfirmationRegressionTests.swift:testPreviewDismissalStaysImmediate;testRemovingSingleStopOffersUndo",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Warehouse/WizardStepWalkingPath.swift",
+      "invariant": "Migrated XCTest static source contract.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "if isPreviewing {\n            previewStops = nil\n        } else {\n            showClearConfirm = true\n        }",
+          "lastRemovedStop = (areaId, index)",
+          "Button(\"Undo\") { undoRemoveStop() }",
+          "pathStops.insert(removed.areaId, at: min(removed.index, pathStops.count))",
+          ".accessibilityIdentifier(\"walkingPathUndoBar\")",
+          "undoDismissTask = Task { @MainActor in",
+          ".onDisappear { discardPendingUndo() }"
+        ]
+      }
+    },
+    {
+      "id": "warehouse-audit-fixture",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/WarehouseAuditFixtureRegressionTests.swift:testFixtureVerificationLookupStaysFlagGatedAndDeterministic",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Warehouse/IOSAuditPage.swift",
+      "invariant": "Migrated XCTest static source contract.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "private static let multiUserFixturePartCode = \"UITEST-MUV-001\"",
+          "ProcessInfo.processInfo.arguments.contains(Self.multiUserFixtureFlag)",
+          "private var fixtureVerificationItem: CountingItem?",
+          "$0.partCode == Self.multiUserFixturePartCode"
+        ]
+      }
+    },
+    {
+      "id": "warehouse-leaderboard-search",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/WarehouseLeaderboardSearchRegressionTests.swift:testPodiumIsHiddenWhileSearchIsActive;testFilteredRowsKeepOverallRank",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Warehouse/IOSWarehouseLeaderboardPage.swift",
+      "invariant": "Migrated XCTest static source contract.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "if searchText.isEmpty, leaderboard.count >= 3 {",
+          "Section(searchText.isEmpty ? \"Rankings\" : \"Search Results\")",
+          "if let rank = ranks[rating.userId] {",
+          "Dictionary(uniqueKeysWithValues: leaderboard.enumerated().map { ($0.element.userId, $0.offset + 1) })"
+        ],
+        "not_contains": [
+          "leaderboardRow(rank: index + 1",
+          "?? 0) + 1"
+        ]
+      }
+    },
+    {
+      "id": "warehouse-network-peer-browser",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/WarehouseNetworkPageRegressionTests.swift:testConnectedDevicesSectionUsesPeerBrowserInsteadOfStaticNotEnabledCopy",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Warehouse/IOSWarehouseNetworkPage.swift",
+      "invariant": "Migrated XCTest static source contract.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "case peerBrowser",
+          "IOSPeerBrowser()",
+          "syncManager.discoveredPeers.count",
+          "syncManager.startPeerDiscovery()"
+        ],
+        "not_contains": [
+          "Device network discovery is not enabled yet"
+        ]
+      }
+    },
+    {
+      "id": "warehouse-sticker-progress-scope",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/WarehouseStickerProgressScopeRegressionTests.swift:testStickerChecklistProgressUsesScopedKeyInsteadOfFloorPlanOnlyKey",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Warehouse/WarehouseWizardStep3.swift",
+      "invariant": "Migrated XCTest static source contract.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "wizard_checked_stickers_v2",
+          "scopedStickerProgressKey",
+          "getBusinessProfile",
+          "appCore.currentUser",
+          "fullLocationCode",
+          "deterministicSignature",
+          "removeObject(forKey: legacyStickerProgressKey)"
+        ],
+        "not_contains": [
+          "array(forKey: \"wizard_checked_stickers_\\(floorPlanId)\"",
+          "set(Array(checkedStickers), forKey: \"wizard_checked_stickers_\\(floorPlanId)\""
+        ]
+      }
+    },
+    {
+      "id": "weird-onboarding-peer-sync",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/Weird_Parts_IOSTests.swift:onboardingPeerDiscoveryKeepsLanAddressForPairing",
+      "target": "Weird Parts IOS/Weird Parts IOS/Sync/IOSSyncManager.swift",
+      "invariant": "Migrated XCTest static source contract.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "allowAnyCompanyPeerDiscovery: mode == .onboardingJoin",
+          "if mode == .existingCompanySync",
+          "Task { await pm.stopPeerSync() }",
+          "hasActiveMultipeerDiscovery: bluetoothDiscoveryEnabled && mode == .onboardingJoin",
+          "startMultipeer: bluetoothDiscoveryEnabled && (mode == .existingCompanySync || mode == .onboardingJoin)",
+          "startSyncServer: mode == .existingCompanySync",
+          "if await pm.getState().running",
+          "peerDiscoveryStartupTask?.cancel()",
+          "let startupGeneration = peerDiscoveryGeneration",
+          "guard isCurrentPeerDiscoveryStartup(startupGeneration) else { return }",
+          "if !isScanning",
+          "await pm.stopPeerSync()",
+          "private static func isManuallySyncablePeer(",
+          "return transport == \"lan\" && address != nil",
+          "let address = formattedPeerAddress(host: peer.host, port: Int(peer.port))",
+          "host.contains(\":\") && !host.hasPrefix(\"[\") ? \"[\\(host)]\" : host",
+          "await pm.stopMultipeerDiscovery()",
+          "let multipeerOnly = mpPeers.filter { !nonMultipeerIds.contains($0.id) }"
+        ]
+      }
+    },
+    {
+      "id": "weird-onboarding-pairing",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/Weird_Parts_IOSTests.swift:onboardingPeerDiscoveryKeepsLanAddressForPairing",
+      "target": "Weird Parts IOS/Weird Parts IOS/Auth/DevicePairingView.swift",
+      "invariant": "Migrated XCTest static source contract.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "address: peer.address ?? \"\"",
+          "shouldFallBackToLAN(e) && !shop.address.isEmpty",
+          "syncManager.stopPeerDiscovery()",
+          ".onDisappear",
+          "stopOnboardingDiscoveryIfAbandoned()",
+          "guard !Task.isCancelled else { return }",
+          "guard !navigateToSync else { return }",
+          "shop.address"
+        ]
+      }
+    },
+    {
+      "id": "weird-sub-schedule",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/Weird_Parts_IOSTests.swift:subSchedulePageExposesExplicitSoftDeleteCancellationAction",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Scheduling/IOSSubSchedulePage.swift",
+      "invariant": "Migrated XCTest static source contract.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "cancelSubcontractorSchedule",
+          "Cancel Schedule"
+        ]
+      }
+    },
+    {
+      "id": "weird-sub-schedule-no-status-cancel",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/Weird_Parts_IOSTests.swift:subSchedulePageExposesExplicitSoftDeleteCancellationAction",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Scheduling/CreateSubcontractorScheduleSheet.swift",
+      "invariant": "Migrated XCTest static source contract.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "not_contains": [
+          "\"cancelled\""
+        ]
+      }
+    },
+    {
+      "id": "weird-qr-start-failure",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/Weird_Parts_IOSTests.swift:qrScannerStartFailureIsSurfacedAndStreamFinished",
+      "target": "Weird Parts IOS/Weird Parts IOS/Scanning/IOSQRScanner.swift",
+      "invariant": "Migrated XCTest static source contract.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "catch {",
+          "activeContinuation?.yield(.error(errorMessage))",
+          "activeContinuation?.finish()"
+        ],
+        "not_contains": [
+          "try? scanner.startScanning()"
+        ]
+      }
+    },
+    {
+      "id": "weird-timesheet-correction",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/Weird_Parts_IOSTests.swift:timesheetCorrectionRejectsMalformedOriginalTimestampsBeforeSave",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Reports/IOSTimesheetsPage.swift",
+      "invariant": "Migrated XCTest static source contract.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "ReportsError.invalidTimesheetOriginalTimestamp(\"clock-in\").localizedDescription",
+          "ReportsError.invalidTimesheetOriginalTimestamp(\"clock-out\").localizedDescription",
+          ".disabled(isSaving || originalTimestampError != nil)",
+          "if let originalTimestampError"
+        ],
+        "not_contains": [
+          "CoreFormatters.parseDateTime(segment.clockIn) ?? Date()"
+        ]
+      }
+    },
+    {
+      "id": "weird-dispatch-conflict",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/Weird_Parts_IOSTests.swift:dispatchAssignmentConflictCheckFailureShowsActionError",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Scheduling/IOSDispatchPage.swift",
+      "invariant": "Migrated XCTest static source contract.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "actionError = userFriendlyError(error, context: \"check time-off conflicts\")\n            return"
+        ]
+      }
+    },
+    {
+      "id": "weird-dispatch-load",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/Weird_Parts_IOSTests.swift:createDispatchSheetShowsActionableLoadFailures",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Scheduling/CreateDispatchSheet.swift",
+      "invariant": "Migrated XCTest static source contract.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "jobLoadError = result.jobLoadError",
+          "employeeLoadError = result.employeeLoadError",
+          "userFriendlyError(error, context: context)",
+          "Text(\"No active jobs\")",
+          "Text(\"No employees found\")",
+          "Label(\"Retry\", systemImage: \"arrow.clockwise\")",
+          "Retry loading jobs",
+          "Retry loading employees"
+        ],
+        "not_contains": [
+          "try? jobService.listJobs",
+          "try? peopleService.listEmployees",
+          ".accessibilityLabel(retryLabel)\n        }\n        .accessibilityElement(children: .combine)"
+        ]
+      }
+    },
+    {
+      "id": "weird-questionnaire-order",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/Weird_Parts_IOSTests.swift:questionnaireSubmitRunsBreakVerificationBeforeSavingResponses",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Jobs/IOSQuestionnairePage.swift",
+      "invariant": "Migrated XCTest static source contract.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "try handleBreakVerification()",
+          "private func handleBreakVerification() throws"
+        ],
+        "not_contains": [
+          "try? breakSvc.autoFillBreaksForDay"
+        ],
+        "ordered": [
+          [
+            "try handleBreakVerification()",
+            "try service.saveClockOutResponses"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "weird-supplier-channel-error",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/Weird_Parts_IOSTests.swift:supplierChannelCreationFailureShowsLoadError",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Parts/PartsSuppliersPage.swift",
+      "invariant": "Migrated XCTest static source contract.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "loadError = userFriendlyError(error, context: \"create supplier channel\")"
+        ]
+      }
+    },
+    {
+      "id": "weird-silent-company-setup",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/Weird_Parts_IOSTests.swift:silentFailureUmbrellaSurfacesRepresentativeErrors",
+      "target": "Weird Parts IOS/Weird Parts IOS/Auth/CompanySetupWizard.swift",
+      "invariant": "Migrated XCTest static source contract.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "saveError = userFriendlyError(error, context: \"load saved setup progress\")"
+        ],
+        "not_contains": [
+          "try? appCore.settingsService?.loadSetupDraft()"
+        ]
+      }
+    },
+    {
+      "id": "weird-silent-jobs",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/Weird_Parts_IOSTests.swift:silentFailureUmbrellaSurfacesRepresentativeErrors",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Jobs/JobsListPage.swift",
+      "invariant": "Migrated XCTest static source contract.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "loadError = userFriendlyError(error, context: \"update job status\")"
+        ],
+        "not_contains": [
+          "guard let service = appCore.jobsService else { return }"
+        ]
+      }
+    },
+    {
+      "id": "weird-silent-schedule",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/Weird_Parts_IOSTests.swift:silentFailureUmbrellaSurfacesRepresentativeErrors",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Scheduling/IOSScheduleCalendarPage.swift",
+      "invariant": "Migrated XCTest static source contract.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "dayDetailError = \"Scheduling service not available\"",
+          "dayDetailError = userFriendlyError(error, context: \"load selected day schedule\")",
+          "ErrorStateView(message: dayDetailError) { loadDayDetail() }"
+        ],
+        "regex": [
+          "(?s)^(?:(?!catch\\s*\\{\\s*dayEntries\\s*=\\s*\\[\\]\\s*timeOffEntries\\s*=\\s*\\[\\]).)*$"
+        ]
+      }
+    },
+    {
+      "id": "weird-silent-sync",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/Weird_Parts_IOSTests.swift:silentFailureUmbrellaSurfacesRepresentativeErrors",
+      "target": "Weird Parts IOS/Weird Parts IOS/Sync/IOSSyncManager.swift",
+      "invariant": "Migrated XCTest static source contract.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "syncSettingsReadFailed(error, context: \"load auto-sync setting\")",
+          "syncSettingsReadFailed(error, context: \"load sync server address\")",
+          "syncSettingsReadFailed(error, context: \"load pairing status\")",
+          "guard lastSurfacedSyncReadFailure != failureKey else { return }",
+          "context: \"load sync conflict count\""
+        ],
+        "not_contains": [
+          "guard let map = try? settingsService?.getSettingsByCategory(\"sync\")",
+          "(try? settingsService?.isAutoSyncEnabled()) ?? true",
+          "let addr = (try? service.getSettingsByCategory(\"sync\"))?[\"shop_server_address\"]",
+          "try? ConflictResolver.getConflictStats(db: db)"
+        ]
+      }
+    },
+    {
+      "id": "weird-backup-order",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/Weird_Parts_IOSTests.swift:manualBackupSidecarCopiesAreNotSwallowedBeforeSuccessState",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSBackupsPage.swift",
+      "invariant": "Migrated XCTest static source contract.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "try IOSBackupFileCopier.copySQLiteSnapshot",
+          "try IOSBackupFileCopier.pruneBackups",
+          "createdURLs.reversed()",
+          "try IOSBackupFileCopier.removeSQLiteSnapshot(at: destinationURL)"
+        ],
+        "not_contains": [
+          "try? FileManager.default.copyItem",
+          "try? FileManager.default.removeItem"
+        ],
+        "ordered": [
+          [
+            "try IOSBackupFileCopier.copySQLiteSnapshot",
+            "try IOSBackupFileCopier.pruneBackups"
+          ],
+          [
+            "try IOSBackupFileCopier.pruneBackups",
+            "backupSuccess = true"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "weird-export-snapshot",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/Weird_Parts_IOSTests.swift:fullDatabaseExportDoesNotCopyMainDatabaseFileDirectly;dataExportCompletionPresentsShareSheetAndHandlesEmptyTables",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSDataExportPage.swift",
+      "invariant": "Migrated XCTest static source contract.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "try IOSDatabaseExportSnapshotter.exportSQLiteSnapshot",
+          "PRAGMA wal_checkpoint(TRUNCATE)",
+          "let busy: Int = checkpoint[0]",
+          "AppCore.databasePath(isUITesting: uiTestingMode)",
+          "Task.detached(priority: .userInitiated)",
+          "await MainActor.run",
+          ".sheet(item: $activeSheet)",
+          "case share([URL])",
+          "case .share(let urls):",
+          "ReportShareSheet(items: urls)",
+          "if urls.isEmpty {",
+          "No rows were exported from the selected tables"
+        ],
+        "not_contains": [
+          "copyItem(at: URL(fileURLWithPath: dbPath), to: destURL)",
+          "showShareSheet"
+        ],
+        "ordered": [
+          [
+            "source.write",
+            "FileManager.default.copyItem(at: sourceURL, to: destURL)"
+          ],
+          [
+            "if urls.isEmpty {",
+            "exportSuccess = true"
+          ],
+          [
+            "exportSuccess = true",
+            "activeSheet = .share(urls)"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "weird-pricing-margin-source",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/Weird_Parts_IOSTests.swift:manualPricingMarginPreviewUsesVisibleMarginInput",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Parts/PartsPricingPage.swift",
+      "invariant": "Migrated XCTest static source contract.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "parseMarginPercent(marginText, fieldName: \"Margin\")",
+          "return Self.sellPrice(weightedAvgCost: row.weightedAvgCost, marginPercent: margin)",
+          "return Self.sellPrice(weightedAvgCost: row.weightedAvgCost, markupPercent: markup)"
+        ]
+      }
     }
   ]
 }
