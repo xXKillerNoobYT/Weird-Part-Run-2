@@ -5,13 +5,20 @@ Run from the repo root with:
     python3 tests/static/test_ai_help_context_coverage.py
 """
 
+import json
+import os
 from pathlib import Path
 import re
+import subprocess
+import sys
+import tempfile
 import unittest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HELP_REGISTRY = REPO_ROOT / "Weird Parts IOS/Weird Parts IOS/Shared/HelpContentRegistry.swift"
 AI_PANEL = REPO_ROOT / "Weird Parts IOS/Weird Parts IOS/AI/IOSAIAssistantPanel.swift"
+NAVIGATION = REPO_ROOT / "Weird Parts IOS/Weird Parts IOS/Navigation/NavigationConfig.swift"
+INVENTORY = REPO_ROOT / "docs/testing/ai-page-context-inventory.json"
 
 
 def swift_file(relative_path: str) -> str:
@@ -23,6 +30,9 @@ class AIHelpContextCoverageTests(unittest.TestCase):
     def setUpClass(cls):
         cls.registry = HELP_REGISTRY.read_text()
         cls.panel = AI_PANEL.read_text()
+        cls.navigation = NAVIGATION.read_text()
+        cls.inventory = json.loads(INVENTORY.read_text())
+        cls.app_tab_ids = set(re.findall(r'AppTab\(id: "([^"]+)"', cls.navigation))
         cls.help_page_ids = set(re.findall(r'pageId: "([^"]+)"', cls.registry))
         cls.registry_notifications = dict(
             re.findall(r'"(WiredPart\.[^"]+)": "([^"]+)"', cls.registry)
@@ -42,6 +52,37 @@ class AIHelpContextCoverageTests(unittest.TestCase):
             if page_id not in self.help_page_ids
         }
         self.assertEqual({}, missing)
+
+    def test_inventory_covers_every_current_app_tab_without_gaps(self):
+        app_tabs = {
+            page_id: path
+            for page_id, path in re.findall(
+                r'AppTab\(id: "([^"]+)"[^\n]*path: "([^"]+)"',
+                self.navigation,
+            )
+        }
+        inventory_by_id = {screen["id"]: screen for screen in self.inventory["screens"]}
+
+        self.assertEqual(set(), set(app_tabs) - set(inventory_by_id))
+        self.assertNotIn("gap", {screen["disposition"] for screen in self.inventory["screens"]})
+        self.assertEqual(
+            {},
+            {
+                page_id: (inventory_by_id[page_id]["path"], path)
+                for page_id, path in app_tabs.items()
+                if inventory_by_id[page_id]["path"] != path
+            },
+        )
+
+    def test_every_inventory_exemption_has_source_and_rationale(self):
+        failures = []
+        for screen in self.inventory["screens"]:
+            source = REPO_ROOT / screen["source"]
+            if not source.is_file() or not screen["rationale"].strip():
+                failures.append(screen["id"])
+            if screen.get("helpPageId") is None and not screen.get("helpRationale", "").strip():
+                failures.append(f"{screen['id']}:help")
+        self.assertEqual([], failures)
 
     def test_help_notification_mapping_covers_active_page_tracker(self):
         missing = {
@@ -83,12 +124,18 @@ class AIHelpContextCoverageTests(unittest.TestCase):
             "settings-app-config",
         }
         missing_help = sorted(required_page_ids - self.help_page_ids)
-        missing_tracker = sorted(required_page_ids - set(self.tracker_notifications.values()))
+        identity_page_ids = set(self.tracker_notifications.values()) | self.app_tab_ids
+        missing_tracker = sorted(required_page_ids - identity_page_ids)
         self.assertEqual([], missing_help, "missing HelpContentRegistry entries")
         self.assertEqual([], missing_tracker, "missing active page tracker mappings")
 
     def test_known_stale_context_pages_repost_on_filter_search_tab_or_form_changes(self):
         freshness_expectations = {
+            "Weird Parts IOS/Weird Parts IOS/Features/Parts/PartsSuppliersPage.swift": [
+                "onChange(of: searchText)",
+                "onChange(of: filterActive)",
+                "onChange(of: sortOption)",
+            ],
             "Weird Parts IOS/Weird Parts IOS/Features/Jobs/IOSQuestionnairePage.swift": [
                 "onChange(of: answers)",
                 "onChange(of: dailyReportText)",
@@ -140,6 +187,79 @@ class AIHelpContextCoverageTests(unittest.TestCase):
             if absent:
                 missing[path] = absent
         self.assertEqual({}, missing)
+
+    def test_supplier_page_uses_aggregate_context_builder_not_full_service_dump(self):
+        suppliers = swift_file(
+            "Weird Parts IOS/Weird Parts IOS/Features/Parts/PartsSuppliersPage.swift"
+        )
+        self.assertIn("enum SupplierAIPageContextBuilder", suppliers)
+        self.assertIn("SupplierAIPageContextBuilder.build(", suppliers)
+        self.assertNotIn("buildSupplierAIContext()", suppliers)
+
+    def test_reviewed_non_router_details_have_canonical_inventory_rows(self):
+        required = {
+            "fleet-vehicle-detail": "IOSVehicleDetailPage",
+            "tools-detail": "IOSToolDetailPage",
+            "people-customer-detail": "IOSCustomerDetailPage",
+            "fleet-trailer-detail": "IOSTrailerDetailPage",
+            "people-contractor-detail": "IOSContractorDetailPage",
+        }
+        inventory_ids = {screen["id"] for screen in self.inventory["screens"]}
+        canonical_destinations = {
+            destination["destination"]
+            for destination in self.inventory["nonRouterAudit"]["destinations"]
+        }
+
+        self.assertEqual(set(), set(required) - inventory_ids)
+        self.assertEqual(set(), set(required.values()) - canonical_destinations)
+
+    def test_verifier_rejects_omitted_non_router_detail_inventory_row(self):
+        inventory = dict(self.inventory)
+        inventory["screens"] = [
+            screen for screen in self.inventory["screens"]
+            if screen["id"] != "fleet-vehicle-detail"
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            inventory_path = Path(directory) / "inventory.json"
+            inventory_path.write_text(json.dumps(inventory))
+            environment = os.environ.copy()
+            environment["AI_CONTEXT_INVENTORY_PATH"] = str(inventory_path)
+            result = subprocess.run(
+                [sys.executable, "scripts/verify-ai-help-context-coverage.py"],
+                cwd=REPO_ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("non-router destination registry failures", result.stderr)
+        self.assertIn("fleet-vehicle-detail", result.stderr)
+
+    def test_verifier_rejects_omitted_deep_route_inventory_row(self):
+        inventory = dict(self.inventory)
+        inventory["screens"] = [
+            screen for screen in self.inventory["screens"]
+            if screen["id"] != "settings-about"
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            inventory_path = Path(directory) / "inventory.json"
+            inventory_path.write_text(json.dumps(inventory))
+            environment = os.environ.copy()
+            environment["AI_CONTEXT_INVENTORY_PATH"] = str(inventory_path)
+            result = subprocess.run(
+                [sys.executable, "scripts/verify-ai-help-context-coverage.py"],
+                cwd=REPO_ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("deep/alias registry page IDs missing from inventory", result.stderr)
+        self.assertIn("settings-about", result.stderr)
 
 
 if __name__ == "__main__":
