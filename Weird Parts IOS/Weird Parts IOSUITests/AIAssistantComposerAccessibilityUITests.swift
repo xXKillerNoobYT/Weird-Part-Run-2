@@ -57,6 +57,7 @@ final class AIAssistantComposerAccessibilityUITests: XCTestCase {
         XCTAssertFalse(send.label.isEmpty, "The Send action must have a usable accessibility name.")
         XCTAssertGreaterThanOrEqual(send.frame.width, 44, "The exported Send target must be at least 44pt wide.")
         XCTAssertGreaterThanOrEqual(send.frame.height, 44, "The exported Send target must be at least 44pt high.")
+        XCTAssertFalse(send.isEnabled, "Send must stay disabled until the composer contains a message.")
         print(
             "[WEI-1505] composer=\(composer.frame.width)x\(composer.frame.height) "
                 + "send=\(send.frame.width)x\(send.frame.height)"
@@ -64,6 +65,11 @@ final class AIAssistantComposerAccessibilityUITests: XCTestCase {
 
         let informationalQuery = "What does the draft filter mean?"
         composer.tap()
+        XCTAssertGreaterThan(
+            app.keyboards.count,
+            0,
+            "Tapping the labelled composer must move input focus to it."
+        )
         composer.typeText(informationalQuery)
         XCTAssertTrue(send.isEnabled, "Send should enable after the user enters an informational question.")
         send.tap()
