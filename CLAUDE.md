@@ -120,16 +120,20 @@ The runner API requires a GitHub token with permission to read repository Action
 
 This repo is currently under the user's personal GitHub account (`xXKillerNoobYT`), not a GitHub organization. Do not assume organization teams, organization policy pages, organization-level settings, or organization Copilot controls exist. Verify the repo owner before applying GitHub admin instructions. If a requested control is organization-only, document it as not applicable unless/until the user transfers the repo to an organization; use repo-level or user-account-level settings where available. See `docs/github-account-context.md`.
 
-## GitHub Copilot PR Review Gate
+## PR Review-Before-Merge (Copilot gate suspended)
 
-Owner direction tracked in Paperclip WEI-3851/WEI-3852 supersedes older attempts to remove GitHub Copilot from the merge path. For every PR before merge:
+Owner direction 2026-07-30 (this supersedes the WEI-3851/WEI-3852 Copilot gate): the GitHub Copilot review gate is **suspended** — GitHub was silently dropping Copilot reviewer requests (quota exhausted) and the owner is considering cancelling the Copilot subscription. Do not request Copilot reviewers and do not block merges waiting for Copilot. PRs #1525/#1542 (which re-enabled fail-closed Copilot/multi-lane gates) were closed per this decision.
 
-1. Request a GitHub Copilot PR review/comment through GitHub review tooling the same way you would request a user review.
-2. Do not merge until Copilot has left a review/comment, unless there is explicit owner-approved evidence that Copilot review is unavailable for that PR. Waiting about 30 minutes between review/fix cycles is acceptable.
-3. If Copilot finds issues, route the fix work through the normal Codex/Hermes-local implementation lane or a human. Copilot review comments/suggestions are review input, not permission to use Copilot as a local Paperclip provider/tooling route.
-4. After fixes land, self-review, run required local/CI checks, and re-request/wait for Copilot again when the PR materially changed. Repeat until no blocking issues remain.
+The review responsibility moves to the driving agent. For every PR before merge:
+
+1. **Review the diff yourself (file-as-a-whole) before merging** — correctness, security direction, test quality (no tautological source-scan assertions), and consistency with `docs/plans/`.
+2. Do not merge with failing or undelivered required checks; required checks are iOS Beta Gate (iPhone/iPad), CodeQL `Analyze (swift)`, and Tracked artifact guard.
+3. If review finds issues, route fix work through the normal Codex/Hermes-local implementation lane or a human.
+4. After fixes land, re-review what materially changed, keep the branch current with `main`, and re-run checks.
 5. Branches of branches and PRs of PRs are allowed when they improve quality or isolate fixes.
-6. Merge readiness now includes: linked Paperclip/GitHub issues resolved, branch current with `main`, required checks green, unresolved review threads resolved, required Copilot review/comment satisfied, and no owner/security/product blocker.
+6. Merge readiness: linked Paperclip/GitHub issues resolved, branch current with `main`, required checks green, unresolved review threads resolved, agent review done, and no owner/security/product blocker.
+
+If the owner re-enables Copilot review later, this section reverts to the WEI-3851/WEI-3852 flow.
 
 **Rules:**
 
