@@ -134,6 +134,170 @@ struct PanelScheduleTests {
         #expect(persisted.circuits.map(\.spaceNumber) == [1])
     }
 
+    @Test("Panel types expose picker options derived from global supported sizes",
+          arguments: [
+            (PanelType.mdp, [42]),
+            (PanelType.subPanel, [20, 24, 30, 42]),
+            (PanelType.loadCenter, [20, 24, 30]),
+            (PanelType.smallPanel, [8, 12, 16, 20]),
+            (PanelType.disconnect, [2])
+          ])
+    func panelTypeAllowedSpacesComposeWithGlobalNormalization(
+        panelType: PanelType,
+        expectedSpaces: [Int]
+    ) {
+        #expect(panelType.allowedTotalSpaces == expectedSpaces)
+        #expect(panelType.allowedTotalSpaces.allSatisfy(PanelSchedule.supportedTotalSpaces.contains))
+        #expect(!panelType.allows(totalSpaces: expectedSpaces.last! + 1))
+    }
+
+    @Test("Malformed load values stay circuit-editable and repairable without circuit loss")
+    func malformedMDPLoadCanBeCorrectedWithoutLosingCircuits() throws {
+        let decoded = PanelSchedule(
+            panelType: .mdp,
+            totalSpaces: -2,
+            circuits: [
+                CircuitEntry(id: "visible", spaceNumber: 1, circuitDescription: "Office", isSpare: false),
+                CircuitEntry(id: "preserved", spaceNumber: 20, circuitDescription: "Shop", isSpare: false)
+            ]
+        )
+
+        let display = decoded.clampingTotalSpacesToSupportedRange()
+
+        #expect(display.totalSpaces == 20)
+        #expect(display.circuits.map(\.id) == ["visible", "preserved"])
+        #expect(display.panelSettingsValidationError == .invalidPanelTypeSpaceCount(
+            panelType: .mdp,
+            spaces: 20,
+            allowedSpaces: [42]
+        ))
+
+        // Safe-loaded schedules can continue through circuit edit/save paths
+        // before a user explicitly repairs their type/size settings.
+        var repaired = display
+        try repaired.moveCircuit(id: "visible", to: 3)
+        try repaired.validated()
+        try repaired.updatePanelSettings(panelType: .mdp, totalSpaces: 42)
+
+        #expect(repaired.panelType == .mdp)
+        #expect(repaired.totalSpaces == 42)
+        #expect(repaired.circuits.map(\.id) == ["visible", "preserved"])
+        #expect(repaired.circuits.first { $0.id == "visible" }?.spaceNumber == 3)
+        #expect(repaired.normalizedForPersistence().circuits.map(\.id) == ["visible", "preserved"])
+    }
+
+    @Test("Normal persistence retains safe-loaded legacy circuits until panel settings are corrected")
+    func safeLoadedMalformedMDPSaveRetainsCircuitOutsideDisplayRange() throws {
+        let decoded = PanelSchedule(
+            panelType: .mdp,
+            totalSpaces: -2,
+            circuits: [
+                CircuitEntry(id: "edited", spaceNumber: 1, circuitDescription: "Office", isSpare: false),
+                CircuitEntry(id: "retained", spaceNumber: 21, circuitDescription: "Legacy equipment", isSpare: false)
+            ]
+        )
+
+        var safeLoaded = decoded.clampingTotalSpacesToSupportedRange()
+        #expect(safeLoaded.totalSpaces == 20)
+        #expect(safeLoaded.panelSettingsValidationError != nil)
+
+        // This mirrors a normal circuit edit followed by the builder's ordinary
+        // persistence path; it must not silently remove the retained circuit.
+        try safeLoaded.moveCircuit(id: "edited", to: 3)
+        let persistedBeforeSettingsCorrection = safeLoaded.normalizedForPersistence()
+        #expect(persistedBeforeSettingsCorrection.circuits.map(\.id) == ["edited", "retained"])
+        #expect(persistedBeforeSettingsCorrection.circuits.first { $0.id == "edited" }?.spaceNumber == 3)
+        #expect(persistedBeforeSettingsCorrection.circuits.first { $0.id == "retained" }?.spaceNumber == 21)
+
+        try safeLoaded.updatePanelSettings(panelType: .mdp, totalSpaces: 42)
+        let persistedAfterSettingsCorrection = safeLoaded.normalizedForPersistence()
+        #expect(persistedAfterSettingsCorrection.totalSpaces == 42)
+        #expect(persistedAfterSettingsCorrection.circuits.map(\.id) == ["edited", "retained"])
+    }
+
+    @Test("Invalid user panel-space edits are rejected atomically without circuit loss")
+    func invalidPanelSpaceEditLeavesScheduleUnchanged() throws {
+        var schedule = PanelSchedule(
+            panelType: .loadCenter,
+            totalSpaces: 20,
+            circuits: [
+                CircuitEntry(id: "office", spaceNumber: 1, circuitDescription: "Office", isSpare: false),
+                CircuitEntry(id: "shop", spaceNumber: 20, circuitDescription: "Shop", isSpare: false)
+            ]
+        )
+
+        #expect(throws: PanelScheduleValidationError.invalidPanelTypeSpaceCount(
+            panelType: .disconnect,
+            spaces: 20,
+            allowedSpaces: [2]
+        )) {
+            try schedule.updatePanelSettings(panelType: .disconnect, totalSpaces: 20)
+        }
+
+        #expect(schedule.panelType == .loadCenter)
+        #expect(schedule.totalSpaces == 20)
+        #expect(schedule.circuits.map(\.id) == ["office", "shop"])
+        #expect(schedule.circuits.map(\.spaceNumber) == [1, 20])
+    }
+
+    @Test("Shrinking panel settings rejects hidden circuits atomically")
+    func shrinkingPanelSettingsLeavesCircuitsAndSettingsUnchanged() throws {
+        var schedule = PanelSchedule(
+            panelType: .mdp,
+            totalSpaces: 42,
+            circuits: [
+                CircuitEntry(id: "main", spaceNumber: 1, circuitDescription: "Main feed", isSpare: false),
+                CircuitEntry(id: "high-space", spaceNumber: 42, circuitDescription: "Roof unit", isSpare: false)
+            ]
+        )
+
+        #expect(throws: PanelScheduleValidationError.panelSettingsWouldHideCircuits(
+            panelType: .disconnect,
+            spaces: 2,
+            circuitSpaces: [42]
+        )) {
+            try schedule.updatePanelSettings(panelType: .disconnect, totalSpaces: 2)
+        }
+
+        #expect(schedule.panelType == .mdp)
+        #expect(schedule.totalSpaces == 42)
+        #expect(schedule.circuits.map(\.id) == ["main", "high-space"])
+        #expect(schedule.circuits.map(\.spaceNumber) == [1, 42])
+    }
+
+    @Test("Shrinking panel settings rejects a double breaker whose second occupied space would be hidden")
+    func shrinkingPanelSettingsRejectsHiddenDoubleBreakerOccupancy() throws {
+        var schedule = PanelSchedule(
+            panelType: .loadCenter,
+            totalSpaces: 24,
+            circuits: [
+                CircuitEntry(
+                    id: "range",
+                    spaceNumber: 19,
+                    breakerAmps: 40,
+                    breakerType: .double,
+                    circuitDescription: "Range",
+                    isSpare: false,
+                    classification: .special
+                )
+            ]
+        )
+
+        #expect(throws: PanelScheduleValidationError.panelSettingsWouldHideCircuits(
+            panelType: .loadCenter,
+            spaces: 20,
+            circuitSpaces: [19]
+        )) {
+            try schedule.updatePanelSettings(panelType: .loadCenter, totalSpaces: 20)
+        }
+
+        #expect(schedule.panelType == .loadCenter)
+        #expect(schedule.totalSpaces == 24)
+        #expect(schedule.circuits.map(\.id) == ["range"])
+        #expect(schedule.circuits.map(\.spaceNumber) == [19])
+        #expect(schedule.occupiedSpaces(for: schedule.circuits[0]) == [19, 21])
+    }
+
     // MARK: - Circuit classification, drag/drop move, and position validation
 
     @Test("Double breakers reserve same-side adjacent spaces")
