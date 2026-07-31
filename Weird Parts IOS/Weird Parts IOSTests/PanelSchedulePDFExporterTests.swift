@@ -127,10 +127,14 @@ final class PanelSchedulePDFExporterTests: XCTestCase {
 
     func testWriteToTemporaryFileRejectsInvalidCircuitPositionsWithoutWritingPDF() throws {
         let panelName = "InvalidPanel\(UUID().uuidString)"
-        var schedule = PanelSchedule(panelName: panelName, totalSpaces: 4)
+        // 20 spaces is settings-valid for the default .loadCenter type — the
+        // panel-settings repair check (#1514) runs before circuit validation,
+        // so this fixture must pass it to exercise doubleBreakerOutOfRange.
+        // A double at space 19 occupies 19 + 21, overrunning the panel.
+        var schedule = PanelSchedule(panelName: panelName, totalSpaces: 20)
         schedule.circuits = [
             CircuitEntry(
-                spaceNumber: 3,
+                spaceNumber: 19,
                 breakerAmps: 30,
                 breakerType: .double,
                 circuitDescription: "Out of Range",
@@ -145,7 +149,7 @@ final class PanelSchedulePDFExporterTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: expectedURL) }
 
         XCTAssertThrowsError(try exporter.writeToTemporaryFile()) { error in
-            XCTAssertEqual(error as? PanelScheduleValidationError, .doubleBreakerOutOfRange(space: 3))
+            XCTAssertEqual(error as? PanelScheduleValidationError, .doubleBreakerOutOfRange(space: 19))
         }
         XCTAssertFalse(FileManager.default.fileExists(atPath: expectedURL.path), "An invalid panel schedule must not write a PDF for export or print.")
     }
