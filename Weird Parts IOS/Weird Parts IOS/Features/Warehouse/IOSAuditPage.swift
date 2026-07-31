@@ -134,7 +134,11 @@ struct IOSAuditPage: View {
             }
         }
         .navigationTitle("Warehouse Audit")
-        .searchable(text: $searchText, prompt: "Search parts...")
+        .searchable(
+            text: $searchText,
+            placement: .navigationBarDrawer(displayMode: .always),
+            prompt: "Search parts..."
+        )
         .onChange(of: searchText) { _, _ in postAIContext() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
