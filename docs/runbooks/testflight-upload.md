@@ -88,6 +88,29 @@ If CLI upload fails on App Store Connect authentication, fall back to the
 Organizer path: copy the archive into `~/Library/Developer/Xcode/Archives/` so
 it appears in Organizer, then upload from there.
 
+## Release notes — REQUIRED for every beta build (owner directive 2026-07-31)
+
+Every TestFlight build ships with **"What's changed"** and **"What to look for"**
+notes. A build without them is not done uploading.
+
+1. **Write the notes BEFORE uploading** to
+   `docs/app-store/testflight-notes/build-<N>.md` (template in that directory).
+   Source the "What's changed" list from the PRs merged since the previous
+   build's commit (`git log <prev-build-tag-or-sha>..HEAD --oneline` filtered to
+   user-visible changes — testers don't care about CI plumbing). "What to look
+   for" names the specific screens/flows to exercise, ALWAYS including re-tests
+   of every open piece of beta feedback (check with the local feedback script,
+   see below).
+2. **Set them on the build in App Store Connect** once processing finishes:
+   TestFlight → the build → Test Details ("What to Test"), or via the ASC API
+   `betaBuildLocalizations` (`whatsNew` field). The internal Home Base group
+   sees these notes in the TestFlight app.
+3. **Check beta feedback first**: `~/.claude/scripts/ascenv/bin/python
+   ~/.claude/scripts/asc_feedback.py` lists screenshot + crash feedback
+   (local-only script; the ASC key never enters this public repo). Every
+   feedback item gets a GitHub issue and a line in the next build's "What to
+   look for".
+
 ## History
 
 - **2026-07-27 23:07** — upload of build 1 failed: archive was Mac Catalyst
