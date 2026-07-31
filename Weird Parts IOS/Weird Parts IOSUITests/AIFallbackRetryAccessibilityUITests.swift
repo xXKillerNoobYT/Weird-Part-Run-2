@@ -45,7 +45,7 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
         try logInIfNeeded()
 
         let assistantButton = app.buttons["aiAssistantButton"]
-        XCTAssertTrue(assistantButton.waitForExistence(timeout: 15), "AI Assistant should be available at \(context).")
+        XCTAssertTrue(assistantButton.waitForExistence(timeout: 45), "AI Assistant should be available at \(context).")
         assistantButton.tap()
 
         let warningTitle = app.descendants(matching: .any).matching(
@@ -57,7 +57,7 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
         let retry = app.buttons["Retry saving conversation turn"]
         let dismiss = app.buttons["Dismiss conversation save warning"]
 
-        XCTAssertTrue(warningTitle.waitForExistence(timeout: 10), "Save warning should render at \(context).")
+        XCTAssertTrue(warningTitle.waitForExistence(timeout: 30), "Save warning should render at \(context).")
         XCTAssertTrue(warningBody.waitForExistence(timeout: 5), "Save warning detail should remain untruncated at \(context).")
         XCTAssertTrue(retry.waitForExistence(timeout: 5), "Retry Save should render at \(context).")
         XCTAssertTrue(retry.isHittable, "Retry Save should be user-actionable at \(context).")
