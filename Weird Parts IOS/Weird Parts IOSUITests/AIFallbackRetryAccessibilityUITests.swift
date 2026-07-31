@@ -124,15 +124,17 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
         ownerRow.tap()
 
         let pinField = app.secureTextFields["loginPINField"]
-        XCTAssertTrue(pinField.waitForExistence(timeout: 5), "PIN field should appear.")
+        // 30 s: AX5 Dynamic Type on iPad relayouts the login list slowly under
+        // CI load — a 5 s wait flaked (2026-07-31, line: PIN field should appear).
+        XCTAssertTrue(pinField.waitForExistence(timeout: 30), "PIN field should appear.")
         pinField.tap()
         pinField.typeText("1234")
 
         let done = app.buttons["loginPINDoneButton"]
-        if done.waitForExistence(timeout: 2), done.isHittable { done.tap() }
+        if done.waitForExistence(timeout: 5), done.isHittable { done.tap() }
 
         let signIn = app.buttons["loginSignInButton"]
-        XCTAssertTrue(signIn.waitForExistence(timeout: 5), "Sign In should appear.")
+        XCTAssertTrue(signIn.waitForExistence(timeout: 30), "Sign In should appear.")
         signIn.tap()
 
         // 75 s, not 25: post-sign-in service bootstrap competes with the
