@@ -96,7 +96,9 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
         let ownerRow = app.buttons.matching(
             NSPredicate(format: "identifier BEGINSWITH 'loginUserRow_'")
         ).firstMatch
-        XCTAssertTrue(ownerRow.waitForExistence(timeout: 30), "UI test owner should be available.")
+        // 90 s: this is the first post-launch wait, so it also absorbs cold
+        // bootstrap (SQLCipher open + migrations) on a contended CI Mac.
+        XCTAssertTrue(ownerRow.waitForExistence(timeout: 90), "UI test owner should be available.")
         ownerRow.tap()
 
         let pinField = app.secureTextFields["loginPINField"]
@@ -111,7 +113,11 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
         XCTAssertTrue(signIn.waitForExistence(timeout: 5), "Sign In should appear.")
         signIn.tap()
 
-        let deadline = Date().addingTimeInterval(25)
+        // 75 s, not 25: post-sign-in service bootstrap competes with the
+        // sibling device-class gate job on the same CI Mac (both gates run
+        // concurrently on one machine) — the shell can take over 25 s to
+        // appear under that load even though the app is healthy.
+        let deadline = Date().addingTimeInterval(75)
         while Date() < deadline {
             let skip = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Skip'")).firstMatch
             let gotIt = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Got It'")).firstMatch
