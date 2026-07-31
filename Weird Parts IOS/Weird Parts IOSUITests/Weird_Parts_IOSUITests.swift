@@ -1785,6 +1785,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             "-UITestingStage8Reports"
         ] + launchArguments
         app.launch()
+        awaitBootstrapCompletion()
     }
 
     private func relaunchForWEI3988BackupRestoreSmoke(_ launchArguments: [String]) {
@@ -1796,6 +1797,22 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             "-UITestingWEI3988BackupRestoreSmoke"
         ] + launchArguments
         app.launch()
+        awaitBootstrapCompletion()
+    }
+
+    /// CI Macs run the iPhone and iPad gate jobs concurrently on one physical
+    /// machine; a cold bootstrap (SQLCipher open + migrations + fixture
+    /// seeding) can outlast the per-page 20 s waits under that contention —
+    /// observed 2026-07-30 with the app still on the "Loading WiredPart..."
+    /// splash 44 s after launch. Absorb bootstrap here so page assertions
+    /// measure rendering, not database work.
+    private func awaitBootstrapCompletion(timeout: TimeInterval = 120) {
+        let splash = app.staticTexts["Loading WiredPart..."]
+        guard splash.waitForExistence(timeout: 2) else { return }
+        XCTAssertTrue(
+            splash.waitForNonExistence(timeout: timeout),
+            "App bootstrap should finish (splash cleared) before page assertions"
+        )
     }
 
     private func relaunchForWEI3988RestoredTarget(_ launchArguments: [String]) {
