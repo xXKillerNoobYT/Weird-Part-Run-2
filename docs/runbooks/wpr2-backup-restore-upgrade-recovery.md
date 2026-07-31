@@ -183,3 +183,19 @@ Automated critical-record backup/restore proof: complete via WEI-3986 evidence.
 Cross-version migration proof: complete via WEI-3987 evidence.
 Phone/tablet user-like restore smoke: complete via WEI-3988 evidence.
 Real beta data entry: still requires the final WEI-3990 GO/NO-GO comment naming the tested candidate branch/SHA and this runbook revision.
+
+## Shared-Mac backup retention (added 2026-07-31)
+
+The CI Mac also hosts Paperclip and hermes; their backups repeatedly filled
+the disk and tripped the beta-gate preflight. Standing policy:
+
+- **Paperclip** (`~/.paperclip/instances/default/`): `database.backup.retentionDays = 7`
+  in `config.json`. Known bug: backups run hourly despite `intervalMinutes: 1440`
+  and retention does not enforce (Paperclip WEI-4801). If
+  `data/backups` exceeds ~20 GB, thin to newest-6 plus one per day.
+- **hermes** (`~/.hermes/`): keep the newest backup and newest state-snapshot;
+  prune older sets. `state.db` VACUUM requires a quiet window (agents stopped)
+  and free space equal to the DB size.
+- **Gate preflight** is 30 GiB (`MINIMUM_FREE_GIB` in
+  `scripts/ci/run-ios-beta-gate.sh`); the gate also reclaims stale local
+  DerivedData (see the preflight-cleanup change from #1537/#1536-era work).
