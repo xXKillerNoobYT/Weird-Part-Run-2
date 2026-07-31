@@ -62,6 +62,31 @@ final class PanelSchedulePDFExporterTests: XCTestCase {
         XCTAssertGreaterThan(data.count, 0, "Exporting a schedule with a malformed totalSpaces should still normalize and render, not crash or produce an empty file.")
     }
 
+    func testExportRequiresRepairForSafeLoadedLegacyPanelSettings() {
+        let schedule = PanelSchedule(
+            panelName: "Legacy MDP",
+            panelType: .mdp,
+            totalSpaces: -2,
+            circuits: [
+                CircuitEntry(id: "visible", spaceNumber: 1, circuitDescription: "Office", isSpare: false),
+                CircuitEntry(id: "retained", spaceNumber: 21, circuitDescription: "Legacy equipment", isSpare: false)
+            ]
+        )
+
+        XCTAssertThrowsError(
+            try PanelSchedulePDFExporter(schedule: schedule, options: PanelScheduleExportOptions())
+                .writeToTemporaryFile()
+        ) { error in
+            guard case PanelScheduleExportError.panelSettingsRequireRepair(let validationError) = error else {
+                return XCTFail("Expected a repair-required export error, got \(error)")
+            }
+            XCTAssertEqual(
+                validationError,
+                .invalidPanelTypeSpaceCount(panelType: .mdp, spaces: 20, allowedSpaces: [42])
+            )
+        }
+    }
+
     func testRenderPDFGuardsAgainstNegativeTotalSpacesWhenCalledDirectly() throws {
         // Directly exercises the `max(schedule.totalSpaces / 2, 0)` guard in
         // `drawScheduleTable` by calling the `internal` `renderPDF(schedule:)`

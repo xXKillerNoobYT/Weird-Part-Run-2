@@ -1,15 +1,97 @@
 # WiredPart
 
-Native iOS field-service operations app for an electrical contracting shop. WiredPart manages parts inventory, warehouse operations, fleet tracking, job labor, procurement, scheduling, reporting, notebooks, chat/RFIs, and local device sync from a SwiftUI app backed by a shared Swift package.
+**The electrician's field app that never needs a signal.**
 
-Tracking:
+Parts, panels, purchasing, jobs, and warehouse — built for electricians first,
+especially crews working remote sites with little or no cell or Wi-Fi service.
+Everything works completely offline; your data lives encrypted on your own
+devices and syncs directly between them when they're near each other. No cloud.
+No accounts. No signal required, ever.
 
-- GitHub: [xXKillerNoobYT/Weird-Part-Run-2#942](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/942)
-- Paperclip parent: `WEI-3096`
-- Paperclip active implementation: `WEI-3099`
-- Paperclip QA review: `WEI-3100`
+[![TestFlight Beta](https://img.shields.io/badge/TestFlight-Join%20the%20Beta-blue?logo=apple)](https://testflight.apple.com/join/may2fTH9)
+![Platform](https://img.shields.io/badge/iPhone%20%26%20iPad-iOS%2026%2B-lightgrey?logo=apple)
+![Offline first](https://img.shields.io/badge/Offline-first-success)
 
-## Start Here
+<p align="center">
+  <img src="docs/readme-assets/dashboard.png" width="240" alt="WiredPart dashboard on iPhone showing clock-in, quick actions, and inventory KPIs. All visible content is synthetic demo data." />
+  &nbsp;
+  <img src="docs/readme-assets/warehouse.png" width="240" alt="Warehouse dashboard with audit score, stock health, and guided movement quick actions. All visible content is synthetic demo data." />
+  &nbsp;
+  <img src="docs/readme-assets/dispatch.png" width="240" alt="Dispatch board with scheduling entries. All visible content is synthetic demo data." />
+</p>
+
+## Why WiredPart
+
+Most field apps assume you have bars. Electricians work in basements,
+mechanical rooms, metal buildings, and job sites an hour past the last cell
+tower. WiredPart is **local-first by design**:
+
+- **Zero-signal operation** — every feature works with no connection at all.
+- **Your data stays yours** — encrypted SQLite on-device (SQLCipher); syncs
+  device-to-device over Bluetooth / local Wi-Fi (Apple Multipeer). There is no
+  server, no account, no tracking. The App Store privacy label is simply
+  **"Data Not Collected."**
+- **On-device AI** — Apple Intelligence answers questions and drives filters
+  with nothing sent off the phone. Works in a faraday cage.
+
+## What it does today
+
+| | |
+| --- | --- |
+| 🔩 **Parts & inventory** | Full catalog with categories, brands, suppliers, pricing tiers, MIN/TARGET/MAX stock rules, low-stock alerts, forecasting, QR part labels |
+| 🏭 **Warehouse** | Guided movement wizard, floor plans, bin locations, receiving, staging, returns, rolling audits with search |
+| 🧾 **Orders & purchasing** | Job parts orders → purchase orders in one lifecycle, procurement planner, supplier preferences, PDF bundles, approvals |
+| 🛠️ **Jobs & labor** | Clock in/out with GPS, questionnaires, daily reports, job costing rollups, budget alerts, per-job notebooks |
+| 🚚 **Fleet & tools** | Vehicles, trailers, inspections, maintenance, mileage; tool registry with kits, checkout/return |
+| 👷 **People & scheduling** | Employees, certifications, permissions, calendar, dispatch board, time off |
+| 📊 **Reports** | Timesheets, spending, daily summaries, pre-billing exports with period locking |
+
+## Beta status — what's solid, what's rough, what's next
+
+The app is in **open beta**. Beta testers are real users and every report
+shapes the release.
+
+**Solid in this beta:** the daily loop — parts catalog and stock, warehouse
+movements and audits, jobs with clock/labor/daily reports, JPO→PO ordering,
+fleet, tools, scheduling, reports.
+
+**In beta, still hardening:** device-to-device sync (encryption and conflict
+review recently reworked), Chat / Q&A / RFIs, AI assistant coverage across
+every page.
+
+**Not ready yet / planned:**
+- **Panel Schedule Builder Pro** — build panel schedules fast (tandems, quads,
+  phase balance) and print a professional company-letterhead schedule for
+  permanent install in the panel. Design is complete
+  ([plan](docs/plans/panel-schedule-builder-visual-redesign.md)); implementation
+  is queued.
+- Alternate app icons and native Icon Composer variants.
+- Internet/remote sync between shops (on hold — local sync first).
+- Desktop/Mac distribution (the iOS app is the product for now).
+
+## 🚀 Join the beta
+
+1. Install TestFlight on your iPhone or iPad.
+2. Tap **[Join the WiredPart beta](https://testflight.apple.com/join/may2fTH9)**.
+3. First launch runs a local setup wizard — create your admin PIN and go.
+4. Found something broken or missing? Send it right from TestFlight
+   (screenshots welcome) or open a
+   [GitHub issue](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues).
+   The [Beta Tester Guide](docs/BETA-TESTER-GUIDE.md) covers install, first
+   launch, and reporting in detail.
+
+> Screenshots in this README are iOS Simulator captures using synthetic demo
+> data only — see [the asset register](docs/readme-assets/README-ASSET-REVIEW.md).
+
+---
+
+## For developers
+
+Native SwiftUI app backed by a shared Swift package. The app is intentionally
+local-first: core business rules live in `core/Sources/WiredPartCore` where
+they can be tested without booting the UI; SwiftUI feature screens stay thin.
+
+### Start Here
 
 | Need | Read |
 | --- | --- |
@@ -23,7 +105,7 @@ Tracking:
 | Design philosophy | [docs/KEY-PRINCIPLES.md](docs/KEY-PRINCIPLES.md) |
 | Historical implementation context | [docs/DEVELOPMENT-HANDOFF.md](docs/DEVELOPMENT-HANDOFF.md) |
 
-## Repository Map
+### Repository Map
 
 ```text
 Weird-Part-Run-2/
@@ -45,7 +127,7 @@ Weird-Part-Run-2/
 └── xcode-ai/                         AI-agent prompts, skills, and observations
 ```
 
-## Architecture
+### Architecture
 
 | Area | Technology |
 | --- | --- |
@@ -57,9 +139,7 @@ Weird-Part-Run-2/
 | Tests | Swift Testing for core package, Xcode test plans/XCUITest for app flows |
 | Automation | GitHub Actions plus local self-hosted Mac runner for Xcode/iOS work |
 
-The app is intentionally local-first. Core business rules belong in `core/Sources/WiredPartCore` where they can be tested without booting the UI. SwiftUI feature screens should remain thin composition layers over shared services, view models, and app navigation state.
-
-## Feature Areas
+### Feature Areas
 
 | Area | Purpose | Primary App Path |
 | --- | --- | --- |
@@ -78,7 +158,7 @@ The app is intentionally local-first. Core business rules belong in `core/Source
 | Office | office management dashboards and admin workflows | `Features/Office` |
 | Settings | company config, security, sync, theme, devices, AI settings | `Features/Settings` |
 
-## Common Commands
+### Common Commands
 
 ```bash
 # Core package tests
@@ -98,13 +178,18 @@ xcodebuild \
 
 For PR validation that needs iOS/macOS/Xcode, prefer the repository's local self-hosted Mac runner labels documented in [docs/QA-PROCESS.md](docs/QA-PROCESS.md). Do not call a WPR2 PR blocked only because GitHub-hosted macOS capacity or billing is unavailable until the local runner state has been checked.
 
-## Work Rules
+### Work Rules
 
 - Keep generated/runtime files out of commits. Run `python3 scripts/guard-tracked-artifacts.py` before handing off.
 - Put domain rules in `WiredPartCore` first when practical, then adapt them in the app.
 - Add or update the smallest relevant test for behavior changes.
 - Capture UI evidence for user-facing changes: route/screen, device or simulator, viewport/orientation, command, and result.
 - Link the GitHub issue and Paperclip ID in docs, PRs, and handoff comments when a change is part of tracked work.
+
+### Tracking
+
+- GitHub: [xXKillerNoobYT/Weird-Part-Run-2#942](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/942)
+- Paperclip parent: `WEI-3096` · active implementation: `WEI-3099` · QA review: `WEI-3100`
 
 ## License
 

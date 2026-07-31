@@ -6,11 +6,14 @@ import WiredPartCore
 
 enum PanelScheduleExportError: LocalizedError {
     case outputPathUnavailable
+    case panelSettingsRequireRepair(PanelScheduleValidationError)
 
     var errorDescription: String? {
         switch self {
         case .outputPathUnavailable:
             return "The generated PDF could not be validated."
+        case .panelSettingsRequireRepair(let error):
+            return "Correct the panel settings before exporting. \(error.localizedDescription)"
         }
     }
 }
@@ -53,11 +56,20 @@ struct PanelSchedulePDFExporter {
 
     func writeToTemporaryFile(fileManager: FileManager = .default) throws -> URL {
         // Normalize malformed dimensions and stale, invisible entries first
-        // (#1239), then reject conflicts in the schedule that will be rendered.
-        // Export and print share this entry point, so neither path can create a
-        // PDF for an overlapping circuit or a double breaker that overruns the
-        // visible panel.
+        // (#1239), then fail closed before rendering, in two layers:
+        // 1. A safe-loaded legacy type/size mismatch deliberately retains
+        //    circuits outside the normalized display range until the user
+        //    corrects panel settings — rendering only visible rows would
+        //    silently omit them from the PDF, so surface the actionable
+        //    model error (#1514).
+        // 2. Reject conflicts in the schedule that will be rendered —
+        //    overlapping circuits, double breakers overrunning the visible
+        //    panel (#1515). Export and print share this entry point, so
+        //    neither path can produce a bad PDF.
         let normalizedSchedule = schedule.normalizedForPersistence()
+        if let validationError = normalizedSchedule.panelSettingsValidationError {
+            throw PanelScheduleExportError.panelSettingsRequireRepair(validationError)
+        }
         try normalizedSchedule.validated()
 
         let directory = fileManager.temporaryDirectory.appendingPathComponent("PanelSchedules", isDirectory: true)
