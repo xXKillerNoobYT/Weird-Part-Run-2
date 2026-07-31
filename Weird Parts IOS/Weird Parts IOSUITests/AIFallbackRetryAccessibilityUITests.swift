@@ -46,7 +46,6 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
 
         let assistantButton = app.buttons["aiAssistantButton"]
         XCTAssertTrue(assistantButton.waitForExistence(timeout: 45), "AI Assistant should be available at \(context).")
-        assistantButton.tap()
 
         let warningTitle = app.descendants(matching: .any).matching(
             NSPredicate(format: "label == %@", "Conversation turn was not saved")
@@ -57,7 +56,30 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
         let retry = app.buttons["Retry saving conversation turn"]
         let dismiss = app.buttons["Dismiss conversation save warning"]
 
-        XCTAssertTrue(warningTitle.waitForExistence(timeout: 30), "Save warning should render at \(context).")
+        // The assistant button can be momentarily covered by late-arriving
+        // onboarding overlays (Got It / Skip hints), which swallow the first
+        // tap without any test-visible failure — the panel never opens and the
+        // fixture warning never renders (flaked 3x on CI, 2026-07-31, across
+        // both Dynamic Type variants). Tap, confirm the panel actually opened
+        // by watching for the fixture warning, and re-tap after clearing
+        // overlays when it did not.
+        var panelOpened = false
+        for _ in 0..<3 {
+            if assistantButton.exists, assistantButton.isHittable {
+                assistantButton.tap()
+            }
+            if warningTitle.waitForExistence(timeout: 10) {
+                panelOpened = true
+                break
+            }
+            for prefix in ["Got It", "Skip"] {
+                let overlay = app.buttons.matching(
+                    NSPredicate(format: "label BEGINSWITH %@", prefix)
+                ).firstMatch
+                if overlay.exists, overlay.isHittable { overlay.tap() }
+            }
+        }
+        XCTAssertTrue(panelOpened, "Save warning should render at \(context).")
         XCTAssertTrue(warningBody.waitForExistence(timeout: 5), "Save warning detail should remain untruncated at \(context).")
         XCTAssertTrue(retry.waitForExistence(timeout: 5), "Retry Save should render at \(context).")
         XCTAssertTrue(retry.isHittable, "Retry Save should be user-actionable at \(context).")
