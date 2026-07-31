@@ -37,7 +37,12 @@ fi
 runner_temp="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
 runtime_version="${IOS_RUNTIME_VERSION:-26.5}"
 runtime_id="com.apple.CoreSimulator.SimRuntime.iOS-${runtime_version//./-}"
-minimum_free_gib="${MINIMUM_FREE_GIB:-60}"
+# A full gate run (workspace build + two test phases + xcresult bundles)
+# consumes well under 20 GiB; 30 GiB keeps real headroom without failing
+# closed on a Mac whose other tenants (Paperclip/hermes state and backups)
+# legitimately hold large data sets. Was 60, which parked every PR whenever
+# unrelated agents' storage grew (2026-07-28/30/31 incidents).
+minimum_free_gib="${MINIMUM_FREE_GIB:-30}"
 simulator_boot_command_timeout_seconds="${SIMULATOR_BOOT_COMMAND_TIMEOUT_SECONDS:-120}"
 simulator_boot_timeout_seconds="${SIMULATOR_BOOT_TIMEOUT_SECONDS:-600}"
 simulator_boot_recovery_timeout_seconds="${SIMULATOR_BOOT_RECOVERY_TIMEOUT_SECONDS:-600}"

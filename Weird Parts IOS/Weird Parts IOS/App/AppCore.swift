@@ -1409,13 +1409,23 @@ final class AppCore: ObservableObject {
                     WHERE notes = 'WEI-3295 Stage 8 reports viewport seed'
                     """
             )
+            // Seed inside the CURRENT local day, never "yesterday": report
+            // pages default to the "This Period" range (pay-period start ..
+            // now), and a pay-period boundary falling on today puts any
+            // yesterday-dated seed into the PREVIOUS period — every gate run
+            // then fails with "No labor entries found for the selected
+            // period" until the next boundary (observed fleet-wide on
+            // 2026-07-30). Start-of-local-day is always >= the period start
+            // and <= now, so it is in-range on every calendar date.
             try dbConn.execute(
                 sql: """
                     INSERT INTO labor_entries
                     (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours,
                      status, notes, deleted_at, created_at)
-                    VALUES (?, ?, datetime('now', '-1 day'), datetime('now', '-1 day', '+9 hours'),
-                            8.0, 1.0, 'completed', 'WEI-3295 Stage 8 reports viewport seed', NULL, datetime('now', '-1 day'))
+                    VALUES (?, ?, datetime('now', 'localtime', 'start of day', 'utc'),
+                            datetime('now'),
+                            8.0, 1.0, 'completed', 'WEI-3295 Stage 8 reports viewport seed', NULL,
+                            datetime('now', 'localtime', 'start of day', 'utc'))
                     """,
                 arguments: [userId, jobId]
             )
@@ -1425,8 +1435,9 @@ final class AppCore: ObservableObject {
                     INSERT OR IGNORE INTO purchase_orders
                     (po_number, supplier_id, status, order_date, subtotal, tax_amount, shipping_cost,
                      total_cost, notes, submitted_by, deleted_at, created_at, updated_at)
-                    VALUES ('PO-WEI3295-STAGE8', ?, 'ordered', date('now', '-1 day'), 127.50, 0, 0,
-                            127.50, 'WEI-3295 Stage 8 reports viewport seed', ?, NULL, datetime('now', '-1 day'), datetime('now'))
+                    VALUES ('PO-WEI3295-STAGE8', ?, 'ordered', date('now', 'localtime'), 127.50, 0, 0,
+                            127.50, 'WEI-3295 Stage 8 reports viewport seed', ?, NULL,
+                            datetime('now', 'localtime', 'start of day', 'utc'), datetime('now'))
                     """,
                 arguments: [supplierId, userId]
             )
