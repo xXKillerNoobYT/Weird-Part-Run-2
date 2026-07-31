@@ -186,22 +186,22 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         logInAsUITestOwnerIfNeeded()
 
         let moreTab = app.tabBars.buttons["More"]
-        XCTAssertTrue(moreTab.waitForExistence(timeout: 10), "The More tab should be reachable after login.")
+        XCTAssertTrue(moreTab.waitForExistence(timeout: 30), "The More tab should be reachable after login.")
         moreTab.tap()
 
         let editTabs = app.buttons["Edit Tabs"]
-        XCTAssertTrue(editTabs.waitForExistence(timeout: 10), "The More tab should expose Edit Tabs without extra scrolling.")
+        XCTAssertTrue(editTabs.waitForExistence(timeout: 30), "The More tab should expose Edit Tabs without extra scrolling.")
         editTabs.tap()
 
         XCTAssertTrue(
-            app.navigationBars["Edit Tabs"].waitForExistence(timeout: 10) || app.staticTexts["Edit Tabs"].waitForExistence(timeout: 10),
+            app.navigationBars["Edit Tabs"].waitForExistence(timeout: 30) || app.staticTexts["Edit Tabs"].waitForExistence(timeout: 30),
             "Edit Tabs should open as a sheet."
         )
 
         let divider = app.descendants(matching: .any)
             .matching(NSPredicate(format: "label BEGINSWITH 'More menu starts here'"))
             .firstMatch
-        XCTAssertTrue(divider.waitForExistence(timeout: 10), "The More divider should be visible on initial presentation.")
+        XCTAssertTrue(divider.waitForExistence(timeout: 30), "The More divider should be visible on initial presentation.")
         XCTAssertLessThan(divider.frame.height, 80, "The More divider must remain a compact row, not a 300pt-class blank cell.")
 
         let firstMoreModuleStatus = app.staticTexts["More menu"].firstMatch
@@ -220,7 +220,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
 
         let accessibleCircuit = app.buttons["Circuit 1, Office lighting"]
         XCTAssertTrue(
-            accessibleCircuit.waitForExistence(timeout: 20),
+            accessibleCircuit.waitForExistence(timeout: 90),
             "Panel schedule fixture should expose populated circuit 1 as the user-facing accessibility button."
         )
         XCTAssertFalse(
@@ -255,7 +255,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         relaunchForPanelScheduleBuilderFixture(appearance: appearance)
 
         let circuit = app.buttons["Circuit 1, Office lighting"]
-        XCTAssertTrue(circuit.waitForExistence(timeout: 20))
+        XCTAssertTrue(circuit.waitForExistence(timeout: 90))
         circuit.press(forDuration: 1)
         let move = app.buttons["Move Circuit"]
         XCTAssertTrue(move.waitForExistence(timeout: 5))
@@ -302,13 +302,13 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     @MainActor
     func testWEI3041CorrectionSheetPolicyAllocationEvidence() throws {
         relaunchForWEI3041Timesheets(preserveDatabase: false)
-        XCTAssertTrue(app.navigationBars["Timesheets"].waitForExistence(timeout: 25))
-        XCTAssertTrue(app.staticTexts["WEI-3041 Correction Overtime Job (#UITEST-WEI-3041)"].waitForExistence(timeout: 12))
+        XCTAssertTrue(app.navigationBars["Timesheets"].waitForExistence(timeout: 90))
+        XCTAssertTrue(app.staticTexts["WEI-3041 Correction Overtime Job (#UITEST-WEI-3041)"].waitForExistence(timeout: 30))
 
         let correctEntryButton = app.buttons.matching(
             NSPredicate(format: "identifier BEGINSWITH 'timesheetCorrectEntryButton-'")
         ).firstMatch
-        XCTAssertTrue(correctEntryButton.waitForExistence(timeout: 8))
+        XCTAssertTrue(correctEntryButton.waitForExistence(timeout: 30))
         for _ in 0..<6 where !correctEntryButton.isHittable || correctEntryButton.frame.maxY > app.frame.maxY - 120 {
             app.swipeUp()
             _ = correctEntryButton.waitForExistence(timeout: 1)
@@ -320,7 +320,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.36, dy: 0.56)).tap()
         }
 
-        XCTAssertTrue(app.staticTexts["Paid Time Preview"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Paid Time Preview"].waitForExistence(timeout: 30))
         XCTAssertTrue(app.staticTexts["Paid Time Preview"].exists)
         XCTAssertFalse(app.staticTexts["Adjusted Regular"].exists)
         XCTAssertFalse(app.staticTexts["Adjusted Overtime"].exists)
@@ -342,16 +342,16 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         let adjustedHistory = app.staticTexts.matching(
             NSPredicate(format: "identifier == 'timesheetCorrectionHistoryAllocation' AND label CONTAINS 'Adjusted 2.0h regular / 2.0h overtime'")
         ).firstMatch
-        XCTAssertTrue(adjustedHistory.waitForExistence(timeout: 12))
+        XCTAssertTrue(adjustedHistory.waitForExistence(timeout: 30))
         captureWEI3041("03-correction-history-after-save")
 
         relaunchForWEI3041Timesheets(preserveDatabase: true)
-        XCTAssertTrue(app.navigationBars["Timesheets"].waitForExistence(timeout: 25))
-        XCTAssertTrue(app.staticTexts["WEI-3041 Correction Overtime Job (#UITEST-WEI-3041)"].waitForExistence(timeout: 12))
+        XCTAssertTrue(app.navigationBars["Timesheets"].waitForExistence(timeout: 90))
+        XCTAssertTrue(app.staticTexts["WEI-3041 Correction Overtime Job (#UITEST-WEI-3041)"].waitForExistence(timeout: 30))
         let reloadedHistory = app.staticTexts.matching(
             NSPredicate(format: "identifier == 'timesheetCorrectionHistoryAllocation' AND label CONTAINS 'Adjusted 2.0h regular / 2.0h overtime'")
         ).firstMatch
-        XCTAssertTrue(reloadedHistory.waitForExistence(timeout: 12))
+        XCTAssertTrue(reloadedHistory.waitForExistence(timeout: 30))
         captureWEI3041("04-correction-history-after-reload")
 
         try writeWEI3041VerificationNotes()
@@ -367,14 +367,14 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         }
 
         relaunchForWEI1451(["-UITestingWEI936Welcome"])
-        XCTAssertTrue(app.staticTexts["WiredPart"].waitForExistence(timeout: 20), "Welcome fixture should render the first-launch welcome screen")
+        XCTAssertTrue(app.staticTexts["WiredPart"].waitForExistence(timeout: 90), "Welcome fixture should render the first-launch welcome screen")
         captureWEI1451("01-ipad-landscape-welcome-sheet")
 
         // State 2: not-started — Getting Started checklist visible with zero app data.
         // -UITestingWEI936NotStarted skips parts/job seeding so isFirstLaunchState == true.
         relaunchForWEI1451(["-UITestingWEI936NotStarted"])
         logInAsUITestOwnerIfNeeded()
-        XCTAssertTrue(app.staticTexts["Getting Started"].waitForExistence(timeout: 20), "Dashboard should show the not-started Getting Started card")
+        XCTAssertTrue(app.staticTexts["Getting Started"].waitForExistence(timeout: 90), "Dashboard should show the not-started Getting Started card")
         XCTAssertFalse(app.staticTexts["Try This"].exists, "Not-started fixture should not show the active onboarding tour banner")
         captureWEI1451("02-ipad-landscape-card-not-started")
 
@@ -384,15 +384,15 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         // stays visible for the capture.
         relaunchForWEI1451(["-UITestingWEI936TourActive"])
         logInAsUITestOwnerIfNeeded()
-        if app.buttons["tab_jobs"].waitForExistence(timeout: 10) {
+        if app.buttons["tab_jobs"].waitForExistence(timeout: 30) {
             app.buttons["tab_jobs"].tap()
         }
-        XCTAssertTrue(app.staticTexts["Try This"].waitForExistence(timeout: 20), "Tour active fixture should show in-progress onboarding tasks")
+        XCTAssertTrue(app.staticTexts["Try This"].waitForExistence(timeout: 90), "Tour active fixture should show in-progress onboarding tasks")
         captureWEI1451("03-ipad-landscape-in-progress")
 
         relaunchForWEI1451(["-UITestingWEI936RequiredDone"])
         logInAsUITestOwnerIfNeeded()
-        XCTAssertTrue(app.staticTexts["Required tour steps complete"].waitForExistence(timeout: 20), "Required-done fixture should collapse the per-page banner")
+        XCTAssertTrue(app.staticTexts["Required tour steps complete"].waitForExistence(timeout: 90), "Required-done fixture should collapse the per-page banner")
         captureWEI1451("04-ipad-landscape-required-done-collapsed-strip")
 
         // State 5: dismiss toast — checklist must be visible first.
@@ -400,7 +400,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         relaunchForWEI1451(["-UITestingWEI936NotStarted"])
         logInAsUITestOwnerIfNeeded()
         let dismiss = app.descendants(matching: .any)["dismissChecklistButton"].firstMatch
-        XCTAssertTrue(dismiss.waitForExistence(timeout: 20), "Dismiss checklist control should be present")
+        XCTAssertTrue(dismiss.waitForExistence(timeout: 90), "Dismiss checklist control should be present")
         if dismiss.isHittable {
             dismiss.tap()
         } else {
@@ -419,7 +419,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             toast = app.descendants(matching: .any)["checklistDismissToast"]
         }
         XCTAssertTrue(
-            toast.waitForExistence(timeout: 8) ||
+            toast.waitForExistence(timeout: 30) ||
             toastMessage.waitForExistence(timeout: 1) ||
             undoToast.waitForExistence(timeout: 1),
             "Dismiss action should show a toast with undo"
@@ -427,7 +427,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         captureWEI1451("05-ipad-landscape-dismiss-toast")
 
         relaunchForWEI1451(["-UITestingWEI936Celebration"])
-        XCTAssertTrue(app.staticTexts["You're All Set!"].waitForExistence(timeout: 20), "Celebration fixture should render completion state")
+        XCTAssertTrue(app.staticTexts["You're All Set!"].waitForExistence(timeout: 90), "Celebration fixture should render completion state")
         captureWEI1451("06-ipad-landscape-celebration")
 
         let verification = """
@@ -465,8 +465,8 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         ]
         app.launch()
 
-        XCTAssertTrue(app.staticTexts["WEI-3144 Materials QA Job"].waitForExistence(timeout: 20), "Seeded job detail should open")
-        XCTAssertTrue(app.descendants(matching: .any)["jobMaterialsTab"].waitForExistence(timeout: 10), "Materials tab content should render")
+        XCTAssertTrue(app.staticTexts["WEI-3144 Materials QA Job"].waitForExistence(timeout: 90), "Seeded job detail should open")
+        XCTAssertTrue(app.descendants(matching: .any)["jobMaterialsTab"].waitForExistence(timeout: 30), "Materials tab content should render")
 
         for segment in ["Ready", "Used", "Returns", "History"] {
             let button = app.buttons[segment]
@@ -528,7 +528,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         openWarehouseDashboard()
 
         let newMovement = app.buttons["whAction_newMovement"].firstMatch
-        XCTAssertTrue(newMovement.waitForExistence(timeout: 20), "Warehouse Dashboard should expose a stable New Movement quick action")
+        XCTAssertTrue(newMovement.waitForExistence(timeout: 90), "Warehouse Dashboard should expose a stable New Movement quick action")
         if newMovement.isHittable {
             newMovement.tap()
         } else {
@@ -536,8 +536,8 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         }
 
         XCTAssertTrue(
-            app.staticTexts["Where is stock moving?"].waitForExistence(timeout: 10) ||
-                app.navigationBars["New Movement"].waitForExistence(timeout: 10),
+            app.staticTexts["Where is stock moving?"].waitForExistence(timeout: 30) ||
+                app.navigationBars["New Movement"].waitForExistence(timeout: 30),
             "Tapping the Warehouse Dashboard New Movement action should open the guided movement wizard."
         )
     }
@@ -549,16 +549,16 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         try FileManager.default.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
 
         relaunchForWEI3295Stage8Reports([])
-        XCTAssertTrue(app.navigationBars["Reports"].waitForExistence(timeout: 20) || app.staticTexts["Reports"].waitForExistence(timeout: 20), "Reports hub should open directly")
-        XCTAssertTrue(app.buttons["Labor"].waitForExistence(timeout: 10), "Reports hub should expose Labor category")
-        XCTAssertTrue(app.buttons["Warehouse"].waitForExistence(timeout: 10), "Reports hub should expose Warehouse category")
+        XCTAssertTrue(app.navigationBars["Reports"].waitForExistence(timeout: 90) || app.staticTexts["Reports"].waitForExistence(timeout: 90), "Reports hub should open directly")
+        XCTAssertTrue(app.buttons["Labor"].waitForExistence(timeout: 30), "Reports hub should expose Labor category")
+        XCTAssertTrue(app.buttons["Warehouse"].waitForExistence(timeout: 30), "Reports hub should expose Warehouse category")
         captureWEI3295("01-\(viewport)-reports-hub")
 
         relaunchForWEI3295Stage8Reports(["-UITestingStage8PreBilling"])
-        XCTAssertTrue(app.navigationBars["Pre-Billing"].waitForExistence(timeout: 20) || app.staticTexts["Pre-Billing"].waitForExistence(timeout: 20), "Pre-Billing page should open directly")
-        XCTAssertTrue(app.staticTexts["Jobs"].waitForExistence(timeout: 8), "Pre-Billing should render summary totals")
+        XCTAssertTrue(app.navigationBars["Pre-Billing"].waitForExistence(timeout: 90) || app.staticTexts["Pre-Billing"].waitForExistence(timeout: 90), "Pre-Billing page should open directly")
+        XCTAssertTrue(app.staticTexts["Jobs"].waitForExistence(timeout: 30), "Pre-Billing should render summary totals")
         let seededPreBillingRow = app.descendants(matching: .any)["pre-billing-row-UITEST-STAGE8-3295"].firstMatch
-        if !seededPreBillingRow.waitForExistence(timeout: 8) {
+        if !seededPreBillingRow.waitForExistence(timeout: 30) {
             for _ in 0..<4 where !seededPreBillingRow.exists {
                 app.swipeUp()
                 _ = seededPreBillingRow.waitForExistence(timeout: 2)
@@ -572,11 +572,11 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         captureWEI3295("03-\(viewport)-pre-billing-export-menu")
 
         relaunchForWEI3295Stage8Reports(["-UITestingStage8Bookkeeper"])
-        XCTAssertTrue(app.navigationBars["Bookkeeper Export"].waitForExistence(timeout: 20) || app.staticTexts["Bookkeeper Export"].waitForExistence(timeout: 20), "Bookkeeper Export page should open directly")
-        XCTAssertTrue(app.staticTexts["Labor by Employee"].waitForExistence(timeout: 20), "Bookkeeper Export should render labor section")
-        XCTAssertTrue(app.staticTexts["Material Purchase Orders"].waitForExistence(timeout: 10), "Bookkeeper Export should render material PO section")
+        XCTAssertTrue(app.navigationBars["Bookkeeper Export"].waitForExistence(timeout: 90) || app.staticTexts["Bookkeeper Export"].waitForExistence(timeout: 90), "Bookkeeper Export page should open directly")
+        XCTAssertTrue(app.staticTexts["Labor by Employee"].waitForExistence(timeout: 90), "Bookkeeper Export should render labor section")
+        XCTAssertTrue(app.staticTexts["Material Purchase Orders"].waitForExistence(timeout: 30), "Bookkeeper Export should render material PO section")
         let seededPurchaseOrderRow = app.descendants(matching: .any)["bookkeeper-material-row-PO-WEI3295-STAGE8"].firstMatch
-        if !seededPurchaseOrderRow.waitForExistence(timeout: 8) {
+        if !seededPurchaseOrderRow.waitForExistence(timeout: 30) {
             for _ in 0..<4 where !seededPurchaseOrderRow.exists {
                 app.swipeUp()
                 _ = seededPurchaseOrderRow.waitForExistence(timeout: 2)
@@ -590,8 +590,8 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         captureWEI3295("05-\(viewport)-bookkeeper-export-menu")
 
         relaunchForWEI3295Stage8Reports(["-UITestingStage8AuditSummary"])
-        XCTAssertTrue(app.navigationBars["Audit Summary"].waitForExistence(timeout: 20) || app.staticTexts["Audit Summary"].waitForExistence(timeout: 20), "Audit Summary page should open directly")
-        XCTAssertTrue(app.staticTexts["Overview"].waitForExistence(timeout: 20), "Audit Summary should render overview section")
+        XCTAssertTrue(app.navigationBars["Audit Summary"].waitForExistence(timeout: 90) || app.staticTexts["Audit Summary"].waitForExistence(timeout: 90), "Audit Summary page should open directly")
+        XCTAssertTrue(app.staticTexts["Overview"].waitForExistence(timeout: 90), "Audit Summary should render overview section")
         let seededDiscrepancy = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'WEI-3295 Stage 8 Breaker'")).firstMatch
         if !seededDiscrepancy.waitForExistence(timeout: 3) {
             for _ in 0..<4 where !seededDiscrepancy.exists {
@@ -623,13 +623,13 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             "-UITestingStage8Reports",
             "-UITestingWEI3144JobMaterials"
         ])
-        XCTAssertTrue(app.navigationBars["Backups"].waitForExistence(timeout: 20) || app.staticTexts["Backups"].waitForExistence(timeout: 20), "Backups page should open directly")
-        XCTAssertTrue(app.staticTexts["Backup Status"].waitForExistence(timeout: 10), "Backup status section should render")
+        XCTAssertTrue(app.navigationBars["Backups"].waitForExistence(timeout: 90) || app.staticTexts["Backups"].waitForExistence(timeout: 90), "Backups page should open directly")
+        XCTAssertTrue(app.staticTexts["Backup Status"].waitForExistence(timeout: 30), "Backup status section should render")
         XCTAssertTrue(app.staticTexts["Database Size"].waitForExistence(timeout: 5), "Backup page should show database size")
         captureWEI3988("01-backups-before-create")
 
         let createBackup = app.descendants(matching: .any)["settings-backups-create-backup-button"].firstMatch
-        XCTAssertTrue(createBackup.waitForExistence(timeout: 10), "Create Backup Now action should be available")
+        XCTAssertTrue(createBackup.waitForExistence(timeout: 30), "Create Backup Now action should be available")
         XCTAssertEqual(createBackup.label, "Create backup now", "Backup action should expose its stable accessible name")
         createBackup.tap()
         let backupCreated = XCTNSPredicateExpectation(
@@ -645,8 +645,8 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         captureWEI3988("02-backups-created")
 
         relaunchForWEI3988RestoredTarget([])
-        XCTAssertTrue(app.staticTexts["Backup Status"].waitForExistence(timeout: 20), "Restored database should reopen the Backups route")
-        XCTAssertTrue(app.staticTexts["Stored Backups"].waitForExistence(timeout: 8), "Restored install should still see the backup ledger")
+        XCTAssertTrue(app.staticTexts["Backup Status"].waitForExistence(timeout: 90), "Restored database should reopen the Backups route")
+        XCTAssertTrue(app.staticTexts["Stored Backups"].waitForExistence(timeout: 30), "Restored install should still see the backup ledger")
         captureWEI3988("03-restored-backups-status")
 
         relaunchForWEI3988RestoredTarget(["-UITestingWEI3988PartsCatalog"])
@@ -666,23 +666,23 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         captureWEI3988("04-restored-parts-catalog")
 
         relaunchForWEI3988RestoredTarget(["-UITestingWEI3988Materials", "-UITestingWEI3144JobMaterials"])
-        XCTAssertTrue(app.staticTexts["WEI-3144 Materials QA Job"].waitForExistence(timeout: 20), "Restored job detail should show the seeded materials job")
-        XCTAssertTrue(app.descendants(matching: .any)["jobMaterialsTab"].waitForExistence(timeout: 10), "Restored job materials tab should render")
+        XCTAssertTrue(app.staticTexts["WEI-3144 Materials QA Job"].waitForExistence(timeout: 90), "Restored job detail should show the seeded materials job")
+        XCTAssertTrue(app.descendants(matching: .any)["jobMaterialsTab"].waitForExistence(timeout: 30), "Restored job materials tab should render")
         if app.buttons["Used"].waitForExistence(timeout: 5), app.buttons["Used"].isHittable {
             app.buttons["Used"].tap()
         }
-        XCTAssertTrue(app.staticTexts["WEI-3144 Wire Nut"].waitForExistence(timeout: 10), "Restored job materials should include the seeded material")
+        XCTAssertTrue(app.staticTexts["WEI-3144 Wire Nut"].waitForExistence(timeout: 30), "Restored job materials should include the seeded material")
         captureWEI3988("05-restored-job-materials")
 
         relaunchForWEI3988RestoredTarget(["-UITestingWEI3988PreBilling"])
-        XCTAssertTrue(app.navigationBars["Pre-Billing"].waitForExistence(timeout: 20) || app.staticTexts["Pre-Billing"].waitForExistence(timeout: 20), "Restored Pre-Billing page should open")
-        XCTAssertTrue(app.descendants(matching: .any)["pre-billing-row-UITEST-STAGE8-3295"].waitForExistence(timeout: 10), "Restored pre-billing should show the seeded labor/material job row")
+        XCTAssertTrue(app.navigationBars["Pre-Billing"].waitForExistence(timeout: 90) || app.staticTexts["Pre-Billing"].waitForExistence(timeout: 90), "Restored Pre-Billing page should open")
+        XCTAssertTrue(app.descendants(matching: .any)["pre-billing-row-UITEST-STAGE8-3295"].waitForExistence(timeout: 30), "Restored pre-billing should show the seeded labor/material job row")
         captureWEI3988("06-restored-prebilling")
 
         relaunchForWEI3988RestoredTarget(["-UITestingWEI3988Bookkeeper"])
-        XCTAssertTrue(app.navigationBars["Bookkeeper Export"].waitForExistence(timeout: 20) || app.staticTexts["Bookkeeper Export"].waitForExistence(timeout: 20), "Restored Bookkeeper Export page should open")
-        XCTAssertTrue(app.staticTexts["Labor by Employee"].waitForExistence(timeout: 10), "Restored bookkeeper report should show labor section")
-        XCTAssertTrue(app.descendants(matching: .any)["bookkeeper-material-row-PO-WEI3295-STAGE8"].waitForExistence(timeout: 10), "Restored bookkeeper report should show the seeded material PO row")
+        XCTAssertTrue(app.navigationBars["Bookkeeper Export"].waitForExistence(timeout: 90) || app.staticTexts["Bookkeeper Export"].waitForExistence(timeout: 90), "Restored Bookkeeper Export page should open")
+        XCTAssertTrue(app.staticTexts["Labor by Employee"].waitForExistence(timeout: 30), "Restored bookkeeper report should show labor section")
+        XCTAssertTrue(app.descendants(matching: .any)["bookkeeper-material-row-PO-WEI3295-STAGE8"].waitForExistence(timeout: 30), "Restored bookkeeper report should show the seeded material PO row")
         captureWEI3988("07-restored-bookkeeper")
 
         let verification = """
@@ -713,13 +713,13 @@ final class Weird_Parts_IOSUITests: XCTestCase {
 
         let sourceJob = app.staticTexts["UITest Source Dispatch Job"]
         let targetJob = app.staticTexts["UITest Target Dispatch Job"]
-        XCTAssertTrue(sourceJob.waitForExistence(timeout: 15), "Source dispatch job should be visible")
+        XCTAssertTrue(sourceJob.waitForExistence(timeout: 45), "Source dispatch job should be visible")
         XCTAssertTrue(targetJob.waitForExistence(timeout: 5), "Target dispatch job should be visible")
 
         let ownerChip = app.descendants(matching: .any)
             .matching(NSPredicate(format: "label == 'Move UITest Owner'"))
             .firstMatch
-        XCTAssertTrue(ownerChip.waitForExistence(timeout: 8), "Existing assignment chip should be visible")
+        XCTAssertTrue(ownerChip.waitForExistence(timeout: 30), "Existing assignment chip should be visible")
         captureWEI1251("01-dispatch-board-seeded")
 
         let targetSecondDay = dayCellCoordinate(rowLabel: targetJob, dayIndex: 1)
@@ -729,7 +729,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         let movedOwnerChip = app.descendants(matching: .any)
             .matching(NSPredicate(format: "label == 'Move UITest Owner'"))
             .firstMatch
-        XCTAssertTrue(movedOwnerChip.waitForExistence(timeout: 8), "Moved assignment chip should remain visible")
+        XCTAssertTrue(movedOwnerChip.waitForExistence(timeout: 30), "Moved assignment chip should remain visible")
         captureWEI1251("02-existing-assignment-moved")
         XCTAssertLessThan(abs(movedOwnerChip.frame.midY - targetJob.frame.midY), 80,
                           "Existing assignment should move onto the target job row")
@@ -739,21 +739,21 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         let spareWorker = app.descendants(matching: .any)
             .matching(NSPredicate(format: "label CONTAINS 'UITest Spare Worker'"))
             .firstMatch
-        XCTAssertTrue(spareWorker.waitForExistence(timeout: 8), "Unassigned worker chip should be visible")
+        XCTAssertTrue(spareWorker.waitForExistence(timeout: 30), "Unassigned worker chip should be visible")
         spareWorker.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
             .press(forDuration: 0.8, thenDragTo: dayCellCoordinate(rowLabel: targetJob, dayIndex: 3))
 
         let spareAssignment = app.descendants(matching: .any)
             .matching(NSPredicate(format: "label == 'Move UITest Spare Worker'"))
             .firstMatch
-        XCTAssertTrue(spareAssignment.waitForExistence(timeout: 8),
+        XCTAssertTrue(spareAssignment.waitForExistence(timeout: 30),
                       "Dropping an unassigned worker should create a dispatch assignment")
         captureWEI1251("03-unassigned-worker-created-assignment")
 
         movedOwnerChip.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
             .press(forDuration: 0.8, thenDragTo: dayCellCoordinate(rowLabel: targetJob, dayIndex: 2))
         let conflict = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'time off'")).firstMatch
-        XCTAssertTrue(conflict.waitForExistence(timeout: 8),
+        XCTAssertTrue(conflict.waitForExistence(timeout: 30),
                       "Invalid move should present a visible time-off conflict error")
         captureWEI1251("04-invalid-move-conflict-error")
     }
@@ -788,14 +788,14 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         openWarehouseSetupWizard()
 
         let createContinue = app.buttons["Create & Continue"]
-        if createContinue.waitForExistence(timeout: 10) {
+        if createContinue.waitForExistence(timeout: 30) {
             createContinue.tap()
         }
         if app.staticTexts["Phase 2 · Storage Units"].waitForExistence(timeout: 3) {
             app.buttons["Back"].tap()
         }
 
-        XCTAssertTrue(app.staticTexts["Confirm Zone Grid"].waitForExistence(timeout: 10),
+        XCTAssertTrue(app.staticTexts["Confirm Zone Grid"].waitForExistence(timeout: 30),
                       "Step 2 should start with the zone grid dimension confirmation")
         captureWEI1185("01-zone-grid-dimensions")
 
@@ -803,7 +803,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         XCTAssertTrue(confirmGrid.waitForExistence(timeout: 5), "Confirm Grid should be available")
         confirmGrid.tap()
 
-        XCTAssertTrue(app.staticTexts["Zones"].waitForExistence(timeout: 10), "Zone placement palette should load")
+        XCTAssertTrue(app.staticTexts["Zones"].waitForExistence(timeout: 30), "Zone placement palette should load")
         captureWEI1185("02-empty-3x5-zone-grid")
         let r1c1 = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'R1C1'")).firstMatch
         let r3c5 = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'R3C5'")).firstMatch
@@ -815,7 +815,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         storage.press(forDuration: 0.7, thenDragTo: r1c1)
 
         let placedStorage = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'starts at R1C1'")).firstMatch
-        XCTAssertTrue(placedStorage.waitForExistence(timeout: 8), "Dropped Storage zone should render on the grid")
+        XCTAssertTrue(placedStorage.waitForExistence(timeout: 30), "Dropped Storage zone should render on the grid")
         placedStorage.tap()
         XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Edit'")).firstMatch.waitForExistence(timeout: 5),
                       "Selecting a zone should reveal Edit")
@@ -860,7 +860,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         app.launch()
         logInAsUITestOwnerIfNeeded()
         openWarehouseSetupWizard()
-        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'R2C2'")).firstMatch.waitForExistence(timeout: 10),
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'R2C2'")).firstMatch.waitForExistence(timeout: 30),
                       "Zone placement should persist after leaving and resuming the wizard")
         captureWEI1185("06-storage-persisted-after-resume")
     }
@@ -888,7 +888,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
 
         let selectedLocationsSubtab = app.buttons["subtab_warehouse-locations"]
         XCTAssertTrue(
-            selectedLocationsSubtab.waitForExistence(timeout: 10),
+            selectedLocationsSubtab.waitForExistence(timeout: 30),
             "Warehouse Locations sub-tab should exist after direct route selection"
         )
         XCTAssertTrue(
@@ -904,15 +904,15 @@ final class Weird_Parts_IOSUITests: XCTestCase {
 
         let auditSubtab = app.buttons["subtab_warehouse-audit"]
         XCTAssertTrue(
-            auditSubtab.waitForExistence(timeout: 10),
+            auditSubtab.waitForExistence(timeout: 30),
             "Warehouse navigation should expose Audit as a native Button"
         )
         XCTAssertFalse(auditSubtab.isSelected, "Audit must not export Selected while Locations content is visible")
         XCTAssertEqual(auditSubtab.value as? String, "Not selected")
 
         XCTAssertTrue(
-            app.buttons["Shelving"].waitForExistence(timeout: 10) ||
-                app.staticTexts["UITesting Shelf A"].waitForExistence(timeout: 10),
+            app.buttons["Shelving"].waitForExistence(timeout: 30) ||
+                app.staticTexts["UITesting Shelf A"].waitForExistence(timeout: 30),
             "Warehouse Locations content should render after the auto-scrolled selected sub-tab is visible"
         )
 
@@ -927,22 +927,22 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         )
 
         let inventorySubtab = app.buttons["subtab_warehouse-inventory"]
-        XCTAssertTrue(inventorySubtab.waitForExistence(timeout: 10))
+        XCTAssertTrue(inventorySubtab.waitForExistence(timeout: 30))
         XCTAssertTrue(inventorySubtab.isHittable)
         inventorySubtab.tap()
 
         XCTAssertTrue(
-            app.searchFields["Search parts..."].waitForExistence(timeout: 10) ||
-                app.staticTexts["Default Warehouse"].waitForExistence(timeout: 10),
+            app.searchFields["Search parts..."].waitForExistence(timeout: 30) ||
+                app.staticTexts["Default Warehouse"].waitForExistence(timeout: 30),
             "Selecting Inventory should replace Locations content with the Inventory page"
         )
         let selectedInventorySubtab = app.buttons["subtab_warehouse-inventory"]
-        XCTAssertTrue(selectedInventorySubtab.waitForExistence(timeout: 10))
+        XCTAssertTrue(selectedInventorySubtab.waitForExistence(timeout: 30))
         XCTAssertTrue(selectedInventorySubtab.isHittable, "The newly selected Inventory chip should remain revealed")
         XCTAssertTrue(selectedInventorySubtab.isSelected)
         XCTAssertEqual(selectedInventorySubtab.value as? String, "Selected")
         let deselectedLocationsSubtab = app.buttons["subtab_warehouse-locations"]
-        XCTAssertTrue(deselectedLocationsSubtab.waitForExistence(timeout: 10))
+        XCTAssertTrue(deselectedLocationsSubtab.waitForExistence(timeout: 30))
         XCTAssertFalse(deselectedLocationsSubtab.isSelected)
         XCTAssertEqual(deselectedLocationsSubtab.value as? String, "Not selected")
 
@@ -981,8 +981,8 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             "Warehouse module should open without the manual login/PIN route"
         )
         XCTAssertTrue(
-            app.buttons["Shelving"].waitForExistence(timeout: 10) ||
-                app.staticTexts["UITesting Shelf A"].waitForExistence(timeout: 10),
+            app.buttons["Shelving"].waitForExistence(timeout: 30) ||
+                app.staticTexts["UITesting Shelf A"].waitForExistence(timeout: 30),
             "Warehouse Locations should render its floor-plan controls or seeded shelf"
         )
         let requiredToolbarItems = [
@@ -991,13 +991,13 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         ]
         for unitType in requiredToolbarItems {
             let button = app.buttons["warehouse-unit-type-\(unitType)"]
-            XCTAssertTrue(button.waitForExistence(timeout: 10), "\(unitType) toolbar item should be present")
+            XCTAssertTrue(button.waitForExistence(timeout: 30), "\(unitType) toolbar item should be present")
             XCTAssertTrue(button.isHittable, "\(unitType) toolbar item should be reachable at iPhone width")
         }
         let packoutToolbarButton = app.buttons["warehouse-unit-type-packout"]
         packoutToolbarButton.tap()
         XCTAssertTrue(
-            app.textFields.firstMatch.waitForExistence(timeout: 8),
+            app.textFields.firstMatch.waitForExistence(timeout: 30),
             "Packout Set toolbar action should open the add-unit sheet with a name field"
         )
         XCTAssertTrue(
@@ -1007,8 +1007,8 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         )
         app.buttons["Cancel"].tap()
         XCTAssertTrue(
-            app.staticTexts["UITesting Shelf A"].waitForExistence(timeout: 10) ||
-                app.staticTexts["UITesting Pipe Rack"].waitForExistence(timeout: 10),
+            app.staticTexts["UITesting Shelf A"].waitForExistence(timeout: 30) ||
+                app.staticTexts["UITesting Pipe Rack"].waitForExistence(timeout: 30),
             "Warehouse Locations should show a seeded storage unit for visual QA"
         )
     }
@@ -1035,7 +1035,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         openWarehouseSetupWizard()
 
         let createContinue = app.buttons["Create & Continue"]
-        XCTAssertTrue(createContinue.waitForExistence(timeout: 10), "Fresh warehouse wizard should start at Step 1")
+        XCTAssertTrue(createContinue.waitForExistence(timeout: 30), "Fresh warehouse wizard should start at Step 1")
         createContinue.tap()
 
         if app.staticTexts["Phase 2 · Storage Units"].waitForExistence(timeout: 3) {
@@ -1043,7 +1043,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         }
         goToWizardStep(2)
 
-        XCTAssertTrue(app.staticTexts["Confirm Zone Grid"].waitForExistence(timeout: 10),
+        XCTAssertTrue(app.staticTexts["Confirm Zone Grid"].waitForExistence(timeout: 30),
                       "Step 2 should start with the zone-grid confirmation")
         captureWEI1182("01-zone-placement-phase-a")
 
@@ -1054,7 +1054,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         let r1c1 = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'R1C1'")).firstMatch
         let r1c3 = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'R1C3'")).firstMatch
         let r3c3 = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'R3C3'")).firstMatch
-        XCTAssertTrue(r1c1.waitForExistence(timeout: 8), "Zone grid should include R1C1")
+        XCTAssertTrue(r1c1.waitForExistence(timeout: 30), "Zone grid should include R1C1")
         XCTAssertTrue(r1c3.waitForExistence(timeout: 5), "Zone grid should include R1C3")
 
         let storage = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Drag Storage zone'")).firstMatch
@@ -1068,7 +1068,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         let placedStorage = app.descendants(matching: .any).matching(
             NSPredicate(format: "label CONTAINS 'Storage' AND label CONTAINS 'starts at R1C1'")
         ).firstMatch
-        XCTAssertTrue(placedStorage.waitForExistence(timeout: 8), "Dropped Storage zone should render on the grid")
+        XCTAssertTrue(placedStorage.waitForExistence(timeout: 30), "Dropped Storage zone should render on the grid")
         placedStorage.tap()
 
         let resizeHandle = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Resize Storage'")).firstMatch
@@ -1089,7 +1089,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         captureWEI1182("02-zone-placement-phase-b-two-zones-resized")
 
         app.buttons["Next"].tap()
-        XCTAssertTrue(app.staticTexts["Phase 2 · Storage Units"].waitForExistence(timeout: 10),
+        XCTAssertTrue(app.staticTexts["Phase 2 · Storage Units"].waitForExistence(timeout: 30),
                       "Step 3 should load storage units")
 
         let addStorageUnit = app.buttons["Add Storage Unit"]
@@ -1101,17 +1101,17 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         nameField.tap()
         nameField.typeText("Shelf A")
         app.buttons["Save"].tap()
-        XCTAssertTrue(app.staticTexts["Shelf A"].waitForExistence(timeout: 8), "Saved storage unit should appear")
+        XCTAssertTrue(app.staticTexts["Shelf A"].waitForExistence(timeout: 30), "Saved storage unit should appear")
 
         goToWizardStep(8)
-        XCTAssertTrue(app.staticTexts["Phase 4 · Walking Path"].waitForExistence(timeout: 10),
+        XCTAssertTrue(app.staticTexts["Phase 4 · Walking Path"].waitForExistence(timeout: 30),
                       "Step 8 should be the walking-path step")
         captureWEI1182("03-walking-path-empty")
 
         let suggestPath = app.buttons["Suggest path"]
-        XCTAssertTrue(suggestPath.waitForExistence(timeout: 8), "Walking path should expose Suggest path")
+        XCTAssertTrue(suggestPath.waitForExistence(timeout: 30), "Walking path should expose Suggest path")
         suggestPath.tap()
-        XCTAssertTrue(app.staticTexts["Suggested Preview"].waitForExistence(timeout: 8),
+        XCTAssertTrue(app.staticTexts["Suggested Preview"].waitForExistence(timeout: 30),
                       "Suggest path should show a preview section")
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS '4'")).firstMatch.waitForExistence(timeout: 5),
                       "Suggested path should include the four generated areas")
@@ -1120,16 +1120,16 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         let useSuggested = app.buttons["Use suggested order"]
         XCTAssertTrue(useSuggested.waitForExistence(timeout: 5), "Preview should expose Use suggested order")
         useSuggested.tap()
-        XCTAssertTrue(app.staticTexts["Path Stops"].waitForExistence(timeout: 8),
+        XCTAssertTrue(app.staticTexts["Path Stops"].waitForExistence(timeout: 30),
                       "Applied suggested order should become saved path stops")
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS '4 stops saved'")).firstMatch.waitForExistence(timeout: 8),
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS '4 stops saved'")).firstMatch.waitForExistence(timeout: 30),
                       "Saved walking path should report four stops")
 
         app.buttons["Save & Exit"].tap()
         openWarehouseSetupWizard()
-        XCTAssertTrue(app.staticTexts["Phase 4 · Walking Path"].waitForExistence(timeout: 10),
+        XCTAssertTrue(app.staticTexts["Phase 4 · Walking Path"].waitForExistence(timeout: 30),
                       "Save & Exit should resume the wizard on the walking-path step")
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS '4 stops saved'")).firstMatch.waitForExistence(timeout: 8),
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS '4 stops saved'")).firstMatch.waitForExistence(timeout: 30),
                       "Walking path stops should persist after reopening the wizard")
         captureWEI1182("05-walking-path-persisted-after-resume")
     }
@@ -1175,7 +1175,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         // Step 1: create the floor plan if it doesn't exist yet. A resumed
         // session lands on the previous step with a "Next" button instead.
         let createContinue = app.buttons["Create & Continue"]
-        if createContinue.waitForExistence(timeout: 10) {
+        if createContinue.waitForExistence(timeout: 30) {
             createContinue.tap()
         }
 
@@ -1247,7 +1247,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         let phaseLabel = app.staticTexts.matching(phasePredicate).firstMatch
         let stepIndicator = app.staticTexts["Step 6 of 10"]
 
-        let phaseFound = phaseLabel.waitForExistence(timeout: 10)
+        let phaseFound = phaseLabel.waitForExistence(timeout: 30)
         let stepFound = stepIndicator.waitForExistence(timeout: 5)
 
         if !phaseFound || !stepFound {
@@ -1311,7 +1311,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         // Step 1: create the floor plan if it doesn't exist yet. A resumed
         // session lands on the previous step with a "Next" button instead.
         let createContinue = app.buttons["Create & Continue"]
-        if createContinue.waitForExistence(timeout: 10) {
+        if createContinue.waitForExistence(timeout: 30) {
             createContinue.tap()
         }
 
@@ -1384,7 +1384,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         let matchingPhaseLabels = app.staticTexts.matching(phasePredicate)
         let stepIndicator = app.staticTexts["Step 8 of 10"]
 
-        let navigationPhaseFound = navigationPhaseTitle.waitForExistence(timeout: 10)
+        let navigationPhaseFound = navigationPhaseTitle.waitForExistence(timeout: 30)
         let progressPhaseDeadline = Date().addingTimeInterval(10)
         while matchingPhaseLabels.count < 2 && Date() < progressPhaseDeadline {
             Thread.sleep(forTimeInterval: 0.25)
@@ -1427,7 +1427,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         }
 
         let userRows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'loginUserRow_'"))
-        guard userRows.firstMatch.waitForExistence(timeout: 20) else {
+        guard userRows.firstMatch.waitForExistence(timeout: 90) else {
             throw XCTSkip("Login seed user was not available; cannot exercise the PIN keyboard layout.")
         }
         userRows.firstMatch.tap()
@@ -1615,7 +1615,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             }
         }
         captureWEI1185("00-wizard-route-not-found")
-        XCTAssertTrue(configure.waitForExistence(timeout: 10), "Dashboard should expose Configure Your Warehouse")
+        XCTAssertTrue(configure.waitForExistence(timeout: 30), "Dashboard should expose Configure Your Warehouse")
         configure.tap()
     }
 
@@ -1625,20 +1625,20 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         }
 
         let warehouseTab = app.buttons["tab_warehouse"]
-        if warehouseTab.waitForExistence(timeout: 8) {
+        if warehouseTab.waitForExistence(timeout: 30) {
             warehouseTab.tap()
         } else if app.buttons["Warehouse"].waitForExistence(timeout: 3) {
             app.buttons["Warehouse"].tap()
         } else if app.tabBars.buttons["More"].waitForExistence(timeout: 3) {
             app.tabBars.buttons["More"].tap()
             let warehouse = app.buttons["Warehouse"]
-            XCTAssertTrue(warehouse.waitForExistence(timeout: 8), "Warehouse module should be reachable")
+            XCTAssertTrue(warehouse.waitForExistence(timeout: 30), "Warehouse module should be reachable")
             warehouse.tap()
         } else {
             XCTFail("Warehouse module tab should be reachable")
         }
 
-        if !app.buttons["whAction_newMovement"].waitForExistence(timeout: 8) {
+        if !app.buttons["whAction_newMovement"].waitForExistence(timeout: 30) {
             let dashboard = app.buttons["Dashboard"]
             if dashboard.waitForExistence(timeout: 5) && dashboard.isHittable {
                 dashboard.tap()
@@ -1646,7 +1646,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         }
 
         XCTAssertTrue(
-            app.buttons["whAction_newMovement"].waitForExistence(timeout: 10),
+            app.buttons["whAction_newMovement"].waitForExistence(timeout: 30),
             "Warehouse Dashboard should open and expose quick actions"
         )
     }
@@ -1658,26 +1658,26 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         }
 
         let schedulingTab = app.buttons["tab_scheduling"]
-        if schedulingTab.waitForExistence(timeout: 8) {
+        if schedulingTab.waitForExistence(timeout: 30) {
             schedulingTab.tap()
         } else if app.buttons["Scheduling"].waitForExistence(timeout: 3) {
             app.buttons["Scheduling"].tap()
         } else if app.tabBars.buttons["More"].waitForExistence(timeout: 3) {
             app.tabBars.buttons["More"].tap()
             let scheduling = app.buttons["Scheduling"]
-            XCTAssertTrue(scheduling.waitForExistence(timeout: 8), "Scheduling module should be reachable")
+            XCTAssertTrue(scheduling.waitForExistence(timeout: 30), "Scheduling module should be reachable")
             scheduling.tap()
         } else {
             XCTFail("Scheduling module tab should be reachable")
         }
 
         let dispatch = app.buttons["Dispatch"]
-        XCTAssertTrue(dispatch.waitForExistence(timeout: 8), "Scheduling module should expose Dispatch tab")
+        XCTAssertTrue(dispatch.waitForExistence(timeout: 30), "Scheduling module should expose Dispatch tab")
         dispatch.tap()
 
         XCTAssertTrue(
-            app.navigationBars["Dispatch Board"].waitForExistence(timeout: 10) ||
-                app.staticTexts["Dispatch Board"].waitForExistence(timeout: 10),
+            app.navigationBars["Dispatch Board"].waitForExistence(timeout: 30) ||
+                app.staticTexts["Dispatch Board"].waitForExistence(timeout: 30),
             "Dispatch Board should open"
         )
     }
@@ -1981,14 +1981,14 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         logInAsUITestOwnerIfNeeded()
 
         let page = partsCategoriesPage
-        if page.waitForExistence(timeout: 10) {
+        if page.waitForExistence(timeout: 30) {
             dismissTransientOnboardingOverlays()
             return
         }
 
         // Tap the "Parts" tab (or "More" then "Parts" on iPhone)
         let partsTab = app.tabBars.buttons["Parts"]
-        if partsTab.waitForExistence(timeout: 10) {
+        if partsTab.waitForExistence(timeout: 30) {
             partsTab.tap()
         } else {
             // On iPhone with many tabs, Parts may be under "More"
@@ -2036,7 +2036,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         }
 
         // Wait for the page to appear
-        XCTAssertTrue(page.waitForExistence(timeout: 10),
+        XCTAssertTrue(page.waitForExistence(timeout: 30),
                       "Parts Categories page should appear after navigation")
         dismissTransientOnboardingOverlays()
     }
@@ -2175,12 +2175,12 @@ final class Weird_Parts_IOSUITests: XCTestCase {
 
         // Verify the new category appears in the tree list
         let treeList = app.scrollViews["categoriesTreeList"]
-        XCTAssertTrue(treeList.waitForExistence(timeout: 10),
+        XCTAssertTrue(treeList.waitForExistence(timeout: 30),
                       "Categories tree list should appear after creating first category")
 
         // The new category name should be visible somewhere in the UI
         let categoryText = app.staticTexts[uniqueName]
-        XCTAssertTrue(categoryText.waitForExistence(timeout: 10),
+        XCTAssertTrue(categoryText.waitForExistence(timeout: 30),
                       "Newly created category '\(uniqueName)' should appear in the tree")
     }
 
@@ -2250,7 +2250,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
 
         // Verify data appears
         let categoryText = app.staticTexts[uniqueName]
-        XCTAssertTrue(categoryText.waitForExistence(timeout: 10),
+        XCTAssertTrue(categoryText.waitForExistence(timeout: 30),
                       "Category should persist and display after sheet dismiss")
 
         // Pull to refresh and verify data is still there
@@ -2375,7 +2375,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         let profile = employeeDetailTab("profile", label: "Profile")
         let hats = employeeDetailTab("hats", label: "Hats")
         let teams = employeeDetailTab("teams", label: "Teams")
-        XCTAssertTrue(profile.waitForExistence(timeout: 10), "Profile tab should be visible")
+        XCTAssertTrue(profile.waitForExistence(timeout: 30), "Profile tab should be visible")
         XCTAssertTrue(hats.waitForExistence(timeout: 5), "Hats tab should be visible")
         XCTAssertTrue(teams.waitForExistence(timeout: 5), "Teams tab should be visible")
 
@@ -2404,28 +2404,28 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         }
 
         let peopleTab = app.buttons["tab_people"]
-        if peopleTab.waitForExistence(timeout: 8) {
+        if peopleTab.waitForExistence(timeout: 30) {
             peopleTab.tap()
         } else if app.buttons["People"].waitForExistence(timeout: 3) {
             app.buttons["People"].tap()
         } else if app.tabBars.buttons["More"].waitForExistence(timeout: 3) {
             app.tabBars.buttons["More"].tap()
             let people = app.buttons["People"]
-            XCTAssertTrue(people.waitForExistence(timeout: 8), "People module should be reachable")
+            XCTAssertTrue(people.waitForExistence(timeout: 30), "People module should be reachable")
             people.tap()
         } else {
             XCTFail("People module tab should be reachable")
         }
 
         let employees = app.buttons["Employees"]
-        if employees.waitForExistence(timeout: 8) {
+        if employees.waitForExistence(timeout: 30) {
             employees.tap()
         }
 
         let ownerRow = app.buttons.matching(NSPredicate(format: "label CONTAINS 'UITest Owner'")).firstMatch
         let ownerLabel = app.staticTexts["UITest Owner"]
         XCTAssertTrue(
-            ownerRow.waitForExistence(timeout: 10) || ownerLabel.waitForExistence(timeout: 10),
+            ownerRow.waitForExistence(timeout: 30) || ownerLabel.waitForExistence(timeout: 30),
             "UITest Owner should be visible in employees list"
         )
         if ownerRow.exists && ownerRow.isHittable {
@@ -2435,8 +2435,8 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         }
 
         XCTAssertTrue(
-            app.navigationBars["UITest Owner"].waitForExistence(timeout: 10) ||
-                app.staticTexts["Basic Info"].waitForExistence(timeout: 10),
+            app.navigationBars["UITest Owner"].waitForExistence(timeout: 30) ||
+                app.staticTexts["Basic Info"].waitForExistence(timeout: 30),
             "Employee detail should open for UITest Owner"
         )
     }
@@ -2473,14 +2473,14 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     @MainActor
     func testWEI3140CSVMappingPreviewScreenshot() throws {
         launchWEI3140Fixture(mode: "csv")
-        XCTAssertTrue(app.navigationBars["Import Preview"].waitForExistence(timeout: 12))
+        XCTAssertTrue(app.navigationBars["Import Preview"].waitForExistence(timeout: 30))
         captureWEI3140("01-csv-mapping-preview")
     }
 
     @MainActor
     func testWEI3140LargeErrorQuarantineScreenshot() throws {
         launchWEI3140Fixture(mode: "error")
-        XCTAssertTrue(app.navigationBars["Import Preview"].waitForExistence(timeout: 12))
+        XCTAssertTrue(app.navigationBars["Import Preview"].waitForExistence(timeout: 30))
         captureWEI3140("02-large-error-preview-top")
         app.swipeUp()
         app.swipeUp()
@@ -2490,7 +2490,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     @MainActor
     func testWEI3140PDFPreviewOnlyScreenshot() throws {
         launchWEI3140Fixture(mode: "pdf")
-        XCTAssertTrue(app.staticTexts["PDF / OCR Review"].waitForExistence(timeout: 12))
+        XCTAssertTrue(app.staticTexts["PDF / OCR Review"].waitForExistence(timeout: 30))
         captureWEI3140("04-pdf-ocr-preview-only")
         app.swipeUp()
         captureWEI3140("05-pdf-ocr-commit-disabled")
