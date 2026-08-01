@@ -23,6 +23,7 @@ struct IOSNotebookDetailPage: View {
     @State private var panelSchedule = PanelSchedule()
     @State private var designPanelState = DesignPanelState()
     @State private var designPanelEntryId: Int64?
+    @State private var hasUnreadableDesignPanelState = false
     @State private var designPanelAutosaveTask: Task<Void, Never>?
     @AppStorage("panelPrintConfigJSON") private var panelPrintConfigJSON = ""
     @State private var showPanelPrintPreview = false
@@ -1650,16 +1651,23 @@ struct IOSNotebookDetailPage: View {
 
     /// Loads the redesigned panel state from its own block entry; when absent
     /// but a legacy schedule exists, seeds it via the migration helper (the
-    /// legacy entry stays untouched until the user saves here).
+    /// legacy entry stays untouched until the user saves here). An existing
+    /// state that cannot decode is never replaced with migrated legacy data.
     private func loadDesignPanelState() {
-        if let entryId = findDesignPanelEntryId(),
-           let entry = blockEntry(withId: entryId),
-           let data = entry.blockData?.data(using: .utf8),
-           let state = try? JSONDecoder().decode(DesignPanelState.self, from: data) {
+        if let entryId = findDesignPanelEntryId() {
             designPanelEntryId = entryId
+            guard let entry = blockEntry(withId: entryId),
+                  let data = entry.blockData?.data(using: .utf8),
+                  let state = try? JSONDecoder().decode(DesignPanelState.self, from: data) else {
+                hasUnreadableDesignPanelState = true
+                loadError = "Saved redesigned panel data could not be read. It was not changed."
+                return
+            }
+            hasUnreadableDesignPanelState = false
             designPanelState = state
         } else {
             designPanelEntryId = nil
+            hasUnreadableDesignPanelState = false
             designPanelState = panelSchedule.circuits.isEmpty
                 ? DesignPanelState()
                 : .migrated(fromLegacy: panelSchedule)
@@ -1667,6 +1675,10 @@ struct IOSNotebookDetailPage: View {
     }
 
     private func persistDesignPanelState() {
+        guard !hasUnreadableDesignPanelState else {
+            loadError = "Saved redesigned panel data could not be read. It was not changed."
+            return
+        }
         guard let service = appCore.notebooksService,
               let userId = appCore.currentUser?.id,
               let notebookId = notebook?.id,
