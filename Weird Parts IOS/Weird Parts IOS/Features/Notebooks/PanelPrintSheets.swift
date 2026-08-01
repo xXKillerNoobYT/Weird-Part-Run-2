@@ -1,5 +1,6 @@
 import PDFKit
 import SwiftUI
+import UniformTypeIdentifiers
 import WiredPartCore
 
 // Panel Schedule Builder redesign — print system UI (plan §5, slice 4b).
@@ -23,7 +24,18 @@ enum PanelSchedulePDFRenderer {
             var y: CGFloat = margin
 
             func color(_ hex: String) -> UIColor {
-                config.grayscale ? .darkGray : (UIColor(Color(hex: hex) ?? .gray))
+                guard !config.grayscale else { return .darkGray }
+
+                var cleaned = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+                if cleaned.hasPrefix("#") { cleaned.removeFirst() }
+                guard cleaned.count == 6, let rgb = UInt64(cleaned, radix: 16) else { return .gray }
+
+                return UIColor(
+                    red: CGFloat((rgb >> 16) & 0xFF) / 255,
+                    green: CGFloat((rgb >> 8) & 0xFF) / 255,
+                    blue: CGFloat(rgb & 0xFF) / 255,
+                    alpha: 1
+                )
             }
             func draw(_ text: String, font: UIFont, color: UIColor = .black,
                       at point: CGPoint, width: CGFloat, alignment: NSTextAlignment = .left) {
