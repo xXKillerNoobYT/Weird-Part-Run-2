@@ -29,6 +29,10 @@ struct IOSTeamsPage: View {
     }
     @State private var activeSheet: ActiveSheet?
 
+    private var canManageTeams: Bool {
+        appCore.hasPermission("manage_people")
+    }
+
     var body: some View {
         teamList
             .navigationTitle("Teams")
@@ -37,15 +41,20 @@ struct IOSTeamsPage: View {
             .task { loadData() }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    Button { activeSheet = .addTeam } label: {
-                        Image(systemName: "plus")
+                    if canManageTeams {
+                        Button { activeSheet = .addTeam } label: {
+                            Image(systemName: "plus")
+                        }
+                        .accessibilityLabel("Add team")
                     }
-                    .accessibilityLabel("Add team")
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
                     }
+                    // ToolbarItem exports the Button's frame, not the Image label's frame.
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
                     .accessibilityLabel("Help")
                 }
             }
@@ -333,10 +342,15 @@ private struct AddTeamSheet: View {
             errorMessage = "People service unavailable"
             return
         }
+        guard let actorUserId = appCore.currentUser?.id else {
+            errorMessage = "No signed-in user"
+            return
+        }
         do {
             try service.createTeam(
                 name: teamName.trimmingCharacters(in: .whitespacesAndNewlines),
-                description: teamDescription.isEmpty ? nil : teamDescription
+                description: teamDescription.isEmpty ? nil : teamDescription,
+                actorUserId: actorUserId
             )
             dismiss()
             onSave()
