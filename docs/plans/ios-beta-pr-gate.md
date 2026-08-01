@@ -30,7 +30,7 @@ Trusted same-repository pull requests targeting `main` run on the self-hosted Ma
 Add `scripts/ci/run-ios-beta-gate.sh` as the execution layer. It:
 
 1. Records expected SHA, actual SHA, runner, Xcode, runtime, and device-class metadata.
-2. Requires at least 60 GiB free on the volume backing `RUNNER_TEMP`; insufficient capacity fails before Xcode.
+2. Requires at least 60 GiB free on the volume backing `RUNNER_TEMP`. When below that budget it first deletes top-level `~/Library/Developer/Xcode/DerivedData` entries not modified in the last 60 minutes (never newer, protecting concurrent builds on the other runner; #1536), logs each deleted entry and the GiB freed, and re-checks; capacity still below budget fails before Xcode.
 3. Verifies the requested iOS runtime and simulator device type exist.
 4. Creates a run-owned temporary simulator and DerivedData directory; the boot command is bounded at 2 minutes and boot readiness at 10 minutes. When only the iPad first boot exhausts that bound while `CoreLocationMigrator.migrator` is active, it captures diagnostics, deletes that run-owned simulator, and performs exactly one fresh 10-minute boot attempt. All other boot failures and a second migration failure remain nonzero failures.
 5. Runs all app/core unit and regression tests from `WiredPart-iOS`, excluding the broad UI-test target from that phase.
