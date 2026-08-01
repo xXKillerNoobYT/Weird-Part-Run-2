@@ -13,6 +13,7 @@ struct IOSMainView: View {
     @EnvironmentObject private var tabPrefs: TabBarPreferences
     @EnvironmentObject private var badgeManager: BadgeCountManager
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var selectedModuleId: String = "dashboard"
     @State private var showLogoutConfirm = false
     @State private var showAIAssistant = false
@@ -331,7 +332,7 @@ struct IOSMainView: View {
                 .accessibilityIdentifier("tab_more")
         }
         .overlay(alignment: .bottomTrailing) {
-            if !showAIAssistant || aiDisplayMode == .sheet {
+            if (!showAIAssistant || aiDisplayMode == .sheet) && !dynamicTypeSize.isAccessibilitySize {
                 aiFloatingButton(bottomPadding: 90)
             }
         }
@@ -403,7 +404,7 @@ struct IOSMainView: View {
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if !showAIAssistant || aiDisplayMode == .sheet {
+            if (!showAIAssistant || aiDisplayMode == .sheet) && !dynamicTypeSize.isAccessibilitySize {
                 aiFloatingButton(bottomPadding: DS.Space.xl)
             }
         }
@@ -479,6 +480,10 @@ struct IOSMainView: View {
             Divider()
             fullSidebarActions
         }
+        // Full-sidebar navigation is persistent chrome. Keep it readable and
+        // operable at AX sizes without letting its visual text consume the
+        // entire split-view width; accessibility labels retain full names.
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .background(DS.Background.page)
     }
 
@@ -651,6 +656,17 @@ struct IOSMainView: View {
     private var fullSidebarActions: some View {
         VStack(spacing: DS.Space.xxs) {
             Button {
+                if aiDisplayMode == .sheet {
+                    activeSidebarSheet = .aiAssistant
+                }
+                showAIAssistant = true
+            } label: {
+                sidebarActionRow(icon: "sparkles", label: "AI Assistant")
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("sidebarAIAssistantButton")
+
+            Button {
                 activeSidebarSheet = .tabEditor
             } label: {
                 sidebarActionRow(icon: "square.grid.2x2", label: "Edit Tabs")
@@ -705,7 +721,10 @@ struct IOSMainView: View {
                 .background(Circle().fill(Color.accentColor))
                 .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
         }
-        .dsMinTapTarget()
+        // The visible circle is already larger than the 44pt HIG target. Do not
+        // apply dsMinTapTarget here: its @ScaledMetric expands the overlay to
+        // 124pt at AX5 and obscures Clock card content (#1456).
+        .contentShape(Rectangle())
         .accessibilityLabel("AI Assistant")
         .accessibilityIdentifier("aiAssistantButton")
         .padding(.trailing, DS.Space.lg)
@@ -732,6 +751,16 @@ struct IOSMainView: View {
 
                 // Edit & Logout
                 Section {
+                    Button {
+                        if aiDisplayMode == .sheet {
+                            activeRootSheet = .aiAssistant
+                        }
+                        showAIAssistant = true
+                    } label: {
+                        Label("AI Assistant", systemImage: "sparkles")
+                    }
+                    .accessibilityIdentifier("moreAIAssistantButton")
+
                     Button {
                         showTabEditor = true
                     } label: {
@@ -788,6 +817,7 @@ struct ModuleHostView: View {
     let navigationRequest: ModuleNavigationRequest?
     @EnvironmentObject private var appCore: AppCore
     @EnvironmentObject private var tabPrefs: TabBarPreferences
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var selectedTabId: String = ""
     @State private var showUserMenu = false
 
@@ -984,7 +1014,52 @@ struct ModuleHostView: View {
 
     @ViewBuilder
     private var subTabPicker: some View {
-        let chipH: CGFloat = 14
+        // A compact phone cannot display all Dashboard destinations at AX5
+        // without a partially clipped trailing label. Use one standard menu so
+        // every destination remains fully named and operable without consuming
+        // the vertical space needed by Clock controls (#1456).
+        if dynamicTypeSize.isAccessibilitySize, module.id == "dashboard" {
+            Menu {
+                ForEach(visibleTabsList) { tab in
+                    Button {
+                        dsAnimate(DS.Anim.fast) {
+                            selectedTabId = tab.id
+                        }
+                    } label: {
+                        Label(tab.label, systemImage: tab.icon)
+                    }
+                    .accessibilityIdentifier("subtab_\(tab.id)")
+                    .accessibilityLabel(tab.label)
+                }
+            } label: {
+                HStack(spacing: DS.Space.xs) {
+                    Image(systemName: visibleTabsList.first(where: { $0.id == selectedTabId })?.icon ?? "square.grid.2x2")
+                        .accessibilityHidden(true)
+                    Text(visibleTabsList.first(where: { $0.id == selectedTabId })?.label ?? "Dashboard")
+                        .lineLimit(1)
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .accessibilityHidden(true)
+                }
+                .font(.headline)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .padding(.horizontal, DS.Space.sm)
+                .background(
+                    RoundedRectangle(cornerRadius: DS.Radius.md)
+                        .fill(Color.accentColor.opacity(0.12))
+                )
+            }
+            .padding(.horizontal, DS.Space.xs)
+            .padding(.vertical, DS.Space.sm)
+            .background(DS.Background.page)
+            .accessibilityIdentifier("dashboardSubtabMenu")
+            .accessibilityLabel("Dashboard section")
+            .accessibilityValue(visibleTabsList.first(where: { $0.id == selectedTabId })?.label ?? "Dashboard")
+        } else {
+        // AX text is capped within the chip, so reduce only its decorative
+        // horizontal padding. This keeps the last Dashboard tab fully legible
+        // instead of presenting a clipped "Daily Re…" label on compact phones.
+        let chipH: CGFloat = dynamicTypeSize.isAccessibilitySize ? 6 : 14
         let isSelected: (AppTab) -> Bool = { $0.id == selectedTabId }
 
         ScrollViewReader { proxy in
@@ -1012,7 +1087,10 @@ struct ModuleHostView: View {
                         .id(tab.id)
                     }
                 }
-                .padding(.horizontal, DS.Space.lg)
+                // Preserve a full 44pt target while using the page gutters for
+                // usable label width at AX5. With only a few Dashboard tabs,
+                // this prevents a half-visible trailing "Daily Report" chip.
+                .padding(.horizontal, dynamicTypeSize.isAccessibilitySize ? DS.Space.xs : DS.Space.lg)
                 .padding(.vertical, DS.Space.sm)
             }
             .onAppear {
@@ -1051,6 +1129,7 @@ struct ModuleHostView: View {
             .animation(.easeInOut(duration: 0.15), value: subTabScrollEdges)
         }
         .background(DS.Background.page)
+        }
     }
 
     /// Gradient scrim shown at a sub-tab strip edge while more chips remain
@@ -1077,6 +1156,10 @@ struct ModuleHostView: View {
                 .dsStyle(.detail)
                 .fontWeight(selected ? .semibold : .regular)
         }
+        // Keep the horizontally scrolling navigation usable at AX sizes without
+        // shrinking the standard XL/XXL choices. The full tab name remains its
+        // accessibility label; only accessibility categories are capped (#1456).
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .padding(.horizontal, chipH)
         .padding(.vertical, DS.Space.sm)
         .frame(minWidth: 44, minHeight: 44)
