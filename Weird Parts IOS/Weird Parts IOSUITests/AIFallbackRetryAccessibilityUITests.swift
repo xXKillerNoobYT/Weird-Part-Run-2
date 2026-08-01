@@ -28,7 +28,16 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
 
     private func launchApp(contentSizeCategory: UIContentSizeCategory? = nil) -> XCUIApplication {
         let application = XCUIApplication()
-        application.launchArguments = ["-UITesting", "-UITestingAIFallbackSaveWarning"]
+        // The warning is asserted from the authenticated shell, not through a
+        // manual PIN/onboarding flow that belongs to separate coverage.
+        application.launchArguments = [
+            "-UITesting",
+            "-UITestingWEI936AutoLogin",
+            "-UITestingAIFallbackSaveWarning",
+            // AX5 on iPad must exercise the persistent full-sidebar action,
+            // never a navStyle_<userId> preference left by another test run.
+            "-UITestingFullSidebar",
+        ]
         if let contentSizeCategory {
             application.launchArguments += [
                 "-UIPreferredContentSizeCategoryName",
@@ -42,11 +51,8 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
 
     @MainActor
     private func verifyWarningAndRetryTarget(context: String) throws {
-        try logInIfNeeded()
-
-        let assistantButton = app.buttons["aiAssistantButton"]
-        XCTAssertTrue(assistantButton.waitForExistence(timeout: 15), "AI Assistant should be available at \(context).")
-        assistantButton.tap()
+        waitForAuthenticatedAppShell()
+        openAssistant(context: context)
 
         let warningTitle = app.descendants(matching: .any).matching(
             NSPredicate(format: "label == %@", "Conversation turn was not saved")
@@ -89,53 +95,36 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
     }
 
     @MainActor
-    private func logInIfNeeded() throws {
-        let assistantButton = app.buttons["aiAssistantButton"]
-        if assistantButton.waitForExistence(timeout: 5), assistantButton.isHittable { return }
+    private func waitForAuthenticatedAppShell() {
+        let dashboard = app.descendants(matching: .any)["tab_dashboard"]
+        guard dashboard.waitForExistence(timeout: 30) else {
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = "Authenticated shell precondition failure"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            XCTFail("The deterministic UI-test fixture should mount the authenticated app shell.")
+            return
+        }
+        XCTAssertTrue(dashboard.isHittable, "The authenticated dashboard shell should be actionable.")
+    }
 
-        let ownerRow = app.buttons.matching(
-            NSPredicate(format: "identifier BEGINSWITH 'loginUserRow_'")
-        ).firstMatch
-        XCTAssertTrue(ownerRow.waitForExistence(timeout: 30), "UI test owner should be available.")
-        ownerRow.tap()
-
-        let pinField = app.secureTextFields["loginPINField"]
-        XCTAssertTrue(pinField.waitForExistence(timeout: 5), "PIN field should appear.")
-        pinField.tap()
-        pinField.typeText("1234")
-
-        let done = app.buttons["loginPINDoneButton"]
-        if done.waitForExistence(timeout: 2), done.isHittable { done.tap() }
-
-        let signIn = app.buttons["loginSignInButton"]
-        XCTAssertTrue(signIn.waitForExistence(timeout: 5), "Sign In should appear.")
-        signIn.tap()
-
-        let deadline = Date().addingTimeInterval(25)
-        while Date() < deadline {
-            let skip = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Skip'")).firstMatch
-            let gotIt = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Got It'")).firstMatch
-            if gotIt.exists {
-                if gotIt.isHittable {
-                    gotIt.tap()
-                } else {
-                    app.scrollViews.firstMatch.swipeUp()
-                }
-                continue
-            }
-            if skip.exists {
-                if skip.isHittable {
-                    skip.tap()
-                } else {
-                    app.scrollViews.firstMatch.swipeUp()
-                }
-                continue
-            }
-            if app.buttons["aiAssistantButton"].exists,
-               app.buttons["aiAssistantButton"].isHittable { return }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+    @MainActor
+    private func openAssistant(context: String) {
+        if name.contains("AX5") && UIDevice.current.userInterfaceIdiom == .pad {
+            // iPad defaults to the full sidebar. This is the AX5 regression
+            // path: the visible sidebar action must open the warning directly.
+            let assistant = app.descendants(matching: .any)["sidebarAIAssistantButton"]
+            XCTAssertTrue(assistant.waitForExistence(timeout: 15), "Full-sidebar AI Assistant should be visible at \(context).")
+            XCTAssertTrue(assistant.isHittable, "Full-sidebar AI Assistant should be hittable at \(context).")
+            XCTAssertGreaterThanOrEqual(assistant.frame.height, 44, "Full-sidebar AI Assistant must retain a 44pt target at \(context).")
+            XCTAssertTrue(app.windows.firstMatch.frame.contains(assistant.frame), "Full-sidebar AI Assistant must remain in the visible viewport at \(context).")
+            assistant.tap()
+            return
         }
 
-        XCTFail("Login should reach the app shell before opening AI Assistant.")
+        let assistant = app.descendants(matching: .any)["aiAssistantButton"]
+        XCTAssertTrue(assistant.waitForExistence(timeout: 15), "AI Assistant should be available at \(context).")
+        XCTAssertTrue(assistant.isHittable, "AI Assistant should be actionable at \(context).")
+        assistant.tap()
     }
 }

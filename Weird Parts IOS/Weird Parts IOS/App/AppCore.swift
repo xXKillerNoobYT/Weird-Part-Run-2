@@ -280,10 +280,13 @@ final class AppCore: ObservableObject {
                 needsOnboarding = false
             }
 
+            let uiTestDisplayName = ProcessInfo.processInfo.arguments.contains("-UITestingTeamsViewOnly")
+                ? "UITest People Viewer"
+                : "UITest Owner"
             if uiTestingMode &&
                ProcessInfo.processInfo.arguments.contains("-UITestingWEI936AutoLogin") &&
                !ProcessInfo.processInfo.arguments.contains("-UITestingForceLogin"),
-               let uiTestUser = result.users.first(where: { $0.displayName == "UITest Owner" }),
+               let uiTestUser = result.users.first(where: { $0.displayName == uiTestDisplayName }),
                let userId = uiTestUser.id {
                 currentUser = uiTestUser
                 permissions = (try? result.auth.getUserPermissions(userId)) ?? []
@@ -903,6 +906,74 @@ final class AppCore: ObservableObject {
             activeUsers.first(where: { $0.displayName == "UITest Owner" })?.id ??
             activeUsers.first?.id
 
+        if ProcessInfo.processInfo.arguments.contains("-UITestingTeamsViewOnly") {
+            let viewerUserId: Int64
+            if let existingViewerUserId = activeUsers.first(where: { $0.displayName == "UITest People Viewer" })?.id {
+                viewerUserId = existingViewerUserId
+            } else {
+                viewerUserId = try authService.createUser(displayName: "UITest People Viewer", pin: "2468")
+            }
+            try db.writer.write { dbConn in
+                try dbConn.execute(sql: """
+                    INSERT OR IGNORE INTO hats (name, description, level, is_builtin)
+                    VALUES ('UITest People Viewer', 'UI-test-only view_people role', 0, 0)
+                    """)
+                guard let viewerHatId = try Int64.fetchOne(
+                    dbConn,
+                    sql: "SELECT id FROM hats WHERE name = 'UITest People Viewer'"
+                ) else { return }
+                try dbConn.execute(
+                    sql: "INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key) VALUES (?, 'view_people')",
+                    arguments: [viewerHatId]
+                )
+                try dbConn.execute(sql: """
+                    UPDATE user_hats
+                    SET is_active = 0,
+                        deleted_at = COALESCE(deleted_at, datetime('now'))
+                    WHERE user_id = ?
+                      AND hat_id != ?
+                      AND (is_active = 1 OR deleted_at IS NULL)
+                    """, arguments: [viewerUserId, viewerHatId])
+                try dbConn.execute(sql: """
+                    INSERT INTO user_hats (user_id, hat_id, is_active, deleted_at)
+                    VALUES (?, ?, 1, NULL)
+                    ON CONFLICT(user_id, hat_id) DO UPDATE SET
+                        is_active = 1,
+                        deleted_at = NULL
+                    """, arguments: [viewerUserId, viewerHatId])
+
+                try dbConn.execute(sql: """
+                    INSERT INTO employee_teams
+                        (name, description, is_active, created_by, updated_by, deleted_at)
+                    VALUES ('UITest Read Only Team', 'Permission regression fixture', 1, ?, ?, NULL)
+                    ON CONFLICT(name) DO UPDATE SET
+                        description = excluded.description,
+                        is_active = 1,
+                        updated_by = excluded.updated_by,
+                        updated_at = datetime('now'),
+                        deleted_at = NULL
+                    """, arguments: [fixtureUserId, fixtureUserId])
+                guard let teamId = try Int64.fetchOne(
+                    dbConn,
+                    sql: """
+                        SELECT id FROM employee_teams
+                        WHERE name = 'UITest Read Only Team' AND is_active = 1 AND deleted_at IS NULL
+                        """
+                ) else { return }
+                try dbConn.execute(sql: """
+                    INSERT INTO employee_team_members
+                        (team_id, user_id, role, added_by, deleted_at)
+                    VALUES (?, ?, 'member', ?, NULL)
+                    ON CONFLICT(team_id, user_id) DO UPDATE SET
+                        role = excluded.role,
+                        joined_at = datetime('now'),
+                        deleted_at = NULL,
+                        added_by = excluded.added_by,
+                        removed_by = NULL
+                    """, arguments: [teamId, viewerUserId, fixtureUserId])
+            }
+        }
+
         let now = ISO8601DateFormatter().string(from: Date())
         let longNotesLocal = String(repeating: "LOCAL_NOTES_SEGMENT_", count: 22)
         let longNotesRemote = String(repeating: "REMOTE_NOTES_SEGMENT_", count: 22)
@@ -1033,6 +1104,39 @@ final class AppCore: ObservableObject {
                     sql: "SELECT id FROM jobs WHERE job_number = 'UITEST-JPO-001' AND deleted_at IS NULL"
                 )!
 
+                if ProcessInfo.processInfo.arguments.contains("-UITestingActiveSupplyRunNearMinute") {
+                    let now = Date()
+                    let clockIn = CoreFormatters.dateTimeSpaceUTC.string(from: now.addingTimeInterval(-300))
+                    let supplyRunStart = CoreFormatters.iso8601.string(from: now.addingTimeInterval(-20))
+                    try dbConn.execute(
+                        sql: "DELETE FROM labor_entries WHERE user_id = ? AND status = 'clocked_in' AND clock_out IS NULL",
+                        arguments: [userId]
+                    )
+                    try dbConn.execute(
+                        sql: """
+                            INSERT INTO labor_entries
+                            (user_id, job_id, clock_in, status, notes, created_at)
+                            VALUES (?, ?, ?, 'clocked_in', ?, ?)
+                            """,
+                        arguments: [userId, jobId, clockIn, "[supply_run_start:\(supplyRunStart)]", clockIn]
+                    )
+                }
+
+                // The interactive Clock In → Start Supply Run → End Supply Run
+                // UI test runs without a simulated GPS fix. Keep the production
+                // default (GPS required) intact and make only this deterministic
+                // test fixture use the company setting's documented opt-out.
+                if ProcessInfo.processInfo.arguments.contains("-UITestingClockInSupplyRunE2E") {
+                    try dbConn.execute(
+                        sql: """
+                            INSERT INTO settings (key, value, category, updated_at)
+                            VALUES ('clock_location_required', 'false', 'company', datetime('now'))
+                            ON CONFLICT(key) DO UPDATE SET
+                                value = 'false', category = 'company', updated_at = datetime('now')
+                            """
+                    )
+                }
+
                 try dbConn.execute(
                     sql: """
                         INSERT OR IGNORE INTO job_parts_orders
@@ -1093,6 +1197,7 @@ final class AppCore: ObservableObject {
         let suppressPostLoginOnboarding = ProcessInfo.processInfo.arguments.contains("-UITestingDispatchBoard")
             || ProcessInfo.processInfo.arguments.contains("-UITestingConflictCapture")
             || ProcessInfo.processInfo.arguments.contains("-UITestingWEI3041Timesheets")
+            || ProcessInfo.processInfo.arguments.contains("-UITestingTeamsViewOnly")
 
         if ProcessInfo.processInfo.arguments.contains("-UITestingWEI3041Timesheets") &&
             !ProcessInfo.processInfo.arguments.contains("-UITestingPreserveDatabase") {
@@ -1416,13 +1521,23 @@ final class AppCore: ObservableObject {
                     WHERE notes = 'WEI-3295 Stage 8 reports viewport seed'
                     """
             )
+            // Seed inside the CURRENT local day, never "yesterday": report
+            // pages default to the "This Period" range (pay-period start ..
+            // now), and a pay-period boundary falling on today puts any
+            // yesterday-dated seed into the PREVIOUS period — every gate run
+            // then fails with "No labor entries found for the selected
+            // period" until the next boundary (observed fleet-wide on
+            // 2026-07-30). Start-of-local-day is always >= the period start
+            // and <= now, so it is in-range on every calendar date.
             try dbConn.execute(
                 sql: """
                     INSERT INTO labor_entries
                     (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours,
                      status, notes, deleted_at, created_at)
-                    VALUES (?, ?, datetime('now', '-1 day'), datetime('now', '-1 day', '+9 hours'),
-                            8.0, 1.0, 'completed', 'WEI-3295 Stage 8 reports viewport seed', NULL, datetime('now', '-1 day'))
+                    VALUES (?, ?, datetime('now', 'localtime', 'start of day', 'utc'),
+                            datetime('now'),
+                            8.0, 1.0, 'completed', 'WEI-3295 Stage 8 reports viewport seed', NULL,
+                            datetime('now', 'localtime', 'start of day', 'utc'))
                     """,
                 arguments: [userId, jobId]
             )
@@ -1432,8 +1547,9 @@ final class AppCore: ObservableObject {
                     INSERT OR IGNORE INTO purchase_orders
                     (po_number, supplier_id, status, order_date, subtotal, tax_amount, shipping_cost,
                      total_cost, notes, submitted_by, deleted_at, created_at, updated_at)
-                    VALUES ('PO-WEI3295-STAGE8', ?, 'ordered', date('now', '-1 day'), 127.50, 0, 0,
-                            127.50, 'WEI-3295 Stage 8 reports viewport seed', ?, NULL, datetime('now', '-1 day'), datetime('now'))
+                    VALUES ('PO-WEI3295-STAGE8', ?, 'ordered', date('now', 'localtime'), 127.50, 0, 0,
+                            127.50, 'WEI-3295 Stage 8 reports viewport seed', ?, NULL,
+                            datetime('now', 'localtime', 'start of day', 'utc'), datetime('now'))
                     """,
                 arguments: [supplierId, userId]
             )
