@@ -4059,7 +4059,7 @@
           "schedule = normalized",
           "onSave(normalized)",
           "schedule.circuitsOutsideTotalSpaces",
-          "Saving will remove",
+          "Saving will permanently remove",
           "showHiddenCircuitPruneConfirmation",
           "Remove Hidden Circuits?",
           "Remove & Save",

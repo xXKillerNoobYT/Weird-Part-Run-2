@@ -1120,11 +1120,13 @@ struct IOSMovementWizard: View {
 
     /// Preload the scanned part from a QR quick action (#700).
     ///
-    /// Runs after `restoreDraft()` and only when no draft selections exist, so a
-    /// saved in-progress movement is never clobbered by a stale scan context.
+    /// Runs after `restoreDraft()` so a direct QR handoff augments a saved
+    /// movement instead of silently losing the newly scanned part. Existing
+    /// selections are retained, and a duplicate scan remains idempotent.
     private func prefillScannedPart() {
         guard let partId = prefillPartId,
-              selectedParts.isEmpty,
+              !selectedParts.contains(where: { $0.partId == partId }),
+              selectedParts.count < 20,
               let service = appCore.partsService,
               let details = try? service.getPart(id: partId) else { return }
 
@@ -1140,9 +1142,9 @@ struct IOSMovementWizard: View {
 }
 
 enum MovementWizardDraftStore {
-    static let baseKey = "movementWizardDraft"
+    nonisolated static let baseKey = "movementWizardDraft"
 
-    static func key(userId: Int64?) -> String {
+    nonisolated static func key(userId: Int64?) -> String {
         guard let userId else { return "\(baseKey)_anonymous" }
         return "\(baseKey)_user_\(userId)"
     }
@@ -1155,7 +1157,7 @@ enum MovementWizardDraftStore {
         UserDefaults.standard.data(forKey: key(userId: userId))
     }
 
-    static func clear(userId: Int64?) {
+    nonisolated static func clear(userId: Int64?) {
         UserDefaults.standard.removeObject(forKey: key(userId: userId))
     }
 }
