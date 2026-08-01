@@ -686,15 +686,19 @@ struct IOSMainView: View {
 
     @ViewBuilder
     private func sidebarActionRow(icon: String, label: String) -> some View {
-        HStack(spacing: DS.Space.sm) {
+        HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center, spacing: DS.Space.sm) {
             Image(systemName: icon)
                 .frame(width: 24)
             Text(label)
                 .font(.caption)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                .fixedSize(horizontal: false, vertical: dynamicTypeSize.isAccessibilitySize)
+                .layoutPriority(1)
             Spacer()
         }
         .padding(.horizontal, DS.Space.md)
         .padding(.vertical, DS.Space.sm)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         .foregroundStyle(.secondary)
         .contentShape(Rectangle())
     }

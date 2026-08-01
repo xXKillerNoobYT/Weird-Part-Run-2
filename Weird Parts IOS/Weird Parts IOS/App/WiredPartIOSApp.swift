@@ -77,6 +77,16 @@ struct WiredPartIOSApp: App {
         ProcessInfo.processInfo.arguments.contains("-UITestingWEI3041Timesheets")
     }
 
+    /// The AIFallback smoke needs the already-authenticated app shell on its
+    /// first launch. Bootstrap seeds the fixture user and first-run defaults in
+    /// the same pass, so ordinary production routing can otherwise render setup
+    /// before SwiftUI observes those defaults.
+    private var shouldOpenAuthenticatedShellForUITest: Bool {
+        let arguments = ProcessInfo.processInfo.arguments
+        return arguments.contains("-UITesting")
+            && arguments.contains("-UITestingWEI936AutoLogin")
+    }
+
     private var shouldShowWEI936WelcomeFixture: Bool {
         ProcessInfo.processInfo.arguments.contains("-UITestingWEI936Welcome")
     }
@@ -207,6 +217,11 @@ struct WiredPartIOSApp: App {
                             IOSTimesheetsPage()
                                 .environmentObject(appCore)
                         }
+                    } else if shouldOpenAuthenticatedShellForUITest {
+                        IOSMainView()
+                            .environmentObject(appCore)
+                            .environmentObject(tabPrefs)
+                            .environmentObject(appCore.badgeCountManager)
                     } else if isAdmin && !hasCompletedCompanySetup {
                         CompanySetupWizard()
                             .environmentObject(appCore)
