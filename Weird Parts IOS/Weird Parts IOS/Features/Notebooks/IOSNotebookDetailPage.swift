@@ -27,6 +27,7 @@ struct IOSNotebookDetailPage: View {
     @State private var designPanelAutosaveTask: Task<Void, Never>?
     @AppStorage("panelPrintConfigJSON") private var panelPrintConfigJSON = ""
     @State private var showPanelPrintPreview = false
+    @State private var jpoCreatedMessage: String?
     @State private var blockConflicts: [NotebookBlockConflict] = []
     @State private var activeEditLocks: [NotebookEntryEditLock] = []
     @State private var pendingDelete: PendingDelete?
@@ -1355,7 +1356,11 @@ struct IOSNotebookDetailPage: View {
 
         case .panelRedesignBuilder:
             NavigationStack {
-                PanelRedesignBuilderView(panel: $designPanelState)
+                PanelRedesignBuilderView(
+                    panel: $designPanelState,
+                    onPrint: { showPanelPrintPreview = true },
+                    onAddToJPO: notebook?.jobId == nil ? nil : { createJPOFromPanel() }
+                )
                     .navigationTitle("Panel Schedule")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
@@ -1385,6 +1390,15 @@ struct IOSNotebookDetailPage: View {
                             panel: designPanelState,
                             config: panelPrintConfigBinding
                         )
+                    }
+                    .alert(
+                        jpoCreatedMessage ?? "",
+                        isPresented: Binding(
+                            get: { jpoCreatedMessage != nil },
+                            set: { if !$0 { jpoCreatedMessage = nil } }
+                        )
+                    ) {
+                        Button("OK", role: .cancel) {}
                     }
             }
 
@@ -1716,6 +1730,27 @@ struct IOSNotebookDetailPage: View {
             guard !Task.isCancelled else { return }
             persistDesignPanelState()
             designPanelAutosaveTask = nil
+        }
+    }
+
+    /// Spec §1 Add to JPO: creates a draft JPO on the notebook's job with the
+    /// panel's breaker shopping list as notes (breakers aren't catalog parts,
+    /// so v1 ships the list for the office to resolve into part lines).
+    private func createJPOFromPanel() {
+        guard let ordersService = appCore.ordersService,
+              let jobId = notebook?.jobId,
+              let userId = appCore.currentUser?.id else { return }
+        let list = designPanelState.breakerShoppingList()
+        guard !list.isEmpty else {
+            jpoCreatedMessage = "No circuits to order yet — add breakers first."
+            return
+        }
+        let notes = "Breakers for \(notebook?.title ?? "panel"):\n" + list.joined(separator: "\n")
+        do {
+            _ = try ordersService.createJPO(jobId: jobId, requestedBy: userId, notes: notes)
+            jpoCreatedMessage = "\(list.count) breaker line\(list.count == 1 ? "" : "s") added to a new JPO draft."
+        } catch {
+            jpoCreatedMessage = userFriendlyError(error, context: "create JPO")
         }
     }
 

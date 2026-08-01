@@ -264,3 +264,42 @@ extension DesignPanelState {
         return state
     }
 }
+
+// MARK: - Add to JPO (spec §1)
+
+extension DesignPanelState {
+    /// One line per breaker to purchase, for a draft JPO's notes. Breakers
+    /// are hardware, not catalog parts, so v1 ships the list as human-readable
+    /// notes on an empty draft JPO — the office resolves parts from there.
+    /// Identical breakers aggregate ("2× 20A/1P GFCI").
+    public func breakerShoppingList() -> [String] {
+        var counts: [String: Int] = [:]
+        var order: [String] = []
+        func add(_ description: String) {
+            if counts[description] == nil { order.append(description) }
+            counts[description, default: 0] += 1
+        }
+        for (_, entry) in entries.sorted(by: { $0.key < $1.key }) {
+            switch entry {
+            case .full(let poles, let circuit):
+                guard circuit.type != .spare else { continue }
+                add("\(circuit.amps)A/\(max(1, min(poles, 3)))P \(circuit.type.displayName)")
+            case .tandem(let upper, let lower):
+                let halves = [upper, lower].filter { $0.type != .spare }
+                guard !halves.isEmpty else { continue }
+                let spec = halves.map { "\($0.amps)A" }.joined(separator: "/")
+                add("Tandem \(spec) \(halves[0].type.displayName)")
+            case .quad(let mode, let sections):
+                let active = sections.filter { $0.type != .spare }
+                guard !active.isEmpty else { continue }
+                let spec = active.map { "\($0.amps)A" }.joined(separator: "/")
+                let modeName = mode == .four ? "4×1P" : mode == .center ? "120/240/120" : "2×2P"
+                add("Quad (\(modeName)) \(spec)")
+            }
+        }
+        return order.map { key in
+            let count = counts[key] ?? 1
+            return count > 1 ? "\(count)× \(key)" : "1× \(key)"
+        }
+    }
+}
