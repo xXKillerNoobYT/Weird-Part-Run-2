@@ -276,9 +276,10 @@ A dedicated tool for building electrical panel schedules. This is a first-class 
 - Circuit position validation (same-side double-breaker span, space-occupancy
   conflicts) lives on `PanelSchedule` (`validationErrors`, `upsertCircuit`,
   `moveCircuit`) and composes with the existing #1239 `totalSpaces` clamping —
-  it does not replace it. Panel type space limits stay driven by the shared
-  `PanelSchedule.supportedTotalSpaces` list rather than per-type ranges, so the
-  #1239 fix's single source of truth for panel sizing is preserved.
+  it does not replace it. Panel-type ranges are composed with the shared
+  `PanelSchedule.supportedTotalSpaces` list via `PanelType.allowedTotalSpaces`,
+  so #1239 remains the single source of truth for numeric sizes while user edits
+  reject invalid type/size pairs without discarding circuits (#1513).
 - No new migration was required: `task_status`/`task_due_date`/`task_assigned_to`/
   `task_parts_note` already exist on `notebook_entries`, and panel circuit
   classification persists inside the existing `block_data` JSON blob.
