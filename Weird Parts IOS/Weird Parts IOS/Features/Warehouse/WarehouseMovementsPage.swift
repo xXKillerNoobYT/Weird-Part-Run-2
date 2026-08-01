@@ -15,6 +15,7 @@ struct WarehouseMovementsPage: View {
     @State private var selectedFilter: MovementFilter?
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
+    @State private var scannedPartIdForNewMovement: Int64?
     @State private var completedHistoryExpanded = false
 
     // Date filter
@@ -128,6 +129,12 @@ struct WarehouseMovementsPage: View {
         .sheet(item: $activeSheet) { sheet in
             sheetContent(for: sheet)
         }
+        .sheet(isPresented: scannedMovementWizardPresented) {
+            if let partId = scannedPartIdForNewMovement {
+                IOSMovementWizard(prefillPartId: partId, onComplete: { loadData() })
+                    .environmentObject(appCore)
+            }
+        }
         .background(DS.Background.page)
         .task {
             // QR quick action "Move Stock" (#700): open the movement wizard with
@@ -168,6 +175,11 @@ struct WarehouseMovementsPage: View {
             })
         case .qrScanner:
             QRScanSheet(expectedType: .part) { result in
+                // QRScanSheet only completes matching, found part results. Keep
+                // the ID check defensive so a malformed result never replaces
+                // the current movement context with an unprefilled wizard.
+                guard result.isFound, let partId = result.entityId else { return }
+                scannedPartIdForNewMovement = partId
                 activeSheet = nil
             }
             .environmentObject(appCore)
@@ -182,6 +194,13 @@ struct WarehouseMovementsPage: View {
                 ]
             )
         }
+    }
+
+    private var scannedMovementWizardPresented: Binding<Bool> {
+        Binding(
+            get: { scannedPartIdForNewMovement != nil },
+            set: { if !$0 { scannedPartIdForNewMovement = nil } }
+        )
     }
 
     // MARK: - Smart Card Filters

@@ -112,6 +112,13 @@ struct IOSMainView: View {
         return args.contains("-UITesting") && args.contains("-UITestingWarehouseDashboard")
     }
 
+    /// Test-only deep link for direct Warehouse Movements actions, including
+    /// the QR-to-wizard handoff.
+    private var isUITestingOpenWarehouseMovements: Bool {
+        let args = ProcessInfo.processInfo.arguments
+        return args.contains("-UITesting") && args.contains("-UITestingWarehouseMovements")
+    }
+
     /// Test-only deep link for clock flow UI QA. Requires `-UITesting` so the
     /// flag cannot alter production or manual debug navigation.
     private var isUITestingOpenDashboardClock: Bool {
@@ -120,7 +127,7 @@ struct IOSMainView: View {
     }
 
     private var isUITestingOpenWarehouse: Bool {
-        isUITestingOpenWarehouseLocations || isUITestingOpenWarehouseDashboard
+        isUITestingOpenWarehouseLocations || isUITestingOpenWarehouseDashboard || isUITestingOpenWarehouseMovements
     }
 
     /// Test-only deep link for team permission UI regression coverage.
@@ -213,6 +220,14 @@ struct IOSMainView: View {
                 moduleNavigationRequests["warehouse"] = ModuleNavigationRequest(
                     moduleId: "warehouse",
                     tabId: "warehouse-dashboard"
+                )
+            } else if isUITestingOpenWarehouseMovements {
+                selectedModuleId = "warehouse"
+                expandedModuleId = "warehouse"
+                selectedTabPath = "/warehouse/movements"
+                moduleNavigationRequests["warehouse"] = ModuleNavigationRequest(
+                    moduleId: "warehouse",
+                    tabId: "warehouse-movements"
                 )
             } else if isUITestingOpenDashboardClock {
                 selectedModuleId = "dashboard"
@@ -897,6 +912,8 @@ struct ModuleHostView: View {
                 selectedTabId = "warehouse-dashboard"
             } else if isUITestingOpenWarehouseLocations, module.id == "warehouse" {
                 selectedTabId = "warehouse-locations"
+            } else if isUITestingOpenWarehouseMovements, module.id == "warehouse" {
+                selectedTabId = "warehouse-movements"
             } else if selectedTabId.isEmpty, let first = visibleTabsList.first {
                 selectedTabId = first.id
             }
@@ -922,6 +939,11 @@ struct ModuleHostView: View {
     private var isUITestingOpenWarehouseDashboard: Bool {
         let args = ProcessInfo.processInfo.arguments
         return args.contains("-UITesting") && args.contains("-UITestingWarehouseDashboard")
+    }
+
+    private var isUITestingOpenWarehouseMovements: Bool {
+        let args = ProcessInfo.processInfo.arguments
+        return args.contains("-UITesting") && args.contains("-UITestingWarehouseMovements")
     }
 
     private var isUITestingOpenDashboardClock: Bool {
