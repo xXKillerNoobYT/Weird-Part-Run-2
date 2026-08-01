@@ -78,6 +78,33 @@ run_or_log() {
   "$@"
 }
 
+# --- Self-heal: approve workflow runs stuck awaiting manual approval ---
+# When PR_MAINTENANCE_PAT is missing, the update-branch pushes this script
+# makes with the fallback github.token leave their CI runs in
+# conclusion=action_required, so required contexts are never delivered and
+# the train silently stalls (#1556; previously jammed #1343-#1346, and
+# 30+ runs were hand-approved during the 2026-07-28/29 backlog drain).
+# Try to approve them via the API; when the token cannot, log loudly so
+# the stall is visible instead of silent.
+approve_stuck_workflow_runs() {
+  local ids id approved=0 failed=0
+  ids="$(gh api "repos/$REPO/actions/runs?status=action_required&per_page=50" \
+    --jq '.workflow_runs[]?.id' 2>/dev/null || true)"
+  [[ -z "$ids" ]] && return 0
+  while IFS= read -r id; do
+    [[ "$id" =~ ^[0-9]+$ ]] || continue
+    if run_or_log gh api -X POST "repos/$REPO/actions/runs/$id/approve" >/dev/null 2>&1; then
+      approved=$((approved+1))
+    else
+      failed=$((failed+1))
+    fi
+  done <<<"$ids"
+  echo "==> Self-heal: approved $approved stuck (action_required) workflow run(s); $failed could not be approved."
+  if [[ "$failed" -gt 0 ]]; then
+    echo "WARNING: $failed workflow run(s) still await manual approval — PR_MAINTENANCE_PAT is likely missing or lacks Actions write (see #1556)." >&2
+  fi
+}
+
 if [[ -n "$MAX_PRS" && ! "$MAX_PRS" =~ ^[0-9]+$ ]]; then
   echo "error: PR_MAINTENANCE_MAX_PRS must be a positive integer when set, got '$MAX_PRS'" >&2
   exit 1
@@ -97,6 +124,10 @@ if [[ -n "$MAX_PRS" ]]; then
 else
   echo "==> Scanning all open PRs in $REPO targeting $BASE (one-at-a-time mode)"
 fi
+
+# Unjam any runs stuck awaiting approval before deciding what to do —
+# otherwise their PRs read as "checks pending/missing" forever.
+approve_stuck_workflow_runs
 
 # Fetch the full matching queue with REST pagination, capturing all fields needed
 # for processing in a single bulk request to avoid per-PR API calls in the loop.
