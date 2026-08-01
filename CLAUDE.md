@@ -1,6 +1,6 @@
 # Agent Instructions
 
-> This file is mirrored across CLAUDE.md, copilot-instructions.md, AGENTS.md, and GEMINI.md so the same instructions load in any AI environment.
+> Canonical agent instructions. `.github/copilot-instructions.md` partially mirrors the most-referenced sections for the Copilot coding agent; no other mirrors currently exist.
 
 --- MEMORY.md use this for project context and architectural patterns. Re-read at ~80% context usage to prevent drift.
 
@@ -120,16 +120,16 @@ The runner API requires a GitHub token with permission to read repository Action
 
 This repo is currently under the user's personal GitHub account (`xXKillerNoobYT`), not a GitHub organization. Do not assume organization teams, organization policy pages, organization-level settings, or organization Copilot controls exist. Verify the repo owner before applying GitHub admin instructions. If a requested control is organization-only, document it as not applicable unless/until the user transfers the repo to an organization; use repo-level or user-account-level settings where available. See `docs/github-account-context.md`.
 
-## GitHub Copilot PR Review Gate
+## PR Review Gate (Copilot gate SUSPENDED — owner directive 2026-07-30)
 
-Owner direction tracked in Paperclip WEI-3851/WEI-3852 supersedes older attempts to remove GitHub Copilot from the merge path. For every PR before merge:
+**Supersession trail:** WEI-3851/WEI-3852 required a GitHub Copilot review on every PR. On 2026-07-30 the owner said in chat they may cancel the Copilot subscription and directed: *"no [Copilot review] — you do a great job if you do a review first."* That chat directive supersedes WEI-3851/WEI-3852. (A prior PR recording this, #1559, was closed by a governance agent citing the older tickets; this section is the current owner-confirmed policy. If Copilot review requests start registering again AND the owner re-enables the gate in chat, restore the old section from git history.)
 
-1. Request a GitHub Copilot PR review/comment through GitHub review tooling the same way you would request a user review.
-2. Do not merge until Copilot has left a review/comment, unless there is explicit owner-approved evidence that Copilot review is unavailable for that PR. Waiting about 30 minutes between review/fix cycles is acceptable.
-3. If Copilot finds issues, route the fix work through the normal Codex/Hermes-local implementation lane or a human. Copilot review comments/suggestions are review input, not permission to use Copilot as a local Paperclip provider/tooling route.
-4. After fixes land, self-review, run required local/CI checks, and re-request/wait for Copilot again when the PR materially changed. Repeat until no blocking issues remain.
-5. Branches of branches and PRs of PRs are allowed when they improve quality or isolate fixes.
-6. Merge readiness now includes: linked Paperclip/GitHub issues resolved, branch current with `main`, required checks green, unresolved review threads resolved, required Copilot review/comment satisfied, and no owner/security/product blocker.
+For every PR before merge:
+
+1. The merging agent performs a full file-as-a-whole diff review (correctness, security, tests, plan alignment) and records material findings on the PR before merging. Self-authored PRs still get this review pass.
+2. Copilot review is OPTIONAL: request it only if the subscription is active and quota is available; never block a merge waiting on Copilot.
+3. Merge readiness: linked issues resolved, branch current with `main`, required checks green, unresolved review threads resolved, agent review done, and no owner/security/product blocker.
+4. Branches of branches and PRs of PRs are allowed when they improve quality or isolate fixes.
 
 **Rules:**
 
@@ -252,7 +252,7 @@ The 11 old scheduled tasks are consolidated into **two continuous heartbeat rout
 - **`HUNT FIX`** (or `/hunt-fix`) — one iteration of the dedicated bug-exterminator, focused on AUTO GO's current area.
 - **`HUNT FIX STOP`** / **`HUNT FIX RESUME`** — shared with AUTO GO.
 
-**Cadence (updated 2026-04-23 — budget-aware default):** 6-hour cadence with a 3-hour offset. AUTO GO fires at 6AM/12PM/6PM local (cron `0 6,12,18 * * *`); HUNT FIX fires at 9AM/3PM/9PM local (cron `0 9,15,21 * * *`). Six total fires/day, interleaved every 3 hours — roughly **11× fewer fires** than the old 30-min cadence (68/day → 6/day). **Each fire does ONE iteration**, not a continuous `/loop` — this replaces the prior "fire once at 9AM, self-pace all day" design after hitting Claude weekly caps (2026-04-21). If the current area isn't done in one iteration, the next cron fire picks up where it left off. Trigger phrases still work typed directly (`AUTO GO`, `HUNT FIX`, `AUTO GO STOP/RESUME`) via `~/.claude/hooks/auto-go-trigger.sh`.
+**Pacing (updated 2026-07-30 — FULL AUTO, owner-directed limits only):** AUTO GO must NOT self-limit for budget reasons. No budget_mode, no self-imposed fire caps, no "budget-aware" throttling baked into the loop. The owner sets any pace limit in chat, explicitly, when they want one; absent such a directive the loop runs full auto. Weekly-limit *timing* (not limiting) is handled centrally: the owner's standing directive is to spend the whole weekly allowance so it runs out in the final quarter of the last day, right before the Monday 10:00 AM local reset. Every AUTO GO iteration checks the pacer (`~/.claude/scripts/claude-pace.sh`, or `python3 ~/.claude/usage-pacer.py` for the deep view) and speeds up or slows down toward that target, biasing toward speed-up since unspent budget at reset is wasted. Two refinements (owner 2026-07-31): an **owner reserve** (default 15%, env `CLAUDE_OWNER_RESERVE`) is held unspent through the first three quarters of the week as the owner's guaranteed interactive headroom and released on a ramp across the last quarter; and a **daily floor** — at least ONE AUTO GO iteration per day regardless of verdict (pacing shifts iteration size and delay, never to zero). The pacer auto-starts the "Usage for Claude" app if its local API is down. Pacer sources, in order: (1) **ClaudeUsage macOS app local API** `http://127.0.0.1:47291` (`/weekly`, `/session`, `/opus` — live percentUsed + resetsAt; read-only, app must be running with Local API enabled); (2) **Paperclip cost ledger cross-check** — the Providers tab at `http://127.0.0.1:3100/<company>/costs`, API `/api/companies/<cid>/costs/by-provider` summed across all companies (owner request 2026-07-31: check this if nothing else; URL-encode timestamp colons or it silently returns `[]`); (3) transcript-based estimator fallback when the app is down. The historical 6h/3h-offset cron design (2026-04-23 "budget-aware default") is retired as a *limit*; crons remain merely a wake-up mechanism, and each fire still does ONE focused iteration with clean heartbeat handoff. Trigger phrases still work typed directly (`AUTO GO`, `HUNT FIX`, `AUTO GO STOP/RESUME`) via `~/.claude/hooks/auto-go-trigger.sh`.
 
 Escalation paths preserved: Q&A → `docs/dev-qa.md`, Xcode UI → `xcode-ai/fix-prompts/` + `00-fix-order.md`, cannot-do → `docs/DevTODO/`.
 
