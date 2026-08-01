@@ -233,9 +233,16 @@ extension DesignPanelState {
             totalSpaces: DesignPanelSetup.clampSpaces(legacy.totalSpaces),
             mainAmps: legacy.mainBreakerAmps ?? 200
         ))
-        for circuit in legacy.circuits where !circuit.isSpare {
+        for circuit in legacy.circuits where !circuit.isSpare && circuit.breakerType != .spare && circuit.breakerType != .blank {
             let amps = circuit.breakerAmps ?? 20
-            let sub = DesignSubCircuit(amps: amps, name: circuit.circuitDescription)
+            let type: DesignBreakerType
+            switch circuit.breakerType {
+            case .gfci: type = .gfci
+            case .afci: type = .afci
+            case .dualFunction: type = .dualFunction
+            default: type = .standard
+            }
+            let sub = DesignSubCircuit(amps: amps, type: type, name: circuit.circuitDescription)
             let entry: DesignSpaceEntry
             switch circuit.breakerType {
             case .double:
@@ -245,6 +252,7 @@ extension DesignPanelState {
                     upper: sub,
                     lower: DesignSubCircuit(
                         amps: amps,
+                        type: type,
                         name: circuit.secondaryCircuitDescription ?? ""
                     )
                 )

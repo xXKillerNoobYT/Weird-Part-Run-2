@@ -22,6 +22,8 @@ struct IOSNotebookDetailPage: View {
     @State private var todosNeedingReview: [NotebooksService.NotebookEntryRow] = []
     @State private var panelSchedule = PanelSchedule()
     @State private var designPanelState = DesignPanelState()
+    @State private var designPanelEntryId: Int64?
+    @State private var designPanelAutosaveTask: Task<Void, Never>?
     @AppStorage("panelPrintConfigJSON") private var panelPrintConfigJSON = ""
     @State private var showPanelPrintPreview = false
     @State private var blockConflicts: [NotebookBlockConflict] = []
@@ -1358,6 +1360,7 @@ struct IOSNotebookDetailPage: View {
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
                             Button("Done") {
+                                designPanelAutosaveTask?.cancel()
                                 persistDesignPanelState()
                                 activeSheet = nil
                             }
@@ -1373,7 +1376,7 @@ struct IOSNotebookDetailPage: View {
                         }
                     }
                     .onChange(of: designPanelState) { _, _ in
-                        persistDesignPanelState()
+                        scheduleDesignPanelAutosave()
                     }
                     .sheet(isPresented: $showPanelPrintPreview) {
                         PanelPrintPreviewSheet(
@@ -1508,6 +1511,9 @@ struct IOSNotebookDetailPage: View {
 
             // Load panel schedule from first panel_schedule block entry
             loadPanelScheduleFromEntries(service: service)
+            // Redesigned schedules can be the only persisted panel state, so
+            // load them independently of the legacy schedule lookup.
+            loadDesignPanelState()
 
             // Check if this notebook belongs to a warranty job
             if let jobId = notebook?.jobId, let jobsService = appCore.jobsService {
@@ -1538,7 +1544,6 @@ struct IOSNotebookDetailPage: View {
                         // Clamp malformed/synced totalSpaces before rendering —
                         // a negative value traps range construction (#1239).
                         panelSchedule = schedule.clampingTotalSpacesToSupportedRange()
-                        loadDesignPanelState()
                         return
                     }
                 }
@@ -1551,7 +1556,6 @@ struct IOSNotebookDetailPage: View {
                     if let data = entry.blockData?.data(using: .utf8),
                        let schedule = try? JSONDecoder().decode(PanelSchedule.self, from: data) {
                         panelSchedule = schedule.clampingTotalSpacesToSupportedRange()
-                        loadDesignPanelState()
                         return
                     }
                 }
@@ -1652,9 +1656,13 @@ struct IOSNotebookDetailPage: View {
            let entry = blockEntry(withId: entryId),
            let data = entry.blockData?.data(using: .utf8),
            let state = try? JSONDecoder().decode(DesignPanelState.self, from: data) {
+            designPanelEntryId = entryId
             designPanelState = state
-        } else if !panelSchedule.circuits.isEmpty {
-            designPanelState = .migrated(fromLegacy: panelSchedule)
+        } else {
+            designPanelEntryId = nil
+            designPanelState = panelSchedule.circuits.isEmpty
+                ? DesignPanelState()
+                : .migrated(fromLegacy: panelSchedule)
         }
     }
 
@@ -1665,16 +1673,17 @@ struct IOSNotebookDetailPage: View {
               let json = try? JSONEncoder().encode(designPanelState),
               let jsonString = String(data: json, encoding: .utf8) else { return }
         do {
-            if let existingEntryId = findDesignPanelEntryId() {
+            if let existingEntryId = designPanelEntryId ?? findDesignPanelEntryId() {
                 try service.updateBlockEntry(
                     entryId: existingEntryId,
                     content: nil,
                     blockData: jsonString,
                     updatedBy: userId
                 )
+                designPanelEntryId = existingEntryId
             } else {
                 guard let sectionId = try findOrCreateDefaultSectionId(service: service, notebookId: notebookId) else { return }
-                _ = try service.createBlockEntry(
+                designPanelEntryId = try service.createBlockEntry(
                     sectionId: sectionId,
                     blockType: "panel_design_state",
                     title: "Panel Schedule (Redesign)",
@@ -1685,6 +1694,16 @@ struct IOSNotebookDetailPage: View {
             }
         } catch {
             loadError = userFriendlyError(error, context: "save panel design")
+        }
+    }
+
+    private func scheduleDesignPanelAutosave() {
+        designPanelAutosaveTask?.cancel()
+        designPanelAutosaveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled else { return }
+            persistDesignPanelState()
+            designPanelAutosaveTask = nil
         }
     }
 
