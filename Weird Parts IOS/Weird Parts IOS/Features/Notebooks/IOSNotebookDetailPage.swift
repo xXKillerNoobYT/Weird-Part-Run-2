@@ -1692,7 +1692,7 @@ struct IOSNotebookDetailPage: View {
         findEntryId(blockType: "panel_design_state")
     }
 
-    private func blockEntry(withId id: Int64) -> NotebookBlockEntry? {
+    private func blockEntry(withId id: Int64) -> NotebooksService.NotebookEntryRow? {
         for group in hierarchy?.groups ?? [] {
             for section in group.sections {
                 if let entry = section.entries.first(where: { $0.id == id }) { return entry }
