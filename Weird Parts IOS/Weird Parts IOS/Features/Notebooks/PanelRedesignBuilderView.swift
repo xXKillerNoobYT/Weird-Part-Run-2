@@ -15,10 +15,12 @@ struct PanelRedesignBuilderView: View {
     @State private var editorDraft: PanelEditorDraft?
     @State private var placementError: String?
     @State private var showWatts = false
+    @State private var showSetup = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                headerRow
                 layoutSwitcher
                 phaseBalanceCard
                 if let placementError {
@@ -34,6 +36,11 @@ struct PanelRedesignBuilderView: View {
                 }
             }
             .padding()
+        }
+        .sheet(isPresented: $showSetup) {
+            PanelSetupSheet(setup: panel.setup) { newSetup in
+                panel.setup = newSetup
+            }
         }
         .sheet(item: $editorDraft) { draft in
             PanelCircuitEditorSheet(draft: draft, voltageSystem: panel.setup.voltageSystem) { entry in
@@ -64,6 +71,29 @@ struct PanelRedesignBuilderView: View {
         } else {
             editorDraft = .defaults(kind: .full, anchorSpace: space)
         }
+    }
+
+    private var headerRow: some View {
+        Button { showSetup = true } label: {
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(panel.setup.brand) \(panel.setup.model)")
+                        .font(.headline)
+                    Text("\(panel.setup.voltageSystem.rawValue) · \(panel.setup.mainAmps)A \(panel.setup.panelKind.rawValue) · \(panel.setup.totalSpaces) sp\(panel.setup.ctlTandemsAnySlot ? "" : " · CTL")")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "slider.horizontal.3")
+                    .foregroundStyle(Color.accentColor)
+                    .accessibilityHidden(true)
+            }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Panel setup: \(panel.setup.brand) \(panel.setup.model), \(panel.setup.mainAmps) amp, \(panel.setup.totalSpaces) spaces. Double tap to change.")
+        .accessibilityIdentifier("panelSetupHeader")
     }
 
     // MARK: - Switcher + balance card
