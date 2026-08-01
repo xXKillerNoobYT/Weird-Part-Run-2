@@ -87,41 +87,7 @@ struct IOSNotebookDetailPage: View {
             case .editGroup(let id, _): return "editGroup-\(id)"
             case .panelScheduleEditor: return "panelSchedule"
             case .panelRedesignBuilder: return "panelRedesign"
-            case .panelRedesignBuilder:
-            NavigationStack {
-                PanelRedesignBuilderView(panel: $designPanelState)
-                    .navigationTitle("Panel Schedule")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") {
-                                persistDesignPanelState()
-                                activeSheet = nil
-                            }
-                            .accessibilityIdentifier("panelRedesignDone")
-                        }
-                        ToolbarItem(placement: .primaryAction) {
-                            Button {
-                                showPanelPrintPreview = true
-                            } label: {
-                                Label("Print", systemImage: "printer")
-                            }
-                            .accessibilityIdentifier("panelRedesignPrint")
-                        }
-                    }
-                    .onChange(of: designPanelState) { _, _ in
-                        persistDesignPanelState()
-                    }
-                    .sheet(isPresented: $showPanelPrintPreview) {
-                        PanelPrintPreviewSheet(
-                            panelName: notebook?.title ?? "Panel",
-                            panel: designPanelState,
-                            config: panelPrintConfigBinding
-                        )
-                    }
-            }
-
-        case .conflictResolution: return "conflictResolution"
+            case .conflictResolution: return "conflictResolution"
             case .notebookSections: return "notebookSections"
             case .help: return "help"
             }
@@ -1382,6 +1348,40 @@ struct IOSNotebookDetailPage: View {
                         Button("Done") { activeSheet = nil }
                     }
                 }
+            }
+
+        case .panelRedesignBuilder:
+            NavigationStack {
+                PanelRedesignBuilderView(panel: $designPanelState)
+                    .navigationTitle("Panel Schedule")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") {
+                                persistDesignPanelState()
+                                activeSheet = nil
+                            }
+                            .accessibilityIdentifier("panelRedesignDone")
+                        }
+                        ToolbarItem(placement: .primaryAction) {
+                            Button {
+                                showPanelPrintPreview = true
+                            } label: {
+                                Label("Print", systemImage: "printer")
+                            }
+                            .accessibilityIdentifier("panelRedesignPrint")
+                        }
+                    }
+                    .onChange(of: designPanelState) { _, _ in
+                        persistDesignPanelState()
+                    }
+                    .sheet(isPresented: $showPanelPrintPreview) {
+                        PanelPrintPreviewSheet(
+                            panelName: notebook?.title ?? "Panel",
+                            panel: designPanelState,
+                            config: panelPrintConfigBinding
+                        )
+                    }
             }
 
         case .conflictResolution:
