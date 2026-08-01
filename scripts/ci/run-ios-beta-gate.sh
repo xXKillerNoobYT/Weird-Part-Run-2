@@ -56,7 +56,15 @@ metadata_file="$artifact_dir/metadata.txt"
 derived_data=""
 simulator_id=""
 
-mkdir -p "$artifact_dir"
+# The self-hosted runner retains ignored artifacts between jobs. xcodebuild
+# refuses an already-existing -resultBundlePath, so every gate attempt must
+# begin with a clean device-scoped evidence directory.
+prepare_artifact_dir() {
+  rm -rf "$artifact_dir"
+  mkdir -p "$artifact_dir"
+}
+
+prepare_artifact_dir
 
 cleanup() {
   local status=$?
@@ -136,6 +144,10 @@ if [[ "${IOS_BETA_GATE_SELF_TEST:-}" == "1" ]]; then
   gate_name="iPhone"
   ui_log="$self_test_dir/ui-smokes.log"
   ui_result="$self_test_dir/ui-smokes.xcresult"
+
+  mkdir -p "$artifact_dir/stale-ui-smokes-iPhone.xcresult"
+  prepare_artifact_dir
+  [[ ! -e "$artifact_dir/stale-ui-smokes-iPhone.xcresult" ]] || exit 1
 
   prepare_first_ui_smoke_attempt() {
     rm -rf "$artifact_dir" "$ui_result"

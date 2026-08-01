@@ -115,4 +115,33 @@ struct DesignPanelStateTests {
         let decoded = try JSONDecoder().decode(DesignPanelState.self, from: data)
         #expect(decoded == panel)
     }
+
+    @Test("Legacy migration preserves breaker protection types and skips blank or spare circuits")
+    func legacyMigration() {
+        let legacy = PanelSchedule(totalSpaces: 20, mainBreakerAmps: 100, circuits: [
+            CircuitEntry(spaceNumber: 1, breakerAmps: 20, breakerType: .single, circuitDescription: "Lights", isSpare: false),
+            CircuitEntry(spaceNumber: 2, breakerAmps: 30, breakerType: .double, circuitDescription: "Dryer", isSpare: false),
+            CircuitEntry(spaceNumber: 5, breakerAmps: 15, breakerType: .tandem, circuitDescription: "Hall", isSpare: false, secondaryCircuitDescription: "Bath"),
+            CircuitEntry(spaceNumber: 7, breakerType: .spare, isSpare: true),
+            CircuitEntry(spaceNumber: 8, breakerType: .blank, circuitDescription: "Blank", isSpare: false),
+            CircuitEntry(spaceNumber: 9, breakerAmps: 20, breakerType: .gfci, circuitDescription: "Bath GFCI", isSpare: false),
+            CircuitEntry(spaceNumber: 10, breakerAmps: 20, breakerType: .afci, circuitDescription: "Bedroom AFCI", isSpare: false),
+            CircuitEntry(spaceNumber: 11, breakerAmps: 20, breakerType: .dualFunction, circuitDescription: "Kitchen DF", isSpare: false),
+        ])
+        let state = DesignPanelState.migrated(fromLegacy: legacy)
+        #expect(state.setup.mainAmps == 100)
+        #expect(state.entries.count == 6)
+        if case .full(let poles, let c)? = state.entries[2] { #expect(poles == 2); #expect(c.name == "Dryer") }
+        else { Issue.record("expected 2P full at 2") }
+        if case .tandem(let up, let low)? = state.entries[5] { #expect(up.name == "Hall"); #expect(low.name == "Bath") }
+        else { Issue.record("expected tandem at 5") }
+        #expect(state.entries[7] == nil)
+        #expect(state.entries[8] == nil)
+        if case .full(_, let c)? = state.entries[9] { #expect(c.type == .gfci) }
+        else { Issue.record("expected GFCI at 9") }
+        if case .full(_, let c)? = state.entries[10] { #expect(c.type == .afci) }
+        else { Issue.record("expected AFCI at 10") }
+        if case .full(_, let c)? = state.entries[11] { #expect(c.type == .dualFunction) }
+        else { Issue.record("expected dual-function breaker at 11") }
+    }
 }
