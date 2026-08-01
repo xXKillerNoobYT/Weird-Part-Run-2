@@ -115,4 +115,22 @@ struct DesignPanelStateTests {
         let decoded = try JSONDecoder().decode(DesignPanelState.self, from: data)
         #expect(decoded == panel)
     }
+
+    @Test("Legacy migration seeds fulls, doubles, and tandems; skips spares")
+    func legacyMigration() {
+        let legacy = PanelSchedule(totalSpaces: 20, mainBreakerAmps: 100, circuits: [
+            CircuitEntry(spaceNumber: 1, breakerAmps: 20, breakerType: .single, circuitDescription: "Lights", isSpare: false),
+            CircuitEntry(spaceNumber: 2, breakerAmps: 30, breakerType: .double, circuitDescription: "Dryer", isSpare: false),
+            CircuitEntry(spaceNumber: 5, breakerAmps: 15, breakerType: .tandem, circuitDescription: "Hall", isSpare: false, secondaryCircuitDescription: "Bath"),
+            CircuitEntry(spaceNumber: 7, breakerType: .spare, isSpare: true),
+        ])
+        let state = DesignPanelState.migrated(fromLegacy: legacy)
+        #expect(state.setup.mainAmps == 100)
+        #expect(state.entries.count == 3)
+        if case .full(let poles, let c)? = state.entries[2] { #expect(poles == 2); #expect(c.name == "Dryer") }
+        else { Issue.record("expected 2P full at 2") }
+        if case .tandem(let up, let low)? = state.entries[5] { #expect(up.name == "Hall"); #expect(low.name == "Bath") }
+        else { Issue.record("expected tandem at 5") }
+        #expect(state.entries[7] == nil)
+    }
 }

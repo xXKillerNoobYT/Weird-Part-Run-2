@@ -21,6 +21,9 @@ struct IOSNotebookDetailPage: View {
     @State private var isWarrantyJob = false
     @State private var todosNeedingReview: [NotebooksService.NotebookEntryRow] = []
     @State private var panelSchedule = PanelSchedule()
+    @State private var designPanelState = DesignPanelState()
+    @AppStorage("panelPrintConfigJSON") private var panelPrintConfigJSON = ""
+    @State private var showPanelPrintPreview = false
     @State private var blockConflicts: [NotebookBlockConflict] = []
     @State private var activeEditLocks: [NotebookEntryEditLock] = []
     @State private var pendingDelete: PendingDelete?
@@ -69,6 +72,7 @@ struct IOSNotebookDetailPage: View {
         case editSection(sectionId: Int64, name: String)
         case editGroup(groupId: Int64, name: String)
         case panelScheduleEditor
+        case panelRedesignBuilder
         case conflictResolution
         case notebookSections
         case help
@@ -82,7 +86,42 @@ struct IOSNotebookDetailPage: View {
             case .editSection(let id, _): return "editSection-\(id)"
             case .editGroup(let id, _): return "editGroup-\(id)"
             case .panelScheduleEditor: return "panelSchedule"
-            case .conflictResolution: return "conflictResolution"
+            case .panelRedesignBuilder: return "panelRedesign"
+            case .panelRedesignBuilder:
+            NavigationStack {
+                PanelRedesignBuilderView(panel: $designPanelState)
+                    .navigationTitle("Panel Schedule")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") {
+                                persistDesignPanelState()
+                                activeSheet = nil
+                            }
+                            .accessibilityIdentifier("panelRedesignDone")
+                        }
+                        ToolbarItem(placement: .primaryAction) {
+                            Button {
+                                showPanelPrintPreview = true
+                            } label: {
+                                Label("Print", systemImage: "printer")
+                            }
+                            .accessibilityIdentifier("panelRedesignPrint")
+                        }
+                    }
+                    .onChange(of: designPanelState) { _, _ in
+                        persistDesignPanelState()
+                    }
+                    .sheet(isPresented: $showPanelPrintPreview) {
+                        PanelPrintPreviewSheet(
+                            panelName: notebook?.title ?? "Panel",
+                            panel: designPanelState,
+                            config: panelPrintConfigBinding
+                        )
+                    }
+            }
+
+        case .conflictResolution: return "conflictResolution"
             case .notebookSections: return "notebookSections"
             case .help: return "help"
             }
@@ -711,6 +750,33 @@ struct IOSNotebookDetailPage: View {
                     .frame(minHeight: 44)
                 }
                 .buttonStyle(.plain)
+
+                Button {
+                    activeSheet = .panelRedesignBuilder
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "sparkles")
+                            .foregroundStyle(.blue)
+                            .frame(width: 28)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("New Builder (redesign)")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Text("Three layouts, tandem/quad breakers, pro print")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
+                    }
+                    .frame(minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("openPanelRedesignBuilder")
             }
         }
     }
@@ -1472,6 +1538,7 @@ struct IOSNotebookDetailPage: View {
                         // Clamp malformed/synced totalSpaces before rendering —
                         // a negative value traps range construction (#1239).
                         panelSchedule = schedule.clampingTotalSpacesToSupportedRange()
+                        loadDesignPanelState()
                         return
                     }
                 }
@@ -1484,6 +1551,7 @@ struct IOSNotebookDetailPage: View {
                     if let data = entry.blockData?.data(using: .utf8),
                        let schedule = try? JSONDecoder().decode(PanelSchedule.self, from: data) {
                         panelSchedule = schedule.clampingTotalSpacesToSupportedRange()
+                        loadDesignPanelState()
                         return
                     }
                 }
@@ -1554,6 +1622,102 @@ struct IOSNotebookDetailPage: View {
         }
         // No sections exist — create a default one (throws on failure so caller can surface the error)
         return try service.createSection(notebookId: notebookId, groupId: nil, name: "General")
+    }
+
+    /// Print config persists app-wide (spec: set once, reused for every
+    /// schedule) as JSON in AppStorage.
+    private var panelPrintConfigBinding: Binding<PanelPrintConfig> {
+        Binding(
+            get: {
+                guard let data = panelPrintConfigJSON.data(using: .utf8),
+                      let config = try? JSONDecoder().decode(PanelPrintConfig.self, from: data) else {
+                    return PanelPrintConfig()
+                }
+                return config
+            },
+            set: { newValue in
+                if let data = try? JSONEncoder().encode(newValue),
+                   let json = String(data: data, encoding: .utf8) {
+                    panelPrintConfigJSON = json
+                }
+            }
+        )
+    }
+
+    /// Loads the redesigned panel state from its own block entry; when absent
+    /// but a legacy schedule exists, seeds it via the migration helper (the
+    /// legacy entry stays untouched until the user saves here).
+    private func loadDesignPanelState() {
+        if let entryId = findDesignPanelEntryId(),
+           let entry = blockEntry(withId: entryId),
+           let data = entry.blockData?.data(using: .utf8),
+           let state = try? JSONDecoder().decode(DesignPanelState.self, from: data) {
+            designPanelState = state
+        } else if !panelSchedule.circuits.isEmpty {
+            designPanelState = .migrated(fromLegacy: panelSchedule)
+        }
+    }
+
+    private func persistDesignPanelState() {
+        guard let service = appCore.notebooksService,
+              let userId = appCore.currentUser?.id,
+              let notebookId = notebook?.id,
+              let json = try? JSONEncoder().encode(designPanelState),
+              let jsonString = String(data: json, encoding: .utf8) else { return }
+        do {
+            if let existingEntryId = findDesignPanelEntryId() {
+                try service.updateBlockEntry(
+                    entryId: existingEntryId,
+                    content: nil,
+                    blockData: jsonString,
+                    updatedBy: userId
+                )
+            } else {
+                guard let sectionId = try findOrCreateDefaultSectionId(service: service, notebookId: notebookId) else { return }
+                _ = try service.createBlockEntry(
+                    sectionId: sectionId,
+                    blockType: "panel_design_state",
+                    title: "Panel Schedule (Redesign)",
+                    content: nil,
+                    blockData: jsonString,
+                    createdBy: userId
+                )
+            }
+        } catch {
+            loadError = userFriendlyError(error, context: "save panel design")
+        }
+    }
+
+    private func findDesignPanelEntryId() -> Int64? {
+        findEntryId(blockType: "panel_design_state")
+    }
+
+    private func blockEntry(withId id: Int64) -> NotebookBlockEntry? {
+        for group in hierarchy?.groups ?? [] {
+            for section in group.sections {
+                if let entry = section.entries.first(where: { $0.id == id }) { return entry }
+            }
+        }
+        for section in hierarchy?.ungroupedSections ?? [] {
+            if let entry = section.entries.first(where: { $0.id == id }) { return entry }
+        }
+        return nil
+    }
+
+    private func findEntryId(blockType: String) -> Int64? {
+        for group in hierarchy?.groups ?? [] {
+            for section in group.sections {
+                for entry in section.entries where entry.blockType == blockType {
+                    return entry.id
+                }
+            }
+        }
+        for section in hierarchy?.ungroupedSections ?? [] {
+            for entry in section.entries where entry.blockType == blockType {
+                return entry.id
+            }
+        }
+        return nil
     }
 
     private func findPanelScheduleEntryId() -> Int64? {
