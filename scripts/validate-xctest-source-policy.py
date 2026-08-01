@@ -388,7 +388,8 @@ def self_test() -> int:
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         (root / "Sources").mkdir()
-        (root / "Sources" / "App.swift").write_text("let safe = true\nfunc save() {\n dismiss()\n await onSave()\n}\nlet token = 42\n", encoding="utf-8")
+        safe_source = "let safe = true\nfunc save() {\n dismiss()\n await onSave()\n}\nlet token = 42\n"
+        (root / "Sources" / "App.swift").write_text(safe_source, encoding="utf-8")
         (root / "Sources" / "Other.swift").write_text("rowAccessibility()\n", encoding="utf-8")
         manifest = {"schemaVersion": 1, "entries": [{"id": "self-test", "testSource": "Tests/SelfTest.swift:testInvariant", "target": "Sources/App.swift", "invariant": "Safe source contract remains true.", "replacement": "checkout-hosted validator", "executableCoverage": "not applicable: static source policy", "rule": {"contains": ["let safe = true"], "not_contains": ["unsafe = true"], "ordered": [["dismiss()", "await onSave()"]], "regex_not_contains": [r"token\s*=\s*0"], "sections": [{"start": "func save()", "contains": ["dismiss()"], "not_contains": ["unsafe"]}], "scoped": [{"start": "func save()", "end": "await onSave()", "rule": {"contains": ["dismiss()"]}}], "directory_count": [{"directory": "Sources", "pattern": "*.swift", "contains": "rowAccessibility()", "min": 1}], "directory_scan": [{"directory": "Sources", "pattern": "*.swift", "not_matches_regex": r"NavigationLink\s*\{\s*Text\s*\(", "allowlist": []}], "occurrences": [{"contains": "let", "min": 2}]}}]}
         manifest_path = root / "docs" / "testing" / "xctest-source-policy-manifest.json"
@@ -398,7 +399,7 @@ def self_test() -> int:
             return 1
         legacy_rule_manifest = json.loads(json.dumps(manifest))
         legacy_rule_manifest["entries"][0]["rule"].update({
-            "not_regex": [r"unsafe\\s*=\\s*true"],
+            "not_regex": [r"unsafe\s*=\s*true"],
             "paths": {"exists": ["Sources/App.swift"], "not_exists": ["Legacy/App.swift"]},
             "directory_scan": [{
                 "directory": "Sources", "pattern": "*.swift", "when_contains": ["let safe"],
@@ -410,6 +411,15 @@ def self_test() -> int:
         if validate(root, legacy_manifest_path) != 0:
             print("self-test did not accept legacy S-cohort rule forms", file=sys.stderr)
             return 1
+        not_regex_manifest = json.loads(json.dumps(legacy_rule_manifest))
+        not_regex_manifest["entries"][0]["rule"] = {"not_regex": [r"unsafe\s*=\s*true"]}
+        not_regex_manifest_path = root / "not-regex-manifest.json"
+        not_regex_manifest_path.write_text(json.dumps(not_regex_manifest), encoding="utf-8")
+        (root / "Sources" / "App.swift").write_text(f"{safe_source}let unsafe = true\n", encoding="utf-8")
+        if validate(root, not_regex_manifest_path, quiet=True) != 1:
+            print("self-test did not reject whitespace-matched not_regex violation", file=sys.stderr)
+            return 1
+        (root / "Sources" / "App.swift").write_text(safe_source, encoding="utf-8")
         typo_manifest = json.loads(json.dumps(manifest))
         typo_manifest["entries"][0]["rule"]["contians"] = ["let safe = true"]
         (root / "typo-manifest.json").write_text(json.dumps(typo_manifest), encoding="utf-8")
