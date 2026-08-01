@@ -21,8 +21,19 @@ struct PanelRedesignBuilderView: View {
     @State private var placementError: String?
     @State private var showWatts = false
     @State private var showSetup = false
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            if horizontalSizeClass == .regular {
+                PanelReferencePanel()
+                    .padding(.vertical)
+            }
+            builderContent
+        }
+    }
+
+    private var builderContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 headerRow
