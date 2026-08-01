@@ -1,3 +1,4 @@
+import Network
 import SwiftUI
 import WiredPartCore
 
@@ -67,7 +68,7 @@ struct DevicePairingView: View {
 
             Spacer()
 
-            Text("Make sure both devices are on the same Wi-Fi network.")
+            Text("Both devices need Wi-Fi turned on — pairing connects over peer-to-peer Wi-Fi even with no network. Bluetooth helps them find each other; a shared network makes syncing fastest.")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
@@ -122,9 +123,12 @@ struct DevicePairingView: View {
             ForEach(syncManager.discoveredPeers) { peer in
                 Button {
                     errorMessage = nil
-                    // Always pair a discovered peer over Bluetooth — it works with no
-                    // Wi-Fi at all. Wi-Fi/LAN is then used automatically for sync
-                    // speed once paired. Keep discovery/Multipeer running; the live
+                    // Pair discovered peers over Multipeer. NOTE the transport
+                    // truth (#1580): Bluetooth only handles DISCOVERY; the
+                    // session itself connects over peer-to-peer Wi-Fi, so both
+                    // radios must be on (no network membership required).
+                    // Wi-Fi/LAN is then used automatically for sync speed once
+                    // paired. Keep discovery/Multipeer running; the live
                     // session is required for the handshake.
                     discoveredShop = DiscoveredShop(id: peer.id, name: peer.name, address: peer.address ?? "", isBluetooth: true)
                 } label: {
@@ -321,11 +325,47 @@ struct DevicePairingView: View {
             // Navigate to the sync waiting screen for initial download
             navigateToSync = true
         } catch let e as MultipeerPairingError {
-            errorMessage = bluetoothPairingErrorMessage(e)
+            // Beta feedback 2026-07-31 (#1580): a Mac with Wi-Fi off discovers
+            // the shop over Bluetooth but the session connect times out —
+            // Multipeer only DISCOVERS over Bluetooth; the connection itself
+            // rides peer-to-peer Wi-Fi (AWDL), which needs the Wi-Fi radio ON
+            // (no network required). Detect that state and say the true thing
+            // instead of blaming Bluetooth proximity.
+            if case .connectionTimeout = e, await wifiRadioLooksOff() {
+                errorMessage = wifiOffGuidance
+            } else {
+                errorMessage = bluetoothPairingErrorMessage(e)
+            }
         } catch {
             errorMessage = userFriendlyError(error, context: "pair device")
         }
         isConnecting = false
+    }
+
+    /// True when no Wi-Fi interface can satisfy a network path — the practical
+    /// signal that this device's Wi-Fi radio is off (common on Ethernet-wired
+    /// Macs). One-shot probe; NWPathMonitor delivers its current path
+    /// immediately on start.
+    private func wifiRadioLooksOff() async -> Bool {
+        await withCheckedContinuation { continuation in
+            let monitor = NWPathMonitor(requiredInterfaceType: .wifi)
+            nonisolated(unsafe) var finished = false
+            monitor.pathUpdateHandler = { path in
+                guard !finished else { return }
+                finished = true
+                monitor.cancel()
+                continuation.resume(returning: path.status != .satisfied)
+            }
+            monitor.start(queue: DispatchQueue.global(qos: .userInitiated))
+        }
+    }
+
+    private var wifiOffGuidance: String {
+        #if targetEnvironment(macCatalyst)
+        return "Pairing connects over peer-to-peer Wi-Fi (Bluetooth only finds nearby devices). This Mac's Wi-Fi looks off — turn Wi-Fi ON in the menu bar (it doesn't need to join a network), or put both devices on the same network and enter the shop device's address manually below."
+        #else
+        return "Pairing connects over peer-to-peer Wi-Fi (Bluetooth only finds nearby devices). This device's Wi-Fi looks off — turn Wi-Fi ON in Settings (it doesn't need to join a network), then try again."
+        #endif
     }
 
     /// Whether a failed Bluetooth pairing attempt should retry over the peer's
@@ -345,7 +385,7 @@ struct DevicePairingView: View {
     private func bluetoothPairingErrorMessage(_ error: MultipeerPairingError) -> String {
         switch error {
         case .connectionTimeout:
-            return "Couldn't connect over Bluetooth. Keep both devices close together with Bluetooth on, and make sure the other device's Add-a-Device screen is open."
+            return "Couldn't connect. Keep the devices close together with Bluetooth AND Wi-Fi turned on (Wi-Fi carries the connection — it doesn't need to join a network), and make sure the other device's Add-a-Device screen is open. You can also enter the shop device's address manually below."
         case .responseTimeout:
             return "The other device didn't respond. Make sure its Add-a-Device screen is still open with a valid code, then try again."
         case .rejected:

@@ -70,7 +70,7 @@ final class PanelScheduleBuilderAccessibilityTests: XCTestCase {
         )
         XCTAssertTrue(
             source.contains("schedule.circuitsOutsideTotalSpaces") &&
-                source.contains("Saving will remove"),
+                source.contains("Saving will permanently remove"),
             "Panel settings should warn when a shrink will prune hidden circuits above the new total space count."
         )
         XCTAssertTrue(
@@ -78,6 +78,37 @@ final class PanelScheduleBuilderAccessibilityTests: XCTestCase {
                 source.contains("Remove Hidden Circuits?") &&
                 source.contains("Remove & Save"),
             "Saving a shrunk panel with hidden circuits should require explicit confirmation before pruning persisted data."
+        )
+    }
+
+    func testPanelSettingsKeepTypeAndSizeAsAnAtomicDraftUntilDone() throws {
+        let source = try Self.readNotebookSource("PanelScheduleBuilder.swift")
+
+        XCTAssertTrue(
+            source.contains("@State private var draftPanelType: PanelType") &&
+                source.contains("@State private var draftTotalSpaces: Int") &&
+                source.contains("Picker(\"Type\", selection: $draftPanelType)") &&
+                source.contains("Picker(\"Total Spaces\", selection: $draftTotalSpaces)"),
+            "Panel type and size must remain in local draft state until the user confirms them."
+        )
+        XCTAssertTrue(
+            source.contains("ForEach(draftPanelType.allowedTotalSpaces, id: \\.self)") &&
+                source.contains("!newType.allowedTotalSpaces.contains(draftTotalSpaces)") &&
+                source.contains("draftTotalSpaces = firstAllowedSpace"),
+            "The size picker must derive options from the selected type and deterministically repair an invalid draft size after a type change."
+        )
+        XCTAssertTrue(
+            source.contains("try schedule.updatePanelSettings(") &&
+                source.contains("panelType: draftPanelType") &&
+                source.contains("totalSpaces: draftTotalSpaces") &&
+                source.contains("settingsValidationMessage = error.localizedDescription"),
+            "Done must atomically submit the draft settings and surface the typed model error without changing the bound schedule on rejection."
+        )
+        XCTAssertTrue(
+            source.contains("schedule.occupiedSpaces(for: circuit)") &&
+                source.contains("occupiedSpace > draftTotalSpaces") &&
+                source.contains("circuitOriginSpacesThatWouldBeHidden"),
+            "The settings warning must account for the second occupied space of a double breaker, not just its origin space."
         )
     }
 
