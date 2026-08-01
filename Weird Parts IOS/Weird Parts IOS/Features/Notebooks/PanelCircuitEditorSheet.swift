@@ -43,7 +43,6 @@ struct PanelCircuitEditorSheet: View {
                     ForEach(draft.sections.indices, id: \.self) { index in
                         sectionCard(index)
                     }
-                    spanNote
                 }
                 .padding()
             }
