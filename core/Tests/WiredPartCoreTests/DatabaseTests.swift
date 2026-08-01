@@ -281,7 +281,10 @@ struct DatabaseTests {
         #expect(storedRecency.zero == 0)
         #expect(storedRecency.null == nil)
         #expect(storedRecency.current == 5)
-        #expect(storedRecency.schema == "114")
+        // Full-migrator run stores the CURRENT head version, not the version
+        // of the migration under test — pin the constant so unshipped-migration
+        // renumbering (e.g. 113→116 on this very branch) cannot break this test.
+        #expect(storedRecency.schema == String(AppDatabase.schemaVersion))
         #expect(allocationQueryPlan.contains { $0.contains("USING COVERING INDEX idx_ai_conv_msgs_recency_order") })
         #expect(loaded.map(\.id) == ["legacy-1", "legacy-2", "rollback-zero", "rollback-null", "current-writer"])
     }
