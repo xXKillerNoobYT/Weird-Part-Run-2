@@ -11,6 +11,11 @@ import WiredPartCore
 /// page that hosts this view (integration slice).
 struct PanelRedesignBuilderView: View {
     @Binding var panel: DesignPanelState
+    /// Opens the print preview (hosted by the notebook page).
+    var onPrint: (() -> Void)?
+    /// Creates a draft JPO from all circuits; nil when the notebook has no
+    /// job (the row explains instead of hiding silently).
+    var onAddToJPO: (() -> Void)?
     @State private var editorAnchor: Int?
     @State private var editorDraft: PanelEditorDraft?
     @State private var placementError: String?
@@ -23,6 +28,7 @@ struct PanelRedesignBuilderView: View {
                 headerRow
                 layoutSwitcher
                 phaseBalanceCard
+                actionRow
                 if let placementError {
                     Text(placementError)
                         .font(.caption)
@@ -94,6 +100,37 @@ struct PanelRedesignBuilderView: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Panel setup: \(panel.setup.brand) \(panel.setup.model), \(panel.setup.mainAmps) amp, \(panel.setup.totalSpaces) spaces. Double tap to change.")
         .accessibilityIdentifier("panelSetupHeader")
+    }
+
+    private var actionRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                Button {
+                    onPrint?()
+                } label: {
+                    Label("Print schedule", systemImage: "printer")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(onPrint == nil)
+                .accessibilityIdentifier("panelActionPrint")
+
+                Button {
+                    onAddToJPO?()
+                } label: {
+                    Label("Add to JPO", systemImage: "cart.badge.plus")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.bordered)
+                .disabled(onAddToJPO == nil || panel.entries.isEmpty)
+                .accessibilityIdentifier("panelActionAddToJPO")
+            }
+            if onAddToJPO == nil {
+                Text("Add to JPO needs a job notebook — this panel isn't linked to a job.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     // MARK: - Switcher + balance card

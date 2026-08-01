@@ -144,4 +144,19 @@ struct DesignPanelStateTests {
         if case .full(_, let c)? = state.entries[11] { #expect(c.type == .dualFunction) }
         else { Issue.record("expected dual-function breaker at 11") }
     }
+
+    @Test("Breaker shopping list aggregates identical breakers and skips spares")
+    func shoppingList() throws {
+        var panel = makePanel()
+        try panel.save(.full(poles: 1, circuit: .init(amps: 20, type: .gfci, name: "Kitchen")), atAnchor: 1)
+        try panel.save(.full(poles: 1, circuit: .init(amps: 20, type: .gfci, name: "Bath")), atAnchor: 3)
+        try panel.save(.full(poles: 2, circuit: .init(amps: 30, name: "Dryer")), atAnchor: 2)
+        try panel.save(.tandem(upper: .init(amps: 15), lower: .init(amps: 20)), atAnchor: 5)
+        try panel.save(.full(poles: 1, circuit: .init(amps: 20, type: .spare)), atAnchor: 7)
+        let list = panel.breakerShoppingList()
+        #expect(list.contains("2× 20A/1P GFCI"))
+        #expect(list.contains("1× 30A/2P Standard"))
+        #expect(list.contains("1× Tandem 15A/20A Standard"))
+        #expect(list.count == 3)
+    }
 }
