@@ -62,6 +62,7 @@ public final class PeopleService: Sendable {
         case contactNotFound(Int64)
         case contractorNotFound(Int64)
         case userNotFound(Int64)
+        case teamNotFound(Int64)
         case cannotDeleteBuiltinHat
         case requiredFieldEmpty(String)
         case hatNotFound(Int64)
@@ -1085,19 +1086,29 @@ public final class PeopleService: Sendable {
         }
     }
 
-    /// Create a new team. Returns the new team's ID.
+    /// Create a new team. Requires `manage_people` and returns the new team's ID.
     @discardableResult
-    public func createTeam(name: String, description: String? = nil) throws -> Int64 {
-        guard !name.isBlankRequiredText else {
-            throw PeopleError.requiredFieldEmpty("name")
-        }
+    public func createTeam(
+        name: String,
+        description: String? = nil,
+        actorUserId: Int64
+    ) throws -> Int64 {
         return try db.writer.write { dbConn in
+            try ServicePermissionGate.requirePermission(
+                dbConn,
+                userId: actorUserId,
+                permissionKey: "manage_people"
+            )
+            guard let normalizedName = name.normalizedRequiredText else {
+                throw PeopleError.requiredFieldEmpty("name")
+            }
+            let normalizedDescription = description.normalizedOptionalText
             try dbConn.execute(
                 sql: """
-                    INSERT INTO employee_teams (name, description)
-                    VALUES (?, ?)
+                    INSERT INTO employee_teams (name, description, created_by, updated_by)
+                    VALUES (?, ?, ?, ?)
                     """,
-                arguments: [name, description]
+                arguments: [normalizedName, normalizedDescription, actorUserId, actorUserId]
             )
             return dbConn.lastInsertedRowID
         }
@@ -1220,17 +1231,28 @@ public final class PeopleService: Sendable {
         }
     }
 
-    /// Add a user to a team.
-    public func addTeamMember(teamId: Int64, userId: Int64, role: String = "member") throws {
+    /// Add a user to a team. Requires `manage_people`.
+    public func addTeamMember(
+        teamId: Int64,
+        userId: Int64,
+        role: String = "member",
+        actorUserId: Int64
+    ) throws {
         try db.writer.write { dbConn in
-            // Guard: team + user must exist and not be tombstoned — a stale UI could
+            try ServicePermissionGate.requirePermission(
+                dbConn,
+                userId: actorUserId,
+                permissionKey: "manage_people"
+            )
+            // Guard: team + user must be active and not tombstoned — a stale UI could
             // otherwise create orphan employee_team_members rows against deleted teams
             // or deleted users, which would be invisible to getTeamMembers (deleted_at
-            // guard on JOIN users) but still polluting the INSERT OR IGNORE dedupe.
+            // guard on JOIN users) but still pollute the membership dedupe.
             let teamExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM employee_teams WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM employee_teams
+                WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [teamId]) ?? 0) > 0
-            guard teamExists else { return }
+            guard teamExists else { throw PeopleError.teamNotFound(teamId) }
             let userExists = (try Int.fetchOne(dbConn, sql: """
                 SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [userId]) ?? 0) > 0
@@ -1238,52 +1260,84 @@ public final class PeopleService: Sendable {
 
             try dbConn.execute(
                 sql: """
-                    INSERT OR IGNORE INTO employee_team_members (team_id, user_id, role)
-                    VALUES (?, ?, ?)
+                    INSERT INTO employee_team_members (team_id, user_id, role, added_by)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(team_id, user_id) DO UPDATE SET
+                        role = excluded.role,
+                        joined_at = datetime('now'),
+                        deleted_at = NULL,
+                        added_by = excluded.added_by,
+                        removed_by = NULL
+                    WHERE employee_team_members.deleted_at IS NOT NULL
                     """,
-                arguments: [teamId, userId, role]
+                arguments: [teamId, userId, role, actorUserId]
             )
         }
     }
 
-    /// Remove a user from a team (soft delete).
-    public func removeTeamMember(membershipId: Int64) throws {
+    /// Remove a user from a team (soft delete). Requires `manage_people`.
+    public func removeTeamMember(membershipId: Int64, actorUserId: Int64) throws {
         try db.writer.write { dbConn in
-            try dbConn.execute(
-                sql: """
-                    UPDATE employee_team_members SET deleted_at = datetime('now')
-                    WHERE id = ?
-                    """,
-                arguments: [membershipId]
+            try ServicePermissionGate.requirePermission(
+                dbConn,
+                userId: actorUserId,
+                permissionKey: "manage_people"
             )
-        }
-    }
-
-    /// Update team name and description.
-    public func updateTeam(teamId: Int64, name: String, description: String?) throws {
-        guard !name.isBlankRequiredText else {
-            throw PeopleError.requiredFieldEmpty("name")
-        }
-        try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
-                    UPDATE employee_teams SET name = ?, description = ?, updated_at = datetime('now')
+                    UPDATE employee_team_members
+                    SET deleted_at = datetime('now'), removed_by = ?
                     WHERE id = ? AND deleted_at IS NULL
                     """,
-                arguments: [name, description, teamId]
+                arguments: [actorUserId, membershipId]
             )
         }
     }
 
-    /// Soft-delete a team.
-    public func deleteTeam(teamId: Int64) throws {
+    /// Update team name and description. Requires `manage_people`.
+    public func updateTeam(
+        teamId: Int64,
+        name: String,
+        description: String?,
+        actorUserId: Int64
+    ) throws {
         try db.writer.write { dbConn in
+            try ServicePermissionGate.requirePermission(
+                dbConn,
+                userId: actorUserId,
+                permissionKey: "manage_people"
+            )
+            guard let normalizedName = name.normalizedRequiredText else {
+                throw PeopleError.requiredFieldEmpty("name")
+            }
+            let normalizedDescription = description.normalizedOptionalText
             try dbConn.execute(
                 sql: """
-                    UPDATE employee_teams SET deleted_at = datetime('now'), updated_at = datetime('now')
-                    WHERE id = ?
+                    UPDATE employee_teams
+                    SET name = ?, description = ?, updated_by = ?, updated_at = datetime('now')
+                    WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                     """,
-                arguments: [teamId]
+                arguments: [normalizedName, normalizedDescription, actorUserId, teamId]
+            )
+        }
+    }
+
+    /// Soft-delete a team. Requires `manage_people`.
+    public func deleteTeam(teamId: Int64, actorUserId: Int64) throws {
+        try db.writer.write { dbConn in
+            try ServicePermissionGate.requirePermission(
+                dbConn,
+                userId: actorUserId,
+                permissionKey: "manage_people"
+            )
+            try dbConn.execute(
+                sql: """
+                    UPDATE employee_teams
+                    SET deleted_at = datetime('now'), deleted_by = ?, updated_by = ?,
+                        updated_at = datetime('now')
+                    WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+                    """,
+                arguments: [actorUserId, actorUserId, teamId]
             )
         }
     }

@@ -37,7 +37,12 @@ fi
 runner_temp="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
 runtime_version="${IOS_RUNTIME_VERSION:-26.5}"
 runtime_id="com.apple.CoreSimulator.SimRuntime.iOS-${runtime_version//./-}"
-minimum_free_gib="${MINIMUM_FREE_GIB:-60}"
+# A full gate run (workspace build + two test phases + xcresult bundles)
+# consumes well under 20 GiB; 30 GiB keeps real headroom without failing
+# closed on a Mac whose other tenants (Paperclip/hermes state and backups)
+# legitimately hold large data sets. Was 60, which parked every PR whenever
+# unrelated agents' storage grew (2026-07-28/30/31 incidents).
+minimum_free_gib="${MINIMUM_FREE_GIB:-30}"
 derived_data_stale_minutes="${DERIVED_DATA_STALE_MINUTES:-60}"
 simulator_boot_command_timeout_seconds="${SIMULATOR_BOOT_COMMAND_TIMEOUT_SECONDS:-120}"
 simulator_boot_timeout_seconds="${SIMULATOR_BOOT_TIMEOUT_SECONDS:-600}"
@@ -268,6 +273,16 @@ if (( available_kib < required_kib )); then
   # may belong to a concurrent build on the other Mac runner and must survive.
   derived_data_cache="$HOME/Library/Developer/Xcode/DerivedData"
   echo "runner has ${available_gib} GiB free; deleting DerivedData entries older than ${derived_data_stale_minutes} minutes before failing" | tee -a "$artifact_dir/gate.log"
+  # Parallel-testing simulator clones (~/Library/Developer/XCTestDevices, the
+  # `--set testing` device set) accumulate 2+ per UI-test run and nothing else
+  # deletes them — 270 clones drove the 2026-07-31 disk incident. Shutdown
+  # clones only; a Booted clone belongs to the sibling runner's live gate.
+  xcrun simctl --set testing list devices 2>/dev/null \
+    | grep "(Shutdown)" \
+    | grep -oE '\([A-F0-9-]{36}\)' | tr -d '()' \
+    | while read -r stale_clone; do
+        xcrun simctl --set testing delete "$stale_clone" >/dev/null 2>&1 || true
+      done
   if [[ -d "$derived_data_cache" ]]; then
     find "$derived_data_cache" -mindepth 1 -maxdepth 1 -mmin "+${derived_data_stale_minutes}" -print -exec rm -rf {} + \
       2>&1 | tee -a "$artifact_dir/gate.log" || true

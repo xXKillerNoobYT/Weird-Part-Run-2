@@ -1,4 +1,5 @@
 import XCTest
+import PDFKit
 import WiredPartCore
 @testable import Weird_Parts
 
@@ -61,6 +62,31 @@ final class PanelSchedulePDFExporterTests: XCTestCase {
         XCTAssertGreaterThan(data.count, 0, "Exporting a schedule with a malformed totalSpaces should still normalize and render, not crash or produce an empty file.")
     }
 
+    func testExportRequiresRepairForSafeLoadedLegacyPanelSettings() {
+        let schedule = PanelSchedule(
+            panelName: "Legacy MDP",
+            panelType: .mdp,
+            totalSpaces: -2,
+            circuits: [
+                CircuitEntry(id: "visible", spaceNumber: 1, circuitDescription: "Office", isSpare: false),
+                CircuitEntry(id: "retained", spaceNumber: 21, circuitDescription: "Legacy equipment", isSpare: false)
+            ]
+        )
+
+        XCTAssertThrowsError(
+            try PanelSchedulePDFExporter(schedule: schedule, options: PanelScheduleExportOptions())
+                .writeToTemporaryFile()
+        ) { error in
+            guard case PanelScheduleExportError.panelSettingsRequireRepair(let validationError) = error else {
+                return XCTFail("Expected a repair-required export error, got \(error)")
+            }
+            XCTAssertEqual(
+                validationError,
+                .invalidPanelTypeSpaceCount(panelType: .mdp, spaces: 20, allowedSpaces: [42])
+            )
+        }
+    }
+
     func testRenderPDFGuardsAgainstNegativeTotalSpacesWhenCalledDirectly() throws {
         // Directly exercises the `max(schedule.totalSpaces / 2, 0)` guard in
         // `drawScheduleTable` by calling the `internal` `renderPDF(schedule:)`
@@ -77,4 +103,82 @@ final class PanelSchedulePDFExporterTests: XCTestCase {
 
         XCTAssertGreaterThan(data.count, 0, "Rendering directly with a negative totalSpaces must not crash and must still produce PDF output.")
     }
+
+    func testWriteToTemporaryFileRendersSecondaryCircuitDescription() throws {
+        var schedule = PanelSchedule(panelName: "Tandem Panel")
+        schedule.circuits = [
+            CircuitEntry(
+                spaceNumber: 1,
+                breakerAmps: 20,
+                breakerType: .tandem,
+                circuitDescription: "Kitchen",
+                isSpare: false,
+                secondaryCircuitDescription: "Pantry"
+            )
+        ]
+
+        let url = try PanelSchedulePDFExporter(schedule: schedule, options: PanelScheduleExportOptions())
+            .writeToTemporaryFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let renderedText = try XCTUnwrap(PDFDocument(url: url)?.page(at: 0)?.string)
+        XCTAssertTrue(renderedText.contains("Kitchen / Pantry"), "The PDF circuit row must render both tandem circuit descriptions.")
+    }
+
+    func testWriteToTemporaryFileRejectsInvalidCircuitPositionsWithoutWritingPDF() throws {
+        let panelName = "InvalidPanel\(UUID().uuidString)"
+        // 20 spaces is settings-valid for the default .loadCenter type — the
+        // panel-settings repair check (#1514) runs before circuit validation,
+        // so this fixture must pass it to exercise doubleBreakerOutOfRange.
+        // A double at space 19 occupies 19 + 21, overrunning the panel.
+        var schedule = PanelSchedule(panelName: panelName, totalSpaces: 20)
+        schedule.circuits = [
+            CircuitEntry(
+                spaceNumber: 19,
+                breakerAmps: 30,
+                breakerType: .double,
+                circuitDescription: "Out of Range",
+                isSpare: false
+            )
+        ]
+        let exporter = PanelSchedulePDFExporter(schedule: schedule, options: PanelScheduleExportOptions())
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("PanelSchedules", isDirectory: true)
+        let date = DateFormatter.panelScheduleFilenameDate.string(from: Date())
+        let expectedURL = directory.appendingPathComponent("\(panelName)_\(date).pdf")
+        try? FileManager.default.removeItem(at: expectedURL)
+        defer { try? FileManager.default.removeItem(at: expectedURL) }
+
+        XCTAssertThrowsError(try exporter.writeToTemporaryFile()) { error in
+            XCTAssertEqual(error as? PanelScheduleValidationError, .doubleBreakerOutOfRange(space: 19))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: expectedURL.path), "An invalid panel schedule must not write a PDF for export or print.")
+    }
+
+    func testWriteToTemporaryFileRejectsOverlappingCircuitPositionsWithoutWritingPDF() throws {
+        let panelName = "OverlappingPanel\(UUID().uuidString)"
+        var schedule = PanelSchedule(panelName: panelName, totalSpaces: 20)
+        schedule.circuits = [
+            CircuitEntry(id: "double-breaker", spaceNumber: 1, breakerAmps: 30, breakerType: .double, circuitDescription: "Range", isSpare: false),
+            CircuitEntry(id: "overlapping-single", spaceNumber: 3, breakerAmps: 20, breakerType: .single, circuitDescription: "Kitchen", isSpare: false)
+        ]
+        let exporter = PanelSchedulePDFExporter(schedule: schedule, options: PanelScheduleExportOptions())
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("PanelSchedules", isDirectory: true)
+        let date = DateFormatter.panelScheduleFilenameDate.string(from: Date())
+        let expectedURL = directory.appendingPathComponent("\(panelName)_\(date).pdf")
+        try? FileManager.default.removeItem(at: expectedURL)
+        defer { try? FileManager.default.removeItem(at: expectedURL) }
+
+        XCTAssertThrowsError(try exporter.writeToTemporaryFile()) { error in
+            XCTAssertEqual(error as? PanelScheduleValidationError, .spaceConflict(space: 3, first: 1, second: 3))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: expectedURL.path), "An overlapping schedule must not write a PDF for export or print.")
+    }
+}
+
+private extension DateFormatter {
+    static let panelScheduleFilenameDate: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
 }

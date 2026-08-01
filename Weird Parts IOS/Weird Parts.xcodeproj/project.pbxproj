@@ -137,8 +137,10 @@
 			buildPhases = (
 				08F2BE402F67A53700944E97 /* Sources */,
 				08F2BE412F67A53700944E97 /* Frameworks */,
+				AB5655010000000000000001 /* Generate Supply Run regression source snapshots */,
 				08F2BE422F67A53700944E97 /* Resources */,
 				A5C327012F1A4A3D00F5327A /* Bundle QR Scan Source Fixture */,
+				F6046001E535600000000001 /* Generate shared-sheet source snapshots */,
 			);
 			buildRules = (
 			);
@@ -269,7 +271,51 @@
 			shellPath = /bin/sh;
 			shellScript = "set -e\nmkdir -p \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\"\ncp \"$SRCROOT/Weird Parts IOS/Scanning/QRScanSheet.swift\" \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/QRScanSheetSource.txt\"\n";
 			showEnvVarsInLog = 0;
-	};
+		};
+		AB5655010000000000000001 /* Generate Supply Run regression source snapshots */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/Weird Parts IOS/Features/Jobs/IOSClockPage.swift",
+				"$(SRCROOT)/Weird Parts IOS/Navigation/IOSMainView.swift",
+			);
+			name = "Generate Supply Run regression source snapshots";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ClockSupplyRunCardRegressionClock.swift",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ClockSupplyRunCardRegressionMain.swift",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -eu\n\nresources_dir=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\"\nmkdir -p \"$resources_dir\"\ncp \"$SRCROOT/Weird Parts IOS/Features/Jobs/IOSClockPage.swift\" \"$resources_dir/ClockSupplyRunCardRegressionClock.swift\"\ncp \"$SRCROOT/Weird Parts IOS/Navigation/IOSMainView.swift\" \"$resources_dir/ClockSupplyRunCardRegressionMain.swift\"\n";
+		};
+		F6046001E535600000000001 /* Generate shared-sheet source snapshots */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/Weird Parts IOS/Shared/PageHelpSheet.swift",
+				"$(SRCROOT)/Weird Parts IOS/Shared/SheetDismissWrapper.swift",
+				"$(SRCROOT)/Weird Parts IOS/Shared/FormSheet.swift",
+				"$(SRCROOT)/Weird Parts IOS/Scanning/QRScanSheet.swift",
+			);
+			name = "Generate shared-sheet source snapshots";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/PageHelpSheet.swift",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/SheetDismissWrapper.swift",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/FormSheet.swift",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/QRScanSheet.swift",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -eu\n\nresources_dir=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\"\nmkdir -p \"$resources_dir\"\ncp \"$SRCROOT/Weird Parts IOS/Shared/PageHelpSheet.swift\" \"$resources_dir/PageHelpSheet.swift\"\ncp \"$SRCROOT/Weird Parts IOS/Shared/SheetDismissWrapper.swift\" \"$resources_dir/SheetDismissWrapper.swift\"\ncp \"$SRCROOT/Weird Parts IOS/Shared/FormSheet.swift\" \"$resources_dir/FormSheet.swift\"\ncp \"$SRCROOT/Weird Parts IOS/Scanning/QRScanSheet.swift\" \"$resources_dir/QRScanSheet.swift\"\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
