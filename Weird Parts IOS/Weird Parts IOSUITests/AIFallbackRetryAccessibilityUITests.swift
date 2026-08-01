@@ -28,13 +28,15 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
 
     private func launchApp(contentSizeCategory: UIContentSizeCategory? = nil) -> XCUIApplication {
         let application = XCUIApplication()
-        // This smoke validates the warning after the authenticated app shell has
-        // mounted. Seed that prerequisite directly instead of attempting an
-        // interactive login whose onboarding state is outside this test's scope.
+        // The warning is asserted from the authenticated shell, not through a
+        // manual PIN/onboarding flow that belongs to separate coverage.
         application.launchArguments = [
             "-UITesting",
             "-UITestingWEI936AutoLogin",
             "-UITestingAIFallbackSaveWarning",
+            // AX5 on iPad must exercise the persistent full-sidebar action,
+            // never a navStyle_<userId> preference left by another test run.
+            "-UITestingFullSidebar",
         ]
         if let contentSizeCategory {
             application.launchArguments += [
@@ -49,7 +51,8 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
 
     @MainActor
     private func verifyWarningAndRetryTarget(context: String) throws {
-        try openAssistant(context: context)
+        waitForAuthenticatedAppShell()
+        openAssistant(context: context)
 
         let warningTitle = app.descendants(matching: .any).matching(
             NSPredicate(format: "label == %@", "Conversation turn was not saved")
@@ -60,7 +63,7 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
         let retry = app.buttons["Retry saving conversation turn"]
         let dismiss = app.buttons["Dismiss conversation save warning"]
 
-        XCTAssertTrue(warningTitle.waitForExistence(timeout: 30), "Save warning should render at \(context).")
+        XCTAssertTrue(warningTitle.waitForExistence(timeout: 10), "Save warning should render at \(context).")
         XCTAssertTrue(warningBody.waitForExistence(timeout: 5), "Save warning detail should remain untruncated at \(context).")
         XCTAssertTrue(retry.waitForExistence(timeout: 5), "Retry Save should render at \(context).")
         XCTAssertTrue(retry.isHittable, "Retry Save should be user-actionable at \(context).")
@@ -92,32 +95,36 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
     }
 
     @MainActor
-    private func openAssistant(context: String) throws {
-        let shell = app.descendants(matching: .any)["tab_dashboard"]
-        XCTAssertTrue(shell.waitForExistence(timeout: 30), "Authenticated app shell should mount at \(context).")
+    private func waitForAuthenticatedAppShell() {
+        let dashboard = app.descendants(matching: .any)["tab_dashboard"]
+        guard dashboard.waitForExistence(timeout: 30) else {
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = "Authenticated shell precondition failure"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            XCTFail("The deterministic UI-test fixture should mount the authenticated app shell.")
+            return
+        }
+        XCTAssertTrue(dashboard.isHittable, "The authenticated dashboard shell should be actionable.")
+    }
 
-        let floatingAssistant = app.descendants(matching: .any)["aiAssistantButton"]
-        if floatingAssistant.exists, floatingAssistant.isHittable {
-            floatingAssistant.tap()
+    @MainActor
+    private func openAssistant(context: String) {
+        if name.contains("AX5") && UIDevice.current.userInterfaceIdiom == .pad {
+            // iPad defaults to the full sidebar. This is the AX5 regression
+            // path: the visible sidebar action must open the warning directly.
+            let assistant = app.descendants(matching: .any)["sidebarAIAssistantButton"]
+            XCTAssertTrue(assistant.waitForExistence(timeout: 15), "Full-sidebar AI Assistant should be visible at \(context).")
+            XCTAssertTrue(assistant.isHittable, "Full-sidebar AI Assistant should be hittable at \(context).")
+            XCTAssertGreaterThanOrEqual(assistant.frame.height, 44, "Full-sidebar AI Assistant must retain a 44pt target at \(context).")
+            XCTAssertTrue(app.windows.firstMatch.frame.contains(assistant.frame), "Full-sidebar AI Assistant must remain in the visible viewport at \(context).")
+            assistant.tap()
             return
         }
 
-        let sidebarAssistant = app.descendants(matching: .any)["sidebarAIAssistantButton"]
-        if sidebarAssistant.exists, sidebarAssistant.isHittable {
-            sidebarAssistant.tap()
-            return
-        }
-
-        // The compact floating action is intentionally suppressed at AX sizes;
-        // More is the production-accessible route to the same assistant.
-        let moreTab = app.tabBars.buttons["More"]
-        XCTAssertTrue(moreTab.waitForExistence(timeout: 10), "More tab should expose the AX assistant route at \(context).")
-        moreTab.tap()
-
-        XCTAssertTrue(app.navigationBars["More"].waitForExistence(timeout: 10), "More should open at \(context).")
-        let moreAssistant = app.buttons["AI Assistant"]
-        XCTAssertTrue(moreAssistant.waitForExistence(timeout: 10), "More should expose AI Assistant at \(context).")
-        XCTAssertTrue(moreAssistant.isHittable, "More AI Assistant route should be user-actionable at \(context).")
-        moreAssistant.tap()
+        let assistant = app.descendants(matching: .any)["aiAssistantButton"]
+        XCTAssertTrue(assistant.waitForExistence(timeout: 15), "AI Assistant should be available at \(context).")
+        XCTAssertTrue(assistant.isHittable, "AI Assistant should be actionable at \(context).")
+        assistant.tap()
     }
 }
