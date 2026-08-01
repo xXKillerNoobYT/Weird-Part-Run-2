@@ -45,8 +45,7 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
         try logInIfNeeded()
 
         let assistantButton = app.buttons["aiAssistantButton"]
-        XCTAssertTrue(assistantButton.waitForExistence(timeout: 15), "AI Assistant should be available at \(context).")
-        assistantButton.tap()
+        XCTAssertTrue(assistantButton.waitForExistence(timeout: 45), "AI Assistant should be available at \(context).")
 
         let warningTitle = app.descendants(matching: .any).matching(
             NSPredicate(format: "label == %@", "Conversation turn was not saved")
@@ -57,7 +56,30 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
         let retry = app.buttons["Retry saving conversation turn"]
         let dismiss = app.buttons["Dismiss conversation save warning"]
 
-        XCTAssertTrue(warningTitle.waitForExistence(timeout: 10), "Save warning should render at \(context).")
+        // The assistant button can be momentarily covered by late-arriving
+        // onboarding overlays (Got It / Skip hints), which swallow the first
+        // tap without any test-visible failure — the panel never opens and the
+        // fixture warning never renders (flaked 3x on CI, 2026-07-31, across
+        // both Dynamic Type variants). Tap, confirm the panel actually opened
+        // by watching for the fixture warning, and re-tap after clearing
+        // overlays when it did not.
+        var panelOpened = false
+        for _ in 0..<3 {
+            if assistantButton.exists, assistantButton.isHittable {
+                assistantButton.tap()
+            }
+            if warningTitle.waitForExistence(timeout: 10) {
+                panelOpened = true
+                break
+            }
+            for prefix in ["Got It", "Skip"] {
+                let overlay = app.buttons.matching(
+                    NSPredicate(format: "label BEGINSWITH %@", prefix)
+                ).firstMatch
+                if overlay.exists, overlay.isHittable { overlay.tap() }
+            }
+        }
+        XCTAssertTrue(panelOpened, "Save warning should render at \(context).")
         XCTAssertTrue(warningBody.waitForExistence(timeout: 5), "Save warning detail should remain untruncated at \(context).")
         XCTAssertTrue(retry.waitForExistence(timeout: 5), "Retry Save should render at \(context).")
         XCTAssertTrue(retry.isHittable, "Retry Save should be user-actionable at \(context).")
@@ -102,15 +124,17 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
         ownerRow.tap()
 
         let pinField = app.secureTextFields["loginPINField"]
-        XCTAssertTrue(pinField.waitForExistence(timeout: 5), "PIN field should appear.")
+        // 30 s: AX5 Dynamic Type on iPad relayouts the login list slowly under
+        // CI load — a 5 s wait flaked (2026-07-31, line: PIN field should appear).
+        XCTAssertTrue(pinField.waitForExistence(timeout: 30), "PIN field should appear.")
         pinField.tap()
         pinField.typeText("1234")
 
         let done = app.buttons["loginPINDoneButton"]
-        if done.waitForExistence(timeout: 2), done.isHittable { done.tap() }
+        if done.waitForExistence(timeout: 5), done.isHittable { done.tap() }
 
         let signIn = app.buttons["loginSignInButton"]
-        XCTAssertTrue(signIn.waitForExistence(timeout: 5), "Sign In should appear.")
+        XCTAssertTrue(signIn.waitForExistence(timeout: 30), "Sign In should appear.")
         signIn.tap()
 
         // 75 s, not 25: post-sign-in service bootstrap competes with the
