@@ -55,14 +55,22 @@ struct PanelSchedulePDFExporter {
     let options: PanelScheduleExportOptions
 
     func writeToTemporaryFile(fileManager: FileManager = .default) throws -> URL {
-        // A safe-loaded legacy type/size mismatch deliberately retains circuits
-        // outside the normalized display range until the user corrects panel
-        // settings. Rendering only visible rows would silently omit those
-        // circuits from the PDF, so fail closed with the actionable model error.
+        // Normalize malformed dimensions and stale, invisible entries first
+        // (#1239), then fail closed before rendering, in two layers:
+        // 1. A safe-loaded legacy type/size mismatch deliberately retains
+        //    circuits outside the normalized display range until the user
+        //    corrects panel settings — rendering only visible rows would
+        //    silently omit them from the PDF, so surface the actionable
+        //    model error (#1514).
+        // 2. Reject conflicts in the schedule that will be rendered —
+        //    overlapping circuits, double breakers overrunning the visible
+        //    panel (#1515). Export and print share this entry point, so
+        //    neither path can produce a bad PDF.
         let normalizedSchedule = schedule.normalizedForPersistence()
         if let validationError = normalizedSchedule.panelSettingsValidationError {
             throw PanelScheduleExportError.panelSettingsRequireRepair(validationError)
         }
+        try normalizedSchedule.validated()
 
         let directory = fileManager.temporaryDirectory.appendingPathComponent("PanelSchedules", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -243,6 +251,11 @@ struct PanelSchedulePDFExporter {
         guard let circuit else { return "SPARE" }
         if circuit.isSpare || circuit.circuitDescription.isEmpty {
             return "SPARE"
+        }
+        if let secondary = circuit.secondaryCircuitDescription?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !secondary.isEmpty {
+            return "\(circuit.circuitDescription) / \(secondary)"
         }
         return circuit.circuitDescription
     }
