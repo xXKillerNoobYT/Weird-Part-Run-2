@@ -217,3 +217,50 @@ public struct DesignPanelState: Codable, Sendable, Equatable {
         return rows
     }
 }
+
+// MARK: - Legacy migration (integration slice)
+
+extension DesignPanelState {
+    /// Best-effort seed from a legacy `PanelSchedule` so an existing panel
+    /// opens in the redesigned builder with its circuits in place. Singles
+    /// become 1-pole fulls, doubles 2-pole fulls, tandems twin entries;
+    /// spares are skipped (open spaces). Entries that no longer fit (overlap
+    /// or out of range) are dropped rather than corrupting the map — the
+    /// legacy entry remains untouched as the source of truth for exports
+    /// until the user saves from the new builder.
+    public static func migrated(fromLegacy legacy: PanelSchedule) -> DesignPanelState {
+        var state = DesignPanelState(setup: DesignPanelSetup(
+            totalSpaces: DesignPanelSetup.clampSpaces(legacy.totalSpaces),
+            mainAmps: legacy.mainBreakerAmps ?? 200
+        ))
+        for circuit in legacy.circuits where !circuit.isSpare && circuit.breakerType != .spare && circuit.breakerType != .blank {
+            let amps = circuit.breakerAmps ?? 20
+            let type: DesignBreakerType
+            switch circuit.breakerType {
+            case .gfci: type = .gfci
+            case .afci: type = .afci
+            case .dualFunction: type = .dualFunction
+            default: type = .standard
+            }
+            let sub = DesignSubCircuit(amps: amps, type: type, name: circuit.circuitDescription)
+            let entry: DesignSpaceEntry
+            switch circuit.breakerType {
+            case .double:
+                entry = .full(poles: 2, circuit: sub)
+            case .tandem:
+                entry = .tandem(
+                    upper: sub,
+                    lower: DesignSubCircuit(
+                        amps: amps,
+                        type: type,
+                        name: circuit.secondaryCircuitDescription ?? ""
+                    )
+                )
+            default:
+                entry = .full(poles: 1, circuit: sub)
+            }
+            try? state.save(entry, atAnchor: circuit.spaceNumber)
+        }
+        return state
+    }
+}
