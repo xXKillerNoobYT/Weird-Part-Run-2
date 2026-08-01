@@ -6,11 +6,14 @@ import WiredPartCore
 
 enum PanelScheduleExportError: LocalizedError {
     case outputPathUnavailable
+    case panelSettingsRequireRepair(PanelScheduleValidationError)
 
     var errorDescription: String? {
         switch self {
         case .outputPathUnavailable:
             return "The generated PDF could not be validated."
+        case .panelSettingsRequireRepair(let error):
+            return "Correct the panel settings before exporting. \(error.localizedDescription)"
         }
     }
 }
@@ -52,13 +55,22 @@ struct PanelSchedulePDFExporter {
     let options: PanelScheduleExportOptions
 
     func writeToTemporaryFile(fileManager: FileManager = .default) throws -> URL {
-        // Persist-time normalization (clamped totalSpaces, pruned out-of-range
-        // circuits) is the closest equivalent to a "validated" schedule on
-        // current main — `PanelSchedule` does not expose a `validated()`
-        // throwing method here, unlike the donor branch's later panel-editing
-        // lane. Rendering against the normalized copy keeps the export in
-        // sync with what `PanelScheduleBuilder`'s Save action persists.
+        // Normalize malformed dimensions and stale, invisible entries first
+        // (#1239), then fail closed before rendering, in two layers:
+        // 1. A safe-loaded legacy type/size mismatch deliberately retains
+        //    circuits outside the normalized display range until the user
+        //    corrects panel settings — rendering only visible rows would
+        //    silently omit them from the PDF, so surface the actionable
+        //    model error (#1514).
+        // 2. Reject conflicts in the schedule that will be rendered —
+        //    overlapping circuits, double breakers overrunning the visible
+        //    panel (#1515). Export and print share this entry point, so
+        //    neither path can produce a bad PDF.
         let normalizedSchedule = schedule.normalizedForPersistence()
+        if let validationError = normalizedSchedule.panelSettingsValidationError {
+            throw PanelScheduleExportError.panelSettingsRequireRepair(validationError)
+        }
+        try normalizedSchedule.validated()
 
         let directory = fileManager.temporaryDirectory.appendingPathComponent("PanelSchedules", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -239,6 +251,11 @@ struct PanelSchedulePDFExporter {
         guard let circuit else { return "SPARE" }
         if circuit.isSpare || circuit.circuitDescription.isEmpty {
             return "SPARE"
+        }
+        if let secondary = circuit.secondaryCircuitDescription?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !secondary.isEmpty {
+            return "\(circuit.circuitDescription) / \(secondary)"
         }
         return circuit.circuitDescription
     }

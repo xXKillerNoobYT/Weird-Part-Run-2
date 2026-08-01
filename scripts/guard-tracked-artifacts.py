@@ -57,12 +57,25 @@ ALLOWED_EXAMPLES = [
 # screenshot/evidence dump that belongs in a GitHub issue or PR attachment
 # (see docs/testing/artifacts/README.md for the policy).
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".heic", ".webp"}
-IMAGE_ALLOWED_PREFIXES = ("docs/problems/",)
-IMAGE_ALLOWED_PATH_PARTS = {"Assets.xcassets"}
+IMAGE_ALLOWED_PREFIXES = (
+    "docs/problems/",
+    # Curated App Store listing screenshots (docs/app-store/description.md).
+    "docs/app-store/screenshots/",
+    # README showcase images governed by docs/readme-assets/README-ASSET-REVIEW.md.
+    "docs/readme-assets/",
+)
+# Asset catalogs and Icon Composer bundles ship real app imagery.
+IMAGE_ALLOWED_PATH_PARTS = {"Assets.xcassets", "AppIcon.icon"}
 
 # Any tracked file larger than this is presumed to be a build artifact or
 # media dump; raise the limit deliberately if a legitimate need appears.
 MAX_TRACKED_FILE_BYTES = 1_000_000
+
+# Deliberate per-file exceptions to the size cap (path -> max bytes).
+LARGE_FILE_EXCEPTIONS = {
+    # Owner's Icon Composer source artwork for the app icon (2.6 MB PNG).
+    "Weird Parts IOS/Weird Parts IOS/AppIcon.icon/Assets/Copilot_20260315_163221.png": 3_000_000,
+}
 
 
 BLOCKED_SUFFIXES = {
@@ -174,7 +187,8 @@ def main() -> int:
             size = os.path.getsize(path)
         except OSError:
             continue
-        if size > MAX_TRACKED_FILE_BYTES:
+        limit = LARGE_FILE_EXCEPTIONS.get(path, MAX_TRACKED_FILE_BYTES)
+        if size > limit:
             oversized.append(f"{path} ({size / 1_000_000:.1f} MB)")
 
     if blocked or oversized:

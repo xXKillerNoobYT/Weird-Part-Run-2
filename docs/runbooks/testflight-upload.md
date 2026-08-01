@@ -88,6 +88,52 @@ If CLI upload fails on App Store Connect authentication, fall back to the
 Organizer path: copy the archive into `~/Library/Developer/Xcode/Archives/` so
 it appears in Organizer, then upload from there.
 
+## Release channels (owner directive 2026-07-31)
+
+Two TestFlight channels with very different costs and cadences:
+
+| | **Internal** ("Home Base" group) | **External** ("Camp 1" group, public link) |
+|---|---|---|
+| Who | Owner's own devices (weirdnow@icloud.com) | Public beta testers via the ASC public link |
+| Apple review | None — build just has to pass | Apple **beta app review** + heavy Xcode Cloud processing |
+| Trigger | Any `main` edit touching the `App verison/` folder (Xcode Cloud Branch-Changes condition watches it), or a local archive+upload | The Xcode Cloud workflow with the full action set (Build/Test iOS+macOS, Archive, Analyze, Notarize, TestFlight External Testing post-action) |
+| Cadence | Whenever useful | **ONE per 5-9 days, no more** — external pushes are expensive and reviewed |
+
+The `App verison/` folder (spelling is load-bearing — Xcode Cloud's condition
+references the URL-encoded name) holds one machine-parseable version file per
+channel: `INTERNAL-BETA.md`, `PUBLIC-BETA.md`, `PUBLIC-RELEASE.md`. Bumping a
+channel's file on `main` is the release trigger for that channel, so version
+bumps must ride the SAME commit/PR as everything the build needs (build number,
+notes) — never bump a channel file "in advance."
+
+App Store Connect status emails land in Apple Mail for weirdnow@icloud.com on
+the shared Mac — check there (AppleScript/`osascript` against Mail.app) for
+processing results, review verdicts, and compliance prompts. Beta feedback is
+checked at least daily via the local ASC feedback script (below).
+
+## Release notes — REQUIRED for every beta build (owner directive 2026-07-31)
+
+Every TestFlight build ships with **"What's changed"** and **"What to look for"**
+notes. A build without them is not done uploading.
+
+1. **Write the notes BEFORE uploading** to
+   `docs/app-store/testflight-notes/build-<N>.md` (template in that directory).
+   Source the "What's changed" list from the PRs merged since the previous
+   build's commit (`git log <prev-build-tag-or-sha>..HEAD --oneline` filtered to
+   user-visible changes — testers don't care about CI plumbing). "What to look
+   for" names the specific screens/flows to exercise, ALWAYS including re-tests
+   of every open piece of beta feedback (check with the local feedback script,
+   see below).
+2. **Set them on the build in App Store Connect** once processing finishes:
+   TestFlight → the build → Test Details ("What to Test"), or via the ASC API
+   `betaBuildLocalizations` (`whatsNew` field). The internal Home Base group
+   sees these notes in the TestFlight app.
+3. **Check beta feedback first**: `~/.claude/scripts/ascenv/bin/python
+   ~/.claude/scripts/asc_feedback.py` lists screenshot + crash feedback
+   (local-only script; the ASC key never enters this public repo). Every
+   feedback item gets a GitHub issue and a line in the next build's "What to
+   look for".
+
 ## History
 
 - **2026-07-27 23:07** — upload of build 1 failed: archive was Mac Catalyst

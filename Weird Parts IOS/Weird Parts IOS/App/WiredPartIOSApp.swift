@@ -13,7 +13,7 @@ struct WiredPartIOSApp: App {
     @State private var showLaunchErrorReport = false
     @State private var uiTestingPanelSchedule = PanelSchedule(
         panelName: "QA Panel A",
-        panelType: .loadCenter,
+        panelType: .smallPanel,
         totalSpaces: 8,
         mainBreakerAmps: 200,
         voltage: 240,
