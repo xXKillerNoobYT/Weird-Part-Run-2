@@ -54,23 +54,18 @@ final class SharedSheetPresentationDetentsTests: XCTestCase {
     }
 
     private func sharedSourcePath(_ fileName: String) -> String {
-        appSourceRoot()
-            .appendingPathComponent("Shared")
-            .appendingPathComponent(fileName)
-            .path
+        sourceSnapshotPath(fileName)
     }
 
     private func scanningSourcePath(_ fileName: String) -> String {
-        appSourceRoot()
-            .appendingPathComponent("Scanning")
-            .appendingPathComponent(fileName)
-            .path
+        sourceSnapshotPath(fileName)
     }
 
-    private func appSourceRoot() -> URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("Weird Parts IOS")
+    private func sourceSnapshotPath(_ fileName: String) -> String {
+        guard let url = Bundle(for: Self.self).url(forResource: fileName, withExtension: nil) else {
+            XCTFail("Missing generated source snapshot \(fileName) in the test bundle.")
+            return ""
+        }
+        return url.path
     }
 }
