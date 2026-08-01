@@ -280,10 +280,13 @@ final class AppCore: ObservableObject {
                 needsOnboarding = false
             }
 
+            let uiTestDisplayName = ProcessInfo.processInfo.arguments.contains("-UITestingTeamsViewOnly")
+                ? "UITest People Viewer"
+                : "UITest Owner"
             if uiTestingMode &&
                ProcessInfo.processInfo.arguments.contains("-UITestingWEI936AutoLogin") &&
                !ProcessInfo.processInfo.arguments.contains("-UITestingForceLogin"),
-               let uiTestUser = result.users.first(where: { $0.displayName == "UITest Owner" }),
+               let uiTestUser = result.users.first(where: { $0.displayName == uiTestDisplayName }),
                let userId = uiTestUser.id {
                 currentUser = uiTestUser
                 permissions = (try? result.auth.getUserPermissions(userId)) ?? []
@@ -903,6 +906,74 @@ final class AppCore: ObservableObject {
             activeUsers.first(where: { $0.displayName == "UITest Owner" })?.id ??
             activeUsers.first?.id
 
+        if ProcessInfo.processInfo.arguments.contains("-UITestingTeamsViewOnly") {
+            let viewerUserId: Int64
+            if let existingViewerUserId = activeUsers.first(where: { $0.displayName == "UITest People Viewer" })?.id {
+                viewerUserId = existingViewerUserId
+            } else {
+                viewerUserId = try authService.createUser(displayName: "UITest People Viewer", pin: "2468")
+            }
+            try db.writer.write { dbConn in
+                try dbConn.execute(sql: """
+                    INSERT OR IGNORE INTO hats (name, description, level, is_builtin)
+                    VALUES ('UITest People Viewer', 'UI-test-only view_people role', 0, 0)
+                    """)
+                guard let viewerHatId = try Int64.fetchOne(
+                    dbConn,
+                    sql: "SELECT id FROM hats WHERE name = 'UITest People Viewer'"
+                ) else { return }
+                try dbConn.execute(
+                    sql: "INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key) VALUES (?, 'view_people')",
+                    arguments: [viewerHatId]
+                )
+                try dbConn.execute(sql: """
+                    UPDATE user_hats
+                    SET is_active = 0,
+                        deleted_at = COALESCE(deleted_at, datetime('now'))
+                    WHERE user_id = ?
+                      AND hat_id != ?
+                      AND (is_active = 1 OR deleted_at IS NULL)
+                    """, arguments: [viewerUserId, viewerHatId])
+                try dbConn.execute(sql: """
+                    INSERT INTO user_hats (user_id, hat_id, is_active, deleted_at)
+                    VALUES (?, ?, 1, NULL)
+                    ON CONFLICT(user_id, hat_id) DO UPDATE SET
+                        is_active = 1,
+                        deleted_at = NULL
+                    """, arguments: [viewerUserId, viewerHatId])
+
+                try dbConn.execute(sql: """
+                    INSERT INTO employee_teams
+                        (name, description, is_active, created_by, updated_by, deleted_at)
+                    VALUES ('UITest Read Only Team', 'Permission regression fixture', 1, ?, ?, NULL)
+                    ON CONFLICT(name) DO UPDATE SET
+                        description = excluded.description,
+                        is_active = 1,
+                        updated_by = excluded.updated_by,
+                        updated_at = datetime('now'),
+                        deleted_at = NULL
+                    """, arguments: [fixtureUserId, fixtureUserId])
+                guard let teamId = try Int64.fetchOne(
+                    dbConn,
+                    sql: """
+                        SELECT id FROM employee_teams
+                        WHERE name = 'UITest Read Only Team' AND is_active = 1 AND deleted_at IS NULL
+                        """
+                ) else { return }
+                try dbConn.execute(sql: """
+                    INSERT INTO employee_team_members
+                        (team_id, user_id, role, added_by, deleted_at)
+                    VALUES (?, ?, 'member', ?, NULL)
+                    ON CONFLICT(team_id, user_id) DO UPDATE SET
+                        role = excluded.role,
+                        joined_at = datetime('now'),
+                        deleted_at = NULL,
+                        added_by = excluded.added_by,
+                        removed_by = NULL
+                    """, arguments: [teamId, viewerUserId, fixtureUserId])
+            }
+        }
+
         let now = ISO8601DateFormatter().string(from: Date())
         let longNotesLocal = String(repeating: "LOCAL_NOTES_SEGMENT_", count: 22)
         let longNotesRemote = String(repeating: "REMOTE_NOTES_SEGMENT_", count: 22)
@@ -1093,6 +1164,7 @@ final class AppCore: ObservableObject {
         let suppressPostLoginOnboarding = ProcessInfo.processInfo.arguments.contains("-UITestingDispatchBoard")
             || ProcessInfo.processInfo.arguments.contains("-UITestingConflictCapture")
             || ProcessInfo.processInfo.arguments.contains("-UITestingWEI3041Timesheets")
+            || ProcessInfo.processInfo.arguments.contains("-UITestingTeamsViewOnly")
 
         if ProcessInfo.processInfo.arguments.contains("-UITestingWEI3041Timesheets") &&
             !ProcessInfo.processInfo.arguments.contains("-UITestingPreserveDatabase") {
