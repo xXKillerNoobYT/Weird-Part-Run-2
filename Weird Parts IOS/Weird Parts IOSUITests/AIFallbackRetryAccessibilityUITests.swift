@@ -28,7 +28,14 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
 
     private func launchApp(contentSizeCategory: UIContentSizeCategory? = nil) -> XCUIApplication {
         let application = XCUIApplication()
-        application.launchArguments = ["-UITesting", "-UITestingAIFallbackSaveWarning"]
+        // This smoke validates the warning after the authenticated app shell has
+        // mounted. Seed that prerequisite directly instead of attempting an
+        // interactive login whose onboarding state is outside this test's scope.
+        application.launchArguments = [
+            "-UITesting",
+            "-UITestingWEI936AutoLogin",
+            "-UITestingAIFallbackSaveWarning",
+        ]
         if let contentSizeCategory {
             application.launchArguments += [
                 "-UIPreferredContentSizeCategoryName",
@@ -42,10 +49,7 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
 
     @MainActor
     private func verifyWarningAndRetryTarget(context: String) throws {
-        try logInIfNeeded()
-
-        let assistantButton = app.buttons["aiAssistantButton"]
-        XCTAssertTrue(assistantButton.waitForExistence(timeout: 45), "AI Assistant should be available at \(context).")
+        try openAssistant(context: context)
 
         let warningTitle = app.descendants(matching: .any).matching(
             NSPredicate(format: "label == %@", "Conversation turn was not saved")
@@ -56,30 +60,7 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
         let retry = app.buttons["Retry saving conversation turn"]
         let dismiss = app.buttons["Dismiss conversation save warning"]
 
-        // The assistant button can be momentarily covered by late-arriving
-        // onboarding overlays (Got It / Skip hints), which swallow the first
-        // tap without any test-visible failure — the panel never opens and the
-        // fixture warning never renders (flaked 3x on CI, 2026-07-31, across
-        // both Dynamic Type variants). Tap, confirm the panel actually opened
-        // by watching for the fixture warning, and re-tap after clearing
-        // overlays when it did not.
-        var panelOpened = false
-        for _ in 0..<3 {
-            if assistantButton.exists, assistantButton.isHittable {
-                assistantButton.tap()
-            }
-            if warningTitle.waitForExistence(timeout: 10) {
-                panelOpened = true
-                break
-            }
-            for prefix in ["Got It", "Skip"] {
-                let overlay = app.buttons.matching(
-                    NSPredicate(format: "label BEGINSWITH %@", prefix)
-                ).firstMatch
-                if overlay.exists, overlay.isHittable { overlay.tap() }
-            }
-        }
-        XCTAssertTrue(panelOpened, "Save warning should render at \(context).")
+        XCTAssertTrue(warningTitle.waitForExistence(timeout: 30), "Save warning should render at \(context).")
         XCTAssertTrue(warningBody.waitForExistence(timeout: 5), "Save warning detail should remain untruncated at \(context).")
         XCTAssertTrue(retry.waitForExistence(timeout: 5), "Retry Save should render at \(context).")
         XCTAssertTrue(retry.isHittable, "Retry Save should be user-actionable at \(context).")
@@ -111,61 +92,32 @@ final class AIFallbackRetryAccessibilityUITests: XCTestCase {
     }
 
     @MainActor
-    private func logInIfNeeded() throws {
-        let assistantButton = app.buttons["aiAssistantButton"]
-        if assistantButton.waitForExistence(timeout: 5), assistantButton.isHittable { return }
+    private func openAssistant(context: String) throws {
+        let shell = app.descendants(matching: .any)["tab_dashboard"]
+        XCTAssertTrue(shell.waitForExistence(timeout: 30), "Authenticated app shell should mount at \(context).")
 
-        let ownerRow = app.buttons.matching(
-            NSPredicate(format: "identifier BEGINSWITH 'loginUserRow_'")
-        ).firstMatch
-        // 90 s: this is the first post-launch wait, so it also absorbs cold
-        // bootstrap (SQLCipher open + migrations) on a contended CI Mac.
-        XCTAssertTrue(ownerRow.waitForExistence(timeout: 90), "UI test owner should be available.")
-        ownerRow.tap()
-
-        let pinField = app.secureTextFields["loginPINField"]
-        // 30 s: AX5 Dynamic Type on iPad relayouts the login list slowly under
-        // CI load — a 5 s wait flaked (2026-07-31, line: PIN field should appear).
-        XCTAssertTrue(pinField.waitForExistence(timeout: 30), "PIN field should appear.")
-        pinField.tap()
-        pinField.typeText("1234")
-
-        let done = app.buttons["loginPINDoneButton"]
-        if done.waitForExistence(timeout: 5), done.isHittable { done.tap() }
-
-        let signIn = app.buttons["loginSignInButton"]
-        XCTAssertTrue(signIn.waitForExistence(timeout: 30), "Sign In should appear.")
-        signIn.tap()
-
-        // 75 s, not 25: post-sign-in service bootstrap competes with the
-        // sibling device-class gate job on the same CI Mac (both gates run
-        // concurrently on one machine) — the shell can take over 25 s to
-        // appear under that load even though the app is healthy.
-        let deadline = Date().addingTimeInterval(75)
-        while Date() < deadline {
-            let skip = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Skip'")).firstMatch
-            let gotIt = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Got It'")).firstMatch
-            if gotIt.exists {
-                if gotIt.isHittable {
-                    gotIt.tap()
-                } else {
-                    app.scrollViews.firstMatch.swipeUp()
-                }
-                continue
-            }
-            if skip.exists {
-                if skip.isHittable {
-                    skip.tap()
-                } else {
-                    app.scrollViews.firstMatch.swipeUp()
-                }
-                continue
-            }
-            if app.buttons["aiAssistantButton"].exists,
-               app.buttons["aiAssistantButton"].isHittable { return }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        let floatingAssistant = app.descendants(matching: .any)["aiAssistantButton"]
+        if floatingAssistant.exists, floatingAssistant.isHittable {
+            floatingAssistant.tap()
+            return
         }
 
-        XCTFail("Login should reach the app shell before opening AI Assistant.")
+        let sidebarAssistant = app.descendants(matching: .any)["sidebarAIAssistantButton"]
+        if sidebarAssistant.exists, sidebarAssistant.isHittable {
+            sidebarAssistant.tap()
+            return
+        }
+
+        // The compact floating action is intentionally suppressed at AX sizes;
+        // More is the production-accessible route to the same assistant.
+        let moreTab = app.tabBars.buttons["More"]
+        XCTAssertTrue(moreTab.waitForExistence(timeout: 10), "More tab should expose the AX assistant route at \(context).")
+        moreTab.tap()
+
+        XCTAssertTrue(app.navigationBars["More"].waitForExistence(timeout: 10), "More should open at \(context).")
+        let moreAssistant = app.buttons["AI Assistant"]
+        XCTAssertTrue(moreAssistant.waitForExistence(timeout: 10), "More should expose AI Assistant at \(context).")
+        XCTAssertTrue(moreAssistant.isHittable, "More AI Assistant route should be user-actionable at \(context).")
+        moreAssistant.tap()
     }
 }

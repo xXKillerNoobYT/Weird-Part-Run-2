@@ -737,6 +737,22 @@ struct IOSMainView: View {
     private var moreTab: some View {
         NavigationStack(path: $moreNavigationPath) {
             List {
+                // At accessibility Dynamic Type the floating assistant action
+                // is intentionally hidden to preserve content clearance. Keep
+                // its alternate More route first so it remains immediately
+                // discoverable without scrolling past every overflow module.
+                Section {
+                    Button {
+                        if aiDisplayMode == .sheet {
+                            activeRootSheet = .aiAssistant
+                        }
+                        showAIAssistant = true
+                    } label: {
+                        Label("AI Assistant", systemImage: "sparkles")
+                    }
+                    .accessibilityIdentifier("moreAIAssistantButton")
+                }
+
                 // Overflow modules
                 if !overflowModules.isEmpty {
                     Section("Modules") {
