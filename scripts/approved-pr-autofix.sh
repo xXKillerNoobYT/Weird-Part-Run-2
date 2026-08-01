@@ -302,7 +302,16 @@ while IFS= read -r pr; do
     exit 0
   fi
 
-  if [[ "$merge_state" == "CLEAN" || "$merge_state" == "HAS_HOOKS" || "$merge_state" == "BLOCKED" ]]; then
+  # BLOCKED means GitHub branch protection still refuses a merge even though the
+  # check-runs endpoint has no completed failures or in-flight runs for this
+  # head. A required context can be missing/cancelled without appearing here;
+  # do not queue an auto-merge that cannot fire or spend this run's action.
+  if [[ "$merge_state" == "BLOCKED" ]]; then
+    echo "    skip: BLOCKED by branch protection/check evidence for head ${head_sha:0:8} (pending=$pending failing=$failing); required context may be missing or cancelled — rerun required checks, moving on"
+    continue
+  fi
+
+  if [[ "$merge_state" == "CLEAN" || "$merge_state" == "HAS_HOOKS" ]]; then
     echo "==> approved PR #$number has no failing checks; queueing/performing squash merge"
     run_or_log gh pr merge "$number" --repo "$REPO" --squash --delete-branch --auto
     exit 0
