@@ -12,6 +12,7 @@ import os.log
 /// time to a specific job without clocking out/in.
 struct IOSClockPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @StateObject private var locationManager = LocationManager()
     @StateObject private var geofenceManager = GeofenceManager()
 
@@ -33,7 +34,6 @@ struct IOSClockPage: View {
     // Activity status (working, supply_run, break, lunch_paid, lunch_unpaid)
     @State private var activityStatus: String = "working"
     @State private var activeSupplyRunStartDate: Date?
-    @State private var supplyRunElapsedText: String = ""
 
     // Break/lunch tracking
     @State private var activeBreakRecord: BreakRecord?
@@ -477,26 +477,84 @@ struct IOSClockPage: View {
                     flexPoolSection
                     todayHoursSection
                 }
+
+                // Keep a real trailing scroll row in addition to the List's
+                // safe-area inset. The Dashboard tab bar is rendered by the
+                // ancestor TabView, so an inset alone can still leave a final
+                // AX5 row visually above the bar but outside its hit region.
+                // This row lets every Clock action and Today's Hours scroll
+                // past the persistent chrome with no interactive or VoiceOver
+                // surface of its own (#1456).
+                Section {
+                    Color.clear
+                        .frame(height: dynamicTypeSize.isAccessibilitySize ? 132 : 72)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets())
+
             }
             .accessibilityIdentifier("clockPage_root")
             .listStyle(.insetGrouped)
+            // At AX5 the Dashboard's compact section menu is persistent chrome
+            // above this routed List. Reserve its rendered height inside the
+            // List rather than relying on the ancestor VStack's layout, which
+            // lets the first section header/card paint under the menu on iOS 26.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Color.clear
+                    .frame(height: dynamicTypeSize.isAccessibilitySize ? 84 : 0)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+            // Unlike safe-area insets, scroll-content margins participate in
+            // the List's own final-row geometry. This makes the persistent
+            // Dashboard tab bar clearance apply to hit testing as well as the
+            // visible rendered area on iOS 26.
+            .contentMargins(
+                .bottom,
+                dynamicTypeSize.isAccessibilitySize ? 220 : 120,
+                for: .scrollContent
+            )
+            // The dashboard tab bar is persistent chrome. A trailing empty row
+            // can still be laid out beneath that overlay, so reserve the space
+            // from the List's visible scroll region instead. This lets Today's
+            // Hours and every active-state control scroll fully above the bar
+            // at AX5 (#1456).
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                Color.clear
+                    .frame(height: dynamicTypeSize.isAccessibilitySize ? 180 : 96)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
         }
     }
 
     // MARK: - Clocked-In Section
 
     private func clockedInSection(_ entry: JobsService.LaborEntryRow) -> some View {
-        Section("Current Status") {
+        let actionLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: 12))
+            : AnyLayout(HStackLayout(spacing: 12))
+
+        return Section("Current Status") {
             VStack(alignment: .leading, spacing: 8) {
-                // Status label
+                // Surface the actionable active state before the large elapsed
+                // timer. At AX5 this keeps the Supply Run evidence card in the
+                // first reachable portion of the section instead of pushing it
+                // under the persistent bottom navigation.
+                if let supplyRunStart = activeSupplyRunStartDate, activityStatus == "supply_run" {
+                    activeSupplyRunCard(startedAt: supplyRunStart)
+                }
+
+                // Keep the status announcement directly after its active-state
+                // evidence card. At AX5 this prevents the redundant heading
+                // from being clipped beneath the persistent sub-tab strip.
                 Label(statusLabel, systemImage: statusIcon)
                     .font(.headline)
                     .foregroundStyle(statusColor)
                     .accessibilityIdentifier("clockPage_currentStatus")
-
-                if activityStatus == "supply_run", let activeSupplyRunStartDate {
-                    supplyRunStatusCard(startedAt: activeSupplyRunStartDate)
-                }
 
                 // Live elapsed timer — large, readable display
                 VStack(spacing: 2) {
@@ -521,27 +579,18 @@ struct IOSClockPage: View {
                     .foregroundStyle(.secondary)
                     .accessibilityElement(children: .combine)
 
-                if let supplyRunStart = activeSupplyRunStartDate, activityStatus == "supply_run" {
-                    activeSupplyRunCard(startedAt: supplyRunStart)
-                }
-
                 // Active break/lunch indicator
                 if let breakRecord = activeBreakRecord {
                     activeBreakBanner(breakRecord)
                 }
 
-                if activityStatus == "supply_run", let activeSupplyRunStartDate {
-                    activeSupplyRunCard(start: activeSupplyRunStartDate)
-                }
-
                 // Clock Out + Switch Job (disabled during active break)
-                HStack(spacing: 12) {
+                actionLayout {
                     Button(role: .destructive) {
                         pendingClockOutEntryId = entry.id
                         showClockOutConfirmation = true
                     } label: {
-                        Label("Clock Out", systemImage: "stop.circle.fill")
-                            .frame(maxWidth: .infinity)
+                        clockActionLabel("Clock Out", systemImage: "stop.circle.fill")
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
@@ -564,8 +613,7 @@ struct IOSClockPage: View {
                     Button {
                         switchJob(entryId: entry.id)
                     } label: {
-                        Label("Switch Job", systemImage: "arrow.triangle.swap")
-                            .frame(maxWidth: .infinity)
+                        clockActionLabel("Switch Job", systemImage: "arrow.triangle.swap")
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
@@ -591,9 +639,12 @@ struct IOSClockPage: View {
                     Button {
                         Task { await endCurrentBreak() }
                     } label: {
-                        Label(activeBreakRecord?.breakType == "lunch_unpaid" ? "Resume Work" : "End \(activeBreakRecord?.breakType == "break" ? "Break" : "Lunch")",
-                              systemImage: "checkmark.circle.fill")
-                            .frame(maxWidth: .infinity)
+                        clockActionLabel(
+                            activeBreakRecord?.breakType == "lunch_unpaid"
+                                ? "Resume Work"
+                                : "End \(activeBreakRecord?.breakType == "break" ? "Break" : "Lunch")",
+                            systemImage: "checkmark.circle.fill"
+                        )
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.orange)
@@ -603,45 +654,47 @@ struct IOSClockPage: View {
                     Button {
                         activeSheet = .breakStatePicker
                     } label: {
-                        Label(
+                        clockActionLabel(
                             activityStatus == "supply_run" ? "Break / Lunch / End Supply Run" : "Break / Lunch / Supply Run",
                             systemImage: activityStatus == "supply_run" ? "checkmark.circle" : "timer"
                         )
-                        .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(activityStatus == "supply_run" ? .green : .orange)
                     .controlSize(.large)
-                    .accessibilityLabel("Open break, lunch, and supply run state picker")
-                    .accessibilityHint("Choose paid break, paid lunch, unpaid lunch, or supply run with duration options.")
+                    .accessibilityLabel(
+                        activityStatus == "supply_run"
+                            ? "Open break, lunch, and end supply run options"
+                            : "Open break, lunch, and supply run options"
+                    )
+                    .accessibilityValue(activityStatus == "supply_run" ? "Supply run active" : "Working")
+                    .accessibilityHint("Choose paid break, paid lunch, unpaid lunch, or supply run options.")
+                    .accessibilityIdentifier("clockPage_statePicker")
                 }
             }
             .padding(.vertical, 4)
         }
     }
 
-    private func supplyRunStatusCard(startedAt: Date) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "car.fill")
-                .foregroundStyle(.orange)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Supply run active")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                Text("Started \(Formatters.timeFormatter.string(from: startedAt)) · \(supplyRunElapsedText) elapsed")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text("Billable clock stays running while you pick up parts or supplies.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+    @ViewBuilder
+    private func clockActionLabel(_ title: String, systemImage: String) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(spacing: 8) {
+                Image(systemName: systemImage)
+                    .accessibilityHidden(true)
+                Text(title)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 0)
+            // Long operational actions remain readable at AX5, but use the
+            // same compact xxxLarge cap as the active evidence card so their
+            // 44pt controls can scroll entirely between persistent chrome.
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+            .frame(maxWidth: .infinity, minHeight: 44)
+        } else {
+            Label(title, systemImage: systemImage)
+                .frame(maxWidth: .infinity, minHeight: 44)
         }
-        .padding(10)
-        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Supply run active. Started \(Formatters.timeFormatter.string(from: startedAt)). \(supplyRunElapsedText) elapsed. Billable clock stays running.")
     }
 
     // MARK: - Status Helpers
@@ -675,83 +728,63 @@ struct IOSClockPage: View {
         }
     }
 
-    private func activeSupplyRunCard(start: Date) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Supply Run Active", systemImage: "car.fill")
-                .font(.subheadline)
-                .fontWeight(.semibold)
-                .foregroundStyle(.orange)
+    // MARK: - Active Supply Run Card
 
-            HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Started")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(Formatters.timeFormatter.string(from: start))
-                        .font(.system(.body, design: .monospaced))
+    private func activeSupplyRunCard(startedAt: Date) -> some View {
+        TimelineView(.periodic(from: startedAt, by: 60)) { context in
+            let duration = formatDuration(max(0, context.date.timeIntervalSince(startedAt)))
+
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Supply Run Active", systemImage: "car.fill")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.orange)
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Started")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(formatClockTime(startedAt))
+                            .font(.system(.body, design: .monospaced))
+                            .fontWeight(.medium)
+                    }
+
+                    Spacer()
+
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("Duration")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(duration)
+                            .font(.system(.body, design: .monospaced))
+                            .fontWeight(.medium)
+                    }
                 }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Duration")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(supplyRunElapsedText)
-                        .font(.system(.body, design: .monospaced))
-                }
-                Spacer()
+
+                Text("You stay clocked in and billable while this supply run is active.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
+            // The card is a compact operational summary. Cap its visual typography
+            // at xxxLarge so the complete evidence card fits in the compact Clock
+            // viewport at AX5. Its combined accessibility label remains complete.
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+            // Let the List calculate the complete multi-line row height before
+            // applying the card background. At AX5 this prevents the card's
+            // started/duration summary from being clipped by an inherited row
+            // height while retaining its compact visual scale.
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(10)
+            .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Supply Run Active")
+            .accessibilityValue("Started \(formatClockTime(startedAt)). Duration \(duration). Billable while active.")
+            .accessibilityIdentifier("clock-active-supply-run-card")
         }
-        .padding(10)
-        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.orange.opacity(0.3), lineWidth: 1)
-        )
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Supply run active. Started at \(Formatters.timeFormatter.string(from: start)). Duration \(supplyRunElapsedText). Time remains billable.")
-        .accessibilityIdentifier("clockPage_activeSupplyRunCard")
     }
 
     // MARK: - Active Break Banner
-
-    private func activeSupplyRunCard(startedAt: Date) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Supply Run Active", systemImage: "car.fill")
-                .font(.subheadline)
-                .fontWeight(.semibold)
-                .foregroundStyle(.orange)
-
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Started")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(formatClockTime(startedAt))
-                        .font(.system(.body, design: .monospaced))
-                        .fontWeight(.medium)
-                }
-
-                Spacer()
-
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("Duration")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(supplyRunElapsedText)
-                        .font(.system(.body, design: .monospaced))
-                        .fontWeight(.medium)
-                }
-            }
-
-            Text("You stay clocked in and billable while this supply run is active.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding(10)
-        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Supply Run Active. Started \(formatClockTime(startedAt)). Duration \(supplyRunElapsedText). You stay clocked in and billable while this supply run is active.")
-        .accessibilityIdentifier("clock-active-supply-run-card")
-    }
 
     private func activeBreakBanner(_ breakRecord: BreakRecord) -> some View {
         VStack(spacing: 6) {
@@ -881,9 +914,11 @@ struct IOSClockPage: View {
 
     // MARK: - Job Picker (inline, no sheet)
 
-    /// Whether clock-in buttons should be disabled (no location permission).
+    /// Whether clock-in buttons should be disabled by the company GPS policy.
+    /// When the company has opted out of GPS-required clocking, the action
+    /// remains available even if this device has no location permission.
     private var clockInDisabled: Bool {
-        needsLocationPermission || locationManager.permissionDenied
+        isClockLocationRequired && (needsLocationPermission || locationManager.permissionDenied)
     }
 
     @ViewBuilder
@@ -1186,6 +1221,8 @@ struct IOSClockPage: View {
                         .font(.headline).bold().monospacedDigit()
                 }
                 .padding(.top, 4)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("clockPage_todayTotal")
             }
         } header: {
             Text("Today's Hours")
@@ -1690,7 +1727,6 @@ struct IOSClockPage: View {
                 activeBreakRecord = nil
                 activityStatus = "working"
                 activeSupplyRunStartDate = nil
-                supplyRunElapsedText = ""
                 breakElapsedText = ""
                 errorMessage = nil
             }
@@ -1821,11 +1857,6 @@ struct IOSClockPage: View {
             await MainActor.run {
                 activityStatus = newStatus
                 activeSupplyRunStartDate = newStart
-                if let newStart {
-                    supplyRunElapsedText = formatDuration(Date().timeIntervalSince(newStart))
-                } else {
-                    supplyRunElapsedText = ""
-                }
                 errorMessage = nil
             }
         } catch {
@@ -1914,12 +1945,10 @@ struct IOSClockPage: View {
 
     private func startElapsedTimer(clockInISO: String) {
         updateElapsedText(clockInISO: clockInISO)
-        updateSupplyRunElapsedText()
         elapsedTimer?.invalidate()
         elapsedTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
             Task { @MainActor in
                 updateElapsedText(clockInISO: clockInISO)
-                updateSupplyRunElapsedText()
             }
         }
     }
@@ -1937,17 +1966,6 @@ struct IOSClockPage: View {
         let hours = Int(elapsed) / 3600
         let minutes = (Int(elapsed) % 3600) / 60
         elapsedText = "\(hours)h \(minutes)m"
-        if let activeSupplyRunStartDate {
-            supplyRunElapsedText = formatDuration(max(0, Date().timeIntervalSince(activeSupplyRunStartDate)))
-        }
-    }
-
-    private func updateSupplyRunElapsedText() {
-        guard let activeSupplyRunStartDate else {
-            supplyRunElapsedText = ""
-            return
-        }
-        supplyRunElapsedText = formatDuration(max(0, Date().timeIntervalSince(activeSupplyRunStartDate)))
     }
 
     // MARK: - To-Do Actions
@@ -2185,7 +2203,6 @@ struct IOSClockPage: View {
                 if let brk = currentBreak {
                     activityStatus = brk.breakType
                     activeSupplyRunStartDate = nil
-                    supplyRunElapsedText = ""
                     if let timer = brk.timerDurationMinutes, timer > 0 {
                         switch brk.breakType {
                         case "break": breakBudgetMinutes = timer
@@ -2195,15 +2212,9 @@ struct IOSClockPage: View {
                     }
                     startBreakTimer()
                     activeSupplyRunStartDate = nil
-                    supplyRunElapsedText = ""
                 } else {
                     activityStatus = currentActivity
                     activeSupplyRunStartDate = currentSupplyRunStart
-                    if let currentSupplyRunStart {
-                        supplyRunElapsedText = formatDuration(Date().timeIntervalSince(currentSupplyRunStart))
-                    } else {
-                        supplyRunElapsedText = ""
-                    }
                     breakTimer?.invalidate()
                     breakTimer = nil
                     breakElapsedText = ""
@@ -2220,7 +2231,6 @@ struct IOSClockPage: View {
                     elapsedTimer = nil
                     elapsedText = "0h 0m"
                     activeSupplyRunStartDate = nil
-                    supplyRunElapsedText = ""
                     showRecoveredTimerBanner = false
                     recoveredBannerDismissed = false
                 }
@@ -2461,6 +2471,9 @@ private struct BreakStatePickerSheet: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(isOnSupplyRun ? .green : .orange)
+                    .accessibilityIdentifier(
+                        isOnSupplyRun ? "clockPage_endSupplyRun" : "clockPage_startSupplyRun"
+                    )
 
                     Text("Supply runs are billable/clocked-in travel for parts or supplies. End the run when you return to normal work.")
                         .font(.caption)
