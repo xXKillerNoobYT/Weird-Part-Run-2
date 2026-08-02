@@ -52,6 +52,25 @@ struct IOSDeviceManagementPage: View {
                 AgentLinkSection()
             }
 
+            Section {
+                NavigationLink {
+                    IOSDatabaseResetPage()
+                } label: {
+                    Label("Reset This Device", systemImage: "arrow.counterclockwise.circle")
+                        .foregroundStyle(.red)
+                        .frame(minHeight: 44)
+                }
+                .rowAccessibility(
+                    label: "Reset this device",
+                    hint: "Wipes this device's data and starts setup over. Requires admin approval. The app stays installed.",
+                    id: "settings-device-mgmt-reset-link"
+                )
+            } header: {
+                Text("Start Over")
+            } footer: {
+                Text("Wipes this device's company data and returns to setup — no need to delete and reinstall the app. Admin PIN required.")
+            }
+
             Section("Actions") {
                 Button {
                     issuePairingCode()
