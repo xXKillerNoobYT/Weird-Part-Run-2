@@ -21,7 +21,7 @@ extension BackgroundTaskService: AppCoreBackgroundTaskAuditing {}
 final class AppCore: ObservableObject {
     nonisolated private static let uiTestingLaunchFlag = "-UITesting"
     nonisolated private static let uiTestingPreserveDatabaseFlag = "-UITestingPreserveDatabase"
-    nonisolated private static let localFallbackBootstrapKeyLock = NSLock()
+    nonisolated private static let localFallbackBootstrapKeyLock = NSRecursiveLock()
 
     #if DEBUG && targetEnvironment(simulator)
     nonisolated private static let wei5134AIReadFailureFlag = "-UITestingWEI5134AIReadFailure"
@@ -722,12 +722,34 @@ final class AppCore: ObservableObject {
             return uiTestingDatabaseKeyHex
         }
 
+        // Serialize the read → fallback lookup → Keychain promotion sequence so
+        // concurrent startup callers cannot replace an established DB key.
+        localFallbackBootstrapKeyLock.lock()
+        defer { localFallbackBootstrapKeyLock.unlock() }
+
         let readResult = keychain.read()
         if readResult.status == errSecSuccess, let data = readResult.data, data.count == 32 {
             return data.map { String(format: "%02x", $0) }.joined()
         }
         if shouldUseLocalBootstrapKeyFallback(for: readResult.status) {
             return try localFallbackBootstrapKeyHex(in: fallbackDirectory)
+        }
+        if readResult.status == errSecItemNotFound,
+           let fallbackKeyData = try existingLocalFallbackBootstrapKeyData(in: fallbackDirectory) {
+            let addStatus = keychain.add(fallbackKeyData)
+            if addStatus == errSecSuccess {
+                return fallbackKeyData.map { String(format: "%02x", $0) }.joined()
+            }
+            if shouldUseLocalBootstrapKeyFallback(for: addStatus) {
+                return try localFallbackBootstrapKeyHex(in: fallbackDirectory)
+            }
+            if addStatus == errSecDuplicateItem {
+                let rereadResult = keychain.read()
+                if rereadResult.status == errSecSuccess, rereadResult.data == fallbackKeyData {
+                    return fallbackKeyData.map { String(format: "%02x", $0) }.joined()
+                }
+            }
+            throw CipherKeyError.keychainAccessFailed(addStatus)
         }
         if readResult.status == errSecSuccess {
             // Self-heal legacy/corrupt entries before minting a replacement key.
@@ -810,6 +832,20 @@ final class AppCore: ObservableObject {
         try keyData.write(to: keyURL, options: .atomic)
         try excludeLocalFallbackBootstrapKeyFromBackup(at: keyURL)
         return keyData.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Returns an existing validated fallback key for Keychain recovery without
+    /// creating one. Reusing this exact key preserves access to an existing DB.
+    nonisolated private static func existingLocalFallbackBootstrapKeyData(in directory: URL? = nil) throws -> Data? {
+        localFallbackBootstrapKeyLock.lock()
+        defer { localFallbackBootstrapKeyLock.unlock() }
+
+        let keyURL = try localFallbackBootstrapKeyURL(in: directory)
+        guard let data = try? Data(contentsOf: keyURL), data.count == 32 else {
+            return nil
+        }
+        try excludeLocalFallbackBootstrapKeyFromBackup(at: keyURL)
+        return data
     }
 
     /// Applies the fallback key's backup-exclusion requirement every time the

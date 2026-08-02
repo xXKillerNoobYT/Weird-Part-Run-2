@@ -57,6 +57,7 @@ private final class MockBootstrapTaskAuditor: AppCoreBackgroundTaskAuditing, @un
 
 private final class OperationProbe: @unchecked Sendable {
     var ran = false
+    var storedKey: Data?
 }
 
 private enum QuestionnaireBreakTestError: Error {
@@ -574,6 +575,45 @@ struct Weird_Parts_IOSTests {
         #expect(
             try fallbackURL.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true
         )
+    }
+
+    @Test func bootstrapFallbackPromotesExistingKeyWhenKeychainRecovers() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BootstrapFallback-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let unavailableKeychain = AppCore.BootstrapKeychainAccess(
+            read: { (errSecNotAvailable, nil) },
+            add: { _ in
+                Issue.record("unavailable Keychain must use the local fallback before a write")
+                return errSecParam
+            },
+            delete: { errSecSuccess }
+        )
+        let promotionProbe = OperationProbe()
+        let recoveredKeychain = AppCore.BootstrapKeychainAccess(
+            read: { (errSecItemNotFound, nil) },
+            add: { keyData in
+                promotionProbe.storedKey = keyData
+                return errSecSuccess
+            },
+            delete: { errSecSuccess }
+        )
+
+        let fallbackKey = try AppCore.deviceBootstrapKeyHex(
+            processArguments: [],
+            keychain: unavailableKeychain,
+            fallbackDirectory: directory
+        )
+        let recoveredKey = try AppCore.deviceBootstrapKeyHex(
+            processArguments: [],
+            keychain: recoveredKeychain,
+            fallbackDirectory: directory
+        )
+        let fallbackURL = try AppCore.localFallbackBootstrapKeyURL(in: directory)
+
+        #expect(recoveredKey == fallbackKey)
+        #expect(promotionProbe.storedKey?.map { String(format: "%02x", $0) }.joined() == fallbackKey)
+        #expect(try fallbackURL.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
     }
 
     @Test func bootstrapFallbackConcurrentCallersShareOnePersistedKey() async throws {
