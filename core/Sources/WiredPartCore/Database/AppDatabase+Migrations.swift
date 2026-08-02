@@ -155,6 +155,7 @@ extension AppDatabase {
         registerMigration115SyncReplayGuard(&migrator)
         registerMigration116TeamMutationAttribution(&migrator)
         registerMigration117AgentLinks(&migrator)
+        registerMigration118AgentLinkActingUser(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6203,5 +6204,14 @@ private func registerMigration117AgentLinks(_ migrator: inout DatabaseMigrator) 
             t.column("status", .text).notNull()
             t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
         }
+    }
+}
+
+private func registerMigration118AgentLinkActingUser(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("118_agent_link_acting_user") { db in
+        // The user who created the link. The one v1 write tool
+        // (job_note_append) attributes its entries to this user and runs
+        // through the normal permission gate — never a hardcoded id.
+        try addColumnIfMissing(db, table: "agent_links", column: "created_by", type: .integer)
     }
 }

@@ -42,6 +42,8 @@ public final class AgentLinkService: Sendable {
         public let id: Int64
         public let name: String
         public let scope: Scope
+        /// User who created the link; the write tool acts as this user.
+        public let createdBy: Int64?
         public let createdAt: String
         public let lastSeenAt: String?
         public let callCount: Int
@@ -82,15 +84,17 @@ public final class AgentLinkService: Sendable {
 
     /// Create a link. The returned token is shown ONCE and never recoverable —
     /// only its SHA-256 lands in the database.
-    public func createLink(name: String, scope: Scope) throws -> (link: AgentLink, token: String) {
+    public func createLink(
+        name: String, scope: Scope, createdBy: Int64? = nil
+    ) throws -> (link: AgentLink, token: String) {
         let token = Self.mintToken()
         let hash = Self.tokenHash(token)
         let link = try db.writer.write { dbc -> AgentLink in
             try dbc.execute(
                 sql: """
-                INSERT INTO agent_links (name, scope, token_hash) VALUES (?, ?, ?)
+                INSERT INTO agent_links (name, scope, token_hash, created_by) VALUES (?, ?, ?, ?)
                 """,
-                arguments: [name, scope.rawValue, hash]
+                arguments: [name, scope.rawValue, hash, createdBy]
             )
             let id = dbc.lastInsertedRowID
             guard let row = try Row.fetchOne(
@@ -205,6 +209,7 @@ public final class AgentLinkService: Sendable {
             id: row["id"],
             name: row["name"],
             scope: Scope(rawValue: row["scope"]) ?? .read,
+            createdBy: row["created_by"],
             createdAt: row["created_at"],
             lastSeenAt: row["last_seen_at"],
             callCount: row["call_count"],

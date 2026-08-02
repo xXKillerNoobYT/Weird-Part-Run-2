@@ -250,7 +250,7 @@ public final class AgentLinkServer: Sendable {
                 SHA256.hash(data: $0).map { String(format: "%02x", $0) }.joined().prefix(16)
             }.map(String.init)
             do {
-                let output = try await tool.handler(argsData)
+                let output = try await tool.handler(link, argsData)
                 try? service.recordCall(
                     linkId: link.id, tool: name, argumentDigest: digest, status: "ok"
                 )
@@ -336,13 +336,13 @@ public struct AgentLinkTool: Sendable {
     public let description: String
     /// JSON Schema for the arguments, as a JSON string.
     public let inputSchemaJSON: String
-    public let handler: @Sendable (Data?) async throws -> String
+    public let handler: @Sendable (AgentLinkService.AgentLink, Data?) async throws -> String
 
     public init(
         name: String,
         description: String,
         inputSchemaJSON: String,
-        handler: @escaping @Sendable (Data?) async throws -> String
+        handler: @escaping @Sendable (AgentLinkService.AgentLink, Data?) async throws -> String
     ) {
         self.name = name
         self.description = description
@@ -356,35 +356,5 @@ public struct AgentLinkToolRegistry: Sendable {
 
     public init(tools: [AgentLinkTool]) {
         self.tools = tools
-    }
-
-    /// v1 registry. Slice 1 ships `system_health`; the seven data tools and
-    /// `job_note_append` land in slice 2 (plan tool table).
-    public static func v1(db: AppDatabase, appVersion: String = "dev") -> AgentLinkToolRegistry {
-        AgentLinkToolRegistry(tools: [
-            AgentLinkTool(
-                name: "system_health",
-                description: "App version, database schema version, and Agent Link status for this WiredPart device.",
-                inputSchemaJSON: #"{"type":"object","properties":{},"additionalProperties":false}"#
-            ) { _ in
-                let (migrationCount, latest) = try db.writer.read { dbc -> (Int, String) in
-                    let count = try Int.fetchOne(
-                        dbc, sql: "SELECT COUNT(*) FROM grdb_migrations"
-                    ) ?? 0
-                    let last = try String.fetchOne(
-                        dbc, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid DESC LIMIT 1"
-                    ) ?? "none"
-                    return (count, last)
-                }
-                let payload: [String: Any] = [
-                    "appVersion": appVersion,
-                    "migrationsApplied": migrationCount,
-                    "latestMigration": latest,
-                    "agentLink": "ok",
-                ]
-                let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
-                return String(decoding: data, as: UTF8.self)
-            },
-        ])
     }
 }

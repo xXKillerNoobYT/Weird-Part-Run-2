@@ -91,12 +91,17 @@ struct AgentLinkServerTests {
     }
 
     private func startServer(scope: AgentLinkService.Scope = .read) async throws -> Harness {
-        let db = try AppDatabase.openInMemoryDatabase()
-        let service = AgentLinkService(db: db)
-        let (link, token) = try service.createLink(name: "test-agent", scope: scope)
+        let env = try E2ETestHelpers.setUp()
+        let service = AgentLinkService(db: env.db)
+        let (link, token) = try service.createLink(
+            name: "test-agent", scope: scope, createdBy: env.adminUserId
+        )
         let server = AgentLinkServer(
             service: service,
-            registry: .v1(db: db, appVersion: "test"),
+            registry: AgentLinkTools.v1(
+                db: env.db, parts: env.parts, jobs: env.jobs, orders: env.orders,
+                notebooks: env.notebooks, reports: env.reports, appVersion: "test"
+            ),
             port: 0,
             appVersion: "test"
         )
@@ -232,16 +237,121 @@ struct AgentLinkServerTests {
     @Test("Read scope cannot see or call the future write tool")
     func scopeFilteringOnList() async throws {
         let harness = try await startServer(scope: .read)
-        // v1 slice ships no write tool yet; assert the filter path by calling
-        // the gate directly AND asserting the listed set matches scope.
         let (_, listJSON) = try await post(harness, token: harness.token, body: rpc("tools/list"))
         let tools = try #require(
             (listJSON?["result"] as? [String: Any])?["tools"] as? [[String: Any]]
         )
-        for tool in tools {
-            let name = try #require(tool["name"] as? String)
-            #expect(AgentLinkService.Scope.read.allows(tool: name))
-        }
+        let names = tools.compactMap { $0["name"] as? String }
+        #expect(names.count == 7)
+        #expect(!names.contains("job_note_append"))
+        // Calling the hidden write tool anyway is refused.
+        let denied = try await post(
+            harness, token: harness.token,
+            body: rpc("tools/call", params: ["name": "job_note_append", "arguments": ["job_id": 1, "note": "x"]])
+        )
+        let error = try #require(denied.json?["error"] as? [String: Any])
+        #expect(error["code"] as? Int == -32602)
         await harness.server.stop()
+    }
+}
+
+@Suite("Agent Link tools")
+struct AgentLinkToolsTests {
+
+    private func makeRegistry() throws -> (env: E2ETestHelpers.TestEnvironment, registry: AgentLinkToolRegistry, link: AgentLinkService.AgentLink) {
+        let env = try E2ETestHelpers.setUp()
+        let service = AgentLinkService(db: env.db)
+        let (link, _) = try service.createLink(
+            name: "tools-test", scope: .readNotes, createdBy: env.adminUserId
+        )
+        let registry = AgentLinkTools.v1(
+            db: env.db, parts: env.parts, jobs: env.jobs, orders: env.orders,
+            notebooks: env.notebooks, reports: env.reports, appVersion: "test"
+        )
+        return (env, registry, link)
+    }
+
+    private func call(
+        _ registry: AgentLinkToolRegistry, _ name: String,
+        link: AgentLinkService.AgentLink, _ arguments: [String: Any]? = nil
+    ) async throws -> [String: Any] {
+        let tool = try #require(registry.tools.first { $0.name == name })
+        let data = try arguments.map { try JSONSerialization.data(withJSONObject: $0) }
+        let out = try await tool.handler(link, data)
+        let json = try JSONSerialization.jsonObject(with: Data(out.utf8))
+        if let dict = json as? [String: Any] { return dict }
+        return ["rows": json]
+    }
+
+    @Test("v1 registry lists the plan's eight tools")
+    func registryRoster() throws {
+        let (_, registry, _) = try makeRegistry()
+        #expect(Set(registry.tools.map(\.name)) == [
+            "parts_search", "stock_levels", "jobs_list", "job_detail",
+            "orders_status", "reports_summary", "system_health", "job_note_append",
+        ])
+    }
+
+    @Test("parts_search finds a seeded part and requires a query")
+    func partsSearch() async throws {
+        let (env, registry, link) = try makeRegistry()
+        let (catId, _, _) = try E2ETestHelpers.seedPartHierarchy(env)
+        _ = try E2ETestHelpers.seedPart(env, name: "THHN 12 Red", categoryId: catId)
+        let result = try await call(registry, "parts_search", link: link, ["query": "THHN"])
+        let rows = try #require(result["rows"] as? [[String: Any]])
+        #expect(rows.contains { ($0["name"] as? String) == "THHN 12 Red" })
+        await #expect(throws: (any Error).self) {
+            _ = try await self.call(registry, "parts_search", link: link, [:])
+        }
+    }
+
+    @Test("jobs_list and job_detail round-trip a seeded job")
+    func jobsTools() async throws {
+        let (env, registry, link) = try makeRegistry()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-777", name: "Panel Swap")
+        let list = try await call(registry, "jobs_list", link: link, ["search": "Panel Swap"])
+        let rows = try #require(list["rows"] as? [[String: Any]])
+        #expect(rows.contains { ($0["jobNumber"] as? String) == "J-777" })
+        let detail = try await call(registry, "job_detail", link: link, ["job_id": jobId])
+        #expect(detail["jobNumber"] as? String == "J-777")
+        #expect(detail["jobName"] as? String == "Panel Swap")
+    }
+
+    @Test("orders_status and reports_summary return well-formed empty-state payloads")
+    func ordersAndReports() async throws {
+        let (_, registry, link) = try makeRegistry()
+        let orders = try await call(registry, "orders_status", link: link)
+        #expect((orders["rows"] as? [[String: Any]])?.isEmpty == true)
+        let summary = try await call(registry, "reports_summary", link: link, ["days": 7])
+        #expect(summary["days"] as? Int == 7)
+        #expect(summary["poCount"] as? Int == 0)
+        #expect((summary["jobsTotal"] as? Int) != nil)
+    }
+
+    @Test("job_note_append creates the notebook, attributes the entry, and needs an acting user")
+    func jobNoteAppend() async throws {
+        let (env, registry, link) = try makeRegistry()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let result = try await call(
+            registry, "job_note_append", link: link,
+            ["job_id": jobId, "note": "Breaker order confirmed", "title": "Order note"]
+        )
+        #expect(result["status"] as? String == "appended")
+        let notebookId = try #require((result["notebookId"] as? NSNumber)?.int64Value)
+        let detail = try env.notebooks.getNotebookDetail(id: notebookId)
+        #expect(detail.jobId == jobId)
+        // Second append reuses the same notebook.
+        let again = try await call(
+            registry, "job_note_append", link: link, ["job_id": jobId, "note": "Second"]
+        )
+        #expect((again["notebookId"] as? NSNumber)?.int64Value == notebookId)
+        // A link with no acting user is refused with a clear message.
+        let service = AgentLinkService(db: env.db)
+        let (orphan, _) = try service.createLink(name: "orphan", scope: .readNotes)
+        await #expect(throws: (any Error).self) {
+            _ = try await self.call(
+                registry, "job_note_append", link: orphan, ["job_id": jobId, "note": "x"]
+            )
+        }
     }
 }
