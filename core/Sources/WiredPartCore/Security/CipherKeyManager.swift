@@ -78,13 +78,19 @@ public final class CipherKeyManager: Sendable {
         if let existing = readSaltFromKeychain() {
             return existing
         }
-        #if targetEnvironment(macCatalyst)
-        // Local Catalyst builds can run without keychain entitlements.
-        // Reuse a sandbox-stored salt so derived keys remain stable per install.
-        if let fallback = try readCatalystFallbackSalt() {
+        // Keychain-less environments: local Catalyst builds without
+        // entitlements AND the iPad app running on Apple Silicon Macs, where
+        // SecItem calls fail with errSecMissingEntitlement (-34018). The
+        // fallback was originally compiled ONLY for Catalyst, so iPad-on-Mac
+        // had no rescue path and the app could never start there (owner
+        // field report 2026-08-02, build 39, Mac14_13: "Still will not
+        // start"). The fallback is now a RUNTIME decision on every platform;
+        // a real iPhone/iPad never reaches it because its keychain works.
+        // The file name keeps its historical "catalyst-" prefix so existing
+        // Catalyst installs keep their salt — and their decryptable DBs.
+        if let fallback = try readFallbackSalt() {
             return fallback
         }
-        #endif
 
         let salt = try Self.generateSalt()
 
@@ -101,15 +107,18 @@ public final class CipherKeyManager: Sendable {
             // Duplicate-item write raced but the follow-up re-read also failed.
             Self.logger.error("CipherKeyManager: salt write raced (errSecDuplicateItem) and re-read also failed")
             throw CipherKeyError.keychainAccessFailed(errSecDuplicateItem)
+        } catch CipherKeyError.keychainAccessFailed(let status)
+            where status == errSecMissingEntitlement || status == errSecNotAvailable {
+            // Keychain is unusable in THIS environment (not merely locked —
+            // errSecInteractionNotAllowed deliberately still throws so a locked
+            // iPhone can never mint a divergent salt). Persist to the sandbox
+            // fallback so the derived key is stable across launches.
+            Self.logger.warning("CipherKeyManager: keychain unusable (OSStatus \(status)) — using sandbox fallback salt")
+            try writeFallbackSalt(salt)
+            return salt
         } catch {
-            #if targetEnvironment(macCatalyst)
-            if case CipherKeyError.keychainAccessFailed(errSecMissingEntitlement) = error {
-                try writeCatalystFallbackSalt(salt)
-                return salt
-            }
-            #endif
-            // Any other write failure (e.g. errSecNotAvailable, errSecAuthFailed) — surface
-            // the original error directly so callers get the real failure reason.
+            // Any other write failure (e.g. errSecAuthFailed) — surface the
+            // original error directly so callers get the real failure reason.
             throw error
         }
     }
@@ -207,7 +216,6 @@ public final class CipherKeyManager: Sendable {
         }
     }
 
-    #if targetEnvironment(macCatalyst)
     private func catalystFallbackSaltURL() throws -> URL {
         guard let supportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
             throw CipherKeyError.keychainAccessFailed(errSecParam)
@@ -217,7 +225,7 @@ public final class CipherKeyManager: Sendable {
         return dir.appendingPathComponent("catalyst-dbcipher-salt.bin")
     }
 
-    private func readCatalystFallbackSalt() throws -> Data? {
+    private func readFallbackSalt() throws -> Data? {
         let url = try catalystFallbackSaltURL()
         guard let data = try? Data(contentsOf: url), data.count == 32 else {
             return nil
@@ -225,11 +233,17 @@ public final class CipherKeyManager: Sendable {
         return data
     }
 
-    private func writeCatalystFallbackSalt(_ salt: Data) throws {
+    private func writeFallbackSalt(_ salt: Data) throws {
         let url = try catalystFallbackSaltURL()
         try salt.write(to: url, options: .atomic)
+        // Best-effort: keep the salt out of iCloud/device backups — restoring
+        // a backup onto different hardware should trigger re-pairing, not
+        // silently carry a decryption salt.
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        var mutableURL = url
+        try? mutableURL.setResourceValues(values)
     }
-    #endif
 }
 
 // MARK: - CipherKeyError
