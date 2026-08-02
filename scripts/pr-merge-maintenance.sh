@@ -21,7 +21,8 @@
 #   PR_MAINTENANCE_DRY_RUN           Set to 1 to log without side effects.
 #   PR_MAINTENANCE_SKIP_LABELS       Comma-separated labels → manual only.
 #   PR_MAINTENANCE_SKIP_TITLE_REGEX  Extended regex for security/manual titles.
-#   PR_MAINTENANCE_COPILOT_WAIVER_FILE  Tracked PR-and-SHA waiver ledger.
+#   Copilot waivers are always read from the trusted merge base, never an
+#   environment-configured local or workflow-ref file.
 
 set -euo pipefail
 shopt -s nocasematch
@@ -35,7 +36,7 @@ DRY_RUN="${PR_MAINTENANCE_DRY_RUN:-0}"
 TRUSTED_PR_AUTHORS="${PR_MAINTENANCE_TRUSTED_PR_AUTHORS:-xXKillerNoobYT}"
 SKIP_LABELS="${PR_MAINTENANCE_SKIP_LABELS:-security,security-sensitive,manual-review,manual-merge,do-not-merge}"
 SKIP_TITLE_REGEX="${PR_MAINTENANCE_SKIP_TITLE_REGEX:-security|sqlcipher|encryption|auth|payment|credential|secret|keychain}"
-COPILOT_WAIVER_FILE="${PR_MAINTENANCE_COPILOT_WAIVER_FILE:-.github/merge-control/copilot-review-waivers.json}"
+COPILOT_WAIVER_PATH=".github/merge-control/copilot-review-waivers.json"
 
 if [[ ! "$REPO" =~ ^[^/]+/[^/]+$ ]]; then
   echo "error: expected repo in owner/repo form, got '${REPO:-<empty>}'" >&2
@@ -81,31 +82,62 @@ run_or_log() {
 }
 
 # A waiver is deliberately a tracked, exact PR-and-head exception rather than
-# an environment toggle. The ledger lives on the trusted default branch, so its
-# history, required review, and CODEOWNERS approval remain auditable. A changed
-# PR head invalidates the entry automatically.
-has_owner_approved_copilot_waiver() {
-  local number="$1" head_sha="$2"
+# an environment toggle. Fetch the ledger from the merge base via GitHub rather
+# than the workflow checkout: workflow_dispatch can otherwise run arbitrary
+# refs whose changed ledger would silently change a merge decision.
+trusted_copilot_waiver_ledger() {
+  gh api -X GET -H 'Accept: application/vnd.github.raw+json' \
+    "repos/$REPO/contents/$COPILOT_WAIVER_PATH?ref=$BASE" 2>/dev/null
+}
 
-  if [[ ! -f "$COPILOT_WAIVER_FILE" ]]; then
-    echo "    skip: Copilot waiver ledger is missing — not merging without exact-head review evidence"
+owner_approval_comment_valid() {
+  local number="$1" approval_url="$2" comment_id comment
+
+  if [[ ! "$approval_url" =~ ^https://github\.com/xXKillerNoobYT/Weird-Part-Run-2/(pull|issues)/$number#issuecomment-([0-9]+)$ ]]; then
+    return 1
+  fi
+  comment_id="${BASH_REMATCH[2]}"
+  comment="$(gh api "repos/$REPO/issues/comments/$comment_id" 2>/dev/null || echo "")"
+  [[ -n "$comment" ]] || return 1
+
+  jq -e --arg number "$number" '
+    (.user.login // "") == "xXKillerNoobYT"
+    and ((.issue_url // "") | endswith("/issues/" + $number))
+  ' <<<"$comment" >/dev/null 2>&1
+}
+
+has_owner_approved_copilot_waiver() {
+  local number="$1" head_sha="$2" ledger waiver approval_url
+
+  ledger="$(trusted_copilot_waiver_ledger || echo "")"
+  if [[ -z "$ledger" ]]; then
+    echo "    skip: could not read Copilot waiver ledger from $BASE — not merging"
     return 1
   fi
 
-  jq -e --argjson number "$number" --arg sha "$head_sha" '
-    .version == 1
-    and (.waivers | type == "array")
-    and any(.waivers[]?;
+  waiver="$(jq -ce --argjson number "$number" --arg sha "$head_sha" '
+    if .version == 1 and (.waivers | type == "array") then
+      first(.waivers[]? |
+        select(
       (.pr == $number)
       and (.head_sha == $sha)
       and (.approved_by == "xXKillerNoobYT")
       and (.reason | type == "string" and length > 0)
       and (.approval_url | type == "string"
            and test("^https://github\\.com/xXKillerNoobYT/Weird-Part-Run-2/(pull|issues)/" + ($number | tostring) + "#issuecomment-[0-9]+$"))
-    )
-  ' "$COPILOT_WAIVER_FILE" >/dev/null 2>&1 || return 1
+        )
+      )
+    else empty end
+  ' <<<"$ledger" 2>/dev/null || echo "")"
+  [[ -n "$waiver" ]] || return 1
 
-  echo "    Copilot gate: owner-approved exact PR-and-SHA waiver found in $COPILOT_WAIVER_FILE"
+  approval_url="$(jq -r '.approval_url' <<<"$waiver")"
+  if ! owner_approval_comment_valid "$number" "$approval_url"; then
+    echo "    skip: Copilot waiver approval comment is not an owner comment on this PR — not merging"
+    return 1
+  fi
+
+  echo "    Copilot gate: owner-approved exact PR-and-SHA waiver found in trusted $BASE ledger"
   return 0
 }
 
@@ -118,12 +150,11 @@ copilot_review_or_waiver_satisfied() {
   review_state="$(gh api graphql -f query="query { repository(owner: \"$repo_owner\", name: \"$repo_name\") { pullRequest(number: $number) { latestReviews: reviews(last: 100) { nodes { author { login } state commit { oid } } } reviewThreads(first: 100) { totalCount nodes { isResolved } } } } }" 2>/dev/null || echo "")"
   if [[ -z "$review_state" ]]; then
     echo "    skip: could not read Copilot review state — not merging on unknown evidence"
-    has_owner_approved_copilot_waiver "$number" "$head_sha"
-    return $?
+    return 1
   fi
 
   copilot_reviews="$(jq --arg sha "$head_sha" '[.data.repository.pullRequest.latestReviews.nodes[]?
-    | select((.author.login // "") == "copilot-pull-request-reviewer[bot]")
+    | select((.author.login // "") == "copilot-pull-request-reviewer" or (.author.login // "") == "copilot-pull-request-reviewer[bot]")
     | select(.state == "COMMENTED" or .state == "APPROVED" or .state == "CHANGES_REQUESTED")
     | select((.commit.oid // "") == $sha)] | length' <<<"$review_state" 2>/dev/null || echo "0")"
   if [[ ! "$copilot_reviews" =~ ^[0-9]+$ ]]; then copilot_reviews="0"; fi
@@ -133,7 +164,7 @@ copilot_review_or_waiver_satisfied() {
     :
   else
     already_requested="$(gh api "repos/$REPO/pulls/$number" \
-      --jq '[.requested_reviewers[]?.login | select(. == "Copilot" or . == "copilot-pull-request-reviewer[bot]")] | length' 2>/dev/null || echo "0")"
+      --jq '[.requested_reviewers[]?.login | select(. == "Copilot" or . == "copilot-pull-request-reviewer" or . == "copilot-pull-request-reviewer[bot]")] | length' 2>/dev/null || echo "0")"
     if [[ ! "$already_requested" =~ ^[0-9]+$ ]]; then already_requested="0"; fi
     if [[ "$already_requested" -eq 0 ]]; then
       if run_or_log gh api -X POST "repos/$REPO/pulls/$number/requested_reviewers" \
