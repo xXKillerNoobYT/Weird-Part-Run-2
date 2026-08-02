@@ -58,6 +58,7 @@ private final class MockBootstrapTaskAuditor: AppCoreBackgroundTaskAuditing, @un
 private final class OperationProbe: @unchecked Sendable {
     var ran = false
     var storedKey: Data?
+    var addCallCount = 0
 }
 
 private enum QuestionnaireBreakTestError: Error {
@@ -679,6 +680,47 @@ struct Weird_Parts_IOSTests {
         }
         let fallbackURL = try AppCore.localFallbackBootstrapKeyURL(in: directory)
         #expect(FileManager.default.fileExists(atPath: fallbackURL.path))
+    }
+
+    @Test func bootstrapFallbackRejectsLockedDuplicateRereadBeforeKeychainMutation() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BootstrapFallback-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let probe = OperationProbe()
+        let lockedDuplicateKeychain = AppCore.BootstrapKeychainAccess(
+            read: {
+                if probe.ran {
+                    return (errSecInteractionNotAllowed, nil)
+                }
+                probe.ran = true
+                return (errSecItemNotFound, nil)
+            },
+            add: { _ in
+                probe.addCallCount += 1
+                if probe.addCallCount > 1 {
+                    Issue.record("unexpected retry add after locked reread")
+                }
+                return errSecDuplicateItem
+            },
+            delete: {
+                Issue.record("locked duplicate reread must not delete the Keychain key")
+                return errSecSuccess
+            }
+        )
+
+        do {
+            _ = try AppCore.deviceBootstrapKeyHex(
+                processArguments: [],
+                keychain: lockedDuplicateKeychain,
+                fallbackDirectory: directory
+            )
+            Issue.record("locked duplicate reread unexpectedly recovered")
+        } catch let CipherKeyError.keychainAccessFailed(status) {
+            #expect(status == errSecInteractionNotAllowed)
+        }
+
+        let fallbackURL = try AppCore.localFallbackBootstrapKeyURL(in: directory)
+        #expect(!FileManager.default.fileExists(atPath: fallbackURL.path))
     }
 
     @Test func bootstrapFallbackUsesApprovedStatusAfterDuplicateItemReread() throws {

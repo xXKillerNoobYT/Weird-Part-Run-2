@@ -780,6 +780,11 @@ final class AppCore: ObservableObject {
             if shouldUseLocalBootstrapKeyFallback(for: rereadResult.status) {
                 return try localFallbackBootstrapKeyHex(in: fallbackDirectory)
             }
+            // Only a missing or corrupt duplicate can be replaced. Locked and
+            // unapproved Keychain states must fail before mutating the key.
+            guard rereadResult.status == errSecSuccess || rereadResult.status == errSecItemNotFound else {
+                throw CipherKeyError.keychainAccessFailed(rereadResult.status)
+            }
             // Preserve the existing recovery path for a stale duplicate entry.
             _ = keychain.delete()
             let retryAddStatus = keychain.add(keyData)
