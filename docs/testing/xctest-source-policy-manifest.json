@@ -4982,6 +4982,1933 @@
           "return Self.sellPrice(weightedAvgCost: row.weightedAvgCost, markupPercent: markup)"
         ]
       }
+    },
+    {
+      "id": "aihelpresumeregressiontests-testhelphandoffusesstablenotificationandownedpayload-1",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/AIHelpResumeRegressionTests.swift:testHelpHandoffUsesStableNotificationAndOwnedPayload",
+      "target": "Weird Parts IOS/Weird Parts IOS/Navigation/NavigationConfig.swift",
+      "invariant": "HelpHandoffUsesStableNotificationAndOwnedPayload.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "WiredPart.askAIAboutHelp"
+        ],
+        "not_contains": [
+          "WiredPart.seedAIHelpRequest"
+        ]
+      }
+    },
+    {
+      "id": "aihelpresumeregressiontests-testhelpaffordanceisvisibletouchfriendlyandaccessible",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/AIHelpResumeRegressionTests.swift:testHelpAffordanceIsVisibleTouchFriendlyAndAccessible",
+      "target": "Weird Parts IOS/Weird Parts IOS/Shared/PageHelpSheet.swift",
+      "invariant": "HelpAffordanceIsVisibleTouchFriendlyAndAccessible.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "Label(\"Ask AI about this page\", systemImage: \"sparkles\")",
+          "minHeight: 44",
+          "accessibilityLabel(\"Ask AI about this help page\")",
+          "accessibilityIdentifier(\"askAIAboutHelpButton\")",
+          "HelpContentRegistry.pageId(matchingTitle: title)"
+        ]
+      }
+    },
+    {
+      "id": "aihelpresumeregressiontests-testhelptitlelookupdoesnotusedictionaryvalueorder",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/AIHelpResumeRegressionTests.swift:testHelpTitleLookupDoesNotUseDictionaryValueOrder",
+      "target": "Weird Parts IOS/Weird Parts IOS/Shared/HelpContentRegistry.swift",
+      "invariant": "HelpTitleLookupDoesNotUseDictionaryValueOrder.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "not_contains": [
+          "entries.values.first"
+        ]
+      }
+    },
+    {
+      "id": "aihelpresumeregressiontests-testresumecontrolsuseexistingpersistencehelpersandsafeemptystate",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/AIHelpResumeRegressionTests.swift:testResumeControlsUseExistingPersistenceHelpersAndSafeEmptyState",
+      "target": "Weird Parts IOS/Weird Parts IOS/AI/IOSAIAssistantPanel.swift",
+      "invariant": "ResumeControlsUseExistingPersistenceHelpersAndSafeEmptyState.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "FoundationModelsService.latestConversationId(\n                ownerUserId: ownerUserId",
+          "FoundationModelsService.listConversations(\n                ownerUserId: ownerUserId",
+          "let ownerUserId = appCore.aiConversationReadOwnerUserId",
+          "savedConversations = []",
+          "No Saved Conversations",
+          "accessibilityLabel(\"Resume a past conversation\")",
+          "accessibilityLabel(\"Resume conversation: \\(plainText(fromMarkdown: conversation.preview))\")",
+          "await resumeLastConversationIfNeeded()",
+          ".task(id: resumePrerequisiteToken)",
+          ".frame(width: 44, height: 44)\n                        .contentShape(Rectangle())",
+          ".frame(width: 44, height: 44)\n            .contentShape(Rectangle())"
+        ]
+      }
+    },
+    {
+      "id": "aihelpresumeregressiontests-testresumeattemptwaitsfordatabaseandauthenticateduser",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/AIHelpResumeRegressionTests.swift:testResumeAttemptWaitsForDatabaseAndAuthenticatedUser",
+      "target": "Weird Parts IOS/Weird Parts IOS/AI/IOSAIAssistantPanel.swift",
+      "invariant": "ResumeAttemptWaitsForDatabaseAndAuthenticatedUser.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "private var resumePrerequisiteToken: ResumePrerequisiteToken",
+          "ownerUserId: appCore.aiConversationReadOwnerUserId",
+          "databaseIdentity: appCore.aiConversationReadDatabase.map(ObjectIdentifier.init)"
+        ]
+      }
+    },
+    {
+      "id": "aihelpresumeregressiontests-testhelphandoffwaitsforinitialhistoryandclearwaitsforpersistence-1",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/AIHelpResumeRegressionTests.swift:testHelpHandoffWaitsForInitialHistoryAndClearWaitsForPersistence",
+      "target": "Weird Parts IOS/Weird Parts IOS/AI/IOSAIAssistantPanel.swift",
+      "invariant": "HelpHandoffWaitsForInitialHistoryAndClearWaitsForPersistence.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "let initialization = helpHandoffReadiness.beginInitialization()",
+          "helpHandoffReadiness.finishInitialization(initialization)",
+          ".onChange(of: resumePrerequisiteToken)",
+          "consumePendingHelpRequestIfReady()",
+          "pendingHelpRequestToken",
+          ".onChange(of: pendingHelpRequestToken)",
+          ".onChange(of: isClearingConversation) { _, isClearing in\n            if !isClearing {\n                consumePendingHelpRequestIfReady()",
+          "await pendingHelpPersistence?.value",
+          "try await aiService.clearConversation(cid, ownerUserId: ownerUserId, from: db)",
+          "aiService.stageHelpConversation(",
+          "ownerUserId: ownerUserId",
+          "conversationPersistenceError = \"This Help conversation is visible now but could not be saved",
+          "@State private var conversationListTask: Task<Void, Never>?",
+          ".disabled(messages.isEmpty || isProcessing || isClearingConversation)",
+          "@State private var conversationLoadTask: Task<Void, Never>?",
+          "savedConversations.removeAll()",
+          "@State private var isLoadingConversationHistory = false",
+          ".disabled(\n                isProcessing\n                    || isClearingConversation\n                    || isLoadingConversationHistory\n                    || pendingFallbackSave != nil\n                    || conversationHistoryReadError != nil\n            )",
+          "Text(renderedMarkdown(message.content))",
+          "Text(renderedMarkdown(conversation.preview))",
+          "markdown: normalized",
+          "interpretedSyntax: .full",
+          "run.presentationIntent?.components.first?.identity",
+          "isBugReportPresented",
+          "ReportABugPage(originModule: activeModuleName)",
+          "HelpContentRegistry.helpFor(pageId)",
+          "accessibilityLabel(\"Report a bug\")"
+        ],
+        "not_contains": [
+          "try? await FoundationModelsService.saveMessages",
+          "Task.detached { [db, currentConversationId, userPrompt, assistantResponse]",
+          "AIHelpAsyncLifecycleRegressionHarness",
+          "markdownBlocks(content)"
+        ]
+      }
+    },
+    {
+      "id": "aihelpresumeregressiontests-testhelppersistenceerrorcannotbleedacrosslifecyclechanges",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/AIHelpResumeRegressionTests.swift:testHelpPersistenceErrorCannotBleedAcrossLifecycleChanges",
+      "target": "Weird Parts IOS/Weird Parts IOS/AI/IOSAIAssistantPanel.swift",
+      "invariant": "HelpPersistenceErrorCannotBleedAcrossLifecycleChanges.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "not_contains": [
+          "AIHelpAsyncLifecycleRegressionHarness"
+        ]
+      }
+    },
+    {
+      "id": "aihelpresumeregressiontests-testconversationpickerloadingflagclearsonstalelistreturn",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/AIHelpResumeRegressionTests.swift:testConversationPickerLoadingFlagClearsOnStaleListReturn",
+      "target": "Weird Parts IOS/Weird Parts IOS/AI/IOSAIAssistantPanel.swift",
+      "invariant": "ConversationPickerLoadingFlagClearsOnStaleListReturn.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "@State private var conversationListTask: Task<Void, Never>?",
+          ".disabled(messages.isEmpty || isProcessing || isClearingConversation)",
+          "@State private var conversationLoadTask: Task<Void, Never>?",
+          "savedConversations.removeAll()",
+          "@State private var isLoadingConversationHistory = false",
+          ".disabled(\n                isProcessing\n                    || isClearingConversation\n                    || isLoadingConversationHistory\n                    || pendingFallbackSave != nil\n                    || conversationHistoryReadError != nil\n            )",
+          "Text(renderedMarkdown(message.content))",
+          "Text(renderedMarkdown(conversation.preview))",
+          "markdown: normalized",
+          "interpretedSyntax: .full",
+          "run.presentationIntent?.components.first?.identity",
+          "isBugReportPresented",
+          "ReportABugPage(originModule: activeModuleName)",
+          "HelpContentRegistry.helpFor(pageId)",
+          "accessibilityLabel(\"Report a bug\")"
+        ],
+        "not_contains": [
+          "markdownBlocks(content)"
+        ]
+      }
+    },
+    {
+      "id": "aihelpresumeregressiontests-testclearinvalidatespendingfollowupbeforedeletion",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/AIHelpResumeRegressionTests.swift:testClearInvalidatesPendingFollowUpBeforeDeletion",
+      "target": "Weird Parts IOS/Weird Parts IOS/AI/IOSAIAssistantPanel.swift",
+      "invariant": "ClearInvalidatesPendingFollowUpBeforeDeletion.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          ".disabled(messages.isEmpty || isProcessing || isClearingConversation)"
+        ]
+      }
+    },
+    {
+      "id": "aihelpresumeregressiontests-testconversationloadsarecancelledandgenerationcheckedacrosslifecyclechanges",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/AIHelpResumeRegressionTests.swift:testConversationLoadsAreCancelledAndGenerationCheckedAcrossLifecycleChanges",
+      "target": "Weird Parts IOS/Weird Parts IOS/AI/IOSAIAssistantPanel.swift",
+      "invariant": "ConversationLoadsAreCancelledAndGenerationCheckedAcrossLifecycleChanges.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "@State private var conversationLoadTask: Task<Void, Never>?",
+          "savedConversations.removeAll()"
+        ]
+      }
+    },
+    {
+      "id": "aihelpresumeregressiontests-testcomposerwaitsforconversationhydrationbeforesending",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/AIHelpResumeRegressionTests.swift:testComposerWaitsForConversationHydrationBeforeSending",
+      "target": "Weird Parts IOS/Weird Parts IOS/AI/IOSAIAssistantPanel.swift",
+      "invariant": "ComposerWaitsForConversationHydrationBeforeSending.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "@State private var isLoadingConversationHistory = false",
+          ".disabled(\n                isProcessing\n                    || isClearingConversation\n                    || isLoadingConversationHistory\n                    || pendingFallbackSave != nil\n                    || conversationHistoryReadError != nil\n            )",
+          "Text(renderedMarkdown(message.content))",
+          "Text(renderedMarkdown(conversation.preview))",
+          "markdown: normalized",
+          "interpretedSyntax: .full",
+          "run.presentationIntent?.components.first?.identity",
+          "isBugReportPresented",
+          "ReportABugPage(originModule: activeModuleName)",
+          "HelpContentRegistry.helpFor(pageId)",
+          "accessibilityLabel(\"Report a bug\")"
+        ],
+        "not_contains": [
+          "markdownBlocks(content)"
+        ]
+      }
+    },
+    {
+      "id": "aihelpresumeregressiontests-testassistantmessagesandhistorypreviewsrendermarkdown",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/AIHelpResumeRegressionTests.swift:testAssistantMessagesAndHistoryPreviewsRenderMarkdown",
+      "target": "Weird Parts IOS/Weird Parts IOS/AI/IOSAIAssistantPanel.swift",
+      "invariant": "AssistantMessagesAndHistoryPreviewsRenderMarkdown.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "Text(renderedMarkdown(message.content))",
+          "Text(renderedMarkdown(conversation.preview))",
+          "markdown: normalized",
+          "interpretedSyntax: .full",
+          "run.presentationIntent?.components.first?.identity"
+        ],
+        "not_contains": [
+          "markdownBlocks(content)"
+        ]
+      }
+    },
+    {
+      "id": "aihelpresumeregressiontests-testexistingassistantbugreportcontextremainsavailable",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/AIHelpResumeRegressionTests.swift:testExistingAssistantBugReportContextRemainsAvailable",
+      "target": "Weird Parts IOS/Weird Parts IOS/AI/IOSAIAssistantPanel.swift",
+      "invariant": "ExistingAssistantBugReportContextRemainsAvailable.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "isBugReportPresented",
+          "ReportABugPage(originModule: activeModuleName)",
+          "HelpContentRegistry.helpFor(pageId)",
+          "accessibilityLabel(\"Report a bug\")"
+        ]
+      }
+    },
+    {
+      "id": "weird-parts-ios-weird-parts-iostests-aihelpresumeregressiontests-swift-testhelphandoffseedslocalresponsewithoutmodelcall",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/AIHelpResumeRegressionTests.swift:testHelpHandoffSeedsLocalResponseWithoutModelCall",
+      "target": "Weird Parts IOS/Weird Parts IOS/Navigation/NavigationConfig.swift",
+      "invariant": "Migrated XCTest static source contract for testHelpHandoffSeedsLocalResponseWithoutModelCall.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "WiredPart.askAIAboutHelp"
+        ]
+      }
+    },
+    {
+      "id": "weird-parts-ios-weird-parts-iostests-aihelpresumeregressiontests-swift-testhelphandoffinvalidatesaninflightsendbeforeseedinghelp",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/AIHelpResumeRegressionTests.swift:testHelpHandoffInvalidatesAnInFlightSendBeforeSeedingHelp",
+      "target": "Weird Parts IOS/Weird Parts IOS/Navigation/NavigationConfig.swift",
+      "invariant": "Migrated XCTest static source contract for testHelpHandoffInvalidatesAnInFlightSendBeforeSeedingHelp.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "WiredPart.askAIAboutHelp"
+        ]
+      }
+    },
+    {
+      "id": "weird-parts-ios-weird-parts-iostests-aihelpresumeregressiontests-swift-testhelpobservationusesdedicatedconstantsizerequestidentity",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/AIHelpResumeRegressionTests.swift:testHelpObservationUsesDedicatedConstantSizeRequestIdentity",
+      "target": "Weird Parts IOS/Weird Parts IOS/Navigation/NavigationConfig.swift",
+      "invariant": "Migrated XCTest static source contract for testHelpObservationUsesDedicatedConstantSizeRequestIdentity.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "WiredPart.askAIAboutHelp"
+        ]
+      }
+    },
+    {
+      "id": "weird-parts-ios-weird-parts-iostests-aihelpresumeregressiontests-swift-testimmediatefollowupwaitsforcompletedhelpstaging",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/AIHelpResumeRegressionTests.swift:testImmediateFollowUpWaitsForCompletedHelpStaging",
+      "target": "Weird Parts IOS/Weird Parts IOS/Navigation/NavigationConfig.swift",
+      "invariant": "Migrated XCTest static source contract for testImmediateFollowUpWaitsForCompletedHelpStaging.",
+      "replacement": "checkout-hosted source policy migrated from XCTest source assertion",
+      "executableCoverage": "Retained executable behavior coverage remains in the app/core test suite where applicable; this entry preserves the static source contract.",
+      "rule": {
+        "contains": [
+          "WiredPart.askAIAboutHelp"
+        ]
+      }
+    },
+    {
+      "id": "sheet-lifecycle-tool-trade-dirty-protection",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SheetLifecycleRegressionTests.swift:testToolTradeRecipientSelectionIsDirtyProtected",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Tools/IOSToolDetailPage.swift",
+      "invariant": "ToolTradeSheet derives discard protection from a full form signature that includes the selected recipient and clears it before completion.",
+      "replacement": "scoped/contains/not_contains/order checkout-hosted source policy",
+      "executableCoverage": "Trade initiation behavior remains covered by executable service and UI validation; this is a static sheet-lifecycle contract.",
+      "rule": {
+        "scoped": [
+          {
+            "start": "struct ToolTradeSheet: View",
+            "end": "struct TradeResponseSheet: View",
+            "rule": {
+              "contains": [
+                "selectedUser.map(String.init) ?? \"\",",
+                "private var isDirty: Bool { formSignature != baselineSignature }",
+                ".interactiveDismissDisabled(isDirty || isSaving)",
+                "if isDirty { showDiscardConfirm = true } else { dismiss() }",
+                ".confirmationDialog(\"Discard changes?\", isPresented: $showDiscardConfirm, titleVisibility: .visible)",
+                ".onAppear { baselineSignature = formSignature }"
+              ],
+              "not_contains": [
+                "isDirty = "
+              ],
+              "scoped": [
+                {
+                  "start": "func sendTradeRequest()",
+                  "end": "private func loadEmployees()",
+                  "rule": {
+                    "ordered": [
+                      [
+                        "baselineSignature = formSignature",
+                        "onComplete()"
+                      ]
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "sheet-lifecycle-smart-delete-dismiss-first",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SheetLifecycleRegressionTests.swift:testSmartDeleteSheetDismissesBeforeParentRefresh",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Parts/SmartDeleteSheet.swift",
+      "invariant": "Both SmartDeleteSheet deletion paths dismiss before awaiting the parent refresh.",
+      "replacement": "scoped/order checkout-hosted source policy",
+      "executableCoverage": "Deletion behavior remains covered by executable parts-service tests; this preserves sheet close ordering.",
+      "rule": {
+        "scoped": [
+          {
+            "start": "private func startEmptyShelfMode()",
+            "end": "private func deleteImmediately()",
+            "rule": {
+              "ordered": [
+                [
+                  "dismiss()",
+                  "await onComplete()"
+                ]
+              ]
+            }
+          },
+          {
+            "start": "private func deleteImmediately()",
+            "end": "\n}",
+            "rule": {
+              "ordered": [
+                [
+                  "dismiss()",
+                  "await onComplete()"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "sheet-lifecycle-pricing-bulk-dismiss-first",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SheetLifecycleRegressionTests.swift:testPricingBulkEditDoneDismissesBeforeParentRefresh",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Parts/PricingBulkEditSheet.swift",
+      "invariant": "Pricing bulk-edit completion dismisses synchronously before scheduling its parent refresh.",
+      "replacement": "scoped/contains/order checkout-hosted source policy",
+      "executableCoverage": "Bulk pricing mutation behavior remains covered by executable parts-service tests; this preserves completion-sheet ordering.",
+      "rule": {
+        "scoped": [
+          {
+            "start": "private var completeView: some View",
+            "end": "// MARK: - Logic",
+            "rule": {
+              "contains": [
+                "dismiss()\n                Task { await onComplete() }"
+              ],
+              "ordered": [
+                [
+                  "dismiss()",
+                  "await onComplete()"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "sheet-lifecycle-pricing-bulk-review-controls",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SheetLifecycleRegressionTests.swift:testPricingBulkEditReviewStepHasExplicitBackAndCancelControls",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Parts/PricingBulkEditSheet.swift",
+      "invariant": "Pricing bulk-edit review has explicit Back and Cancel controls.",
+      "replacement": "scoped/contains checkout-hosted source policy",
+      "executableCoverage": "Static SwiftUI navigation affordance contract.",
+      "rule": {
+        "scoped": [
+          {
+            "start": "private func reviewOneAtATime",
+            "end": "// MARK: - Complete",
+            "rule": {
+              "contains": [
+                "reviewIndex = nil",
+                "Image(systemName: \"chevron.left\")",
+                "Text(\"Back\")",
+                "Button(\"Cancel\")",
+                "dismiss()"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "sheet-lifecycle-pricing-override-review-controls",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SheetLifecycleRegressionTests.swift:testPricingOverrideConflictResolutionHasExplicitBackControl",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Parts/PricingOverrideFlow.swift",
+      "invariant": "Pricing override conflict resolution has an explicit Back path and the flow retains its global Cancel path.",
+      "replacement": "scoped/contains checkout-hosted source policy",
+      "executableCoverage": "Static SwiftUI navigation affordance contract.",
+      "rule": {
+        "contains": [
+          "Button(\"Cancel\")",
+          "dismiss()"
+        ],
+        "scoped": [
+          {
+            "start": "private var resolveConflictsView",
+            "end": "// MARK: - Done",
+            "rule": {
+              "contains": [
+                "step = .preview",
+                "Image(systemName: \"chevron.left\")",
+                "Text(\"Back\")"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "silent-load-jpo-search-failure",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SilentLoadFailureSurfacingRegressionTests.swift:testJPOCreationPartSearchFailureSurfacesInlineErrorWithRetry",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Orders/IOSJPOCreationPage.swift",
+      "invariant": "JPO part-search failures surface inline with retry, while short searches stay out of the service-failure branch.",
+      "replacement": "contains/not_contains/scoped checkout-hosted source policy",
+      "executableCoverage": "Part-search behavior is covered by executable order and UI validation; this preserves the error-state wiring contract.",
+      "rule": {
+        "contains": [
+          "@State private var searchError: String?",
+          "searchError = userFriendlyError(error, context: \"search parts\")",
+          "} else if let error = searchError {",
+          ".accessibilityLabel(\"Retry part search\")"
+        ],
+        "scoped": [
+          {
+            "start": "private func searchParts()",
+            "end": "private func buildSearchContext()",
+            "rule": {
+              "contains": [
+                "guard searchText.count >= 2 else {"
+              ],
+              "not_contains": [
+                "submitError = \"Parts service not available\"",
+                "catch {\n            searchResults = []\n        }"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "silent-load-po-receipt-history",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SilentLoadFailureSurfacingRegressionTests.swift:testPODetailReceiptHistoryFailureSurfacesSectionError",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Orders/IOSPODetailPage.swift",
+      "invariant": "PO receipt-history and item failures surface distinct recoverable errors instead of silently appearing empty.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Receipt persistence behavior remains covered by executable orders tests; this preserves UI error-state wiring.",
+      "rule": {
+        "contains": [
+          "@State private var receiptHistoryError: String?",
+          "receiptHistoryError = userFriendlyError(error, context: \"load receipt history\")",
+          "receiptItemsError = userFriendlyError(error, context: \"load receipt details\")",
+          "@State private var receiptItemsError: String?",
+          ".accessibilityIdentifier(\"receiptItemsError\")",
+          "if hasEntries || hasBatches || receiptHistoryError != nil {",
+          ".accessibilityLabel(\"Retry loading receipt history\")"
+        ],
+        "not_contains": [
+          "(try? service.getReceiptHistory(poId: poId)) ?? []",
+          "(try? service.getReceiptHistoryEntries(poId: poId)) ?? []",
+          "(try? service.getReceiptHistoryItems(sessionId: sessionId)) ?? []"
+        ]
+      }
+    },
+    {
+      "id": "silent-load-schedule-config-lists",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SilentLoadFailureSurfacingRegressionTests.swift:testScheduleConfigListLoadFailuresSetLoadErrorMsg",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Scheduling/IOSScheduleConfigPage.swift",
+      "invariant": "Schedule configuration list-load failures surface loadErrorMsg rather than coercing results to empty arrays.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Schedule persistence behavior remains covered by executable scheduling tests; this preserves UI failure wiring.",
+      "rule": {
+        "contains": [
+          "loadErrorMsg = userFriendlyError(error, context: \"load shift templates and holidays\")",
+          "loadErrorMsg = userFriendlyError(error, context: \"load supervisor hats\")"
+        ],
+        "not_contains": [
+          "(try? svc.getShiftTemplates()) ?? []",
+          "(try? svc.getHolidays()) ?? []",
+          "(try? people.listHats()) ?? []"
+        ]
+      }
+    },
+    {
+      "id": "silent-load-people-dashboard-payment-alerts",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SilentLoadFailureSurfacingRegressionTests.swift:testPeopleDashboardPaymentLookupFailureShowsDegradedSection",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/People/IOSPeopleDashboardPage.swift",
+      "invariant": "People-dashboard payment lookup failures render a degraded section instead of a silent disabled/empty state.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Payment-alert behavior remains covered by executable people/service tests; this preserves UI degradation wiring.",
+      "rule": {
+        "contains": [
+          "@State private var paymentAlertsError: String?",
+          "paymentAlertsError = userFriendlyError(error, context: \"load payment alerts\")",
+          "if let error = paymentAlertsError {",
+          "paymentTrackingEnabled = try service.isPaymentTrackingEnabled()"
+        ],
+        "not_contains": [
+          "(try? service.isPaymentTrackingEnabled()) ?? false",
+          "(try? service.getOverdueCustomers()) ?? []"
+        ]
+      }
+    },
+    {
+      "id": "silent-load-wishlist-auto-approvals",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SilentLoadFailureSurfacingRegressionTests.swift:testWishlistAutoApprovalFailureSurfacesBannerAndCountsFailureSurfacesLoadError",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Orders/IOSWishlistPage.swift",
+      "invariant": "Wishlist auto-approval and count failures surface user-visible errors instead of being silently swallowed/defaulted.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Wishlist mutation behavior remains covered by executable orders tests; this preserves error-state wiring.",
+      "rule": {
+        "contains": [
+          "@State private var autoApprovalError: String?",
+          "autoApprovalFailure = error",
+          "autoApprovalError = autoApprovalFailure.map { userFriendlyError($0, context: \"run wishlist auto-approvals\") }",
+          "_ = try service.processAutoApprovals(byUserId: currentUserId)",
+          "if let error = autoApprovalError {",
+          "let counts = try service.getStatusCounts()"
+        ],
+        "not_contains": [
+          "_ = try? service.processAutoApprovals(byUserId: currentUserId)",
+          "(try? service.getStatusCounts()) ?? WishlistService.StatusCounts()"
+        ]
+      }
+    },
+    {
+      "id": "silent-load-employee-hat-toggle",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SilentLoadFailureSurfacingRegressionTests.swift:testEmployeeDetailHatToggleReloadFailureKeepsPreviousHatsAndSetsError",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/People/IOSEmployeeDetailPage.swift",
+      "invariant": "Employee hat-toggle reload preserves prior hats and surfaces failure rather than silently replacing them with an empty list.",
+      "replacement": "not_contains/scoped checkout-hosted source policy",
+      "executableCoverage": "Hat assignment behavior remains covered by executable people tests; this preserves reload-error wiring.",
+      "rule": {
+        "not_contains": [
+          "(try? service.getAllHatsWithAssignment(employeeId: employeeId)) ?? []"
+        ],
+        "scoped": [
+          {
+            "start": "private func toggleHat",
+            "end": "private func removeSkill",
+            "rule": {
+              "contains": [
+                "allHats = try service.getAllHatsWithAssignment(employeeId: employeeId)",
+                "loadError = userFriendlyError(error, context: \"update hat\")"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "silent-load-app-config-save-guard",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SilentLoadFailureSurfacingRegressionTests.swift:testAppConfigSaveIsBlockedAfterFailedLoadSoDefaultsCannotOverwriteRealSettings",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Settings/AppConfigPage.swift",
+      "invariant": "App-config save is blocked after failed loading so defaults cannot overwrite real payment settings.",
+      "replacement": "contains/not_contains/scoped checkout-hosted source policy",
+      "executableCoverage": "Payment-settings persistence remains covered by executable service tests; this preserves the UI data-loss guard.",
+      "rule": {
+        "contains": [
+          "@State private var configLoadFailed = false",
+          ".disabled(!isFormValid || configLoadFailed)",
+          "paymentTrackingEnabled = try peopleService.isPaymentTrackingEnabled()",
+          "let paySettings = try peopleService.getPaymentSettings()",
+          "Label(\"Retry Load\", systemImage: \"arrow.clockwise\")"
+        ],
+        "not_contains": [
+          "(try? peopleService.isPaymentTrackingEnabled()) ?? false",
+          "try? peopleService.getPaymentSettings()"
+        ],
+        "scoped": [
+          {
+            "start": "private func loadConfig()",
+            "end": "private func saveConfig()",
+            "rule": {
+              "contains": [
+                "configLoadFailed = false",
+                "configLoadFailed = true"
+              ]
+            }
+          },
+          {
+            "start": "private func saveConfig()",
+            "end": "private func postAIContextIfLoaded()",
+            "rule": {
+              "contains": [
+                "guard !configLoadFailed else {"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "silent-load-people-add-save-contexts",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SilentLoadFailureSurfacingRegressionTests.swift:testPeopleAddSheetSaveFailuresUseSaveSpecificErrorContexts",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/People/IOSCustomersPage.swift",
+      "invariant": "Customer save failures identify saving, not loading, as the failed operation.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Customer persistence remains covered by executable people tests; this preserves UI error copy.",
+      "rule": {
+        "contains": [
+          "errorMessage = userFriendlyError(error, context: \"save customer\")"
+        ],
+        "not_contains": [
+          "errorMessage = userFriendlyError(error, context: \"load customers\")"
+        ]
+      }
+    },
+    {
+      "id": "silent-load-contractor-add-save-contexts",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SilentLoadFailureSurfacingRegressionTests.swift:testPeopleAddSheetSaveFailuresUseSaveSpecificErrorContexts",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/People/IOSContractorsPage.swift",
+      "invariant": "Contractor save failures identify saving, not loading, as the failed operation.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Contractor persistence remains covered by executable people tests; this preserves UI error copy.",
+      "rule": {
+        "contains": [
+          "errorMessage = userFriendlyError(error, context: \"save contractor\")"
+        ],
+        "not_contains": [
+          "errorMessage = userFriendlyError(error, context: \"load contractors\")"
+        ]
+      }
+    },
+    {
+      "id": "silent-load-employee-add-save-contexts",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SilentLoadFailureSurfacingRegressionTests.swift:testPeopleAddSheetSaveFailuresUseSaveSpecificErrorContexts",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/People/IOSEmployeesPage.swift",
+      "invariant": "Employee save failures identify saving, not loading, as the failed operation.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Employee persistence remains covered by executable people tests; this preserves UI error copy.",
+      "rule": {
+        "contains": [
+          "errorMessage = userFriendlyError(error, context: \"save employee\")"
+        ],
+        "not_contains": [
+          "errorMessage = userFriendlyError(error, context: \"load employees\")"
+        ]
+      }
+    },
+    {
+      "id": "silent-load-hat-add-save-contexts",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SilentLoadFailureSurfacingRegressionTests.swift:testPeopleAddSheetSaveFailuresUseSaveSpecificErrorContexts",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/People/IOSHatsPage.swift",
+      "invariant": "Hat save failures identify saving, not loading, as the failed operation.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Hat persistence remains covered by executable people tests; this preserves UI error copy.",
+      "rule": {
+        "contains": [
+          "errorMessage = userFriendlyError(error, context: \"save hat\")"
+        ],
+        "not_contains": [
+          "errorMessage = userFriendlyError(error, context: \"load hats\")"
+        ]
+      }
+    },
+    {
+      "id": "silent-load-team-add-save-contexts",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SilentLoadFailureSurfacingRegressionTests.swift:testPeopleAddSheetSaveFailuresUseSaveSpecificErrorContexts",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/People/IOSTeamsPage.swift",
+      "invariant": "Team save failures identify saving, not loading, as the failed operation.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Team persistence remains covered by executable people tests; this preserves UI error copy.",
+      "rule": {
+        "contains": [
+          "errorMessage = userFriendlyError(error, context: \"save team\")"
+        ],
+        "not_contains": [
+          "errorMessage = userFriendlyError(error, context: \"load teams\")"
+        ]
+      }
+    },
+    {
+      "id": "sync-read-failures-surface-visible-state",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SyncManagerFailureSurfacingRegressionTests.swift:testSyncReadFailuresMoveManagerIntoVisibleErrorState",
+      "target": "Weird Parts IOS/Weird Parts IOS/Sync/IOSSyncManager.swift",
+      "invariant": "Pending-change, conflict-count, and conflict-list read failures must become visible, contextual sync errors instead of zero or empty states.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Sync state transitions and persistence remain covered by executable core and iOS sync tests; this entry preserves the static error-surfacing wiring.",
+      "rule": {
+        "contains": [
+          "private func syncReadFailed(_ error: Error, context: String, logMessage: String)",
+          "syncStatus = .error",
+          "errorMessage = userFriendlyError(error, context: context)",
+          "context: \"load pending sync changes\"",
+          "context: \"load sync conflict count\"",
+          "context: \"load unreviewed sync conflicts\""
+        ],
+        "not_contains": [
+          "try? ChangeTracker.getPendingChangeCount(db: db)",
+          "try? ConflictResolver.getConflictStats(db: db)",
+          "try? ConflictResolver.getUnreviewedConflicts(db: db)"
+        ]
+      }
+    },
+    {
+      "id": "sync-conflict-review-actions-surface-manager-failures",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SyncManagerFailureSurfacingRegressionTests.swift:testConflictReviewActionsDoNotSilentlySkipMissingIdsOrFailedWrites",
+      "target": "Weird Parts IOS/Weird Parts IOS/Sync/IOSSyncManager.swift",
+      "invariant": "Conflict review writes return success, surface missing-ID and read/write failures, and do not dismiss rows before a confirmed write.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Conflict review behavior remains covered by executable sync/core tests; this entry protects the static manager error-routing contract.",
+      "rule": {
+        "contains": [
+          "@discardableResult\n    func markConflictReviewed(conflictId: Int64) -> Bool",
+          "@discardableResult\n    func markAutoResolvableConflictsReviewed() -> Bool",
+          "syncReviewActionFailed(\"A sync conflict could not be marked reviewed because its conflict id is missing",
+          "context: \"mark sync conflict reviewed\"",
+          "context: \"mark sync conflicts reviewed\"",
+          "surfaceConflictReviewActionFailure",
+          "conflicts = try ConflictResolver.getUnreviewedConflicts(db: db)",
+          "context: \"load unreviewed sync conflicts before marking reviewed\""
+        ]
+      }
+    },
+    {
+      "id": "sync-conflict-review-page-surfaces-action-failures",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SyncManagerFailureSurfacingRegressionTests.swift:testConflictReviewActionsDoNotSilentlySkipMissingIdsOrFailedWrites",
+      "target": "Weird Parts IOS/Weird Parts IOS/Sync/SyncConflictReviewPage.swift",
+      "invariant": "Conflict-review UI must show corrupt missing IDs and failed writes as recoverable action errors rather than silently returning.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Conflict review interaction behavior remains covered by executable app tests; this entry preserves the static visible-error contract.",
+      "rule": {
+        "contains": [
+          "case actionError(String)",
+          "case .actionError: return \"Sync conflict action failed\"",
+          "conflict id is missing"
+        ],
+        "not_contains": [
+          "guard let id = conflict.id else { return }",
+          "guard let conflictId = conflict.id else { return }"
+        ]
+      }
+    },
+    {
+      "id": "tab-bar-editor-more-divider-and-demote-destination",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/TabBarEditorRegressionTests.swift:testSourceKeepsMoreDividerAndFastDemoteButtonBehindDestinationCheck",
+      "target": "Weird Parts IOS/Weird Parts IOS/Navigation/TabBarEditorView.swift",
+      "invariant": "The More divider is rendered only when a More destination exists, and fast-row demote actions require that destination.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "TabBarEditorLayout reorder and persistence behavior remains covered by the retained executable XCTest fixtures in TabBarEditorRegressionTests.",
+      "rule": {
+        "contains": [
+          "if !moreIds.isEmpty {\n            items.append(.moreDivider)",
+          "if !isFastAccess || hasMoreDestination {",
+          "\"Move \\(module.label) to More menu\""
+        ]
+      }
+    },
+    {
+      "id": "tracked-silent-load-supplier-picker",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/TrackedSilentFailureFixesRegressionTests.swift:testSupplierChannelPickerSurfacesSupplierLoadFailure",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Chat/CreateChannelSheet.swift",
+      "invariant": "Supplier-picker failures have dedicated visible retryable state, preserve a distinct empty state, and never silently coerce the read to an empty array.",
+      "replacement": "contains/not_contains/scoped checkout-hosted source policy",
+      "executableCoverage": "Channel creation remains covered by executable app/core tests; this entry preserves source-level error and empty-state wiring.",
+      "rule": {
+        "contains": [
+          "@State private var supplierLoadError: String?",
+          "supplierLoadError = userFriendlyError(error, context: \"load suppliers\")",
+          ".accessibilityLabel(\"Retry loading suppliers\")",
+          "Text(\"No suppliers configured\")"
+        ],
+        "not_contains": [
+          "suppliers = (try? service.listSuppliers()) ?? []"
+        ],
+        "scoped": [
+          {
+            "start": "private func loadSuppliers() async {",
+            "end": "\n}",
+            "rule": {
+              "contains": [
+                "suppliers = try service.listSuppliers()",
+                "supplierLoadError = \"Parts service not available\""
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "tracked-silent-load-notebook-template-picker",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/TrackedSilentFailureFixesRegressionTests.swift:testNotebookTemplateLoadFailureSurfacesRetryableError",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Notebooks/CreateNotebookSheet.swift",
+      "invariant": "Notebook-template load failures are distinct from save failures, retain retry visibility, and never silently coerce the template read to an empty list.",
+      "replacement": "contains/not_contains/scoped checkout-hosted source policy",
+      "executableCoverage": "Notebook persistence remains covered by executable core tests; this entry protects the UI loading-state contract.",
+      "rule": {
+        "contains": [
+          "@State private var templatesLoadError: String?",
+          "templatesLoadError = userFriendlyError(error, context: \"load notebook templates\")",
+          "if !templates.isEmpty || templatesLoadError != nil {",
+          "Button(\"Retry loading templates\") {"
+        ],
+        "not_contains": [
+          "templates = (try? service.getTemplates(templateType: \"job\")) ?? []"
+        ],
+        "scoped": [
+          {
+            "start": "private func loadTemplates() {",
+            "end": "private func autoFillFromClockEntry() {",
+            "rule": {
+              "contains": [
+                "templates = try service.getTemplates(templateType: \"job\")"
+              ],
+              "not_contains": [
+                "saveError =",
+                "saveError="
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "tracked-silent-load-subcontractor-schedule-pickers",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/TrackedSilentFailureFixesRegressionTests.swift:testSubcontractorScheduleSheetSurfacesJobAndContractorLoadFailures",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Scheduling/CreateSubcontractorScheduleSheet.swift",
+      "invariant": "Job and contractor picker failures remain separate, retryable, and never silently default either list to empty.",
+      "replacement": "contains/not_contains/scoped checkout-hosted source policy",
+      "executableCoverage": "Subcontractor scheduling persistence remains covered by executable service tests; this entry preserves the picker failure surface.",
+      "rule": {
+        "contains": [
+          "@State private var jobsLoadError: String?",
+          "@State private var contractorsLoadError: String?",
+          "jobsLoadError = userFriendlyError(error, context: \"load active jobs\")",
+          "contractorsLoadError = userFriendlyError(error, context: \"load subcontractors\")",
+          ".accessibilityLabel(\"Retry loading jobs\")",
+          ".accessibilityLabel(\"Retry loading subcontractors\")"
+        ],
+        "not_contains": [
+          "jobs = (try? jobsService.listJobs(status: \"active\", limit: 300)) ?? []",
+          "contractors = (try? peopleService.listContractors()) ?? []"
+        ],
+        "scoped": [
+          {
+            "start": "private func loadJobList() {",
+            "end": "private func loadContractorList() {",
+            "rule": {
+              "contains": [
+                "jobs = try jobsService.listJobs(status: \"active\", limit: 300)"
+              ]
+            }
+          },
+          {
+            "start": "private func loadContractorList() {",
+            "end": "private func saveSchedule() {",
+            "rule": {
+              "contains": [
+                "contractors = try peopleService.listContractors()"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "tracked-silent-load-chat-attachment-picker",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/TrackedSilentFailureFixesRegressionTests.swift:testChatAttachmentPickerSurfacesLookupFailures",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Chat/IOSMessageThreadView.swift",
+      "invariant": "Attachment reference lookups surface part, purchase-order, and job failures with retry instead of silently rendering empty results.",
+      "replacement": "contains/not_contains/scoped checkout-hosted source policy",
+      "executableCoverage": "Message attachment behavior remains covered by executable app/core tests; this entry preserves source-level lookup failure handling.",
+      "rule": {
+        "contains": [
+          "loadError = userFriendlyError(error, context: \"load parts\")",
+          "loadError = userFriendlyError(error, context: \"load purchase orders\")",
+          "loadError = userFriendlyError(error, context: \"load jobs\")",
+          ".accessibilityLabel(\"Retry loading references\")"
+        ],
+        "not_contains": [
+          "parts = (try? appCore.partsService?.listParts(search: search, limit: 50)) ?? []",
+          "pos = (try? appCore.ordersService?.listPurchaseOrders(limit: 50)) ?? []",
+          "jobs = (try? appCore.jobsService?.listJobs(search: search, limit: 50)) ?? []"
+        ],
+        "scoped": [
+          {
+            "start": "private func loadData() {",
+            "end": "\n}\n\n// MARK: - Push Back Reason Sheet",
+            "rule": {
+              "contains": [
+                "parts = try service.listParts(search: search, limit: 50)",
+                "pos = try service.listPurchaseOrders(limit: 50)",
+                "jobs = try service.listJobs(search: search, limit: 50)"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "tracked-silent-load-tool-detail-subsections",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/TrackedSilentFailureFixesRegressionTests.swift:testToolDetailSurfacesTradeAndMaintenanceSubLoadFailures",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Tools/IOSToolDetailPage.swift",
+      "invariant": "Tool-detail trade and maintenance sub-load failures remain separately visible and retryable without swallowed throwing calls or silently emptied maintenance data.",
+      "replacement": "contains/not_contains/scoped checkout-hosted source policy",
+      "executableCoverage": "Tool data and maintenance persistence remain covered by executable core tests; this entry preserves source-level sub-load error handling.",
+      "rule": {
+        "contains": [
+          "@State private var pendingTradesError: String?",
+          "@State private var maintenanceError: String?",
+          "pendingTradesError = userFriendlyError(error, context: \"load pending trades\")",
+          "maintenanceError = userFriendlyError(error, context: \"load maintenance data\")",
+          "if pendingTradesError != nil || maintenanceError != nil {",
+          ".accessibilityLabel(\"Retry loading trade and maintenance data\")"
+        ],
+        "not_contains": [
+          "_ = try? service.expireOldTrades()",
+          "maintenanceConfigs = (try? service.getMaintenanceConfigs(toolId: toolId)) ?? []",
+          "nextMaintenanceDue = try? service.calculateNextMaintenanceDate(toolId: toolId)"
+        ],
+        "scoped": [
+          {
+            "start": "private func loadAllData() {",
+            "end": "\n}\n\n// MARK: - Checkout Sheet",
+            "rule": {
+              "contains": [
+                "_ = try service.expireOldTrades()",
+                "pendingTrades = try service.getPendingTradesForUser(userId: userId)",
+                "maintenanceConfigs = try service.getMaintenanceConfigs(toolId: toolId)",
+                "nextMaintenanceDue = try service.calculateNextMaintenanceDate(toolId: toolId)"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "silent-load-contact-add-save-contexts",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SilentLoadFailureSurfacingRegressionTests.swift:testPeopleAddSheetSaveFailuresUseSaveSpecificErrorContexts",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/People/IOSContactsPage.swift",
+      "invariant": "Contact save failures identify saving, not loading, as the failed operation.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Contact persistence remains covered by executable people tests; this preserves UI error copy.",
+      "rule": {
+        "contains": [
+          "errorMessage = userFriendlyError(error, context: \"save contact\")"
+        ],
+        "not_contains": [
+          "errorMessage = userFriendlyError(error, context: \"load contacts\")"
+        ]
+      }
+    },
+    {
+      "id": "schedule-config-dirty-full-form-signature",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/ScheduleConfigDirtyProtectionRegressionTests.swift:testDirtyTrackingCoversAllPersistedFieldsNotJustName",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Scheduling/IOSScheduleConfigPage.swift",
+      "invariant": "Shift-template and holiday edit sheets derive dirty state from every persisted form field rather than from the name alone.",
+      "replacement": "contains/not_contains/count checkout-hosted source policy",
+      "executableCoverage": "Schedule persistence and edit callbacks remain covered by executable scheduling tests; this entry retains the static form-signature contract.",
+      "rule": {
+        "contains": [
+          "let days = dayOrder.filter { selectedDays.contains($0) }.joined(separator: \",\")",
+          "name.trimmingCharacters(in: .whitespacesAndNewlines),\n            String(selectedHatId),\n            days,",
+          "Formatters.timeHHmmFormatter.string(from: startTime)",
+          "Formatters.timeHHmmFormatter.string(from: endTime)",
+          "String(breakMinutes)",
+          "String(breakPaid)",
+          "overtimeRule",
+          "Formatters.localDateFormatter.string(from: selectedDate)",
+          "String(isPaid)",
+          "String(isRecurring)"
+        ],
+        "not_contains": [
+          "name.trimmingCharacters(in: .whitespaces) != originalName"
+        ],
+        "count": [
+          {
+            "fragment": "private var isDirty: Bool { formSignature != baselineSignature }",
+            "exact": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "schedule-config-dirty-discard-protection",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/ScheduleConfigDirtyProtectionRegressionTests.swift:testDirtySheetsRequireExplicitDiscardDecision",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Scheduling/IOSScheduleConfigPage.swift",
+      "invariant": "Both schedule configuration edit sheets require an explicit discard decision and disable swipe dismissal while dirty.",
+      "replacement": "count checkout-hosted source policy",
+      "executableCoverage": "The user-facing dismissal flow remains exercised by schedule UI tests; this entry retains the static guard wiring.",
+      "rule": {
+        "count": [
+          {
+            "fragment": "if isDirty { showDiscardConfirm = true } else { dismiss() }",
+            "exact": 2
+          },
+          {
+            "fragment": ".interactiveDismissDisabled(isDirty)",
+            "min": 2
+          },
+          {
+            "fragment": "\"Discard changes?\"",
+            "exact": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "schedule-config-dirty-baseline-after-populate",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/ScheduleConfigDirtyProtectionRegressionTests.swift:testBaselineSnapshotsAfterPopulatingSoUntouchedSheetsAreClean",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Scheduling/IOSScheduleConfigPage.swift",
+      "invariant": "Both schedule configuration edit sheets snapshot the dirty baseline after populating existing values or defaults.",
+      "replacement": "count checkout-hosted source policy",
+      "executableCoverage": "Schedule save behavior remains covered by executable scheduling tests; this entry preserves the static baseline placement contract.",
+      "rule": {
+        "count": [
+          {
+            "fragment": "defer { baselineSignature = formSignature }",
+            "exact": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "schedule-config-sheet-dismisses-only-after-service-success",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/ScheduleConfigSheetFailureRegressionTests.swift:testShiftTemplateAndHolidayActionsDismissSheetsOnlyAfterSuccessfulServiceCalls",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Scheduling/IOSScheduleConfigPage.swift",
+      "invariant": "Shift-template and holiday save/delete operations dismiss their active sheet only from their successful service path.",
+      "replacement": "regex checkout-hosted source policy",
+      "executableCoverage": "Scheduling-service save/delete behavior remains covered by executable service tests; this entry retains the sheet-success boundary.",
+      "rule": {
+        "regex": [
+          "private func saveShiftTemplate(?s:.*?)do \\{(?s:.*?)activeSheet = nil(?s:.*?)\\} catch \\{(?:(?!activeSheet = nil).)*?\\}",
+          "private func deleteShiftTemplate(?s:.*?)do \\{(?s:.*?)activeSheet = nil(?s:.*?)\\} catch \\{(?:(?!activeSheet = nil).)*?\\}",
+          "private func saveHoliday(?s:.*?)do \\{(?s:.*?)activeSheet = nil(?s:.*?)\\} catch \\{(?:(?!activeSheet = nil).)*?\\}",
+          "private func deleteHoliday(?s:.*?)do \\{(?s:.*?)activeSheet = nil(?s:.*?)\\} catch \\{(?:(?!activeSheet = nil).)*?\\}"
+        ]
+      }
+    },
+    {
+      "id": "schedule-config-sheet-failure-visible-and-open",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/ScheduleConfigSheetFailureRegressionTests.swift:testFailurePathsSurfaceInlineSaveErrorWithoutClearingActiveSheet",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Scheduling/IOSScheduleConfigPage.swift",
+      "invariant": "Schedule configuration failures remain visible inline and preserve the active edit context.",
+      "replacement": "contains/regex checkout-hosted source policy",
+      "executableCoverage": "Scheduling service failures remain covered by executable tests; this entry preserves static error-surface and no-dismiss contracts.",
+      "rule": {
+        "contains": [
+          "actionError: saveError",
+          "accessibilityIdentifier(\"shiftTemplateActionError\")",
+          "accessibilityIdentifier(\"holidayActionError\")"
+        ],
+        "regex": [
+          "private func saveShiftTemplate(?s:.*?)catch \\{\\s*saveError = userFriendlyError\\(error, context: \\\"save shift template\\\"\\)(?:(?!activeSheet = nil).)*?\\}",
+          "private func deleteShiftTemplate(?s:.*?)catch \\{\\s*saveError = userFriendlyError\\(error, context: \\\"delete shift template\\\"\\)(?:(?!activeSheet = nil).)*?\\}",
+          "private func saveHoliday(?s:.*?)catch \\{\\s*saveError = userFriendlyError\\(error, context: \\\"save holiday\\\"\\)(?:(?!activeSheet = nil).)*?\\}",
+          "private func deleteHoliday(?s:.*?)catch \\{\\s*saveError = userFriendlyError\\(error, context: \\\"delete holiday\\\"\\)(?:(?!activeSheet = nil).)*?\\}"
+        ]
+      }
+    },
+    {
+      "id": "schedule-config-sheet-callbacks-dismiss-only-on-success",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/ScheduleConfigSheetFailureRegressionTests.swift:testSheetsDismissThemselvesOnlyWhenCallbacksSucceed",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Scheduling/IOSScheduleConfigPage.swift",
+      "invariant": "Schedule edit sheets dismiss after save/delete callbacks report success rather than clearing entered values after a failed callback.",
+      "replacement": "contains/count checkout-hosted source policy",
+      "executableCoverage": "Callback return behavior remains exercised through schedule UI/service tests; this entry preserves the static conditional-dismiss wiring.",
+      "rule": {
+        "contains": [
+          "if onSave(TemplateData(",
+          "if onSave(HolidayData("
+        ],
+        "count": [
+          {
+            "fragment": "if onDelete?() == true",
+            "min": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "searchable-context-refreshes-on-search-change",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SearchablePageContextRegressionTests.swift:testSearchableContextPagesRefreshContextWhenSearchTextChanges",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Jobs/JobReportsPage.swift",
+      "invariant": "Every Swift page that has both search text and an AI/page context notification refreshes that context when the search text changes.",
+      "replacement": "directory_scan checkout-hosted source policy",
+      "executableCoverage": "Search filtering and page-context behavior remain covered by executable feature tests; this entry retains the repository-wide static wiring invariant.",
+      "rule": {
+        "directory_scan": [
+          {
+            "directory": "Weird Parts IOS/Weird Parts IOS",
+            "pattern": "*.swift",
+            "when_contains": [
+              "searchText",
+              "userInfo: [\"context\""
+            ],
+            "required_regex": "\\.onChange\\(of: searchText\\)"
+          }
+        ]
+      }
+    },
+    {
+      "id": "settings-save-success-confirmation",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SettingsSaveConfirmationRegressionTests.swift:testEachPageShowsSuccessConfirmationAfterSave",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSAuditSettingsPage.swift",
+      "invariant": "Each audited settings page records and renders its named green save-success confirmation with a stable accessibility identifier.",
+      "replacement": "directory_scan checkout-hosted source policy",
+      "executableCoverage": "Settings persistence remains covered by executable service tests; this entry retains static save-confirmation presentation contracts.",
+      "rule": {
+        "directory_scan": [
+          {
+            "directory": "Weird Parts IOS/Weird Parts IOS/Features/Settings",
+            "pattern": "IOSAuditSettingsPage.swift",
+            "when_regex": ".",
+            "required_regex": "(?s)(?=.*@State private var saveSuccessMessage: String\\?)(?=.*saveSuccessMessage = \\\"Audit settings saved\\.\\\")(?=.*accessibilityIdentifier\\(\\\"auditSettingsSaveSuccessMessage\\\"\\))(?=.*Label\\(saveSuccessMessage, systemImage: \\\"checkmark\\.circle\\.fill\\\"\\))"
+          },
+          {
+            "directory": "Weird Parts IOS/Weird Parts IOS/Features/Settings",
+            "pattern": "IOSDispatchPreferencesPage.swift",
+            "when_regex": ".",
+            "required_regex": "(?s)(?=.*@State private var saveSuccessMessage: String\\?)(?=.*saveSuccessMessage = \\\"Dispatch preferences saved\\.\\\")(?=.*accessibilityIdentifier\\(\\\"dispatchPreferencesSaveSuccessMessage\\\"\\))(?=.*Label\\(saveSuccessMessage, systemImage: \\\"checkmark\\.circle\\.fill\\\"\\))"
+          },
+          {
+            "directory": "Weird Parts IOS/Weird Parts IOS/Features/Settings",
+            "pattern": "IOSOrganizationThresholdsPage.swift",
+            "when_regex": ".",
+            "required_regex": "(?s)(?=.*@State private var saveSuccessMessage: String\\?)(?=.*saveSuccessMessage = \\\"Organization thresholds saved\\.\\\")(?=.*accessibilityIdentifier\\(\\\"organizationThresholdsSaveSuccessMessage\\\"\\))(?=.*Label\\(saveSuccessMessage, systemImage: \\\"checkmark\\.circle\\.fill\\\"\\))"
+          },
+          {
+            "directory": "Weird Parts IOS/Weird Parts IOS/Features/Settings",
+            "pattern": "IOSPreTripChecklistPage.swift",
+            "when_regex": ".",
+            "required_regex": "(?s)(?=.*@State private var saveSuccessMessage: String\\?)(?=.*saveSuccessMessage = \\\"All checklists saved\\.\\\")(?=.*accessibilityIdentifier\\(\\\"preTripChecklistSaveSuccessMessage\\\"\\))(?=.*Label\\(saveSuccessMessage, systemImage: \\\"checkmark\\.circle\\.fill\\\"\\))"
+          }
+        ]
+      }
+    },
+    {
+      "id": "settings-save-confirmation-clears-on-error-and-edit",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SettingsSaveConfirmationRegressionTests.swift:testSuccessMessageClearsOnErrorAndNewEdits",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSAuditSettingsPage.swift",
+      "invariant": "Each audited settings page clears the save-success confirmation after a failed save and on a subsequent edit.",
+      "replacement": "directory_scan checkout-hosted source policy",
+      "executableCoverage": "Settings save failure behavior remains covered by executable service tests; this entry retains the UI-state invalidation contract.",
+      "rule": {
+        "directory_scan": [
+          {
+            "directory": "Weird Parts IOS/Weird Parts IOS/Features/Settings",
+            "pattern": "IOSAuditSettingsPage.swift",
+            "when_regex": ".",
+            "required_regex": "(?s)(?=.*private func saveSettings\\(\\)(?:(?!private func).)*?saveSuccessMessage = \\\"Audit settings saved\\.\\\")(?=.*catch \\{(?:(?!private func).)*?saveSuccessMessage = nil)(?=.*private func markDirty\\(\\)(?:(?!private func).)*?saveSuccessMessage = nil)"
+          },
+          {
+            "directory": "Weird Parts IOS/Weird Parts IOS/Features/Settings",
+            "pattern": "IOSDispatchPreferencesPage.swift",
+            "when_regex": ".",
+            "required_regex": "(?s)(?=.*private func saveSettings\\(\\)(?:(?!private func).)*?saveSuccessMessage = \\\"Dispatch preferences saved\\.\\\")(?=.*catch \\{(?:(?!private func).)*?saveSuccessMessage = nil)(?=.*private func markDirty\\(\\)(?:(?!private func).)*?saveSuccessMessage = nil)"
+          },
+          {
+            "directory": "Weird Parts IOS/Weird Parts IOS/Features/Settings",
+            "pattern": "IOSOrganizationThresholdsPage.swift",
+            "when_regex": ".",
+            "required_regex": "(?s)(?=.*private func saveSettings\\(\\)(?:(?!private func).)*?saveSuccessMessage = \\\"Organization thresholds saved\\.\\\")(?=.*catch \\{(?:(?!private func).)*?saveSuccessMessage = nil)(?=.*onChange\\(of: formSignature\\)(?:(?!private func).)*?saveSuccessMessage = nil)"
+          },
+          {
+            "directory": "Weird Parts IOS/Weird Parts IOS/Features/Settings",
+            "pattern": "IOSPreTripChecklistPage.swift",
+            "when_regex": ".",
+            "required_regex": "(?s)(?=.*private func saveSettings\\(\\)(?:(?!private func).)*?saveSuccessMessage = \\\"All checklists saved\\.\\\")(?=.*catch \\{(?:(?!private func).)*?saveSuccessMessage = nil)(?=.*onChange\\(of: drafts\\)(?:(?!private func).)*?saveSuccessMessage = nil)"
+          }
+        ]
+      }
+    },
+    {
+      "id": "standard-filter-bar-quick-chip-accessibility",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/StandardFilterBarRegressionTests.swift:testQuickChipsExposeMinimumTapTargetAndSelectedAccessibilityContract",
+      "target": "Weird Parts IOS/Weird Parts IOS/Shared/StandardFilterBar.swift",
+      "invariant": "Quick date chips keep a 44pt hit target and expose stable selected-state accessibility metadata.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Pay-period range calculations remain covered by retained executable XCTest methods; this entry preserves static SwiftUI accessibility wiring.",
+      "rule": {
+        "contains": [
+          "static let minimumChipTapTarget: CGFloat = 44",
+          ".frame(minWidth: Self.minimumChipTapTarget, minHeight: Self.minimumChipTapTarget)",
+          ".accessibilityIdentifier(\"dateRangeChip_\\(option.accessibilityIdentifier)\")",
+          ".accessibilityAddTraits(selectedRange == option ? .isSelected : [])",
+          ".accessibilityValue(selectedRange == option ? \"Selected\" : \"Not selected\")"
+        ]
+      }
+    },
+    {
+      "id": "standard-filter-bar-custom-range-normalization",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/StandardFilterBarRegressionTests.swift:testCustomRangePickersNormalizeReversedDates",
+      "target": "Weird Parts IOS/Weird Parts IOS/Shared/StandardFilterBar.swift",
+      "invariant": "Custom range pickers normalize reversed dates and clamp the end date forward.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Pay-period range calculations remain covered by retained executable XCTest methods; this entry preserves static picker wiring.",
+      "rule": {
+        "contains": [
+          "DatePicker(\"From\", selection: normalizedCustomStart",
+          "DatePicker(\"To\", selection: normalizedCustomEnd",
+          "guard customStart > customEnd else { return }",
+          "customEnd = customStart",
+          "customEnd = max(newEnd, customStart)"
+        ]
+      }
+    },
+    {
+      "id": "standard-filter-bar-stable-quick-chip-identifiers",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/StandardFilterBarRegressionTests.swift:testQuickChipIdentifiersAreStablePerCase",
+      "target": "Weird Parts IOS/Weird Parts IOS/Shared/StandardFilterBar.swift",
+      "invariant": "Quick-chip identifiers remain stable per enum case instead of deriving from display copy.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Pay-period range calculations remain covered by retained executable XCTest methods; this entry preserves static identifier mapping.",
+      "rule": {
+        "contains": [
+          "case .thisWeek: return \"this_week\"",
+          "case .lastPeriod: return \"last_period\""
+        ],
+        "not_contains": [
+          "rawValue\n            .lowercased()"
+        ]
+      }
+    },
+    {
+      "id": "standard-filter-bar-report-date-range-shared-layer",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/StandardFilterBarRegressionTests.swift:testReportDateRangeLivesInSharedLayer",
+      "target": "Weird Parts IOS/Weird Parts IOS/Shared/ReportDateRange.swift",
+      "invariant": "ReportDateRange is defined in Shared and has no Reports-feature duplicate.",
+      "replacement": "paths checkout-hosted source policy",
+      "executableCoverage": "Pay-period range calculations remain covered by retained executable XCTest methods; this entry preserves source placement.",
+      "rule": {
+        "paths": {
+          "exists": [
+            "Weird Parts IOS/Weird Parts IOS/Shared/ReportDateRange.swift"
+          ],
+          "not_exists": [
+            "Weird Parts IOS/Weird Parts IOS/Features/Reports/ReportDateRange.swift"
+          ]
+        }
+      }
+    },
+    {
+      "id": "standard-filter-bar-before-jobs-smart-cards",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/StandardFilterBarRegressionTests.swift:testCoreJobsAndOrdersPagesUseStandardFilterBarBeforePageSpecificFilters",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Jobs/JobsListPage.swift",
+      "invariant": "Jobs shows the standard date bar before status smart cards.",
+      "replacement": "ordered checkout-hosted source policy",
+      "executableCoverage": "Pay-period range calculations remain covered by retained executable XCTest methods; this entry preserves page layout ordering.",
+      "rule": {
+        "ordered": [
+          [
+            "StandardFilterBar",
+            "smartCards"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "standard-filter-bar-before-jpo-status-picker",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/StandardFilterBarRegressionTests.swift:testCoreJobsAndOrdersPagesUseStandardFilterBarBeforePageSpecificFilters",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Orders/IOSJPOsPage.swift",
+      "invariant": "JPOs shows the standard date bar before status chips.",
+      "replacement": "ordered checkout-hosted source policy",
+      "executableCoverage": "Pay-period range calculations remain covered by retained executable XCTest methods; this entry preserves page layout ordering.",
+      "rule": {
+        "ordered": [
+          [
+            "StandardFilterBar",
+            "statusPicker"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "standard-filter-bar-before-parts-supplier-picker",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/StandardFilterBarRegressionTests.swift:testCoreJobsAndOrdersPagesUseStandardFilterBarBeforePageSpecificFilters",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Orders/IOSPartsOrderManagementPage.swift",
+      "invariant": "Parts management shows the standard date bar before supplier and status filters.",
+      "replacement": "ordered checkout-hosted source policy",
+      "executableCoverage": "Pay-period range calculations remain covered by retained executable XCTest methods; this entry preserves page layout ordering.",
+      "rule": {
+        "ordered": [
+          [
+            "StandardFilterBar",
+            "supplierPicker"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "standard-filter-bar-jobs-date-filtering",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/StandardFilterBarRegressionTests.swift:testCoreJobsAndOrdersPagesFilterRowsBySelectedStandardDateRange",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Jobs/JobsListPage.swift",
+      "invariant": "Jobs filters rows with the selected standard date range and its start/due-date fallback.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Pay-period range calculations remain covered by retained executable XCTest methods; this entry preserves page filter wiring.",
+      "rule": {
+        "contains": [
+          "StandardDateRangeFilter.contains(",
+          "job.startDate ?? job.dueDate"
+        ]
+      }
+    },
+    {
+      "id": "standard-filter-bar-jpo-date-filtering",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/StandardFilterBarRegressionTests.swift:testCoreJobsAndOrdersPagesFilterRowsBySelectedStandardDateRange",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Orders/IOSJPOsPage.swift",
+      "invariant": "JPOs filters rows with the selected standard date range and its created/due-date fallback.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Pay-period range calculations remain covered by retained executable XCTest methods; this entry preserves page filter wiring.",
+      "rule": {
+        "contains": [
+          "StandardDateRangeFilter.contains(",
+          "$0.createdAt ?? $0.dueDate"
+        ]
+      }
+    },
+    {
+      "id": "standard-filter-bar-parts-date-filtering",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/StandardFilterBarRegressionTests.swift:testCoreJobsAndOrdersPagesFilterRowsBySelectedStandardDateRange",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Orders/IOSPartsOrderManagementPage.swift",
+      "invariant": "Parts management filters rows with the selected standard date range and its order/expected-delivery fallback.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Pay-period range calculations remain covered by retained executable XCTest methods; this entry preserves page filter wiring.",
+      "rule": {
+        "contains": [
+          "StandardDateRangeFilter.contains(",
+          "row.orderDate ?? row.expectedDelivery"
+        ]
+      }
+    },
+    {
+      "id": "standard-filter-bar-date-filter-keeps-undated-rows",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/StandardFilterBarRegressionTests.swift:testStandardDateRangeFilterKeepsRowsWithoutFilterableDates",
+      "target": "Weird Parts IOS/Weird Parts IOS/Shared/ReportDateRange.swift",
+      "invariant": "The shared date filter keeps rows with unparseable dates visible.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Pay-period range calculations remain covered by retained executable XCTest methods; this entry preserves static parsing and fallback policy.",
+      "rule": {
+        "contains": [
+          "enum StandardDateRangeFilter",
+          "guard let date = parse(rawDate) else { return true }",
+          "guard let trimmed = rawDate?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }",
+          "Formatters.sqlDateTimeFormatter.date(from: trimmed)"
+        ]
+      }
+    },
+    {
+      "id": "standard-filter-bar-jobs-date-scoped-status-counts",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/StandardFilterBarRegressionTests.swift:testCoreJobsAndJPOStatusCountsUsePrecomputedSelectedDateRangeCounts",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Jobs/JobsListPage.swift",
+      "invariant": "Jobs derives status counts from the selected date-filtered rows.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Pay-period range calculations remain covered by retained executable XCTest methods; this entry preserves status-count wiring.",
+      "rule": {
+        "contains": [
+          "refreshDateScopedStatusCounts(from: dateFiltered)",
+          "statusCounts = Dictionary(grouping: dateFilteredJobs, by: \\.status)"
+        ]
+      }
+    },
+    {
+      "id": "standard-filter-bar-jpo-date-scoped-status-counts",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/StandardFilterBarRegressionTests.swift:testCoreJobsAndJPOStatusCountsUsePrecomputedSelectedDateRangeCounts",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Orders/IOSJPOsPage.swift",
+      "invariant": "JPO derives status counts from the selected date-filtered rows.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Pay-period range calculations remain covered by retained executable XCTest methods; this entry preserves status-count wiring.",
+      "rule": {
+        "contains": [
+          "@State private var dateFilteredJPOs: [OrdersService.JPOListItem] = []",
+          "dateScopedStatusCounts = Dictionary(grouping: dateFilteredJPOs, by: \\.status)",
+          "dateScopedStatusCounts[\"pending\"] ?? 0",
+          "return dateScopedStatusCounts[status] ?? 0"
+        ]
+      }
+    },
+    {
+      "id": "standard-filter-bar-exclusive-end-of-day",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/StandardFilterBarRegressionTests.swift:testStandardDateRangeFilterUsesExclusiveEndOfDay",
+      "target": "Weird Parts IOS/Weird Parts IOS/Shared/ReportDateRange.swift",
+      "invariant": "The shared date filter uses an exclusive end of day rather than a one-second subtraction fallback.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Pay-period range calculations remain covered by retained executable XCTest methods; this entry preserves static filtering bounds.",
+      "rule": {
+        "contains": [
+          "date < exclusiveEndOfDay(for: interval.end, calendar: calendar)"
+        ],
+        "not_contains": [
+          ".end.addingTimeInterval(-1) ?? date"
+        ]
+      }
+    },
+    {
+      "id": "standard-filter-bar-stable-report-date-range-identity",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/StandardFilterBarRegressionTests.swift:testReportDateRangeIdentityDoesNotUseDisplayCopy",
+      "target": "Weird Parts IOS/Weird Parts IOS/Shared/ReportDateRange.swift",
+      "invariant": "ReportDateRange identity remains independent of user-facing display copy.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Pay-period range calculations remain covered by retained executable XCTest methods; this entry preserves static identity wiring.",
+      "rule": {
+        "contains": [
+          "var id: Self { self }"
+        ],
+        "not_contains": [
+          "var id: String { rawValue }"
+        ]
+      }
+    },
+    {
+      "id": "standard-filter-bar-immutable-pay-period-length",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/StandardFilterBarRegressionTests.swift:testPayPeriodConfigurationCannotMutateIntoInvalidLength",
+      "target": "Weird Parts IOS/Weird Parts IOS/Shared/ReportDateRange.swift",
+      "invariant": "Pay-period length is immutable after initializer clamping.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Pay-period range calculations remain covered by retained executable XCTest methods; this entry preserves static configuration immutability.",
+      "rule": {
+        "contains": [
+          "let lengthInDays: Int"
+        ],
+        "not_contains": [
+          "var lengthInDays: Int"
+        ]
+      }
+    },
+    {
+      "id": "settings-craft-accessibility-identifier-adoption-floor",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SettingsCraftAdoptionContractTests.swift:testSettingsAreaUsesStableAccessibilityIdentifiers",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Settings/SettingsRouter.swift",
+      "invariant": "At least 35 Settings source files retain stable settings-prefixed accessibility identifiers.",
+      "replacement": "directory-count checkout-hosted source policy",
+      "executableCoverage": "Accessibility behavior remains covered by app UI validation; this policy preserves the Settings-area adoption floor.",
+      "rule": {
+        "directory_scan": [
+          {
+            "directory": "Weird Parts IOS/Weird Parts IOS/Features/Settings",
+            "pattern": "*.swift",
+            "when_contains": [
+              "\"settings-"
+            ],
+            "required_regex": "\"settings-",
+            "min_matching_files": 35
+          }
+        ]
+      }
+    },
+    {
+      "id": "settings-craft-row-accessibility-adoption-floor",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SettingsCraftAdoptionContractTests.swift:testSettingsAreaUsesTheSharedRowAccessibilityKit",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Settings/SettingsRouter.swift",
+      "invariant": "At least 12 Settings source files retain the shared row accessibility kit.",
+      "replacement": "directory-count checkout-hosted source policy",
+      "executableCoverage": "Accessibility behavior remains covered by app UI validation; this policy preserves the Settings-area adoption floor.",
+      "rule": {
+        "directory_scan": [
+          {
+            "directory": "Weird Parts IOS/Weird Parts IOS/Features/Settings",
+            "pattern": "*.swift",
+            "when_contains": [
+              ".rowAccessibility("
+            ],
+            "required_regex": "\\.rowAccessibility\\(",
+            "min_matching_files": 12
+          }
+        ]
+      }
+    },
+    {
+      "id": "settings-craft-context-menu-adoption-floor",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SettingsCraftAdoptionContractTests.swift:testSettingsAreaOffersContextMenuSecondInputPaths",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Settings/SettingsRouter.swift",
+      "invariant": "At least 6 Settings source files retain context-menu second input paths.",
+      "replacement": "directory-count checkout-hosted source policy",
+      "executableCoverage": "Context-menu behavior remains covered by app UI validation; this policy preserves the Settings-area adoption floor.",
+      "rule": {
+        "directory_scan": [
+          {
+            "directory": "Weird Parts IOS/Weird Parts IOS/Features/Settings",
+            "pattern": "*.swift",
+            "when_contains": [
+              ".contextMenu"
+            ],
+            "required_regex": "\\.contextMenu",
+            "min_matching_files": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": "settings-database-reset-final-confirmation",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SettingsCraftAdoptionContractTests.swift:testDatabaseResetKeepsFinalConfirmationLayer",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSDatabaseResetPage.swift",
+      "invariant": "Database reset retains its final confirmation state, explicit consequence copy, and admin approval gate.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "The destructive reset flow remains covered by product-level validation; this policy preserves its static safety layers.",
+      "rule": {
+        "contains": [
+          "showFinalConfirm",
+          "Erase all data on this device?",
+          "verifyAdminApproval"
+        ]
+      }
+    },
+    {
+      "id": "settings-save-daily-report-dirty-tracking",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SettingsSaveButtonValidationTests.swift:testDailyReportTemplatesPageHasIsDirtyGuard",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSDailyReportTemplatesPage.swift",
+      "invariant": "Daily report template saves remain disabled without a changed form signature and reset baseline tracking after save/load.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Settings save behavior remains covered by product-level validation; this policy preserves dirty-state wiring.",
+      "rule": {
+        "contains": [
+          "@State private var hasUnsavedChanges = false",
+          ".disabled(!hasUnsavedChanges)",
+          ".onChange(of: formSignature)",
+          "hasUnsavedChanges = formSignature != baselineFormSignature",
+          "private func resetDirtyTracking()",
+          "baselineFormSignature = formSignature"
+        ]
+      }
+    },
+    {
+      "id": "settings-save-tool-policies-dirty-and-success",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SettingsSaveButtonValidationTests.swift:testToolPoliciesPageHasIsDirtyGuard",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSToolPoliciesPage.swift",
+      "invariant": "Tool policy saves retain dirty validation and visible, cleared-on-edit success feedback.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Settings save behavior remains covered by product-level validation; this policy preserves dirty-state and success-feedback wiring.",
+      "rule": {
+        "contains": [
+          "@State private var isDirty = false",
+          ".disabled(!isDirty)",
+          ".onChange(of: maxCheckoutDays)",
+          "isDirty = false",
+          "@State private var saveSuccessMessage: String?",
+          "Label(saveSuccessMessage, systemImage: \"checkmark.circle.fill\")",
+          ".foregroundStyle(.green)",
+          "saveSuccessMessage = \"Tool policies saved.\"",
+          "saveSuccessMessage = nil",
+          "private func markDirty()"
+        ]
+      }
+    },
+    {
+      "id": "settings-save-forecast-validity-guard",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SettingsSaveButtonValidationTests.swift:testForecastSettingsPageHasValidSettingsGuard",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSForecastSettingsPage.swift",
+      "invariant": "Forecast settings require positive common and critical multipliers before Save is enabled.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Settings save behavior remains covered by product-level validation; this policy preserves validity wiring.",
+      "rule": {
+        "contains": [
+          "private var hasValidSettings: Bool",
+          "commonMinMult > 0",
+          "criticalMinMult > 0",
+          ".disabled(!hasValidSettings)"
+        ]
+      }
+    },
+    {
+      "id": "settings-save-organization-threshold-validity-guard",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SettingsSaveButtonValidationTests.swift:testOrganizationThresholdsPageHasValidSettingsGuard",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSOrganizationThresholdsPage.swift",
+      "invariant": "Organization thresholds require positive decay factors before Save is enabled.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Settings save behavior remains covered by product-level validation; this policy preserves validity wiring.",
+      "rule": {
+        "contains": [
+          "private var hasValidSettings: Bool",
+          "baseDecayRate > 0",
+          "movementDecayFactor > 0",
+          ".disabled(!hasValidSettings)"
+        ]
+      }
+    },
+    {
+      "id": "settings-save-pretrip-dirty-guard",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SettingsSaveButtonValidationTests.swift:testPreTripChecklistPageHasIsDirtyGuard",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSPreTripChecklistPage.swift",
+      "invariant": "Pre-trip checklist saves retain dirty-state validation and reset behavior.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Settings save behavior remains covered by product-level validation; this policy preserves dirty-state wiring.",
+      "rule": {
+        "contains": [
+          "@State private var isDirty = false",
+          ".disabled(!isDirty)",
+          ".onChange(of: drafts)",
+          "isDirty = false"
+        ]
+      }
+    },
+    {
+      "id": "settings-save-dispatch-dirty-guard",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SettingsSaveButtonValidationTests.swift:testDispatchPreferencesPageHasIsDirtyGuard",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSDispatchPreferencesPage.swift",
+      "invariant": "Dispatch preference saves retain dirty-state validation and reset behavior.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Settings save behavior remains covered by product-level validation; this policy preserves dirty-state wiring.",
+      "rule": {
+        "contains": [
+          "@State private var isDirty = false",
+          ".disabled(!isDirty)",
+          ".onChange(of: enableAISuggestions)",
+          "isDirty = false"
+        ]
+      }
+    },
+    {
+      "id": "settings-save-audit-dirty-and-validity-guard",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SettingsSaveButtonValidationTests.swift:testAuditSettingsPageHasBothIsDirtyAndValidSettingsGuard",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSAuditSettingsPage.swift",
+      "invariant": "Audit settings require a changed form and positive penalty before Save is enabled.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Settings save behavior remains covered by product-level validation; this policy preserves dirty-state and validity wiring.",
+      "rule": {
+        "contains": [
+          "@State private var isDirty = false",
+          "private var hasValidSettings: Bool",
+          "misplacementPenalty > 0",
+          ".disabled(!isDirty || !hasValidSettings)",
+          ".onChange(of: misplacementPenalty)",
+          "isDirty = false"
+        ]
+      }
+    },
+    {
+      "id": "settings-save-job-stage-template-validation",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SettingsSaveButtonValidationTests.swift:testJobStageTemplateAlertsRejectBlankNamesBeforeDismissal",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSJobStageTemplatesSettingsPage.swift",
+      "invariant": "Job-stage template create, rename, and duplicate paths trim names, disable blank submissions, show validation copy, and guard service calls.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Template mutation behavior remains covered by product-level validation; this policy preserves static alert validation wiring.",
+      "rule": {
+        "contains": [
+          "private var trimmedNewTemplateName: String",
+          "private var trimmedRenameTemplateName: String",
+          "private var trimmedDuplicateTemplateName: String",
+          "private var canCreateTemplate: Bool { !trimmedNewTemplateName.isEmpty }",
+          "private var canRenameTemplate: Bool { !trimmedRenameTemplateName.isEmpty }",
+          "private var canDuplicateTemplate: Bool { !trimmedDuplicateTemplateName.isEmpty }",
+          "Button(\"Create\") { createTemplate() }\n                .disabled(!canCreateTemplate)",
+          "Button(\"Duplicate\") { duplicateTemplate() }\n                .disabled(!canDuplicateTemplate)",
+          "Button(\"Rename\") { renameTemplate() }\n                .disabled(!canRenameTemplate)",
+          "Enter a template name before creating this workflow.",
+          "Enter a new template name before duplicating this workflow.",
+          "Enter a template name before renaming this workflow.",
+          "guard canCreateTemplate else { return }",
+          "guard canRenameTemplate else { return }",
+          "guard canDuplicateTemplate else { return }",
+          "name: templateName",
+          "let templateName = trimmedNewTemplateName",
+          "let templateName = trimmedRenameTemplateName",
+          "let templateName = trimmedDuplicateTemplateName"
+        ]
+      }
+    },
+    {
+      "id": "settings-hydration-parser-safety",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SettingsSaveButtonValidationTests.swift:testSettingsPagesSurfaceMalformedStoredValuesBeforeSaveableFormLoads",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Settings/SettingsValueParser.swift",
+      "invariant": "Settings hydration retains typed parsing, finite-number checks, visible malformed-value reporting, and bounded display values.",
+      "replacement": "contains checkout-hosted source policy",
+      "executableCoverage": "Hydration behavior remains covered by product-level validation; this policy preserves parser safety wiring.",
+      "rule": {
+        "contains": [
+          "struct SettingsValueParser",
+          "throw SettingsHydrationError",
+          "Saved settings contain invalid values and were not overwritten",
+          ".lowercased()",
+          "guard let rawValue = settings[key] else { return defaultValue }",
+          "recordInvalid(key: key, value: rawValue",
+          "parsed.isFinite",
+          "displayValue",
+          "maxLength = 80"
+        ]
+      }
+    },
+    {
+      "id": "settings-hydration-ai-config",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SettingsSaveButtonValidationTests.swift:testSettingsPagesSurfaceMalformedStoredValuesBeforeSaveableFormLoads",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSAIConfigPage.swift",
+      "invariant": "AI config hydrates persisted settings through the typed parser and surfaces malformed values before save.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Hydration behavior remains covered by product-level validation; this policy preserves page wiring.",
+      "rule": {
+        "contains": [
+          "SettingsValueParser()",
+          "throwIfInvalid()",
+          "settingsHydrationMessage("
+        ],
+        "not_contains": [
+          "Int(map[",
+          "Double(map["
+        ],
+        "not_regex": [
+          "(?=.*\\(map\\[)(?=.*\\] \\?\\?)(?=.*\\) == \\x22true\\x22)"
+        ]
+      }
+    },
+    {
+      "id": "settings-hydration-organization-thresholds",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SettingsSaveButtonValidationTests.swift:testSettingsPagesSurfaceMalformedStoredValuesBeforeSaveableFormLoads",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSOrganizationThresholdsPage.swift",
+      "invariant": "Organization thresholds hydrate persisted settings through the typed parser and surface malformed values before save.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Hydration behavior remains covered by product-level validation; this policy preserves page wiring.",
+      "rule": {
+        "contains": [
+          "SettingsValueParser()",
+          "throwIfInvalid()",
+          "settingsHydrationMessage("
+        ],
+        "not_contains": [
+          "Int(map[",
+          "Double(map["
+        ],
+        "not_regex": [
+          "(?=.*\\(map\\[)(?=.*\\] \\?\\?)(?=.*\\) == \\x22true\\x22)"
+        ]
+      }
+    },
+    {
+      "id": "settings-hydration-forecast",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SettingsSaveButtonValidationTests.swift:testSettingsPagesSurfaceMalformedStoredValuesBeforeSaveableFormLoads",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSForecastSettingsPage.swift",
+      "invariant": "Forecast settings hydrate persisted settings through the typed parser and surface malformed values before save.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Hydration behavior remains covered by product-level validation; this policy preserves page wiring.",
+      "rule": {
+        "contains": [
+          "SettingsValueParser()",
+          "throwIfInvalid()",
+          "settingsHydrationMessage("
+        ],
+        "not_contains": [
+          "Int(map[",
+          "Double(map["
+        ],
+        "not_regex": [
+          "(?=.*\\(map\\[)(?=.*\\] \\?\\?)(?=.*\\) == \\x22true\\x22)"
+        ]
+      }
+    },
+    {
+      "id": "settings-hydration-tool-policies",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SettingsSaveButtonValidationTests.swift:testSettingsPagesSurfaceMalformedStoredValuesBeforeSaveableFormLoads",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSToolPoliciesPage.swift",
+      "invariant": "Tool policies hydrate persisted settings through the typed parser and surface malformed values before save.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Hydration behavior remains covered by product-level validation; this policy preserves page wiring.",
+      "rule": {
+        "contains": [
+          "SettingsValueParser()",
+          "throwIfInvalid()",
+          "settingsHydrationMessage("
+        ],
+        "not_contains": [
+          "Int(map[",
+          "Double(map["
+        ],
+        "not_regex": [
+          "(?=.*\\(map\\[)(?=.*\\] \\?\\?)(?=.*\\) == \\x22true\\x22)"
+        ]
+      }
+    },
+    {
+      "id": "settings-hydration-audit",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SettingsSaveButtonValidationTests.swift:testSettingsPagesSurfaceMalformedStoredValuesBeforeSaveableFormLoads",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSAuditSettingsPage.swift",
+      "invariant": "Audit settings hydrate persisted settings through the typed parser and surface malformed values before save.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Hydration behavior remains covered by product-level validation; this policy preserves page wiring.",
+      "rule": {
+        "contains": [
+          "SettingsValueParser()",
+          "throwIfInvalid()",
+          "settingsHydrationMessage("
+        ],
+        "not_contains": [
+          "Int(map[",
+          "Double(map["
+        ],
+        "not_regex": [
+          "(?=.*\\(map\\[)(?=.*\\] \\?\\?)(?=.*\\) == \\x22true\\x22)"
+        ]
+      }
+    },
+    {
+      "id": "settings-hydration-dispatch",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SettingsSaveButtonValidationTests.swift:testSettingsPagesSurfaceMalformedStoredValuesBeforeSaveableFormLoads",
+      "target": "Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSDispatchPreferencesPage.swift",
+      "invariant": "Dispatch preferences hydrate persisted settings through the typed parser and surface malformed values before save.",
+      "replacement": "contains/not_contains checkout-hosted source policy",
+      "executableCoverage": "Hydration behavior remains covered by product-level validation; this policy preserves page wiring.",
+      "rule": {
+        "contains": [
+          "SettingsValueParser()",
+          "throwIfInvalid()",
+          "settingsHydrationMessage("
+        ],
+        "not_contains": [
+          "Int(map[",
+          "Double(map["
+        ],
+        "not_regex": [
+          "(?=.*\\(map\\[)(?=.*\\] \\?\\?)(?=.*\\) == \\x22true\\x22)"
+        ]
+      }
+    },
+    {
+      "id": "shared-sheet-help-detents",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SharedSheetPresentationDetentsTests.swift:testSharedHelpAndDismissWrappersUseMediumLargePresentationDetents",
+      "target": "Weird Parts IOS/Weird Parts IOS/Shared/PageHelpSheet.swift",
+      "invariant": "Page help uses visible medium/large sheet detents.",
+      "replacement": "regex/contains checkout-hosted source policy",
+      "executableCoverage": "Sheet presentation remains covered by app UI validation; this policy preserves the static sheet contract.",
+      "rule": {
+        "regex": [
+          "\\.presentationDetents\\(\\s*\\[\\.medium,\\s*\\.large\\]\\s*\\)"
+        ],
+        "contains": [
+          ".presentationDragIndicator(.visible)"
+        ]
+      }
+    },
+    {
+      "id": "shared-sheet-dismiss-detents",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SharedSheetPresentationDetentsTests.swift:testSharedHelpAndDismissWrappersUseMediumLargePresentationDetents",
+      "target": "Weird Parts IOS/Weird Parts IOS/Shared/SheetDismissWrapper.swift",
+      "invariant": "The dismiss wrapper uses visible medium/large sheet detents.",
+      "replacement": "regex/contains checkout-hosted source policy",
+      "executableCoverage": "Sheet presentation remains covered by app UI validation; this policy preserves the static sheet contract.",
+      "rule": {
+        "regex": [
+          "\\.presentationDetents\\(\\s*\\[\\.medium,\\s*\\.large\\]\\s*\\)"
+        ],
+        "contains": [
+          ".presentationDragIndicator(.visible)"
+        ]
+      }
+    },
+    {
+      "id": "shared-form-sheet-large-detent",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SharedSheetPresentationDetentsTests.swift:testSharedFormSheetPinsLargePresentationDetent",
+      "target": "Weird Parts IOS/Weird Parts IOS/Shared/FormSheet.swift",
+      "invariant": "Shared create/edit forms use a visible large sheet detent.",
+      "replacement": "regex/contains checkout-hosted source policy",
+      "executableCoverage": "Sheet presentation remains covered by app UI validation; this policy preserves the static sheet contract.",
+      "rule": {
+        "regex": [
+          "\\.presentationDetents\\(\\s*\\[\\.large\\]\\s*\\)"
+        ],
+        "contains": [
+          ".presentationDragIndicator(.visible)"
+        ]
+      }
+    },
+    {
+      "id": "shared-qr-scan-sheet-medium-detent",
+      "testSource": "Weird Parts IOS/Weird Parts IOSTests/SharedSheetPresentationDetentsTests.swift:testQRScanSheetUsesMediumPresentationDetent",
+      "target": "Weird Parts IOS/Weird Parts IOS/Scanning/QRScanSheet.swift",
+      "invariant": "Quick scan/manual entry uses a visible medium sheet detent.",
+      "replacement": "regex/contains checkout-hosted source policy",
+      "executableCoverage": "Sheet presentation remains covered by app UI validation; this policy preserves the static sheet contract.",
+      "rule": {
+        "regex": [
+          "\\.presentationDetents\\(\\s*\\[\\.medium\\]\\s*\\)"
+        ],
+        "contains": [
+          ".presentationDragIndicator(.visible)"
+        ]
+      }
     }
   ]
 }
