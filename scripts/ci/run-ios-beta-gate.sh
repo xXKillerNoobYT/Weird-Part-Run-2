@@ -106,7 +106,7 @@ should_retry_ui_smoke_bootstrap_failure() {
   [[ "$xcode_status" == "65" ]] || return 1
   [[ -f "$xcode_log" ]] || return 1
   grep -Fq "Early unexpected exit, operation never finished bootstrapping" "$xcode_log" &&
-    grep -Fq "Test crashed with signal term while preparing to run tests." "$xcode_log"
+    grep -Eq "Test crashed with signal (term|abrt) while preparing to run tests\." "$xcode_log"
 }
 
 preserve_failed_ui_smoke_attempt() {
@@ -128,15 +128,18 @@ if [[ "${IOS_BETA_GATE_SELF_TEST:-}" == "1" ]]; then
   migration_log="$self_test_dir/migration.log"
   unrelated_log="$self_test_dir/unrelated.log"
   ui_bootstrap_log="$self_test_dir/ui-bootstrap.log"
+  ui_bootstrap_abort_log="$self_test_dir/ui-bootstrap-abort.log"
   printf 'Waiting on Data Migration\nReason:Running plugin com.apple.locationd.migrator (CoreLocationMigrator.migrator)\n' > "$migration_log"
   printf 'Waiting on BackBoard\n' > "$unrelated_log"
   printf 'Early unexpected exit, operation never finished bootstrapping\nTest crashed with signal term while preparing to run tests.\n' > "$ui_bootstrap_log"
+  printf 'Early unexpected exit, operation never finished bootstrapping\nTest crashed with signal abrt while preparing to run tests.\n' > "$ui_bootstrap_abort_log"
 
   should_retry_core_location_migration 142 "$migration_log" || exit 1
   ! should_retry_core_location_migration 0 "$migration_log" || exit 1
   ! should_retry_core_location_migration 1 "$migration_log" || exit 1
   ! should_retry_core_location_migration 142 "$unrelated_log" || exit 1
   should_retry_ui_smoke_bootstrap_failure 65 "$ui_bootstrap_log" || exit 1
+  should_retry_ui_smoke_bootstrap_failure 65 "$ui_bootstrap_abort_log" || exit 1
   ! should_retry_ui_smoke_bootstrap_failure 0 "$ui_bootstrap_log" || exit 1
   ! should_retry_ui_smoke_bootstrap_failure 65 "$unrelated_log" || exit 1
 
