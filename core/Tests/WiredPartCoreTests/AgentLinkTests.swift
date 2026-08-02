@@ -66,12 +66,24 @@ struct AgentLinkServiceTests {
         #expect(trail.first?.status == "error")
     }
 
-    @Test("Scopes gate the write tool only")
+    @Test("Scopes allowlist documented tools and reject unassigned writes")
     func scopes() {
-        #expect(AgentLinkService.Scope.read.allows(tool: "parts_search"))
+        let readOnlyTools = [
+            "parts_search", "stock_levels", "jobs_list", "job_detail",
+            "orders_status", "reports_summary", "system_health"
+        ]
+        for tool in readOnlyTools {
+            #expect(AgentLinkService.Scope.read.allows(tool: tool))
+            #expect(AgentLinkService.Scope.readNotes.allows(tool: tool))
+        }
+
         #expect(!AgentLinkService.Scope.read.allows(tool: "job_note_append"))
         #expect(AgentLinkService.Scope.readNotes.allows(tool: "job_note_append"))
-        #expect(AgentLinkService.Scope.readNotes.allows(tool: "stock_levels"))
+
+        for unassignedWrite in ["wishlist_create", "procurement_request_create", "todo_create"] {
+            #expect(!AgentLinkService.Scope.read.allows(tool: unassignedWrite))
+            #expect(!AgentLinkService.Scope.readNotes.allows(tool: unassignedWrite))
+        }
     }
 }
 

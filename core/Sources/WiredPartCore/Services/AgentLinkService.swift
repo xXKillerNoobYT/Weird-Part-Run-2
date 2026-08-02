@@ -29,11 +29,20 @@ public final class AgentLinkService: Sendable {
 
         /// Whether this scope may invoke the named tool.
         public func allows(tool: String) -> Bool {
+            let isReadOnlyTool: Bool
+            switch tool {
+            case "parts_search", "stock_levels", "jobs_list", "job_detail",
+                    "orders_status", "reports_summary", "system_health":
+                isReadOnlyTool = true
+            default:
+                isReadOnlyTool = false
+            }
+
             switch self {
             case .read:
-                return tool != "job_note_append"
+                return isReadOnlyTool
             case .readNotes:
-                return true
+                return isReadOnlyTool || tool == "job_note_append"
             }
         }
     }
