@@ -1290,6 +1290,14 @@ public final class AuthService: Sendable {
             _ = SecItemUpdate(migrateQuery as CFDictionary, migrateAttrs as CFDictionary)
             return SymmetricKey(data: data)
         }
+        // Keychain-less environments (iPad binary on Apple Silicon Macs —
+        // errSecMissingEntitlement, the #1622 class): reuse the sandbox
+        // fallback key so sessions survive relaunch there too. A working
+        // keychain always wins the read above, so real iPhones/iPads never
+        // reach this.
+        if let fallback = AuthService.readFallbackSigningKey() {
+            return SymmetricKey(data: fallback)
+        }
         // Generate a new 256-bit key and persist it.
         var keyBytes = [UInt8](repeating: 0, count: 32)
         _ = SecRandomCopyBytes(kSecRandomDefault, 32, &keyBytes)
@@ -1304,12 +1312,50 @@ public final class AuthService: Sendable {
         ]
         let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
         if addStatus != errSecSuccess && addStatus != errSecDuplicateItem {
-            // Key generated but not persisted — tokens will invalidate on next app launch.
-            // errSecDuplicateItem is benign (item was added between our read and write).
-            AuthService.logger.warning("SecItemAdd failed (OSStatus \(addStatus)) — signing key in memory only. Tokens will not survive app restart.")
+            if addStatus == errSecMissingEntitlement || addStatus == errSecNotAvailable {
+                // Keychain unusable in THIS environment (not merely locked) —
+                // persist to the sandbox fallback so Mac sessions survive
+                // relaunch (issue: re-login every launch on iPad-on-Mac).
+                AuthService.logger.warning("SecItemAdd failed (OSStatus \(addStatus)) — persisting signing key to sandbox fallback (keychain-less environment).")
+                AuthService.writeFallbackSigningKey(keyData)
+            } else {
+                // Key generated but not persisted — tokens will invalidate on next app launch.
+                // errSecDuplicateItem is benign (item was added between our read and write).
+                AuthService.logger.warning("SecItemAdd failed (OSStatus \(addStatus)) — signing key in memory only. Tokens will not survive app restart.")
+            }
         }
         return SymmetricKey(data: keyData)
     }()
+
+    /// Sandbox fallback for the session signing key — used ONLY where the
+    /// keychain reports missing-entitlement/not-available (same tradeoff and
+    /// storage envelope as CipherKeyManager's salt fallback from #1622).
+    private static func fallbackSigningKeyURL() -> URL? {
+        guard let supportURL = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first else { return nil }
+        let dir = supportURL.appendingPathComponent("WiredPart", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("session-signing-key.bin")
+    }
+
+    private static func readFallbackSigningKey() -> Data? {
+        guard let url = fallbackSigningKeyURL(),
+              let data = try? Data(contentsOf: url), data.count == 32 else { return nil }
+        return data
+    }
+
+    private static func writeFallbackSigningKey(_ key: Data) {
+        guard var url = fallbackSigningKeyURL() else { return }
+        do {
+            try key.write(to: url, options: .atomic)
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try? url.setResourceValues(values)
+        } catch {
+            AuthService.logger.warning("Could not persist fallback signing key: \(error.localizedDescription)")
+        }
+    }
 
     /// Generate a signed local session token (base64 payload + HMAC-SHA256 signature).
     static func generateLocalToken(userId: Int64) -> String? {
