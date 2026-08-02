@@ -576,6 +576,31 @@ struct Weird_Parts_IOSTests {
         )
     }
 
+    @Test func bootstrapFallbackConcurrentCallersShareOnePersistedKey() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BootstrapFallback-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let keyHexes = try await withThrowingTaskGroup(of: String.self, returning: [String].self) { group in
+            for _ in 0..<16 {
+                group.addTask {
+                    try AppCore.localFallbackBootstrapKeyHex(in: directory)
+                }
+            }
+
+            var values: [String] = []
+            for try await keyHex in group {
+                values.append(keyHex)
+            }
+            return values
+        }
+        let fallbackURL = try AppCore.localFallbackBootstrapKeyURL(in: directory)
+
+        #expect(Set(keyHexes).count == 1)
+        #expect(try Data(contentsOf: fallbackURL).count == 32)
+        #expect(try fallbackURL.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
+    }
+
     @Test func bootstrapFallbackUsesNotAvailableButRejectsLockedKeychain() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("BootstrapFallback-\(UUID().uuidString)", isDirectory: true)

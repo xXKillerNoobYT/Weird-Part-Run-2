@@ -21,6 +21,7 @@ extension BackgroundTaskService: AppCoreBackgroundTaskAuditing {}
 final class AppCore: ObservableObject {
     nonisolated private static let uiTestingLaunchFlag = "-UITesting"
     nonisolated private static let uiTestingPreserveDatabaseFlag = "-UITestingPreserveDatabase"
+    nonisolated private static let localFallbackBootstrapKeyLock = NSLock()
 
     #if DEBUG && targetEnvironment(simulator)
     nonisolated private static let wei5134AIReadFailureFlag = "-UITestingWEI5134AIReadFailure"
@@ -791,6 +792,9 @@ final class AppCore: ObservableObject {
     /// Persistent bootstrap-key fallback for approved keychain-unavailable states.
     /// The key stays in the app container and is excluded from device/iCloud backups.
     nonisolated static func localFallbackBootstrapKeyHex(in directory: URL? = nil) throws -> String {
+        localFallbackBootstrapKeyLock.lock()
+        defer { localFallbackBootstrapKeyLock.unlock() }
+
         let keyURL = try localFallbackBootstrapKeyURL(in: directory)
         if let data = try? Data(contentsOf: keyURL), data.count == 32 {
             try excludeLocalFallbackBootstrapKeyFromBackup(at: keyURL)
