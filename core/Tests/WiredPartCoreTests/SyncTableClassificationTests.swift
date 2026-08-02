@@ -80,4 +80,82 @@ struct SyncTableClassificationTests {
         }
         #expect(logged >= 1, "company_holidays INSERT was not change-tracked")
     }
+
+    @Test("Migration 119 upgrades pre-gap stores without echoing sync-applied writes")
+    func migration119BackfillsExistingRowsAndHonorsApplyGuard() throws {
+        var config = Configuration()
+        config.foreignKeysEnabled = true
+        let queue = try DatabaseQueue(configuration: config)
+
+        // Reproduce a store that ran the historical migration 112 before these
+        // tables were added to its allowlist: its schema and guard table exist,
+        // but company_holidays has no change triggers or bootstrap row.
+        var historicalMigrator = DatabaseMigrator()
+        AppDatabase.registerMigrations(&historicalMigrator)
+        try historicalMigrator.migrate(queue, upTo: "111_chat_attachment_storage_relative")
+        try queue.write { db in
+            try db.execute(sql: "CREATE TABLE _sync_apply_guard (id INTEGER PRIMARY KEY)")
+        }
+        var appliedHistorical112 = DatabaseMigrator()
+        appliedHistorical112.registerMigration("112_change_tracking_triggers") { _ in }
+        try appliedHistorical112.migrate(queue)
+        try queue.write { db in
+            try db.execute(sql: """
+                INSERT INTO company_holidays (name, date)
+                VALUES ('Pre-migration holiday', '2026-12-25')
+                """)
+        }
+
+        var currentMigrator = DatabaseMigrator()
+        AppDatabase.registerMigrations(&currentMigrator)
+        try currentMigrator.migrate(queue)
+
+        let upgraded = try queue.read { db -> (bootstrapRows: Int, triggers: Set<String>) in
+            let bootstrapRows = try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM _change_log
+                WHERE table_name = 'company_holidays'
+                  AND operation = 'INSERT'
+                  AND changed_fields = '{"__backfill__":1}'
+                """) ?? 0
+            let triggers = try Set(String.fetchAll(db, sql: """
+                SELECT name FROM sqlite_master
+                WHERE type = 'trigger' AND name IN (?, ?, ?)
+                """, arguments: [
+                    "trg_sync_company_holidays_insert",
+                    "trg_sync_company_holidays_update",
+                    "trg_sync_company_holidays_delete",
+                ]))
+            return (bootstrapRows, triggers)
+        }
+        #expect(upgraded.bootstrapRows == 1, "migration 119 must backfill one existing gap-table row")
+        #expect(upgraded.triggers == [
+            "trg_sync_company_holidays_insert",
+            "trg_sync_company_holidays_update",
+            "trg_sync_company_holidays_delete",
+        ])
+
+        try queue.write { db in
+            try db.execute(sql: "UPDATE company_holidays SET name = 'Local edit' WHERE id = 1")
+        }
+        let localUpdates = try queue.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM _change_log
+                WHERE table_name = 'company_holidays' AND operation = 'UPDATE'
+                """) ?? 0
+        }
+        #expect(localUpdates == 1, "normal gap-table writes must be change-tracked")
+
+        try queue.write { db in
+            try db.execute(sql: "INSERT INTO _sync_apply_guard (id) VALUES (1)")
+            try db.execute(sql: "UPDATE company_holidays SET name = 'Peer edit' WHERE id = 1")
+            try db.execute(sql: "DELETE FROM _sync_apply_guard WHERE id = 1")
+        }
+        let guardedUpdates = try queue.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM _change_log
+                WHERE table_name = 'company_holidays' AND operation = 'UPDATE'
+                """) ?? 0
+        }
+        #expect(guardedUpdates == localUpdates, "sync-applied writes must not echo into _change_log")
+    }
 }
