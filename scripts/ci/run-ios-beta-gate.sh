@@ -34,23 +34,36 @@ fi
   echo "ERROR: repository root is not a directory: $workspace" >&2
   exit 1
 }
+toolchain_contract="$workspace/.github/wpr2-main-build/toolchain.env"
+[[ -f "$toolchain_contract" ]] || {
+  echo "ERROR: missing WPR2 toolchain contract: $toolchain_contract" >&2
+  exit 1
+}
+# shellcheck disable=SC1090
+. "$toolchain_contract"
+if [[ "$device_key" == "iphone" ]]; then
+  device_type="$IPHONE_DEVICE_TYPE"
+else
+  device_type="$IPAD_DEVICE_TYPE"
+fi
+[[ "${WPR2_TOOLCHAIN_VERIFIED:-}" == "1" || "${IOS_BETA_GATE_SELF_TEST:-}" == "1" ]] || {
+  echo "ERROR: exact WPR2 Xcode toolchain was not verified before invoking the beta gate" >&2
+  exit 1
+}
 runner_temp="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
-runtime_version="${IOS_RUNTIME_VERSION:-26.5}"
+runtime_version="${IOS_RUNTIME_VERSION:-$IOS_RUNTIME_VERSION}"
 runtime_id="com.apple.CoreSimulator.SimRuntime.iOS-${runtime_version//./-}"
-# A full gate run (workspace build + two test phases + xcresult bundles)
-# consumes well under 20 GiB; 30 GiB keeps real headroom without failing
-# closed on a Mac whose other tenants (Paperclip/hermes state and backups)
-# legitimately hold large data sets. Was 60, which parked every PR whenever
-# unrelated agents' storage grew (2026-07-28/30/31 incidents).
-minimum_free_gib="${MINIMUM_FREE_GIB:-30}"
-derived_data_stale_minutes="${DERIVED_DATA_STALE_MINUTES:-60}"
-simulator_boot_command_timeout_seconds="${SIMULATOR_BOOT_COMMAND_TIMEOUT_SECONDS:-120}"
-simulator_boot_timeout_seconds="${SIMULATOR_BOOT_TIMEOUT_SECONDS:-600}"
-simulator_boot_recovery_timeout_seconds="${SIMULATOR_BOOT_RECOVERY_TIMEOUT_SECONDS:-600}"
-xcode_phase_timeout_seconds="${XCODE_PHASE_TIMEOUT_SECONDS:-2400}"
-ui_smoke_phase_timeout_seconds="${UI_SMOKE_PHASE_TIMEOUT_SECONDS:-900}"
-job_timeout_seconds="${JOB_TIMEOUT_SECONDS:-7200}"
-cleanup_upload_margin_seconds="${CLEANUP_UPLOAD_MARGIN_SECONDS:-1200}"
+# The descriptor sets the shared PR/main free-space contract. A shortfall is
+# red even after bounded stale-DerivedData reclamation.
+minimum_free_gib="${MINIMUM_FREE_GIB:-$MINIMUM_FREE_GIB}"
+derived_data_stale_minutes="${DERIVED_DATA_STALE_MINUTES:-$DERIVED_DATA_STALE_MINUTES}"
+simulator_boot_command_timeout_seconds="${SIMULATOR_BOOT_COMMAND_TIMEOUT_SECONDS:-$SIMULATOR_BOOT_COMMAND_TIMEOUT_SECONDS}"
+simulator_boot_timeout_seconds="${SIMULATOR_BOOT_TIMEOUT_SECONDS:-$SIMULATOR_BOOT_TIMEOUT_SECONDS}"
+simulator_boot_recovery_timeout_seconds="${SIMULATOR_BOOT_RECOVERY_TIMEOUT_SECONDS:-$SIMULATOR_BOOT_RECOVERY_TIMEOUT_SECONDS}"
+xcode_phase_timeout_seconds="${XCODE_PHASE_TIMEOUT_SECONDS:-$XCODE_PHASE_TIMEOUT_SECONDS}"
+ui_smoke_phase_timeout_seconds="${UI_SMOKE_PHASE_TIMEOUT_SECONDS:-$UI_SMOKE_PHASE_TIMEOUT_SECONDS}"
+job_timeout_seconds="${JOB_TIMEOUT_SECONDS:-$JOB_TIMEOUT_SECONDS}"
+cleanup_upload_margin_seconds="${CLEANUP_UPLOAD_MARGIN_SECONDS:-$CLEANUP_UPLOAD_MARGIN_SECONDS}"
 artifact_dir="$workspace/artifacts/ios-beta-gate-$device_key"
 metadata_file="$artifact_dir/metadata.txt"
 derived_data=""
@@ -172,8 +185,8 @@ wait_for_xcode_destination() {
   # visible to the same scheme that will run the UI smoke.
   while (( SECONDS < deadline )); do
     destinations="$(xcodebuild -showdestinations \
-      -workspace "$workspace/Weird Parts.xcworkspace" \
-      -scheme "WiredPart-iOS-Stage9-Smokes" 2>&1)"
+      -workspace "$workspace/$WPR2_WORKSPACE" \
+      -scheme "$WPR2_UI_SMOKE_SCHEME" 2>&1)"
     printf '%s\n' "$destinations" >> "$artifact_dir/destination-readiness.log"
     if grep -Fq "$simulator_id" <<< "$destinations"; then
       return 0
@@ -325,6 +338,9 @@ available_internal_budget_seconds=$((job_timeout_seconds - cleanup_upload_margin
   fail "internal timeout budget ${internal_budget_seconds}s exceeds ${available_internal_budget_seconds}s after reserving cleanup/upload margin"
 
 actual_sha="$(git -C "$workspace" rev-parse HEAD)" || fail "cannot resolve repository HEAD"
+xcode_version_output="$(xcodebuild -version 2>&1)" || fail "cannot query selected Xcode"
+xcode_version="$(printf '%s\n' "$xcode_version_output" | awk -F' ' '/^Xcode / { print $2; exit }')"
+xcode_build="$(printf '%s\n' "$xcode_version_output" | awk -F' ' '/^Build version / { print $3; exit }')"
 {
   echo "gate=$gate_name"
   echo "expected_sha=$expected_sha"
@@ -344,18 +360,27 @@ actual_sha="$(git -C "$workspace" rev-parse HEAD)" || fail "cannot resolve repos
   echo "job_timeout_seconds=$job_timeout_seconds"
   echo "cleanup_upload_margin_seconds=$cleanup_upload_margin_seconds"
   echo "internal_budget_seconds=$internal_budget_seconds"
-  xcodebuild -version | tr '\n' ' '
+  echo "xcode_version=$xcode_version"
+  echo "xcode_build=$xcode_build"
+  printf 'xcodebuild_version='
+  printf '%s' "$xcode_version_output" | tr '\n' ' '
   echo
 } > "$metadata_file"
 
 [[ -n "$expected_sha" ]] || fail "EXPECTED_SHA is required"
-[[ "$actual_sha" == "$expected_sha" ]] || fail "checked out HEAD $actual_sha does not match expected PR head $expected_sha"
+[[ "$actual_sha" == "$expected_sha" ]] || fail "checked out HEAD $actual_sha does not match expected immutable SHA $expected_sha"
 [[ "${RUNNER_OS:-macOS}" == "macOS" ]] || fail "gate requires a macOS runner"
 [[ "$(uname -s)" == "Darwin" ]] || fail "gate requires Darwin"
 command -v jq >/dev/null || fail "jq is required to validate xcresult evidence"
 command -v xcodebuild >/dev/null || fail "xcodebuild is required"
 command -v xcrun >/dev/null || fail "xcrun is required"
 [[ -x /usr/bin/perl ]] || fail "/usr/bin/perl is required for bounded Xcode phases"
+[[ "$xcode_version" == "$WPR2_XCODE_VERSION" && "$xcode_build" == "$WPR2_XCODE_BUILD" ]] || \
+  fail "selected Xcode $xcode_version ($xcode_build) does not match the declared $WPR2_XCODE_VERSION ($WPR2_XCODE_BUILD) toolchain"
+xcodebuild -list -workspace "$workspace/$WPR2_WORKSPACE" > "$artifact_dir/workspace-schemes.txt" 2>&1 || \
+  fail "cannot list schemes from tracked workspace $WPR2_WORKSPACE"
+grep -Fq "$WPR2_UNIT_SCHEME" "$artifact_dir/workspace-schemes.txt" || fail "missing required scheme $WPR2_UNIT_SCHEME"
+grep -Fq "$WPR2_UI_SMOKE_SCHEME" "$artifact_dir/workspace-schemes.txt" || fail "missing required scheme $WPR2_UI_SMOKE_SCHEME"
 
 available_kib="$(df -Pk "$runner_temp" | awk 'NR == 2 {print $4}')"
 [[ "$available_kib" =~ ^[0-9]+$ ]] || fail "could not determine free disk space for $runner_temp"
@@ -474,7 +499,7 @@ run_xcode_phase() {
   shift 5
 
   /usr/bin/perl -e 'alarm shift; exec @ARGV' "$phase_timeout_seconds" xcodebuild test \
-    -workspace "$workspace/Weird Parts.xcworkspace" \
+    -workspace "$workspace/$WPR2_WORKSPACE" \
     -scheme "$scheme" \
     -destination "platform=iOS Simulator,id=$simulator_id" \
     -derivedDataPath "$derived_data" \
@@ -497,13 +522,13 @@ ui_log="$artifact_dir/ui-smokes-xcodebuild.log"
 # UI catalog. The second phase executes the repo's bounded deterministic UI
 # smoke plan, including its viewport harness, on this same device class.
 run_xcode_phase \
-  "unit-regression" "WiredPart-iOS" "$unit_result" "$unit_log" "$xcode_phase_timeout_seconds" \
+  "unit-regression" "$WPR2_UNIT_SCHEME" "$unit_result" "$unit_log" "$xcode_phase_timeout_seconds" \
   -skip-testing:"Weird PartsUITests"
 retry_phase_if_bundle_corrupt \
-  "unit-regression" "WiredPart-iOS" "$unit_result" "$unit_log" "$xcode_phase_timeout_seconds" \
+  "unit-regression" "$WPR2_UNIT_SCHEME" "$unit_result" "$unit_log" "$xcode_phase_timeout_seconds" \
   -skip-testing:"Weird PartsUITests"
 run_xcode_phase \
-  "ui-smokes" "WiredPart-iOS-Stage9-Smokes" "$ui_result" "$ui_log" "$ui_smoke_phase_timeout_seconds"
+  "ui-smokes" "$WPR2_UI_SMOKE_SCHEME" "$ui_result" "$ui_log" "$ui_smoke_phase_timeout_seconds"
 
 ui_smoke_bootstrap_retry=0
 [[ -f "$artifact_dir/ui-smokes-xcode-status.txt" ]] || fail "missing Xcode status for ui-smokes"
@@ -512,7 +537,7 @@ if should_retry_ui_smoke_bootstrap_failure "$(<"$artifact_dir/ui-smokes-xcode-st
   preserve_failed_ui_smoke_attempt
   ui_smoke_bootstrap_retry=1
   run_xcode_phase \
-    "ui-smokes" "WiredPart-iOS-Stage9-Smokes" "$ui_result" "$ui_log" "$ui_smoke_phase_timeout_seconds"
+    "ui-smokes" "$WPR2_UI_SMOKE_SCHEME" "$ui_result" "$ui_log" "$ui_smoke_phase_timeout_seconds"
 fi
 echo "ui_smoke_bootstrap_retry=$ui_smoke_bootstrap_retry" >> "$metadata_file"
 retry_phase_if_bundle_corrupt \

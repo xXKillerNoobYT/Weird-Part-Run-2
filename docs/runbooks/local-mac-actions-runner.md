@@ -58,6 +58,12 @@ Missing, queued, cancelled, stale-head, skipped-test, zero-test, disk-capacity, 
 
 Ordinary PR gates never archive or upload to App Store Connect. TestFlight upload is a separate post-merge `main` operation and requires an authenticated App Store Connect session.
 
+## Exact-main beta gate (Xcode 26.3)
+
+Tracking: GitHub #1480 / Paperclip WEI-6390 and WEI-6709. The separate post-merge workflow is `.github/workflows/ios-main-beta-gate.yml`; its full operational contract is `docs/runbooks/wpr2-main-beta-gate.md`.
+
+Before a main-gate runner touches `simctl` or Xcode build/test work, it must provide the exact public descriptor toolchain: Xcode 26.3 build 17C529 at `/Applications/Xcode_26.3.app/Contents/Developer`. A local Xcode 26.6 installation is deliberately red/ineligible for this lane; do not use it as a fallback, run `xcode-select --switch`, create a symlink, or update project-format metadata. Provision the named bundle through bounded runner maintenance and validate it with a same-SHA canary before relying on main eligibility.
+
 ### Disk-capacity response
 
 The preflight self-heals before failing (added via #1536). When free space on the runner temp volume is below 60 GiB, the gate script deletes top-level `~/Library/Developer/Xcode/DerivedData` entries not modified in the last 60 minutes (cutoff tunable via `DERIVED_DATA_STALE_MINUTES`), then re-checks free space and fails only if still below budget. Newer entries are never deleted because a concurrent build on the other Mac runner may still own them. Each deleted entry is logged to the lane's `gate.log`, and `metadata.txt` records `derived_data_cleanup_freed_gib` and `post_cleanup_free_gib`.
