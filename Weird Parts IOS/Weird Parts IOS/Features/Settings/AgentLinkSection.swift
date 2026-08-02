@@ -95,7 +95,14 @@ struct AgentLinkSection: View {
         ) {
             Button("Revoke Access", role: .destructive) {
                 if let target = revokeTarget {
-                    try? appCore.agentLinkService?.revoke(linkId: target.id)
+                    do {
+                        try appCore.agentLinkService?.revoke(linkId: target.id)
+                        loadError = nil
+                    } catch {
+                        // A silent revoke failure would leave the owner
+                        // believing access was cut (Copilot review 2026-08-02).
+                        loadError = userFriendlyError(error, context: "revoke agent link")
+                    }
                     reload()
                 }
                 revokeTarget = nil
@@ -175,12 +182,15 @@ private struct AgentLinkCreateSheet: View {
             Picker("Access", selection: $scope) {
                 Text("Read-only").tag(AgentLinkService.Scope.read)
                 Text("Read + job notes").tag(AgentLinkService.Scope.readNotes)
+                    .selectionDisabled(appCore.currentUser?.id == nil)
             }
         }
         Section {
             EmptyView()
         } footer: {
-            Text("Read-only allows lookups (parts, stock, jobs, orders, reports). Read + job notes additionally lets the agent append notes to job notebooks, attributed to you.")
+            Text(appCore.currentUser?.id == nil
+                 ? "Read-only allows lookups (parts, stock, jobs, orders, reports). Sign in to create a link that can append job notes — notes must be attributed to a real user."
+                 : "Read-only allows lookups (parts, stock, jobs, orders, reports). Read + job notes additionally lets the agent append notes to job notebooks, attributed to you.")
         }
         if let createError {
             Section {

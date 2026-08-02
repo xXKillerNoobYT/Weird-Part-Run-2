@@ -2130,9 +2130,14 @@ extension AppCore {
             do {
                 _ = try await server.start()
             } catch {
-                // Port taken or bind failure — surface via the toggle's own
-                // state on next visit; never crash the app for the link.
-                await MainActor.run { self.agentLinkServer = nil }
+                // Port taken or bind failure: release the instance AND turn
+                // the persisted toggle off, so Settings shows the truth
+                // instead of an "on" switch with no server behind it
+                // (Copilot review 2026-08-02). Never crash the app for it.
+                await MainActor.run {
+                    self.agentLinkServer = nil
+                    UserDefaults.standard.set(false, forKey: "agentLinkEnabled")
+                }
             }
         }
     }

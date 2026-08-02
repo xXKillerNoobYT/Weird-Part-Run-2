@@ -27,14 +27,23 @@ public final class AgentLinkService: Sendable {
         /// Reads plus the single v1 write: append a job note.
         case readNotes = "read_notes"
 
+        /// The seven read-only tools every scope may call.
+        static let readTools: Set<String> = [
+            "parts_search", "stock_levels", "jobs_list", "job_detail",
+            "orders_status", "reports_summary", "system_health",
+        ]
+        /// Write tools per scope. Explicit ALLOWLISTS (Copilot review,
+        /// 2026-08-02): a future tool added to the registry is callable by
+        /// NO scope until it is deliberately listed here — new tools are
+        /// safe-by-default instead of read-callable-by-accident.
+        static let writeTools: [Scope: Set<String>] = [
+            .read: [],
+            .readNotes: ["job_note_append"],
+        ]
+
         /// Whether this scope may invoke the named tool.
         public func allows(tool: String) -> Bool {
-            switch self {
-            case .read:
-                return tool != "job_note_append"
-            case .readNotes:
-                return true
-            }
+            Self.readTools.contains(tool) || (Self.writeTools[self] ?? []).contains(tool)
         }
     }
 
