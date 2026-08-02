@@ -669,8 +669,51 @@ final class AppCore: ObservableObject {
     ///
     /// User PIN changes do not re-key the app database. Startup must open the DB
     /// before any user can enter a PIN, so the persistent DB key remains device-bound.
+    nonisolated struct BootstrapKeychainAccess: Sendable {
+        let read: @Sendable () -> (status: OSStatus, data: Data?)
+        let add: @Sendable (Data) -> OSStatus
+        let delete: @Sendable () -> OSStatus
+
+        static let live = BootstrapKeychainAccess(
+            read: {
+                let query: [CFString: Any] = [
+                    kSecClass: kSecClassGenericPassword,
+                    kSecAttrService: "com.wiredpart.dbcipher.bootstrap-key",
+                    kSecAttrAccount: "device-bootstrap-key",
+                    kSecReturnData: true,
+                    kSecMatchLimit: kSecMatchLimitOne
+                ]
+                var result: AnyObject?
+                let status = SecItemCopyMatching(query as CFDictionary, &result)
+                return (status, result as? Data)
+            },
+            add: { keyData in
+                var query: [CFString: Any] = [
+                    kSecClass: kSecClassGenericPassword,
+                    kSecAttrService: "com.wiredpart.dbcipher.bootstrap-key",
+                    kSecAttrAccount: "device-bootstrap-key",
+                    kSecValueData: keyData
+                ]
+                #if !targetEnvironment(macCatalyst)
+                query[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+                #endif
+                return SecItemAdd(query as CFDictionary, nil)
+            },
+            delete: {
+                let query: [CFString: Any] = [
+                    kSecClass: kSecClassGenericPassword,
+                    kSecAttrService: "com.wiredpart.dbcipher.bootstrap-key",
+                    kSecAttrAccount: "device-bootstrap-key"
+                ]
+                return SecItemDelete(query as CFDictionary)
+            }
+        )
+    }
+
     nonisolated static func deviceBootstrapKeyHex(
-        processArguments: [String] = ProcessInfo.processInfo.arguments
+        processArguments: [String] = ProcessInfo.processInfo.arguments,
+        keychain: BootstrapKeychainAccess = .live,
+        fallbackDirectory: URL? = nil
     ) throws -> String {
         let uiTestingLaunchFlag = "-UITesting"
         let uiTestingDatabaseKeyHex = "8f1df32f4be04d5fcde1e8e6ddf9187f53a4b68370d5aafc56f0d43f2e9732a1"
@@ -678,33 +721,20 @@ final class AppCore: ObservableObject {
             return uiTestingDatabaseKeyHex
         }
 
-        let service = "com.wiredpart.dbcipher.bootstrap-key"
-        let account = "device-bootstrap-key"
-
-        // Try to read existing key.
-        let readQuery: [CFString: Any] = [
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: service,
-            kSecAttrAccount: account,
-            kSecReturnData: true,
-            kSecMatchLimit: kSecMatchLimitOne
-        ]
-        var result: AnyObject?
-        let readStatus = SecItemCopyMatching(readQuery as CFDictionary, &result)
-        if readStatus == errSecSuccess, let data = result as? Data, data.count == 32 {
+        let readResult = keychain.read()
+        if readResult.status == errSecSuccess, let data = readResult.data, data.count == 32 {
             return data.map { String(format: "%02x", $0) }.joined()
         }
-        if readStatus == errSecSuccess {
-            // Self-heal legacy/corrupt keychain entries so startup can recover.
-            let deleteQuery: [CFString: Any] = [
-                kSecClass: kSecClassGenericPassword,
-                kSecAttrService: service,
-                kSecAttrAccount: account
-            ]
-            _ = SecItemDelete(deleteQuery as CFDictionary)
+        if shouldUseLocalBootstrapKeyFallback(for: readResult.status) {
+            return try localFallbackBootstrapKeyHex(in: fallbackDirectory)
+        }
+        if readResult.status == errSecSuccess {
+            // Self-heal legacy/corrupt entries before minting a replacement key.
+            _ = keychain.delete()
+        } else if readResult.status != errSecItemNotFound {
+            throw CipherKeyError.keychainAccessFailed(readResult.status)
         }
 
-        // Generate 32 fresh random bytes.
         var keyBytes = [UInt8](repeating: 0, count: 32)
         let rc = SecRandomCopyBytes(kSecRandomDefault, 32, &keyBytes)
         guard rc == errSecSuccess else {
@@ -712,70 +742,53 @@ final class AppCore: ObservableObject {
         }
         let keyData = Data(keyBytes)
 
-        var addQuery: [CFString: Any] = [
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: service,
-            kSecAttrAccount: account,
-            kSecValueData: keyData
-        ]
-        #if !targetEnvironment(macCatalyst)
-        // kSecAttrAccessible is an iOS-style accessibility class. On Catalyst
-        // this can fail with errSecParam on first launch, which blocks DB setup.
-        addQuery[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        #endif
-        let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+        let addStatus = keychain.add(keyData)
+        if addStatus == errSecSuccess {
+            return keyData.map { String(format: "%02x", $0) }.joined()
+        }
+        if shouldUseLocalBootstrapKeyFallback(for: addStatus) {
+            return try localFallbackBootstrapKeyHex(in: fallbackDirectory)
+        }
         if addStatus == errSecDuplicateItem {
-            // Another thread or launch already stored a bootstrap key — read and return it
-            // so we don't encrypt the DB with a key that won't be retrievable next launch.
-            var existing: AnyObject?
-            let rereadStatus = SecItemCopyMatching(readQuery as CFDictionary, &existing)
-            if rereadStatus == errSecSuccess, let data = existing as? Data, data.count == 32 {
+            let rereadResult = keychain.read()
+            if rereadResult.status == errSecSuccess, let data = rereadResult.data, data.count == 32 {
                 return data.map { String(format: "%02x", $0) }.joined()
             }
-            let deleteQuery: [CFString: Any] = [
-                kSecClass: kSecClassGenericPassword,
-                kSecAttrService: service,
-                kSecAttrAccount: account
-            ]
-            _ = SecItemDelete(deleteQuery as CFDictionary)
-            let retryAddStatus = SecItemAdd(addQuery as CFDictionary, nil)
+            // Preserve the existing recovery path for a stale duplicate entry.
+            _ = keychain.delete()
+            let retryAddStatus = keychain.add(keyData)
             if retryAddStatus == errSecSuccess {
                 return keyData.map { String(format: "%02x", $0) }.joined()
             }
             if shouldUseLocalBootstrapKeyFallback(for: retryAddStatus) {
-                return try localFallbackBootstrapKeyHex()
+                return try localFallbackBootstrapKeyHex(in: fallbackDirectory)
             }
             throw CipherKeyError.keychainAccessFailed(retryAddStatus)
-        } else if shouldUseLocalBootstrapKeyFallback(for: addStatus) {
-            return try localFallbackBootstrapKeyHex()
-        } else if addStatus != errSecSuccess {
-            throw CipherKeyError.keychainAccessFailed(addStatus)
         }
-        return keyData.map { String(format: "%02x", $0) }.joined()
+        throw CipherKeyError.keychainAccessFailed(addStatus)
     }
 
     nonisolated static func shouldUseLocalBootstrapKeyFallback(for status: OSStatus) -> Bool {
-        guard status == errSecMissingEntitlement else { return false }
-        #if targetEnvironment(simulator) || targetEnvironment(macCatalyst)
-        return true
-        #else
-        return false
-        #endif
+        status == errSecMissingEntitlement || status == errSecNotAvailable
     }
 
-    #if targetEnvironment(simulator) || targetEnvironment(macCatalyst)
-    /// Local-development fallback when Keychain is unavailable (e.g. unsigned simulator
-    /// launch or missing Catalyst entitlement).
-    /// Stores a random device key inside the app container to keep DB encryption stable
-    /// across launches on the same machine/account.
-    nonisolated private static func localFallbackBootstrapKeyHex() throws -> String {
-        guard let supportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+    nonisolated static func localFallbackBootstrapKeyURL(in directory: URL? = nil) throws -> URL {
+        let parent: URL
+        if let directory {
+            parent = directory
+        } else if let supportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            parent = supportURL.appendingPathComponent("WiredPart", isDirectory: true)
+        } else {
             throw AppCoreError.noDocumentsDirectory
         }
-        let dir = supportURL.appendingPathComponent("WiredPart", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let keyURL = dir.appendingPathComponent("local-bootstrap-key.bin")
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        return parent.appendingPathComponent("local-bootstrap-key.bin")
+    }
 
+    /// Persistent bootstrap-key fallback for approved keychain-unavailable states.
+    /// The key stays in the app container and is excluded from device/iCloud backups.
+    nonisolated static func localFallbackBootstrapKeyHex(in directory: URL? = nil) throws -> String {
+        let keyURL = try localFallbackBootstrapKeyURL(in: directory)
         if let data = try? Data(contentsOf: keyURL), data.count == 32 {
             return data.map { String(format: "%02x", $0) }.joined()
         }
@@ -787,13 +800,18 @@ final class AppCore: ObservableObject {
         }
         let keyData = Data(keyBytes)
         try keyData.write(to: keyURL, options: .atomic)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        var mutableURL = keyURL
+        try mutableURL.setResourceValues(values)
         return keyData.map { String(format: "%02x", $0) }.joined()
     }
-    #else
-    nonisolated private static func localFallbackBootstrapKeyHex() throws -> String {
-        throw CipherKeyError.keychainAccessFailed(errSecMissingEntitlement)
+
+    nonisolated static func deleteLocalFallbackBootstrapKey(in directory: URL? = nil) throws {
+        let keyURL = try localFallbackBootstrapKeyURL(in: directory)
+        guard FileManager.default.fileExists(atPath: keyURL.path) else { return }
+        try FileManager.default.removeItem(at: keyURL)
     }
-    #endif
 
     // MARK: - PIN Change
 

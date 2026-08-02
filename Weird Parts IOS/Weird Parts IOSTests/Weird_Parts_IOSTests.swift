@@ -514,13 +514,85 @@ struct Weird_Parts_IOSTests {
         #expect(keyHex.count == 64)
     }
 
-    @Test func simulatorMissingEntitlementCanUseLocalBootstrapKeyFallback() {
-        #if targetEnvironment(simulator) || targetEnvironment(macCatalyst)
+    @Test func bootstrapFallbackUsesOnlyApprovedKeychainStatuses() {
         #expect(AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecMissingEntitlement))
-        #else
-        #expect(!AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecMissingEntitlement))
-        #endif
+        #expect(AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecNotAvailable))
+        #expect(!AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecInteractionNotAllowed))
         #expect(!AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecAuthFailed))
+    }
+
+    @Test func bootstrapFallbackPersistsForApprovedReadFailureAndCleansUp() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BootstrapFallback-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let unavailableKeychain = AppCore.BootstrapKeychainAccess(
+            read: { (errSecMissingEntitlement, nil) },
+            add: { _ in
+                Issue.record("fallback must be used before a Keychain write")
+                return errSecParam
+            },
+            delete: { errSecSuccess }
+        )
+
+        let first = try AppCore.deviceBootstrapKeyHex(
+            processArguments: [],
+            keychain: unavailableKeychain,
+            fallbackDirectory: directory
+        )
+        let second = try AppCore.deviceBootstrapKeyHex(
+            processArguments: [],
+            keychain: unavailableKeychain,
+            fallbackDirectory: directory
+        )
+        let fallbackURL = try AppCore.localFallbackBootstrapKeyURL(in: directory)
+
+        #expect(first.count == 64)
+        #expect(first == second)
+        #expect(FileManager.default.fileExists(atPath: fallbackURL.path))
+        #expect(try fallbackURL.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
+
+        try AppCore.deleteLocalFallbackBootstrapKey(in: directory)
+        #expect(!FileManager.default.fileExists(atPath: fallbackURL.path))
+    }
+
+    @Test func bootstrapFallbackUsesNotAvailableButRejectsLockedKeychain() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BootstrapFallback-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let unavailableKeychain = AppCore.BootstrapKeychainAccess(
+            read: { (errSecNotAvailable, nil) },
+            add: { _ in
+                Issue.record("fallback must be used before a Keychain write")
+                return errSecParam
+            },
+            delete: { errSecSuccess }
+        )
+        let lockedKeychain = AppCore.BootstrapKeychainAccess(
+            read: { (errSecInteractionNotAllowed, nil) },
+            add: { _ in
+                Issue.record("locked keychain must not attempt a write")
+                return errSecParam
+            },
+            delete: { errSecSuccess }
+        )
+
+        _ = try AppCore.deviceBootstrapKeyHex(
+            processArguments: [],
+            keychain: unavailableKeychain,
+            fallbackDirectory: directory
+        )
+        do {
+            _ = try AppCore.deviceBootstrapKeyHex(
+                processArguments: [],
+                keychain: lockedKeychain,
+                fallbackDirectory: directory
+            )
+            Issue.record("locked keychain unexpectedly used fallback")
+        } catch let CipherKeyError.keychainAccessFailed(status) {
+            #expect(status == errSecInteractionNotAllowed)
+        }
+        let fallbackURL = try AppCore.localFallbackBootstrapKeyURL(in: directory)
+        #expect(FileManager.default.fileExists(atPath: fallbackURL.path))
     }
 
     @Test func debugCipherRecoveryOnlyMatchesDecryptNotADB() {
