@@ -600,7 +600,7 @@ public final class LanSyncServer: Sendable {
 
         // Accumulate data until we have the full HTTP request (headers + body).
         // URLSession may split headers and body across TCP packets.
-        readFullHTTPRequest(connection: connection, accumulated: Data()) { data in
+        Self.readFullHTTPRequest(connection: connection, accumulated: Data()) { data in
             guard let data else {
                 connection.cancel()
                 return
@@ -628,12 +628,14 @@ public final class LanSyncServer: Sendable {
     /// Reads from the connection until we have the complete HTTP request
     /// (headers + full body per Content-Length). Calls completion with the
     /// accumulated data, or nil on error.
-    private func readFullHTTPRequest(
+    // Static + internal so AgentLinkServer shares the same accumulation logic
+    // instead of duplicating it (only self-use was the recursive call).
+    static func readFullHTTPRequest(
         connection: NWConnection,
         accumulated: Data,
         completion: @Sendable @escaping (Data?) -> Void
     ) {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 1_048_576) { [weak self] data, _, isComplete, error in
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 1_048_576) { data, _, isComplete, error in
             guard let data, error == nil else {
                 completion(accumulated.isEmpty ? nil : accumulated)
                 return
@@ -673,7 +675,7 @@ public final class LanSyncServer: Sendable {
                 // Connection closed — use what we have
                 completion(buffer)
             } else {
-                self?.readFullHTTPRequest(connection: connection, accumulated: buffer, completion: completion)
+                Self.readFullHTTPRequest(connection: connection, accumulated: buffer, completion: completion)
             }
         }
     }
@@ -789,13 +791,16 @@ public final class LanSyncServer: Sendable {
     }
 
     /// Build a raw HTTP/1.1 response from status code and JSON body.
-    private static func buildHTTPResponse(status: Int, body: Data) -> Data {
+    // Internal so AgentLinkServer reuses the same response framing.
+    static func buildHTTPResponse(status: Int, body: Data) -> Data {
         let statusText: String = switch status {
         case 200: "OK"
+        case 202: "Accepted"
         case 400: "Bad Request"
         case 401: "Unauthorized"
         case 403: "Forbidden"
         case 404: "Not Found"
+        case 405: "Method Not Allowed"
         case 500: "Internal Server Error"
         default: "Unknown"
         }

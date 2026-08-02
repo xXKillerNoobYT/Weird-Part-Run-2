@@ -154,6 +154,7 @@ extension AppDatabase {
         registerMigration114AIConversationRecency(&migrator)
         registerMigration115SyncReplayGuard(&migrator)
         registerMigration116TeamMutationAttribution(&migrator)
+        registerMigration117AgentLinks(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6175,5 +6176,32 @@ private func registerMigration116TeamMutationAttribution(_ migrator: inout Datab
         try addColumnIfMissing(db, table: "employee_teams", column: "deleted_by", type: .integer)
         try addColumnIfMissing(db, table: "employee_team_members", column: "added_by", type: .integer)
         try addColumnIfMissing(db, table: "employee_team_members", column: "removed_by", type: .integer)
+    }
+}
+
+private func registerMigration117AgentLinks(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("117_agent_links") { db in
+        // Agent Link (MCP) — plan docs/plans/devices-add-mcp-agent-link.md,
+        // owner decisions 2026-08-01. Tokens are stored as SHA-256 hex only
+        // (never the raw token); `agent_link_calls` is an append-only audit
+        // trail and is intentionally exempt from the soft-delete pattern.
+        try db.create(table: "agent_links", ifNotExists: true) { t in
+            t.autoIncrementedPrimaryKey("id")
+            t.column("name", .text).notNull()
+            t.column("scope", .text).notNull()
+            t.column("token_hash", .text).notNull().unique()
+            t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+            t.column("last_seen_at", .text)
+            t.column("call_count", .integer).notNull().defaults(to: 0)
+            t.column("revoked_at", .text)
+        }
+        try db.create(table: "agent_link_calls", ifNotExists: true) { t in
+            t.autoIncrementedPrimaryKey("id")
+            t.column("link_id", .integer).notNull().indexed().references("agent_links")
+            t.column("tool", .text).notNull()
+            t.column("argument_digest", .text)
+            t.column("status", .text).notNull()
+            t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+        }
     }
 }
