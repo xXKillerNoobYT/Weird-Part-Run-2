@@ -95,6 +95,7 @@ struct AgentLinkServiceTests {
 struct AgentLinkServerTests {
 
     private struct Harness {
+        let db: AppDatabase
         let service: AgentLinkService
         let server: AgentLinkServer
         let port: UInt16
@@ -102,18 +103,21 @@ struct AgentLinkServerTests {
         let linkId: Int64
     }
 
-    private func startServer(scope: AgentLinkService.Scope = .read) async throws -> Harness {
+    private func startServer(
+        scope: AgentLinkService.Scope = .read,
+        registry: AgentLinkToolRegistry? = nil
+    ) async throws -> Harness {
         let db = try AppDatabase.openInMemoryDatabase()
         let service = AgentLinkService(db: db)
         let (link, token) = try service.createLink(name: "test-agent", scope: scope)
         let server = AgentLinkServer(
             service: service,
-            registry: .v1(db: db, appVersion: "test"),
+            registry: registry ?? .v1(db: db, appVersion: "test"),
             port: 0,
             appVersion: "test"
         )
         let port = try await server.start()
-        return Harness(service: service, server: server, port: port, token: token, linkId: link.id)
+        return Harness(db: db, service: service, server: server, port: port, token: token, linkId: link.id)
     }
 
     private func post(
@@ -179,6 +183,20 @@ struct AgentLinkServerTests {
         await harness.server.stop()
     }
 
+    @Test("Revoked token returns 503 when its required audit write fails")
+    func revokedTokenAuditFailureIsExplicit() async throws {
+        let harness = try await startServer()
+        try harness.service.revoke(linkId: harness.linkId)
+        try await harness.db.writer.write { dbc in
+            try dbc.execute(sql: "DROP TABLE agent_link_calls")
+        }
+
+        let (status, json) = try await post(harness, token: harness.token, body: rpc("tools/list"))
+        #expect(status == 503)
+        #expect(json?["error"] as? String == "audit unavailable")
+        await harness.server.stop()
+    }
+
     @Test("tools/list shows system_health and tools/call runs it with audit")
     func systemHealthTool() async throws {
         let harness = try await startServer()
@@ -241,19 +259,36 @@ struct AgentLinkServerTests {
         await harness.server.stop()
     }
 
-    @Test("Read scope cannot see or call the future write tool")
+    @Test("Read scope hides and rejects an injected forbidden registry write")
     func scopeFilteringOnList() async throws {
-        let harness = try await startServer(scope: .read)
-        // v1 slice ships no write tool yet; assert the filter path by calling
-        // the gate directly AND asserting the listed set matches scope.
-        let (_, listJSON) = try await post(harness, token: harness.token, body: rpc("tools/list"))
+        let forbiddenWrite = AgentLinkTool(
+            name: "wishlist_create",
+            description: "test-only forbidden write",
+            inputSchemaJSON: #"{"type":"object"}"#
+        ) { _ in
+            "must not execute"
+        }
+        let harness = try await startServer(
+            scope: .read,
+            registry: AgentLinkToolRegistry(tools: [forbiddenWrite])
+        )
+
+        let (listStatus, listJSON) = try await post(harness, token: harness.token, body: rpc("tools/list"))
+        #expect(listStatus == 200)
         let tools = try #require(
             (listJSON?["result"] as? [String: Any])?["tools"] as? [[String: Any]]
         )
-        for tool in tools {
-            let name = try #require(tool["name"] as? String)
-            #expect(AgentLinkService.Scope.read.allows(tool: name))
-        }
+        #expect(!tools.contains { $0["name"] as? String == "wishlist_create" })
+
+        let (callStatus, callJSON) = try await post(
+            harness,
+            token: harness.token,
+            body: rpc("tools/call", params: ["name": "wishlist_create"])
+        )
+        #expect(callStatus == 200)
+        let error = try #require(callJSON?["error"] as? [String: Any])
+        #expect(error["code"] as? Int == -32602)
+        #expect(error["message"] as? String == "tool not available for this link")
         await harness.server.stop()
     }
 }

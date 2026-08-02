@@ -166,10 +166,16 @@ public final class AgentLinkServer: Sendable {
             return (401, jsonError("unknown token"))
         }
         guard lookup.active else {
-            // Revoked tokens are auditable — the link is known.
-            try? service.recordCall(
-                linkId: lookup.link.id, tool: "-", argumentDigest: nil, status: "unauthorized"
-            )
+            // Revoked tokens are auditable — the link is known. Do not claim a
+            // normally-audited 401 if persistence is unavailable.
+            do {
+                try service.recordCall(
+                    linkId: lookup.link.id, tool: "-", argumentDigest: nil, status: "unauthorized"
+                )
+            } catch {
+                logger.error("Agent Link revoked-token audit failed: \(error.localizedDescription)")
+                return (503, jsonError("audit unavailable"))
+            }
             return (401, jsonError("token revoked"))
         }
 
