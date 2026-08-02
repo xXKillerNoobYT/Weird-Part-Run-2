@@ -45,10 +45,12 @@ how many 20A breakers are in stock" works locally and offline.
   shared HTTP primitives where they do not carry LAN behavior. It runs only
   in the Mac Catalyst build, while enabled in Settings and with at least one
   link; iPhone and iPad do not expose this service in v1.
-- **Auth:** per-agent bearer token minted at link time via the existing
-  pairing-code UX (`SyncCrypto.normalizedPairingCode` family). Token stored
-  hashed (FNV-1a is NOT acceptable for secrets — use SHA-256 here; the
-  `String.hashValue` ban applies doubly). Every request must bear a valid
+- **Auth:** per-agent bearer token minted at link time from at least 128 bits
+  of CSPRNG-generated opaque bytes (256 bits preferred), base64url-encoded for
+  the config snippet. This is deliberately separate from the 8-character
+  human pairing-code format in `SyncCrypto`: never derive, normalize, or reuse
+  a pairing code as a bearer credential. Store only a SHA-256 token digest and
+  compare candidate digests in constant time. Every request must bear a valid
   token; unlinked = 401; revoked immediately.
 - **Audit:** `agent_link_calls` table (soft-delete exempt, append-only):
   agent id, tool, argument digest, timestamp, result status. Surfaced on the
@@ -94,7 +96,8 @@ New Mac-Catalyst-only section **Linked Agents**:
 
 ## Security posture (electricians-first = owner's data stays local)
 
-Loopback-only; Bearer per agent; hashed at rest; revocation immediate;
+Loopback-only; CSPRNG bearer per agent; SHA-256 digest at rest; constant-time
+verification; revocation immediate;
 approved append-only job notes; audit every call; rate-limit per token; server
 off unless explicitly enabled; no cloud relay ever. Threat model note: another
 local process holding the token has the granted scope, so the config snippet
@@ -109,8 +112,10 @@ is a secret and UX must say so ("treat this like a key").
 4. Server rejects every non-loopback interface; it is unreachable from other
    LAN hosts.
 5. All calls appear in the per-agent audit trail.
-6. Unit tests for token mint/verify/revoke + tool responses; UI smoke for the
-   link sheet. Red-proof each guard (STEP 5.2 rule).
+6. Unit tests prove a CSPRNG token has at least 128 bits of entropy, only its
+   SHA-256 digest is stored, verification is constant-time, and revocation
+   fails closed; also cover tool responses and the link-sheet UI smoke.
+   Red-proof each guard (STEP 5.2 rule).
 
 ## Owner decisions — ANSWERED 2026-08-01 (chat)
 
@@ -121,9 +126,8 @@ is a secret and UX must say so ("treat this like a key").
 3. **Which device runs it** — **Macs only**: *"Mac's Only this is meant to
    tie in with Claude or GPT on the desktop app."* The consumer is an AI
    desktop app (Claude Desktop / ChatGPT desktop) on the same Mac, so the
-   server **binds to 127.0.0.1 only** — same-machine access, not LAN. This
-   supersedes the LAN-bind + Bonjour design above for v1: no Bonjour advert,
-   no `NSBonjourServices` change, no LAN exposure at all. The Devices-page
+   server **binds to 127.0.0.1 only** — same-machine access, not LAN. v1 has
+   no Bonjour advert, no `NSBonjourServices` change, and no LAN exposure. The Devices-page
    section renders only in the Mac (Catalyst) build. LAN serving, Bonjour
    discovery, and phone/iPad serving move to a future phase gated on a new
    owner decision.
@@ -135,12 +139,14 @@ is a secret and UX must say so ("treat this like a key").
 
 - Bind strictly to loopback (`127.0.0.1:8471`); refuse other interfaces.
   The config snippet uses `http://127.0.0.1:8471/mcp`.
-- Bearer tokens stay (they gate *other local processes*, not just LAN peers);
-  SHA-256-hashed at rest, one-time display, immediate revoke — unchanged.
+- Bearer tokens stay (they gate *other local processes*, not just LAN peers).
+  Mint an independent CSPRNG opaque token (minimum 128 bits; 256 bits
+  preferred), display it once, SHA-256-digest it at rest, compare digests in
+  constant time, and revoke immediately. Do not reuse the human pairing-code
+  family.
 - Audit trail unchanged.
 - Acceptance criterion 4 becomes: server unreachable from any non-loopback
   interface (and from other LAN hosts).
-- Acceptance criterion 6 (Bonjour) is dropped from v1.
 
 ## Cross-references
 
