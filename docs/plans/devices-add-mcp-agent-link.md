@@ -6,8 +6,8 @@
 > managing the system"* — i.e. "MCP tool app integration and setup linking
 > using the local system."
 >
-> Status: DESIGN — awaiting owner answers on the decision list below before
-> implementation prompts are written (design-first rule). References the
+> Status: DECIDED 2026-08-01 — owner answered the decision list (log below);
+> implementation is a go under the recorded decisions (design-first rule). References the
 > master plan (`docs/implementation-plan.md`) and the current native-iOS
 > architecture (CLAUDE.md). Related area: Devices page (Phase 16 Admin Hub
 > territory), Multipeer/LAN sync plumbing (`core/Sources/WiredPartCore/Sync/`).
@@ -111,13 +111,35 @@ say so ("treat this like a key").
 7. Unit tests for token mint/verify/revoke + tool responses; UI smoke for the
    link sheet. Red-proof each guard (STEP 5.2 rule).
 
-## Owner decisions needed before build
+## Owner decisions — ANSWERED 2026-08-01 (chat)
 
-1. **Scope default** — Read-only only in v1, or include "append job note"?
-2. **Port 8471** OK, or prefer another?
-3. **Which device runs it** — shop device only, or any device with the toggle?
-4. **Tool list v1** — the 7 above right? Anything missing you'd ask first?
-5. **Naming** — "Agent Link" vs "MCP Link" vs "AI Access" on the page?
+1. **Scope** — *Read + append job note.* v1 ships the 7 read tools plus ONE
+   write, `job_note_append` (append-only, attributed to the agent link, no
+   edit/delete of anything).
+2. **Port** — 8471 accepted (no objection raised).
+3. **Which device runs it** — **Macs only**: *"Mac's Only this is meant to
+   tie in with Claude or GPT on the desktop app."* The consumer is an AI
+   desktop app (Claude Desktop / ChatGPT desktop) on the same Mac, so the
+   server **binds to 127.0.0.1 only** — same-machine access, not LAN. This
+   supersedes the LAN-bind + Bonjour design above for v1: no Bonjour advert,
+   no `NSBonjourServices` change, no LAN exposure at all. The Devices-page
+   section renders only in the Mac (Catalyst) build. LAN serving, Bonjour
+   discovery, and phone/iPad serving move to a future phase gated on a new
+   owner decision.
+4. **Tool list v1** — the 7 read tools accepted, plus `job_note_append` per
+   decision 1.
+5. **Naming** — **"Agent Link (MCP)"** (owner: "Agent Link/MCP").
+
+### v1 architecture deltas from the decisions
+
+- Bind strictly to loopback (`127.0.0.1:8471`); refuse other interfaces.
+  The config snippet uses `http://127.0.0.1:8471/mcp`.
+- Bearer tokens stay (they gate *other local processes*, not just LAN peers);
+  SHA-256-hashed at rest, one-time display, immediate revoke — unchanged.
+- Audit trail unchanged.
+- Acceptance criterion 4 becomes: server unreachable from any non-loopback
+  interface (and from other LAN hosts).
+- Acceptance criterion 6 (Bonjour) is dropped from v1.
 
 ## Cross-references
 

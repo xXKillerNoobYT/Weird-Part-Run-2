@@ -12,6 +12,17 @@ Implementation target: `Weird Parts IOS/Weird Parts IOS/Features/Notebooks/Panel
 panel PRs (#1514 space-combination validation, #1515 PDF validation) land, on
 top of their final state.
 
+> **STATUS: COMPLETE 2026-08-01** — implemented in full across PRs
+> #1588–#1600 (13 slices: models/voltage systems/breaker catalog/phase math,
+> editor draft + circuit editor sheet, three-layout builder view + balance
+> card, print document + PDF renderer + print sheets, setup sheet, Notebooks
+> integration with persistence + legacy migration, Add-to-JPO action, iPad
+> reference panel). 44 core tests across PanelScheduleDesignTests,
+> PanelEditorDraftTests, DesignPanelStateTests, PanelPrintDocumentTests.
+> Deviations: none of substance; the legacy builder remains available beside
+> "New Builder (redesign)" until the owner confirms the new one in beta
+> (retirement is a follow-up decision, per systems-shrink).
+
 ## 1. Screen structure (phone)
 
 Header: **panel name** (large, tappable → Panel setup) + `tune` icon; meta line
