@@ -555,6 +555,27 @@ struct Weird_Parts_IOSTests {
         #expect(!FileManager.default.fileExists(atPath: fallbackURL.path))
     }
 
+    @Test func bootstrapFallbackExistingKeyRepairsBackupExclusion() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BootstrapFallback-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fallbackURL = try AppCore.localFallbackBootstrapKeyURL(in: directory)
+        let existingKey = Data(repeating: 0xa5, count: 32)
+        try existingKey.write(to: fallbackURL, options: .atomic)
+
+        var unexcludedValues = URLResourceValues()
+        unexcludedValues.isExcludedFromBackup = false
+        var mutableURL = fallbackURL
+        try mutableURL.setResourceValues(unexcludedValues)
+
+        let keyHex = try AppCore.localFallbackBootstrapKeyHex(in: directory)
+
+        #expect(keyHex == String(repeating: "a5", count: 32))
+        #expect(
+            try fallbackURL.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true
+        )
+    }
+
     @Test func bootstrapFallbackUsesNotAvailableButRejectsLockedKeychain() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("BootstrapFallback-\(UUID().uuidString)", isDirectory: true)

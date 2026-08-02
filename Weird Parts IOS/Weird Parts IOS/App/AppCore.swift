@@ -790,6 +790,7 @@ final class AppCore: ObservableObject {
     nonisolated static func localFallbackBootstrapKeyHex(in directory: URL? = nil) throws -> String {
         let keyURL = try localFallbackBootstrapKeyURL(in: directory)
         if let data = try? Data(contentsOf: keyURL), data.count == 32 {
+            try excludeLocalFallbackBootstrapKeyFromBackup(at: keyURL)
             return data.map { String(format: "%02x", $0) }.joined()
         }
 
@@ -800,11 +801,18 @@ final class AppCore: ObservableObject {
         }
         let keyData = Data(keyBytes)
         try keyData.write(to: keyURL, options: .atomic)
+        try excludeLocalFallbackBootstrapKeyFromBackup(at: keyURL)
+        return keyData.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Applies the fallback key's backup-exclusion requirement every time the
+    /// persisted key is used. A metadata-write failure is intentionally surfaced:
+    /// returning an unprotected persistent database key would weaken the fallback.
+    nonisolated private static func excludeLocalFallbackBootstrapKeyFromBackup(at keyURL: URL) throws {
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
         var mutableURL = keyURL
         try mutableURL.setResourceValues(values)
-        return keyData.map { String(format: "%02x", $0) }.joined()
     }
 
     nonisolated static func deleteLocalFallbackBootstrapKey(in directory: URL? = nil) throws {
