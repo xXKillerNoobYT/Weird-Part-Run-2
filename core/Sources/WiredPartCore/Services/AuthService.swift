@@ -1292,10 +1292,10 @@ public final class AuthService: Sendable {
         }
         // Keychain-less environments (iPad binary on Apple Silicon Macs —
         // errSecMissingEntitlement, the #1622 class): reuse the sandbox
-        // fallback key so sessions survive relaunch there too. A working
-        // keychain always wins the read above, so real iPhones/iPads never
-        // reach this.
-        if let fallback = AuthService.readFallbackSigningKey() {
+        // fallback key so sessions survive relaunch there too. Locked and
+        // other Keychain failures must not use the fallback.
+        if AuthService.canUseSigningKeyFallback(for: status),
+           let fallback = AuthService.readFallbackSigningKey() {
             return SymmetricKey(data: fallback)
         }
         // Generate a new 256-bit key and persist it.
@@ -1312,7 +1312,7 @@ public final class AuthService: Sendable {
         ]
         let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
         if addStatus != errSecSuccess && addStatus != errSecDuplicateItem {
-            if addStatus == errSecMissingEntitlement || addStatus == errSecNotAvailable {
+            if AuthService.canUseSigningKeyFallback(for: addStatus) {
                 // Keychain unusable in THIS environment (not merely locked) —
                 // persist to the sandbox fallback so Mac sessions survive
                 // relaunch (issue: re-login every launch on iPad-on-Mac).
@@ -1330,6 +1330,10 @@ public final class AuthService: Sendable {
     /// Sandbox fallback for the session signing key — used ONLY where the
     /// keychain reports missing-entitlement/not-available (same tradeoff and
     /// storage envelope as CipherKeyManager's salt fallback from #1622).
+    static func canUseSigningKeyFallback(for status: OSStatus) -> Bool {
+        status == errSecMissingEntitlement || status == errSecNotAvailable
+    }
+
     private static func fallbackSigningKeyURL() -> URL? {
         guard let supportURL = FileManager.default.urls(
             for: .applicationSupportDirectory, in: .userDomainMask
