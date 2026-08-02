@@ -36,7 +36,10 @@ jobs:
       SIMULATOR_BOOT_COMMAND_TIMEOUT_SECONDS: "120"
       SIMULATOR_BOOT_TIMEOUT_SECONDS: "600"
       SIMULATOR_BOOT_RECOVERY_TIMEOUT_SECONDS: "600"
-      XCODE_PHASE_TIMEOUT_SECONDS: "2400"
+      # The full regression phase exceeded 2400s on a successful iPhone run
+      # (WEI-6711). 3000s is the largest phase allowance that still fits the
+      # script's 7200s job budget after its required cleanup/upload reserve.
+      XCODE_PHASE_TIMEOUT_SECONDS: "3000"
       JOB_TIMEOUT_SECONDS: "7200"
       CLEANUP_UPLOAD_MARGIN_SECONDS: "1080"
 
