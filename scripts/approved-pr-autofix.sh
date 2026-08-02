@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# approved-pr-autofix.sh — Bounded Codex repair + merge path for approved same-repo PRs.
+# approved-pr-autofix.sh — Bounded Codex repair path for approved same-repo PRs.
 #
 # This script is intentionally conservative:
 # - same-repo PRs only (no forks / untrusted code)
