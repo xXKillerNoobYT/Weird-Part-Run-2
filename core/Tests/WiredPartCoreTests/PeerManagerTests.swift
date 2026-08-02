@@ -277,6 +277,39 @@ struct PeerManagerTests {
         #expect(secondPublicKey == keys.publicKey)
     }
 
+    @Test("Incremental push is deferred while a hosted snapshot is unacknowledged (#1417)")
+    func testIncrementalPushDeferredUntilSnapshotAcknowledged() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+        try await pm.startPeerSync(
+            deviceId: "host-001",
+            deviceName: "Host Device",
+            companyId: "company-abc",
+            allowAnyCompanyPeerDiscovery: true,
+            startMultipeer: false,
+            startSyncServer: false
+        )
+        // Simulate a freshly paired joiner: its snapshot token is outstanding
+        // (it is only consumed on durable apply acknowledgement).
+        await pm.testIssueHostedSnapshotToken("token-123", for: "joiner-9")
+
+        let result = await pm.syncWithPeer(DiscoveredPeer(
+            deviceId: "joiner-9",
+            deviceName: "New iPad",
+            companyId: "company-abc",
+            host: "127.0.0.1",
+            port: 12345
+        ))
+        // Deferred: not a success (nothing was pushed), with the honest
+        // waiting message — and NOT recorded as a completed sync.
+        #expect(result.success == false)
+        #expect(result.error == "Waiting for the new device's initial download to finish.")
+        let state = await pm.getState()
+        #expect(state.lastPeerSyncs["joiner-9"] == nil)
+
+        await pm.stopPeerSync()
+    }
+
     @Test("Discovery-only peer sync starts browsing without a sync server")
     func testDiscoveryOnlyPeerSyncState() async throws {
         let db = try freshDB()

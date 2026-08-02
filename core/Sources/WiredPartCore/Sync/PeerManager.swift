@@ -467,6 +467,23 @@ public actor PeerManager {
 
     /// Sync with a specific peer via LAN HTTP.
     public func syncWithPeer(_ peer: DiscoveredPeer) async -> PeerSyncResult {
+        // #1417 hardening part 2: a peer that paired but has NOT completed its
+        // initial snapshot (its hosted token is still outstanding — consumed
+        // only on durable apply acknowledgement) must not receive incremental
+        // change-log pushes. Loose records mean nothing on an empty database,
+        // and recording "Sent N records" made the owner's failed field join
+        // look like a success. Skip quietly; pushes resume the moment the
+        // snapshot acknowledges. lastPeerSyncs is deliberately NOT updated —
+        // neither a fake success nor a scary "failed" belongs in the UI.
+        if hostedSnapshotTokens[peer.deviceId] != nil {
+            logger.info("[PeerManager] Deferring incremental push to \(String(peer.deviceId.prefix(8)), privacy: .public) — initial snapshot not yet acknowledged")
+            return PeerSyncResult(
+                peerDeviceId: peer.deviceId,
+                peerName: peer.deviceName,
+                success: false,
+                error: "Waiting for the new device's initial download to finish."
+            )
+        }
         state.syncingWith = peer.deviceId
         notifyStateChanged()
 
