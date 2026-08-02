@@ -48,7 +48,7 @@ struct IOSDeviceManagementPage: View {
                 )
             }
 
-            Section("Start Over") {
+            Section {
                 NavigationLink {
                     IOSDatabaseResetPage()
                 } label: {
@@ -61,6 +61,8 @@ struct IOSDeviceManagementPage: View {
                     hint: "Wipes this device's data and starts setup over. Requires admin approval. The app stays installed.",
                     id: "settings-device-mgmt-reset-link"
                 )
+            } header: {
+                Text("Start Over")
             } footer: {
                 Text("Wipes this device's company data and returns to setup — no need to delete and reinstall the app. Admin PIN required.")
             }
