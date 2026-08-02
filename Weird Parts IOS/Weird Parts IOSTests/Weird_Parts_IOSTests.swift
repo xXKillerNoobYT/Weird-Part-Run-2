@@ -616,6 +616,37 @@ struct Weird_Parts_IOSTests {
         #expect(FileManager.default.fileExists(atPath: fallbackURL.path))
     }
 
+    @Test func bootstrapFallbackUsesApprovedStatusAfterDuplicateItemReread() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BootstrapFallback-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let probe = OperationProbe()
+        let racingKeychain = AppCore.BootstrapKeychainAccess(
+            read: {
+                if probe.ran {
+                    return (errSecNotAvailable, nil)
+                }
+                probe.ran = true
+                return (errSecItemNotFound, nil)
+            },
+            add: { _ in errSecDuplicateItem },
+            delete: {
+                Issue.record("approved reread failure must use fallback before deleting")
+                return errSecSuccess
+            }
+        )
+
+        let keyHex = try AppCore.deviceBootstrapKeyHex(
+            processArguments: [],
+            keychain: racingKeychain,
+            fallbackDirectory: directory
+        )
+        let fallbackURL = try AppCore.localFallbackBootstrapKeyURL(in: directory)
+
+        #expect(keyHex.count == 64)
+        #expect(FileManager.default.fileExists(atPath: fallbackURL.path))
+    }
+
     @Test func debugCipherRecoveryOnlyMatchesDecryptNotADB() {
         let sqlCipherError = NSError(
             domain: "GRDB.DatabaseError",

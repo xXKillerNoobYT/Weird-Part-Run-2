@@ -754,6 +754,9 @@ final class AppCore: ObservableObject {
             if rereadResult.status == errSecSuccess, let data = rereadResult.data, data.count == 32 {
                 return data.map { String(format: "%02x", $0) }.joined()
             }
+            if shouldUseLocalBootstrapKeyFallback(for: rereadResult.status) {
+                return try localFallbackBootstrapKeyHex(in: fallbackDirectory)
+            }
             // Preserve the existing recovery path for a stale duplicate entry.
             _ = keychain.delete()
             let retryAddStatus = keychain.add(keyData)
