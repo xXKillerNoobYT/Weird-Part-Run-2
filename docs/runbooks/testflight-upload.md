@@ -88,6 +88,17 @@ If CLI upload fails on App Store Connect authentication, fall back to the
 Organizer path: copy the archive into `~/Library/Developer/Xcode/Archives/` so
 it appears in Organizer, then upload from there.
 
+## What-to-Test notes — known-issues process (owner 2026-08-01)
+
+Every build's notes include the OPEN and AWAITING-CONFIRMATION sections of
+`docs/app-store/testflight-notes/KNOWN-ISSUES.md` — reported bugs stay listed
+with a fix-confidence rating until the reporting tester confirms the fix, then
+move to the confirmed log (never deleted). Behavior changes are announced in
+the notes the build they ship. Feedback is swept daily; tester follow-up
+questions may be sent from weirdnow@icloud.com (owner-authorized, report each
+send). Kevin's and external testers' reports are never interpreted by guess —
+ask the owner.
+
 ## Release channels (owner directive 2026-07-31)
 
 Two TestFlight channels with very different costs and cadences:
