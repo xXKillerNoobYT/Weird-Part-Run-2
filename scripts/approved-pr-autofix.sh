@@ -3,7 +3,8 @@
 #
 # This script is intentionally conservative:
 # - same-repo PRs only (no forks / untrusted code)
-# - approved review decision required before fixes or merge
+# - approval is required only for repair eligibility; merge remains exclusively
+#   owned by pr-merge-maintenance, which enforces exact-head Copilot evidence
 # - one PR and one action per run
 # - max attempts per PR head SHA, recorded via PR comments
 # - Codex only; no Copilot
@@ -312,9 +313,8 @@ while IFS= read -r pr; do
   fi
 
   if [[ "$merge_state" == "CLEAN" || "$merge_state" == "HAS_HOOKS" ]]; then
-    echo "==> approved PR #$number has no failing checks; queueing/performing squash merge"
-    run_or_log gh pr merge "$number" --repo "$REPO" --squash --delete-branch --auto
-    exit 0
+    echo "    handoff: clean repaired PR is mergeable; pr-merge-maintenance owns the serialized exact-head Copilot gate"
+    continue
   fi
 
   echo "    skip: unhandled merge state $merge_state"

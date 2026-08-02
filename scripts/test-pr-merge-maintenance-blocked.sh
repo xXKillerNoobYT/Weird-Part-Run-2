@@ -54,6 +54,13 @@ JSON
     printf '0\n'
     exit 0
   fi
+
+  if [[ " $* " == *" graphql "* ]]; then
+    cat <<'JSON'
+{"data":{"repository":{"pullRequest":{"latestReviews":{"nodes":[{"author":{"login":"copilot-pull-request-reviewer[bot]"},"state":"APPROVED","commit":{"oid":"clean-sha"}}]},"reviewThreads":{"totalCount":0,"nodes":[]}}}}}
+JSON
+    exit 0
+  fi
 fi
 
 printf 'unexpected gh invocation: %q ' "${command[@]}" >&2
@@ -77,8 +84,13 @@ assert_later_clean_pr_merged() {
   echo "$script_name BLOCKED regression passed"
 }
 
+: >"$GH_MOCK_LOG"
 autofix_output="$($ROOT/scripts/approved-pr-autofix.sh xXKillerNoobYT/Weird-Part-Run-2 2>&1)"
-assert_later_clean_pr_merged 'approved-pr-autofix' "$autofix_output"
+grep -Fq 'handoff: clean repaired PR is mergeable' <<<"$autofix_output"
+! grep -Fq 'merge 101' "$GH_MOCK_LOG"
+! grep -Fq 'merge 102' "$GH_MOCK_LOG"
+echo 'approved-pr-autofix BLOCKED regression passed'
+: >"$GH_MOCK_LOG"
 
 maintenance_output="$($ROOT/scripts/pr-merge-maintenance.sh xXKillerNoobYT/Weird-Part-Run-2 2>&1)"
 assert_later_clean_pr_merged 'pr-merge-maintenance' "$maintenance_output"

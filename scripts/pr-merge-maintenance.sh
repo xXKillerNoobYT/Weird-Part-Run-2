@@ -21,6 +21,7 @@
 #   PR_MAINTENANCE_DRY_RUN           Set to 1 to log without side effects.
 #   PR_MAINTENANCE_SKIP_LABELS       Comma-separated labels → manual only.
 #   PR_MAINTENANCE_SKIP_TITLE_REGEX  Extended regex for security/manual titles.
+#   PR_MAINTENANCE_COPILOT_WAIVER_FILE  Tracked PR-and-SHA waiver ledger.
 
 set -euo pipefail
 shopt -s nocasematch
@@ -34,6 +35,7 @@ DRY_RUN="${PR_MAINTENANCE_DRY_RUN:-0}"
 TRUSTED_PR_AUTHORS="${PR_MAINTENANCE_TRUSTED_PR_AUTHORS:-xXKillerNoobYT}"
 SKIP_LABELS="${PR_MAINTENANCE_SKIP_LABELS:-security,security-sensitive,manual-review,manual-merge,do-not-merge}"
 SKIP_TITLE_REGEX="${PR_MAINTENANCE_SKIP_TITLE_REGEX:-security|sqlcipher|encryption|auth|payment|credential|secret|keychain}"
+COPILOT_WAIVER_FILE="${PR_MAINTENANCE_COPILOT_WAIVER_FILE:-.github/merge-control/copilot-review-waivers.json}"
 
 if [[ ! "$REPO" =~ ^[^/]+/[^/]+$ ]]; then
   echo "error: expected repo in owner/repo form, got '${REPO:-<empty>}'" >&2
@@ -76,6 +78,87 @@ run_or_log() {
     printf 'dry-run:'; printf ' %q' "$@"; printf '\n'; return 0
   fi
   "$@"
+}
+
+# A waiver is deliberately a tracked, exact PR-and-head exception rather than
+# an environment toggle. The ledger lives on the trusted default branch, so its
+# history, required review, and CODEOWNERS approval remain auditable. A changed
+# PR head invalidates the entry automatically.
+has_owner_approved_copilot_waiver() {
+  local number="$1" head_sha="$2"
+
+  if [[ ! -f "$COPILOT_WAIVER_FILE" ]]; then
+    echo "    skip: Copilot waiver ledger is missing — not merging without exact-head review evidence"
+    return 1
+  fi
+
+  jq -e --argjson number "$number" --arg sha "$head_sha" '
+    .version == 1
+    and (.waivers | type == "array")
+    and any(.waivers[]?;
+      (.pr == $number)
+      and (.head_sha == $sha)
+      and (.approved_by == "xXKillerNoobYT")
+      and (.reason | type == "string" and length > 0)
+      and (.approval_url | type == "string"
+           and test("^https://github\\.com/xXKillerNoobYT/Weird-Part-Run-2/(pull|issues)/" + ($number | tostring) + "#issuecomment-[0-9]+$"))
+    )
+  ' "$COPILOT_WAIVER_FILE" >/dev/null 2>&1 || return 1
+
+  echo "    Copilot gate: owner-approved exact PR-and-SHA waiver found in $COPILOT_WAIVER_FILE"
+  return 0
+}
+
+copilot_review_or_waiver_satisfied() {
+  local number="$1" head_sha="$2" review_state copilot_reviews already_requested thread_total unresolved
+
+  # A GraphQL failure fails closed: an absent or unreadable review state never
+  # becomes permission to merge. review.commit.oid prevents a prior-head review
+  # from satisfying the current-head gate.
+  review_state="$(gh api graphql -f query="query { repository(owner: \"$repo_owner\", name: \"$repo_name\") { pullRequest(number: $number) { latestReviews: reviews(last: 100) { nodes { author { login } state commit { oid } } } reviewThreads(first: 100) { totalCount nodes { isResolved } } } } }" 2>/dev/null || echo "")"
+  if [[ -z "$review_state" ]]; then
+    echo "    skip: could not read Copilot review state — not merging on unknown evidence"
+    has_owner_approved_copilot_waiver "$number" "$head_sha"
+    return $?
+  fi
+
+  copilot_reviews="$(jq --arg sha "$head_sha" '[.data.repository.pullRequest.latestReviews.nodes[]?
+    | select((.author.login // "") == "copilot-pull-request-reviewer[bot]")
+    | select(.state == "COMMENTED" or .state == "APPROVED" or .state == "CHANGES_REQUESTED")
+    | select((.commit.oid // "") == $sha)] | length' <<<"$review_state" 2>/dev/null || echo "0")"
+  if [[ ! "$copilot_reviews" =~ ^[0-9]+$ ]]; then copilot_reviews="0"; fi
+  if [[ "$copilot_reviews" -gt 0 ]]; then
+    echo "    Copilot gate: $copilot_reviews submitted exact-head review(s) found"
+  elif has_owner_approved_copilot_waiver "$number" "$head_sha"; then
+    :
+  else
+    already_requested="$(gh api "repos/$REPO/pulls/$number" \
+      --jq '[.requested_reviewers[]?.login | select(. == "Copilot" or . == "copilot-pull-request-reviewer[bot]")] | length' 2>/dev/null || echo "0")"
+    if [[ ! "$already_requested" =~ ^[0-9]+$ ]]; then already_requested="0"; fi
+    if [[ "$already_requested" -eq 0 ]]; then
+      if run_or_log gh api -X POST "repos/$REPO/pulls/$number/requested_reviewers" \
+        -f 'reviewers[]=copilot-pull-request-reviewer[bot]' >/dev/null; then
+        echo "    skip: no exact-head Copilot review or valid waiver; requested Copilot review"
+      else
+        echo "    skip: no exact-head Copilot review or valid waiver; failed to request Copilot review"
+      fi
+    else
+      echo "    skip: no exact-head Copilot review or valid waiver; Copilot review is pending"
+    fi
+    return 1
+  fi
+
+  thread_total="$(jq '.data.repository.pullRequest.reviewThreads.totalCount // "invalid"' <<<"$review_state" 2>/dev/null || echo "invalid")"
+  if [[ ! "$thread_total" =~ ^[0-9]+$ ]] || [[ "$thread_total" -gt 100 ]]; then
+    echo "    skip: cannot prove all review threads are resolved — not merging"
+    return 1
+  fi
+  unresolved="$(jq '[.data.repository.pullRequest.reviewThreads.nodes[]? | select(.isResolved == false)] | length' <<<"$review_state" 2>/dev/null || echo "invalid")"
+  if [[ ! "$unresolved" =~ ^[0-9]+$ ]] || [[ "$unresolved" -gt 0 ]]; then
+    echo "    skip: ${unresolved:-unknown} unresolved review thread(s) — not merging"
+    return 1
+  fi
+  return 0
 }
 
 # --- Self-heal: approve workflow runs stuck awaiting manual approval ---
@@ -257,79 +340,17 @@ while IFS= read -r pr; do
     fi
   fi
 
-  # Legacy Copilot-only review gate is disabled: this repository uses the
-  # trusted first-party Codex path plus exact-head checks instead.
-  # It may be explicitly re-enabled only for a deliberately configured legacy
-  # migration, never as the default merge requirement.
-  if [[ "${PR_MAINTENANCE_REQUIRE_COPILOT_REVIEW:-0}" == "1" ]]; then
-    # A GraphQL API failure must FAIL CLOSED (never merge on unknown review
-    # state). We probe once and treat empty/failed output as "not satisfied".
-    # Review nodes carry author login + state so a PENDING/DISMISSED review
-    # cannot satisfy the gate.
-    # reviews(last: 100) — the MOST RECENT reviews, so a Copilot review is
-    # never missed on PRs whose total review history exceeds one page.
-    review_state="$(gh api graphql -f query="query { repository(owner: \"$repo_owner\", name: \"$repo_name\") { pullRequest(number: $number) { latestReviews: reviews(last: 100) { nodes { author { login } state } } reviewThreads(first: 100) { totalCount nodes { isResolved } } } } }" 2>/dev/null || echo "")"
-
-    if [[ -z "$review_state" ]]; then
-      echo "    skip: could not read review state (API failure) — not merging on unknown review status"
-      continue
-    fi
-
-    # A satisfying Copilot review is an EXACT bot login (no prefix spoofing by a
-    # 'copilot*' human account) whose state is a real submitted review
-    # (COMMENTED/APPROVED/CHANGES_REQUESTED — never PENDING/DISMISSED).
-    copilot_reviews="$(jq '[.data.repository.pullRequest.latestReviews.nodes[]?
-      | select((.author.login // "") == "copilot-pull-request-reviewer[bot]")
-      | select(.state == "COMMENTED" or .state == "APPROVED" or .state == "CHANGES_REQUESTED")] | length' <<<"$review_state" 2>/dev/null || echo "0")"
-    if [[ ! "$copilot_reviews" =~ ^[0-9]+$ ]]; then copilot_reviews="0"; fi
-
-    if [[ "$copilot_reviews" -eq 0 ]]; then
-      # Request the review only if the Copilot bot is not already a requested
-      # reviewer. Match the two exact logins GitHub uses for this bot across
-      # API surfaces ('Copilot' in requested_reviewers,
-      # 'copilot-pull-request-reviewer[bot]' in reviews) — no prefix match, so a
-      # similarly-named human can't suppress the request.
-      already_requested="$(gh api "repos/$REPO/pulls/$number" \
-        --jq '[.requested_reviewers[]?.login | select(. == "Copilot" or . == "copilot-pull-request-reviewer[bot]")] | length' 2>/dev/null || echo "0")"
-      if [[ ! "$already_requested" =~ ^[0-9]+$ ]]; then already_requested="0"; fi
-      if [[ "$already_requested" -eq 0 ]]; then
-        # Surface request failures honestly — a silently failed request would
-        # stall the train with a log line claiming the review was requested.
-        if run_or_log gh api -X POST "repos/$REPO/pulls/$number/requested_reviewers" \
-          -f 'reviewers[]=copilot-pull-request-reviewer[bot]' >/dev/null; then
-          echo "    skip: requested Copilot review — waiting for it before merge"
-        else
-          echo "    skip: FAILED to request Copilot review (API error above) — PR needs a manual review request"
-        fi
-      else
-        echo "    skip: Copilot review pending — waiting before merge"
-      fi
-      continue
-    fi
-
-    # Copilot has reviewed — block on any unresolved review thread (from any
-    # reviewer) so findings are addressed and resolved before the merge, not
-    # after. If the thread count exceeds the page we fetched, fail closed
-    # (can't prove resolution).
-    thread_total="$(jq '.data.repository.pullRequest.reviewThreads.totalCount // 0' <<<"$review_state" 2>/dev/null || echo "0")"
-    if [[ ! "$thread_total" =~ ^[0-9]+$ ]]; then thread_total="0"; fi
-    if [[ "$thread_total" -gt 100 ]]; then
-      echo "    skip: $thread_total review threads exceed the 100 fetched — cannot confirm resolution, not merging"
-      continue
-    fi
-    unresolved="$(jq '[.data.repository.pullRequest.reviewThreads.nodes[]? | select(.isResolved == false)] | length' <<<"$review_state" 2>/dev/null || echo "1")"
-    if [[ ! "$unresolved" =~ ^[0-9]+$ ]]; then unresolved="1"; fi
-    if [[ "$unresolved" -gt 0 ]]; then
-      echo "    skip: $unresolved unresolved review thread(s) (any reviewer) — must be resolved before merge"
-      continue
-    fi
+  if ! copilot_review_or_waiver_satisfied "$number" "$head_sha"; then
+    continue
   fi
 
   # --- Ready to merge ---
   if [[ "$merge_state" == "CLEAN" || "$merge_state" == "HAS_HOOKS" ]]; then
-    echo "==> PR #$number is $merge_state with required checks green — merging now (squash)"
-    if run_or_log gh pr merge "$number" --repo "$REPO" --squash --delete-branch --auto; then
-      echo "    Merged (or auto-merge queued). Push to $BASE will trigger next run."
+    echo "==> PR #$number is $merge_state with required checks and exact-head Copilot evidence — merging now (squash)"
+    # Do not queue auto-merge: a later head update would otherwise become
+    # mergeable without this script re-evaluating its exact-head evidence.
+    if run_or_log gh pr merge "$number" --repo "$REPO" --squash --delete-branch; then
+      echo "    Merged. Push to $BASE will trigger next run."
     else
       echo "    Merge failed — may need manual review."
     fi
