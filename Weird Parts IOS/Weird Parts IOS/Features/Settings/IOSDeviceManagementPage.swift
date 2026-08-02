@@ -48,6 +48,10 @@ struct IOSDeviceManagementPage: View {
                 )
             }
 
+            #if targetEnvironment(macCatalyst)
+            AgentLinkSection()
+            #endif
+
             Section("Actions") {
                 Button {
                     issuePairingCode()

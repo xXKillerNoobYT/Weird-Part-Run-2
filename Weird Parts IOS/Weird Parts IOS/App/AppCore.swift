@@ -71,6 +71,10 @@ final class AppCore: ObservableObject {
     public private(set) var backgroundTaskService: BackgroundTaskService?
     public private(set) var aiDispatchService: AIDispatchService?
     public private(set) var badgeCountService: BadgeCountService?
+    /// Agent Link (MCP) — Mac-only loopback server for AI desktop apps
+    /// (plan docs/plans/devices-add-mcp-agent-link.md).
+    public private(set) var agentLinkService: AgentLinkService?
+    private var agentLinkServer: AgentLinkServer?
 
     /// Shared sync manager — all views observe this single instance.
     let syncManager = IOSSyncManager()
@@ -257,6 +261,10 @@ final class AppCore: ObservableObject {
             backgroundTaskService = result.backgroundTask
             aiDispatchService = result.aiDispatch
             badgeCountService = result.badgeCount
+            if let database = self.db {
+                agentLinkService = AgentLinkService(db: database)
+                startAgentLinkIfEnabled()
+            }
 
             if let theme = result.theme {
                 self.theme = theme
@@ -630,6 +638,8 @@ final class AppCore: ObservableObject {
         backgroundTaskService = nil
         aiDispatchService = nil
         badgeCountService = nil
+        stopAgentLink()
+        agentLinkService = nil
         db = nil
 
         // 3. Delete the database files and local backups
@@ -2064,5 +2074,79 @@ final class AppCore: ObservableObject {
             )
         }
         UserDefaults.standard.set(targetDate, forKey: "uiTestingDispatchTargetDate")
+    }
+}
+
+
+// MARK: - Agent Link (MCP) server lifecycle
+
+extension AppCore {
+    /// Start the loopback MCP server if the owner enabled it. Mac only —
+    /// no-op on iPhone/iPad (owner decision 2026-08-01: Macs only, because
+    /// the client is an AI desktop app on the same machine).
+    func startAgentLinkIfEnabled() {
+        #if targetEnvironment(macCatalyst)
+        guard UserDefaults.standard.bool(forKey: "agentLinkEnabled") else { return }
+        startAgentLink()
+        #endif
+    }
+
+    /// Toggle handler from the Devices page.
+    func setAgentLinkEnabled(_ enabled: Bool) {
+        #if targetEnvironment(macCatalyst)
+        UserDefaults.standard.set(enabled, forKey: "agentLinkEnabled")
+        if enabled { startAgentLink() } else { stopAgentLink() }
+        #endif
+    }
+
+    /// Called after link creation/revocation so a running server picks up
+    /// the new link set immediately. (Token verification reads the database
+    /// per request, so this is belt-and-braces for future cached state.)
+    func restartAgentLinkIfRunning() {
+        #if targetEnvironment(macCatalyst)
+        guard agentLinkServer != nil else { return }
+        stopAgentLink()
+        startAgentLink()
+        #endif
+    }
+
+    private func startAgentLink() {
+        #if targetEnvironment(macCatalyst)
+        guard agentLinkServer == nil,
+              let database = db,
+              let service = agentLinkService,
+              let parts = partsService,
+              let jobs = jobsService,
+              let orders = ordersService,
+              let notebooks = notebooksService,
+              let reports = reportsService else { return }
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+        let server = AgentLinkServer(
+            service: service,
+            registry: AgentLinkTools.v1(
+                db: database, parts: parts, jobs: jobs, orders: orders,
+                notebooks: notebooks, reports: reports, appVersion: version
+            ),
+            appVersion: version
+        )
+        agentLinkServer = server
+        Task {
+            do {
+                _ = try await server.start()
+            } catch {
+                // Port taken or bind failure — surface via the toggle's own
+                // state on next visit; never crash the app for the link.
+                await MainActor.run { self.agentLinkServer = nil }
+            }
+        }
+        #endif
+    }
+
+    private func stopAgentLink() {
+        #if targetEnvironment(macCatalyst)
+        guard let server = agentLinkServer else { return }
+        agentLinkServer = nil
+        Task { await server.stop() }
+        #endif
     }
 }
