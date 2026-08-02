@@ -48,9 +48,9 @@ struct IOSDeviceManagementPage: View {
                 )
             }
 
-            #if targetEnvironment(macCatalyst)
-            AgentLinkSection()
-            #endif
+            if Self.isRunningOnMac {
+                AgentLinkSection()
+            }
 
             Section("Actions") {
                 Button {
@@ -107,6 +107,18 @@ struct IOSDeviceManagementPage: View {
                     .presentationDetents([.medium, .large])
             }
         }
+    }
+
+    /// Macs only (owner decision 2026-08-01) — TRUE for BOTH the Catalyst
+    /// build and the iPad binary on Apple Silicon (how TestFlight delivers
+    /// to Macs; a compile-time Catalyst gate would hide this from the
+    /// owner's actual Mac — the #1622 lesson).
+    static var isRunningOnMac: Bool {
+        #if targetEnvironment(macCatalyst)
+        return true
+        #else
+        return ProcessInfo.processInfo.isiOSAppOnMac
+        #endif
     }
 
     private enum ActiveSheet: Identifiable {

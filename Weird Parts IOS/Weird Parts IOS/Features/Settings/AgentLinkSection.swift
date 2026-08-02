@@ -1,7 +1,6 @@
 import SwiftUI
 import WiredPartCore
 
-#if targetEnvironment(macCatalyst)
 
 /// "Agent Link (MCP)" section of Device Management — Mac only (plan
 /// `docs/plans/devices-add-mcp-agent-link.md`, owner decisions 2026-08-01).
@@ -259,5 +258,3 @@ private struct AgentLinkCreateSheet: View {
         }
     }
 }
-
-#endif

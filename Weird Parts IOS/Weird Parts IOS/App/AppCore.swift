@@ -2085,34 +2085,30 @@ extension AppCore {
     /// no-op on iPhone/iPad (owner decision 2026-08-01: Macs only, because
     /// the client is an AI desktop app on the same machine).
     func startAgentLinkIfEnabled() {
-        #if targetEnvironment(macCatalyst)
+        guard IOSDeviceManagementPage.isRunningOnMac else { return }
         guard UserDefaults.standard.bool(forKey: "agentLinkEnabled") else { return }
         startAgentLink()
-        #endif
     }
 
     /// Toggle handler from the Devices page.
     func setAgentLinkEnabled(_ enabled: Bool) {
-        #if targetEnvironment(macCatalyst)
+        guard IOSDeviceManagementPage.isRunningOnMac else { return }
         UserDefaults.standard.set(enabled, forKey: "agentLinkEnabled")
         if enabled { startAgentLink() } else { stopAgentLink() }
-        #endif
     }
 
     /// Called after link creation/revocation so a running server picks up
     /// the new link set immediately. (Token verification reads the database
     /// per request, so this is belt-and-braces for future cached state.)
     func restartAgentLinkIfRunning() {
-        #if targetEnvironment(macCatalyst)
         guard agentLinkServer != nil else { return }
         stopAgentLink()
         startAgentLink()
-        #endif
     }
 
     private func startAgentLink() {
-        #if targetEnvironment(macCatalyst)
-        guard agentLinkServer == nil,
+        guard IOSDeviceManagementPage.isRunningOnMac,
+              agentLinkServer == nil,
               let database = db,
               let service = agentLinkService,
               let parts = partsService,
@@ -2139,14 +2135,11 @@ extension AppCore {
                 await MainActor.run { self.agentLinkServer = nil }
             }
         }
-        #endif
     }
 
     private func stopAgentLink() {
-        #if targetEnvironment(macCatalyst)
         guard let server = agentLinkServer else { return }
         agentLinkServer = nil
         Task { await server.stop() }
-        #endif
     }
 }
