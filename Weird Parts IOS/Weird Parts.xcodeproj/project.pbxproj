@@ -501,6 +501,11 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Weird-Parts-IOS-Info.plist";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.business";
+				// Export compliance: every crypto path is Apple OS-provided
+				// (SQLCipher built with SQLCIPHER_CRYPTO_CC -> CommonCrypto,
+				// CryptoKit AES-GCM sync, HTTPS/ATS, Data Protection), which is
+				// exempt -> no per-build ASC questionnaire, no French declaration.
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -547,6 +552,11 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Weird-Parts-IOS-Info.plist";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.business";
+				// Export compliance: every crypto path is Apple OS-provided
+				// (SQLCipher built with SQLCIPHER_CRYPTO_CC -> CommonCrypto,
+				// CryptoKit AES-GCM sync, HTTPS/ATS, Data Protection), which is
+				// exempt -> no per-build ASC questionnaire, no French declaration.
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
