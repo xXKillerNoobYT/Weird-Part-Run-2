@@ -1242,9 +1242,14 @@ final class IOSSyncManager {
 
         let deviceId = DeviceIdentity.current
 
-        // Prefer Wi-Fi/LAN when a shop server address is known (faster full download);
-        // otherwise fall back to the Bluetooth initial sync for a device that paired
-        // over Bluetooth (no server address).
+        // Prefer Wi-Fi/LAN when a shop server address is known (faster full
+        // download) — but a failed HTTP attempt must FALL THROUGH to the
+        // Bluetooth/Multipeer snapshot when this device paired over Bluetooth.
+        // Field-confirmed 2026-08-01 (#1417): a stale discovered address made
+        // the HTTP branch fail in ~2-3s (connection refused) and the old
+        // if/else THREW without ever trying the authorized Multipeer path,
+        // bricking every tablet join despite both radios being ready.
+        var wifiFailure: String?
         if let engine = syncEngine, let server = serverAddress {
             syncProgressMessage = "Downloading database from shop..."
             syncProgressPercent = 0.2
@@ -1254,8 +1259,6 @@ final class IOSSyncManager {
                 shopUrl: server
             )
 
-            syncProgressPercent = 0.8
-
             if success {
                 syncProgressMessage = "Initial sync complete."
                 syncProgressPercent = 1.0
@@ -1263,30 +1266,41 @@ final class IOSSyncManager {
                 lastSyncDate = Formatters.iso8601Basic.string(from: Date())
             } else {
                 let state = await engine.getState()
-                syncProgressMessage = nil
-                syncStatus = .error
-                errorMessage = state.error ?? "Initial sync failed."
-                throw SyncError.syncFailed(state.error ?? "Unknown error")
+                wifiFailure = state.error ?? "Wi-Fi download failed."
             }
-        } else if let hostDeviceId = pairedBluetoothHostDeviceId(), let pm = peerManager {
+        }
+
+        if syncStatus != .synced, let hostDeviceId = pairedBluetoothHostDeviceId(), let pm = peerManager {
             // Bluetooth: ask the paired host to replay the whole company over the
             // live Multipeer session — no Wi-Fi/server needed.
-            syncProgressMessage = "Downloading data over Bluetooth…"
+            syncProgressMessage = wifiFailure == nil
+                ? "Downloading data over Bluetooth…"
+                : "Wi-Fi didn't work — downloading over Bluetooth instead…"
             syncProgressPercent = 0.3
             do {
                 try await pm.requestFullSyncOverMultipeer(hostDeviceId: hostDeviceId)
             } catch {
                 syncProgressMessage = nil
                 syncStatus = .error
-                errorMessage = "Bluetooth sync failed. Keep both devices close with Bluetooth on and try again."
-                throw error
+                errorMessage = Self.initialSyncFailureMessage(
+                    wifiFailure: wifiFailure,
+                    bluetoothError: error
+                )
+                throw SyncError.syncFailed(errorMessage ?? "Initial sync failed.")
             }
             syncProgressMessage = "Initial sync complete."
             syncProgressPercent = 1.0
             syncStatus = .synced
             lastSyncDate = Formatters.iso8601Basic.string(from: Date())
-        } else {
+        } else if syncStatus != .synced {
             syncProgressMessage = nil
+            syncStatus = .error
+            if let wifiFailure {
+                // HTTP was attempted and failed, and no Bluetooth pairing exists
+                // to fall back on — surface the real reason, not a generic line.
+                errorMessage = "Couldn't download from the shop over Wi-Fi (\(wifiFailure)) and this device has no Bluetooth pairing to fall back on. Re-pair the device and try again."
+                throw SyncError.syncFailed(errorMessage ?? wifiFailure)
+            }
             throw SyncError.noServerConfigured
         }
 
@@ -1378,6 +1392,31 @@ final class IOSSyncManager {
         case .offline:
             return pendingChanges > 0 ? "Offline — \(pendingChanges) changes queued" : "Offline"
         }
+    }
+
+    /// Compose an honest initial-sync failure covering every transport tried.
+    /// The generic "Couldn't sync data" hid the real cause in the 2026-08-01
+    /// field failure — never collapse distinct transport failures again.
+    static func initialSyncFailureMessage(
+        wifiFailure: String?,
+        bluetoothError: Error
+    ) -> String {
+        let bluetoothReason: String
+        switch bluetoothError {
+        case MultipeerPairingError.rejected:
+            bluetoothReason = "the shop device didn't recognize this pairing — generate a NEW code on the shop device and pair again"
+        case MultipeerPairingError.connectionTimeout:
+            bluetoothReason = "the devices lost their connection — keep both unlocked, close together, with the shop device's Add-a-Device screen open, and retry"
+        case MultipeerPairingError.requestAlreadyInProgress:
+            bluetoothReason = "a previous attempt is still finishing — wait a few seconds and retry"
+        default:
+            bluetoothReason = (bluetoothError as? LocalizedError)?.errorDescription
+                ?? "Bluetooth transfer failed — keep both devices close and retry"
+        }
+        if let wifiFailure {
+            return "Wi-Fi download failed (\(wifiFailure)), then Bluetooth also failed: \(bluetoothReason)."
+        }
+        return "Bluetooth sync failed: \(bluetoothReason)."
     }
 
     // MARK: - Sync Errors
