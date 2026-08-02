@@ -3,7 +3,16 @@ import Foundation
 import os
 @testable import WiredPartCore
 
-@Suite("LAN Sync Server Tests")
+// .serialized (#1583): three distinct intermittents in one day — an
+// unpaired-sender 400 answered 200, state.port read 0 after start, and an
+// .incorrectParameterSize decrypt — all fit one cause: parallel tests each
+// binding ephemeral-port servers can hit a port the kernel just rebound to a
+// SIBLING test's server, so requests land on the wrong server (wrong pairing
+// table, wrong keys, races on state publication). Serializing removes the
+// cross-test port/URLSession interleaving at negligible runtime cost for
+// this suite. If an intermittent recurs while serialized, it is a REAL
+// in-process race — investigate the server, not the tests.
+@Suite("LAN Sync Server Tests", .serialized)
 struct SyncServerTests {
 
     private var validPeerKey: String {
