@@ -18,8 +18,8 @@ from typing import Any
 
 REQUIRED_METADATA = ("id", "testSource", "target", "invariant", "replacement", "executableCoverage")
 RULE_KEYS = {
-    "contains", "not_contains", "ordered", "regex", "regex_not_contains", "count",
-    "sections", "scoped", "function_scoped", "directory_count", "directory_scan", "occurrences",
+    "contains", "not_contains", "ordered", "regex", "regex_not_contains", "not_regex", "count",
+    "sections", "scoped", "function_scoped", "directory_count", "directory_scan", "occurrences", "paths",
 }
 SCOPED_WRAPPER_KEYS = {"start", "end", "rule"}
 FUNCTION_SCOPED_WRAPPER_KEYS = {"after", "rule"}
@@ -131,7 +131,10 @@ def validate_fragments(identifier: str, source: str, rule: dict[str, Any], label
     for pattern in require_string_list(rule.get("regex"), f"{label}.regex", identifier):
         if not re.search(pattern, source, flags=re.DOTALL):
             errors.append(f"{identifier}: expected {label} to match regex {pattern!r}")
-    for pattern in require_string_list(rule.get("regex_not_contains"), f"{label}.regex_not_contains", identifier):
+    forbidden_patterns = require_string_list(
+        rule.get("regex_not_contains"), f"{label}.regex_not_contains", identifier
+    ) + require_string_list(rule.get("not_regex"), f"{label}.not_regex", identifier)
+    for pattern in forbidden_patterns:
         if re.search(pattern, source, flags=re.DOTALL):
             errors.append(f"{identifier}: {label} must not match regex {pattern!r}")
     ordered = rule.get("ordered", [])
@@ -204,9 +207,9 @@ def validate_directory_scan(repo_root: Path, identifier: str, specs: Any) -> lis
     for spec in specs:
         if not isinstance(spec, dict):
             raise ValueError(f"{identifier}: directory_scan entries must be objects")
-        directory_value, regex = spec.get("directory"), spec.get("not_matches_regex")
-        if not isinstance(directory_value, str) or not directory_value or not isinstance(regex, str) or not regex:
-            raise ValueError(f"{identifier}: directory_scan requires directory and not_matches_regex strings")
+        directory_value = spec.get("directory")
+        if not isinstance(directory_value, str) or not directory_value:
+            raise ValueError(f"{identifier}: directory_scan requires a non-empty directory string")
         directory = repo_root / directory_value
         if not directory.is_dir():
             errors.append(f"{identifier}: missing directory: {directory_value}")
@@ -214,10 +217,48 @@ def validate_directory_scan(repo_root: Path, identifier: str, specs: Any) -> lis
         pattern = spec.get("pattern", "*.swift")
         if not isinstance(pattern, str):
             raise ValueError(f"{identifier}: directory_scan.pattern must be a string")
-        allowlist = set(require_string_list(spec.get("allowlist"), "directory_scan.allowlist", identifier))
-        violations = [str(path.relative_to(repo_root)) for path in source_files(directory, pattern) if str(path.relative_to(repo_root)) not in allowlist and re.search(regex, path.read_text(encoding="utf-8"), flags=re.DOTALL)]
-        if violations:
-            errors.append(f"{identifier}: directory scan found forbidden matches: {', '.join(violations)}")
+        if isinstance(spec.get("not_matches_regex"), str) and spec["not_matches_regex"]:
+            allowlist = set(require_string_list(spec.get("allowlist"), "directory_scan.allowlist", identifier))
+            violations = [str(path.relative_to(repo_root)) for path in source_files(directory, pattern) if str(path.relative_to(repo_root)) not in allowlist and re.search(spec["not_matches_regex"], path.read_text(encoding="utf-8"), flags=re.DOTALL)]
+            if violations:
+                errors.append(f"{identifier}: directory scan found forbidden matches: {', '.join(violations)}")
+            continue
+        required = spec.get("required_regex")
+        when_contains = spec.get("when_contains")
+        when_regex = spec.get("when_regex", ".")
+        minimum = spec.get("min_matching_files")
+        if (
+            not isinstance(required, str) or not required
+            or (when_contains is not None and (not isinstance(when_contains, list) or not all(isinstance(item, str) for item in when_contains)))
+            or not isinstance(when_regex, str)
+            or (minimum is not None and (not isinstance(minimum, int) or minimum < 0))
+        ):
+            raise ValueError(f"{identifier}: directory_scan requires not_matches_regex or required_regex with optional when_contains/when_regex and non-negative min_matching_files")
+        candidates = sorted(path for path in directory.rglob("*") if path.is_file() and fnmatch.fnmatch(path.name, pattern))
+        matching_files = 0
+        for path in candidates:
+            source = path.read_text(encoding="utf-8")
+            matches = all(fragment in source for fragment in when_contains) if when_contains is not None else re.search(when_regex, source, flags=re.DOTALL)
+            if matches:
+                matching_files += 1
+                if not re.search(required, source, flags=re.DOTALL):
+                    errors.append(f"{identifier}: {path.relative_to(repo_root)} is missing required directory policy")
+        if minimum is not None and matching_files < minimum:
+            errors.append(f"{identifier}: expected at least {minimum} matching files in {directory_value}, found {matching_files}")
+    return errors
+
+
+def validate_paths(repo_root: Path, identifier: str, specs: Any) -> list[str]:
+    if specs is None:
+        return []
+    if not isinstance(specs, dict):
+        raise ValueError(f"{identifier}: paths must be an object")
+    errors: list[str] = []
+    for key, expected in (("exists", True), ("not_exists", False)):
+        for relative_path in require_string_list(specs.get(key), f"paths.{key}", identifier):
+            if (repo_root / relative_path).exists() != expected:
+                state = "exist" if expected else "not exist"
+                errors.append(f"{identifier}: expected path to {state}: {relative_path}")
     return errors
 
 
@@ -286,6 +327,7 @@ def validate_rule(repo_root: Path, identifier: str, source: str, rule: Any, labe
         )
     errors.extend(validate_directory_count(repo_root, identifier, rule.get("directory_count")))
     errors.extend(validate_directory_scan(repo_root, identifier, rule.get("directory_scan")))
+    errors.extend(validate_paths(repo_root, identifier, rule.get("paths")))
     return errors
 
 
@@ -346,7 +388,8 @@ def self_test() -> int:
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         (root / "Sources").mkdir()
-        (root / "Sources" / "App.swift").write_text("let safe = true\nfunc save() {\n dismiss()\n await onSave()\n}\nlet token = 42\n", encoding="utf-8")
+        safe_source = "let safe = true\nfunc save() {\n dismiss()\n await onSave()\n}\nlet token = 42\n"
+        (root / "Sources" / "App.swift").write_text(safe_source, encoding="utf-8")
         (root / "Sources" / "Other.swift").write_text("rowAccessibility()\n", encoding="utf-8")
         manifest = {"schemaVersion": 1, "entries": [{"id": "self-test", "testSource": "Tests/SelfTest.swift:testInvariant", "target": "Sources/App.swift", "invariant": "Safe source contract remains true.", "replacement": "checkout-hosted validator", "executableCoverage": "not applicable: static source policy", "rule": {"contains": ["let safe = true"], "not_contains": ["unsafe = true"], "ordered": [["dismiss()", "await onSave()"]], "regex_not_contains": [r"token\s*=\s*0"], "sections": [{"start": "func save()", "contains": ["dismiss()"], "not_contains": ["unsafe"]}], "scoped": [{"start": "func save()", "end": "await onSave()", "rule": {"contains": ["dismiss()"]}}], "directory_count": [{"directory": "Sources", "pattern": "*.swift", "contains": "rowAccessibility()", "min": 1}], "directory_scan": [{"directory": "Sources", "pattern": "*.swift", "not_matches_regex": r"NavigationLink\s*\{\s*Text\s*\(", "allowlist": []}], "occurrences": [{"contains": "let", "min": 2}]}}]}
         manifest_path = root / "docs" / "testing" / "xctest-source-policy-manifest.json"
@@ -354,6 +397,29 @@ def self_test() -> int:
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
         if validate(root, manifest_path) != 0:
             return 1
+        legacy_rule_manifest = json.loads(json.dumps(manifest))
+        legacy_rule_manifest["entries"][0]["rule"].update({
+            "not_regex": [r"unsafe\s*=\s*true"],
+            "paths": {"exists": ["Sources/App.swift"], "not_exists": ["Legacy/App.swift"]},
+            "directory_scan": [{
+                "directory": "Sources", "pattern": "*.swift", "when_contains": ["let safe"],
+                "required_regex": r"let\s+safe\s*=\s*true", "min_matching_files": 1,
+            }],
+        })
+        legacy_manifest_path = root / "legacy-rule-manifest.json"
+        legacy_manifest_path.write_text(json.dumps(legacy_rule_manifest), encoding="utf-8")
+        if validate(root, legacy_manifest_path) != 0:
+            print("self-test did not accept legacy S-cohort rule forms", file=sys.stderr)
+            return 1
+        not_regex_manifest = json.loads(json.dumps(legacy_rule_manifest))
+        not_regex_manifest["entries"][0]["rule"] = {"not_regex": [r"unsafe\s*=\s*true"]}
+        not_regex_manifest_path = root / "not-regex-manifest.json"
+        not_regex_manifest_path.write_text(json.dumps(not_regex_manifest), encoding="utf-8")
+        (root / "Sources" / "App.swift").write_text(f"{safe_source}let unsafe = true\n", encoding="utf-8")
+        if validate(root, not_regex_manifest_path, quiet=True) != 1:
+            print("self-test did not reject whitespace-matched not_regex violation", file=sys.stderr)
+            return 1
+        (root / "Sources" / "App.swift").write_text(safe_source, encoding="utf-8")
         typo_manifest = json.loads(json.dumps(manifest))
         typo_manifest["entries"][0]["rule"]["contians"] = ["let safe = true"]
         (root / "typo-manifest.json").write_text(json.dumps(typo_manifest), encoding="utf-8")
