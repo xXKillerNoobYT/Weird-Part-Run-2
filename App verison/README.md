@@ -22,6 +22,13 @@ release beyond the internal group:
   agents never bump this autonomously.
 - `PUBLIC-RELEASE.md` — App Store. Owner-gated.
 
+**External preflight (owner 2026-08-01): full testing, every test green on
+every device.** Before `PUBLIC-BETA.md` is bumped, the FULL test suite — the
+recommended testing package, not the PR quick gates — must pass on ALL device
+classes (iPhone + iPad at minimum, plus any other device in the package).
+A red or skipped test on any device blocks the external push; internal builds
+are not held to this bar.
+
 Rules (owner spec, 2026-07-31): when a bump does happen, it goes in the same
 commit/PR as everything its build needs (notes written, fixes merged). Strict
 `key: value` format so any agent or bot can parse and bump. Replaces the

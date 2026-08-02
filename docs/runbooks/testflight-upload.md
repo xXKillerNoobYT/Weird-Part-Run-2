@@ -101,6 +101,7 @@ Two TestFlight channels with very different costs and cadences:
 | Who | Owner's own devices (weirdnow@icloud.com) | Public beta testers via the ASC public link |
 | Apple review | None — build just has to pass | Apple **beta app review** + heavy Xcode Cloud processing |
 | Trigger | Any `main` edit touching the `App verison/` folder (Xcode Cloud Branch-Changes condition watches it), or a local archive+upload | The Xcode Cloud workflow with the full action set (Build/Test iOS+macOS, Archive, Analyze, Notarize, TestFlight External Testing post-action) |
+| Test bar | PR gates green | **FULL suite green on every device in the recommended testing package** (owner 2026-08-01) — any red/skip on any device blocks the push |
 | Cadence | Every main edit (automatic) | **At most one per 5 days, at least one per 14** (owner 2026-08-01) — a stable-ish external release every 5–14 days; owner-gated |
 
 The `App verison/` folder (spelling is load-bearing — Xcode Cloud's condition
