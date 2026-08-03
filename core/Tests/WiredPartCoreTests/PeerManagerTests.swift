@@ -310,6 +310,42 @@ struct PeerManagerTests {
         await pm.stopPeerSync()
     }
 
+    @Test("Hosted snapshot SKIPS id-less tables instead of aborting the transfer (#field P0 build 44)")
+    func testSnapshotSkipsIdlessTables() async throws {
+        let db = try freshDB()
+        // Synthetic stand-in for warehouse_user_positions (composite/user_id
+        // primary key, NO id column) — with a real row, the pre-fix pager
+        // threw missingRecordID here and killed the whole company download.
+        try await db.writer.write { dbc in
+            try dbc.execute(sql: "CREATE TABLE zz_no_id (k TEXT PRIMARY KEY, v TEXT)")
+            try dbc.execute(sql: "INSERT INTO zz_no_id (k, v) VALUES ('a', 'b')")
+        }
+        let page = try await PeerManager.hostedSnapshotPage(
+            db: db, table: "zz_no_id", limit: 200, offset: 0,
+            hostDeviceId: "host-1", fallbackTimestamp: "2026-08-02T00:00:00Z"
+        )
+        #expect(page.changes.isEmpty)
+        #expect(page.sourceRowCount == 0)   // pager treats it as exhausted, moves on
+
+        // And the production instance: warehouse_user_positions must also skip.
+        let prod = try await PeerManager.hostedSnapshotPage(
+            db: db, table: "warehouse_user_positions", limit: 200, offset: 0,
+            hostDeviceId: "host-1", fallbackTimestamp: "2026-08-02T00:00:00Z"
+        )
+        #expect(prod.sourceRowCount == 0)
+
+        // A normal id-ful table still pages rows.
+        try await db.writer.write { dbc in
+            try dbc.execute(sql: "INSERT INTO part_categories (name) VALUES ('Wire')")
+        }
+        let normal = try await PeerManager.hostedSnapshotPage(
+            db: db, table: "part_categories", limit: 200, offset: 0,
+            hostDeviceId: "host-1", fallbackTimestamp: "2026-08-02T00:00:00Z"
+        )
+        #expect(normal.sourceRowCount >= 1)
+        #expect(normal.changes.contains { $0.tableName == "part_categories" })
+    }
+
     @Test("Discovery-only peer sync starts browsing without a sync server")
     func testDiscoveryOnlyPeerSyncState() async throws {
         let db = try freshDB()
