@@ -12,6 +12,11 @@ public struct PeerSyncResult: Sendable {
     public var pulled: Int
     public var success: Bool
     public var error: String?
+    /// True when nothing was pushed BY DESIGN — the peer is mid-onboarding and
+    /// its initial snapshot has not been acknowledged yet (#1625). Callers must
+    /// not count a deferral as a sync failure: it is a normal waiting state and
+    /// the push resumes automatically once the snapshot lands.
+    public var deferred: Bool
     public let syncedAt: String
 
     public init(
@@ -21,6 +26,7 @@ public struct PeerSyncResult: Sendable {
         pulled: Int = 0,
         success: Bool = true,
         error: String? = nil,
+        deferred: Bool = false,
         syncedAt: String? = nil
     ) {
         self.peerDeviceId = peerDeviceId
@@ -29,6 +35,7 @@ public struct PeerSyncResult: Sendable {
         self.pulled = pulled
         self.success = success
         self.error = error
+        self.deferred = deferred
         self.syncedAt = syncedAt ?? CoreFormatters.iso8601Fractional.string(from: Date())
     }
 }
@@ -474,7 +481,8 @@ public actor PeerManager {
                 peerDeviceId: peer.deviceId,
                 peerName: peer.deviceName,
                 success: false,
-                error: "Waiting for the new device's initial download to finish."
+                error: "Waiting for the new device's initial download to finish.",
+                deferred: true
             )
         }
         state.syncingWith = peer.deviceId
