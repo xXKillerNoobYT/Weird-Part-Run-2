@@ -43,13 +43,27 @@ public final class PeopleService: Sendable {
         return SymmetricKey(data: keyData)
     }()
 
-    private func encryptSensitiveField(_ value: String?) throws -> String? {
-        guard let value, !value.isEmpty else { return value }
-        let sealedBox = try AES.GCM.seal(Data(value.utf8), using: Self.contactFieldEncryptionKey)
-        guard let combined = sealedBox.combined else {
-            throw NSError(domain: "PeopleService.Encryption", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to combine sealed box"])
-        }
-        return combined.base64EncodedString()
+    /// Recover a contact email that a pre-#1656 `updateContact` encrypted.
+    ///
+    /// Returns the plaintext when this device still holds the key that sealed
+    /// the value, and `nil` when it does not — which is the common case on any
+    /// device whose Keychain is unusable, because the key there was regenerated
+    /// on every launch and the sealing key is simply gone. Unrecoverable rows
+    /// are left exactly as they are rather than blanked: an unreadable address
+    /// is bad, but destroying the only remaining copy of it is worse.
+    static func recoverEncryptedContactEmail(_ stored: String?) -> String? {
+        guard let stored, !stored.isEmpty else { return nil }
+        // A real address always contains "@" and is not valid standalone base64,
+        // so this cannot mistake a genuine email for ciphertext.
+        guard !stored.contains("@"),
+              let combined = Data(base64Encoded: stored),
+              combined.count > 28,  // 12-byte nonce + 16-byte tag + payload
+              let sealed = try? AES.GCM.SealedBox(combined: combined),
+              let plaintext = try? AES.GCM.open(sealed, using: contactFieldEncryptionKey),
+              let email = String(data: plaintext, encoding: .utf8),
+              email.contains("@")
+        else { return nil }
+        return email
     }
 
     // =========================================================================
@@ -1047,7 +1061,21 @@ public final class PeopleService: Sendable {
         guard !firstName.isBlankRequiredText else {
             throw PeopleError.requiredFieldEmpty("firstName")
         }
-        let encryptedEmail = try encryptSensitiveField(email)
+        // The email is stored as written. It used to be run through
+        // encryptSensitiveField here, which CORRUPTED IT: createContact writes
+        // this same column in plaintext, and not one of the six read paths ever
+        // decrypted it — no decrypt function existed anywhere in the codebase.
+        // So editing any contact silently replaced a readable address with an
+        // unreadable AES-GCM blob, on every platform, permanently. Migration 120
+        // repairs the rows that were already damaged.
+        //
+        // Field-level encryption is not the right tool here regardless: the
+        // database is already SQLCipher-encrypted at rest, and the key this used
+        // was minted fresh on every launch wherever the Keychain is unusable
+        // (iPad-on-Mac), so even a correct decrypt path could not have read back
+        // what the previous launch wrote. If contact PII needs protection beyond
+        // SQLCipher, that is a design decision with a migration behind it — see
+        // #1656 — not a one-line call on one of two write paths.
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
@@ -1056,7 +1084,7 @@ public final class PeopleService: Sendable {
                         updated_at = datetime('now')
                     WHERE id = ? AND deleted_at IS NULL
                     """,
-                arguments: [firstName, lastName, phone, encryptedEmail, role, id]
+                arguments: [firstName, lastName, phone, email, role, id]
             )
         }
     }
