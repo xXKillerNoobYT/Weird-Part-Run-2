@@ -221,6 +221,11 @@ public enum ConflictResolver {
         // device-derived from local photos; binary payloads belong to
         // BinarySyncManager (Copilot review on PR #1422).
         "image_match_history",
+        // Fleet diagnostics — every device's technical log replicates so
+        // field failures are readable from the shop Mac (owner 2026-08-03).
+        // Its change triggers are installed by migration 121, NOT by 119:
+        // 119 uses a frozen table list that predates this table.
+        "device_logs",
         // Sync infrastructure (these are managed by sync itself)
         "_change_log", "_conflict_log", "_vector_clock", "_device_registry",
         "_binary_attachments", "_sync_transfer_log",
