@@ -108,11 +108,21 @@ public final class CipherKeyManager: Sendable {
             Self.logger.error("CipherKeyManager: salt write raced (errSecDuplicateItem) and re-read also failed")
             throw CipherKeyError.keychainAccessFailed(errSecDuplicateItem)
         } catch CipherKeyError.keychainAccessFailed(let status)
-            where status == errSecMissingEntitlement || status == errSecNotAvailable {
-            // Keychain is unusable in THIS environment (not merely locked —
-            // errSecInteractionNotAllowed deliberately still throws so a locked
-            // iPhone can never mint a divergent salt). Persist to the sandbox
-            // fallback so the derived key is stable across launches.
+            where status != errSecInteractionNotAllowed {
+            // FIELD P0 (owner, 2026-08-04, builds 41 AND 47 both dead on Mac):
+            // the previous version rescued only errSecMissingEntitlement and
+            // errSecNotAvailable — an ALLOWLIST. The iPad-on-Mac keychain
+            // rejects the write with a different status (errSecParam is the
+            // documented one for iOS accessibility classes on Mac, and the
+            // add query sets kSecAttrAccessible on this build), so the rescue
+            // never fired and the app could not open its database at all.
+            //
+            // Inverted to a DENYLIST, which is the correct shape: the sandbox
+            // fallback is safe wherever the keychain is genuinely unusable,
+            // and only ONE status is dangerous — errSecInteractionNotAllowed
+            // means "temporarily locked, try later", where minting a second
+            // salt would orphan an existing encrypted database. That one still
+            // throws.
             Self.logger.warning("CipherKeyManager: keychain unusable (OSStatus \(status)) — using sandbox fallback salt")
             try writeFallbackSalt(salt)
             return salt
@@ -176,6 +186,18 @@ public final class CipherKeyManager: Sendable {
 
     // MARK: - Private Keychain Helpers
 
+    /// True on Catalyst AND on the iPad binary running on Apple Silicon —
+    /// the environment TestFlight actually delivers to Macs.
+    static var isRunningOnMac: Bool {
+        #if targetEnvironment(macCatalyst)
+        return true
+        #elseif canImport(UIKit)
+        return ProcessInfo.processInfo.isiOSAppOnMac
+        #else
+        return false
+        #endif
+    }
+
     private func readSaltFromKeychain() -> Data? {
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
@@ -199,10 +221,13 @@ public final class CipherKeyManager: Sendable {
             kSecAttrAccount: Self.keychainAccount,
             kSecValueData: salt
         ]
-        #if !targetEnvironment(macCatalyst)
-        // Catalyst keychain can reject iOS accessibility classes with errSecParam.
-        addQuery[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        #endif
+        // Catalyst AND iPad-on-Mac keychains can reject iOS accessibility
+        // classes with errSecParam, so the attribute is omitted on any Mac
+        // (2026-08-04: the compile-time Catalyst check missed iPad-on-Mac,
+        // which is what TestFlight actually ships to Macs — the #1622 lesson).
+        if !Self.isRunningOnMac {
+            addQuery[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        }
         let status = SecItemAdd(addQuery as CFDictionary, nil)
         guard status == errSecSuccess || status == errSecDuplicateItem else {
             throw CipherKeyError.keychainAccessFailed(status)

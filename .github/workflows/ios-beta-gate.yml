@@ -37,6 +37,10 @@ jobs:
       SIMULATOR_BOOT_TIMEOUT_SECONDS: "600"
       SIMULATOR_BOOT_RECOVERY_TIMEOUT_SECONDS: "600"
       XCODE_PHASE_TIMEOUT_SECONDS: "2400"
+      # The iPad UI-smoke plan exceeded the prior 15-minute allowance after
+      # its unit phase passed. Keep the phase bounded while allowing the full
+      # deterministic plan to finalize a valid result bundle.
+      UI_SMOKE_PHASE_TIMEOUT_SECONDS: "1200"
       JOB_TIMEOUT_SECONDS: "7200"
       CLEANUP_UPLOAD_MARGIN_SECONDS: "1080"
 

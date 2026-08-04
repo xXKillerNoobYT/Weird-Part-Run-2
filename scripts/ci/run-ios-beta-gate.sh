@@ -122,6 +122,26 @@ preserve_failed_ui_smoke_attempt() {
   mv "$ui_result" "$artifact_dir/ui-smokes-attempt-1-${gate_name}.xcresult" || fail "could not preserve first UI-smoke xcresult bundle"
 }
 
+wait_for_xcode_destination() {
+  local deadline=$((SECONDS + 120))
+  local destinations
+
+  # simctl bootstatus can finish before Xcode's destination registry observes a
+  # newly created simulator. Do not start a test phase until the exact UUID is
+  # visible to the same scheme that will run the UI smoke.
+  while (( SECONDS < deadline )); do
+    destinations="$(xcodebuild -showdestinations \
+      -workspace "$workspace/Weird Parts.xcworkspace" \
+      -scheme "WiredPart-iOS-Stage9-Smokes" 2>&1)"
+    printf '%s\n' "$destinations" >> "$artifact_dir/destination-readiness.log"
+    if grep -Fq "$simulator_id" <<< "$destinations"; then
+      return 0
+    fi
+    sleep 5
+  done
+  return 1
+}
+
 if [[ "${IOS_BETA_GATE_SELF_TEST:-}" == "1" ]]; then
   self_test_dir="$(mktemp -d)"
   trap 'rm -rf "$self_test_dir"' EXIT
@@ -147,6 +167,15 @@ if [[ "${IOS_BETA_GATE_SELF_TEST:-}" == "1" ]]; then
   gate_name="iPhone"
   ui_log="$self_test_dir/ui-smokes.log"
   ui_result="$self_test_dir/ui-smokes.xcresult"
+  workspace="$self_test_dir/workspace"
+  simulator_id="self-test-simulator-id"
+  mkdir -p "$workspace/Weird Parts.xcworkspace" "$artifact_dir"
+  xcodebuild() {
+    printf 'Available destinations: id:%s\n' "$simulator_id"
+  }
+  wait_for_xcode_destination || exit 1
+  [[ -s "$artifact_dir/destination-readiness.log" ]] || exit 1
+  unset -f xcodebuild
 
   mkdir -p "$artifact_dir/stale-ui-smokes-iPhone.xcresult"
   prepare_artifact_dir
@@ -378,6 +407,11 @@ if (( first_boot_status != 0 )); then
   else
     fail "$gate_name simulator did not finish booting before the timeout (status $first_boot_status)"
   fi
+fi
+
+if ! wait_for_xcode_destination; then
+  capture_simulator_diagnostics "destination-readiness"
+  fail "$gate_name simulator booted but Xcode did not expose its UUID within 120 seconds"
 fi
 
 run_xcode_phase() {
