@@ -515,11 +515,7 @@ public actor PeerManager {
                 // placeholder host, so HTTP could only throw badURL (-1000), which
                 // is the raw error the owner hit from the Nearby Devices sheet.
                 if !mpManager.isConnected(toPeer: peer.deviceId) {
-                    mpManager.invite(deviceId: peer.deviceId)
-                    let deadline = Date().addingTimeInterval(10)
-                    while !mpManager.isConnected(toPeer: peer.deviceId), Date() < deadline {
-                        try? await Task.sleep(nanoseconds: 300_000_000)
-                    }
+                    _ = await awaitMultipeerConnection(to: peer.deviceId, using: mpManager)
                 }
                 guard mpManager.isConnected(toPeer: peer.deviceId) else {
                     let result = PeerSyncResult(
@@ -1663,6 +1659,43 @@ public actor PeerManager {
         }
     }
 
+    /// Wait for an MCSession to reach `connected`, re-inviting once if the
+    /// first invitation lapses.
+    ///
+    /// FIELD P0 (owner, 2026-08-03, Bluetooth-only test): every wait here used
+    /// to be **20 s while `MultipeerManager.invite` sets a 30 s invitation
+    /// timeout** — the app gave up 10 s before iOS had finished trying, so a
+    /// link that needed longer than 20 s could never succeed. Peer-to-peer
+    /// Wi-Fi (AWDL) connects in ~1-3 s and hid this; **Bluetooth-only takes
+    /// far longer**, so the owner saw "couldn't connect" on every attempt with
+    /// Wi-Fi off. The wait must always exceed the invitation window, and a
+    /// dropped invitation (Multipeer delivers no failure callback) must be
+    /// re-sent rather than waited out.
+    static let multipeerInviteTimeout: TimeInterval = 30
+    static let multipeerConnectWait: TimeInterval = 75
+
+    private func awaitMultipeerConnection(
+        to deviceId: String,
+        using mpManager: MultipeerManager,
+        timeout: TimeInterval = PeerManager.multipeerConnectWait
+    ) async -> Bool {
+        if mpManager.isConnected(toPeer: deviceId) { return true }
+        mpManager.invite(deviceId: deviceId)
+        let started = Date()
+        var reinvited = false
+        while Date().timeIntervalSince(started) < timeout {
+            if mpManager.isConnected(toPeer: deviceId) { return true }
+            // Just past the invitation's own expiry, send exactly one more.
+            if !reinvited, Date().timeIntervalSince(started) > Self.multipeerInviteTimeout + 2 {
+                mpManager.invite(deviceId: deviceId)
+                reinvited = true
+                logger.info("[PeerManager] Re-invited \(String(deviceId.prefix(8)), privacy: .public) — first invitation lapsed without connecting")
+            }
+            try? await Task.sleep(nanoseconds: 300_000_000)
+        }
+        return mpManager.isConnected(toPeer: deviceId)
+    }
+
     /// Joiner side: request and await the full initial company sync over Bluetooth.
     public func requestFullSyncOverMultipeer(hostDeviceId: String) async throws {
         guard let mpManager = multipeerManager else { throw MultipeerPairingError.notAvailable }
@@ -1676,10 +1709,8 @@ public actor PeerManager {
         guard let authorizationToken = receivedSnapshotTokens[hostDeviceId] else {
             throw MultipeerPairingError.rejected
         }
-        let deadline = Date().addingTimeInterval(20)
-        while !mpManager.isConnected(toPeer: hostDeviceId) {
-            if Date() >= deadline { throw MultipeerPairingError.connectionTimeout }
-            try? await Task.sleep(nanoseconds: 300_000_000)
+        guard await awaitMultipeerConnection(to: hostDeviceId, using: mpManager) else {
+            throw MultipeerPairingError.connectionTimeout
         }
         let request = try JSONEncoder().encode(
             FullSyncRequest(authorizationToken: authorizationToken)
@@ -2032,12 +2063,10 @@ public actor PeerManager {
             throw MultipeerPairingError.responseVerificationFailed
         }
 
-        // 1. Invite the host and wait for the MCSession to connect.
-        mpManager.invite(deviceId: hostDeviceId)
-        let deadline = Date().addingTimeInterval(20)
-        while !mpManager.isConnected(toPeer: hostDeviceId) {
-            if Date() >= deadline { throw MultipeerPairingError.connectionTimeout }
-            try? await Task.sleep(nanoseconds: 300_000_000)
+        // 1. Invite the host and wait for the MCSession to connect. The wait
+        //    must outlast the invitation timeout (see awaitMultipeerConnection).
+        guard await awaitMultipeerConnection(to: hostDeviceId, using: mpManager) else {
+            throw MultipeerPairingError.connectionTimeout
         }
 
         // 2. Send a proof bound to this attempt, expected host, and durable device key.
