@@ -54,6 +54,13 @@ final class MoreMenuModulePushUITests: XCTestCase {
     /// The same push for every overflow module, so a single unresolved id cannot
     /// hide behind the others. This is what splits "navigation is broken" from
     /// "one module is broken" without a human bisecting by hand.
+    ///
+    /// **Deliberately NOT in `Stage9DeterministicUISmokes.xctestplan`.** That plan
+    /// is bounded on purpose and runs under a 900s phase timeout; this test walks
+    /// five modules and would meaningfully change its runtime, and a UI phase that
+    /// times out produces the half-written xcresult flake #1636 exists to absorb.
+    /// Run it locally when navigation changes, or promote it to a broader plan.
+    /// Only `testNotebooksModuleOpensFromMoreMenu` is in the gate.
     func testEveryOverflowModulePushesRealContent() throws {
         let moreTab = app.tabBars.buttons["More"]
         XCTAssertTrue(moreTab.waitForExistence(timeout: 30), "The More tab should be reachable after login.")
