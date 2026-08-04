@@ -162,6 +162,7 @@ extension AppDatabase {
         registerMigration116TeamMutationAttribution(&migrator)
         registerMigration119SyncGapTables(&migrator)
         registerContactEmailRepair(&migrator)
+        registerMigration121DeviceLogs(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6286,5 +6287,44 @@ private func registerContactEmailRepair(_ migrator: inout DatabaseMigrator) {
         migrationLogger.notice(
             "120_repair_encrypted_contact_emails: recovered \(recovered), left intact \(unrecoverable)"
         )
+    }
+}
+
+private func registerMigration121DeviceLogs(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("121_device_logs") { db in
+        try db.create(table: "device_logs", ifNotExists: true) { t in
+            t.autoIncrementedPrimaryKey("id")
+            t.column("device_id", .text).notNull()
+            t.column("device_name", .text)
+            t.column("app_version", .text)
+            t.column("level", .text).notNull()          // error | warn | info
+            t.column("category", .text).notNull()       // sync | pairing | startup | ...
+            t.column("message", .text).notNull()
+            t.column("detail", .text)                   // optional JSON
+            t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+            t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
+        }
+        try db.create(
+            index: "idx_device_logs_created", on: "device_logs",
+            columns: ["created_at"], ifNotExists: true
+        )
+        try db.create(
+            index: "idx_device_logs_device_level", on: "device_logs",
+            columns: ["device_id", "level"], ifNotExists: true
+        )
+
+        // Replicate like any other synced table (same trigger shape as
+        // migration 112, which only covered tables existing at ITS run).
+        for (op, rowRef) in [("INSERT", "NEW"), ("UPDATE", "NEW"), ("DELETE", "OLD")] {
+            try db.execute(sql: """
+                CREATE TRIGGER IF NOT EXISTS trg_sync_device_logs_\(op.lowercased())
+                AFTER \(op) ON [device_logs]
+                WHEN (SELECT COUNT(*) FROM _sync_apply_guard) = 0
+                BEGIN
+                    INSERT INTO _change_log (device_id, table_name, record_id, operation)
+                    VALUES ('', 'device_logs', \(rowRef).id, '\(op)');
+                END
+                """)
+        }
     }
 }
