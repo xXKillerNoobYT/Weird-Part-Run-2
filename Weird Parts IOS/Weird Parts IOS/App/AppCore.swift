@@ -391,8 +391,15 @@ final class AppCore: ObservableObject {
             logger.error(
                 "[AppCore] bootstrap failed domain=\(nsError.domain, privacy: .public) code=\(nsError.code, privacy: .public) description=\(error.localizedDescription, privacy: .public)"
             )
-            loadError = userFriendlyError(error, context: "start app")
-            BugReportErrorLog.shared.record(loadError, context: "App startup")
+            // A startup-failure screen is a DIAGNOSTIC surface: the generic
+            // "Couldn't start app. Pull down to retry." hid the OSStatus that
+            // would have identified the Mac keychain failure immediately
+            // (owner, 2026-08-04 — two builds burned guessing). Show the real
+            // reason underneath the friendly line.
+            let friendly = userFriendlyError(error, context: "start app")
+            let technical = "\(nsError.domain) \(nsError.code): \(error.localizedDescription)"
+            loadError = "\(friendly)\n\n\(technical)"
+            BugReportErrorLog.shared.record(loadError ?? friendly, context: "App startup")
         }
     }
 
