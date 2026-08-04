@@ -24,6 +24,7 @@ required_workflow_fragments = {
     "iPad required context remains stable": "- name: iPad",
     "job timeout is declared": "timeout-minutes: 120",
     "script receives the job timeout": 'JOB_TIMEOUT_SECONDS: "7200"',
+    "UI-smoke phase retains its bounded timeout": 'UI_SMOKE_PHASE_TIMEOUT_SECONDS: "1200"',
     "cleanup and upload margin is reserved": 'CLEANUP_UPLOAD_MARGIN_SECONDS: "1080"',
 }
 
