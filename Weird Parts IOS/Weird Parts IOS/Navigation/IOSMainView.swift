@@ -826,6 +826,22 @@ struct IOSMainView: View {
                     )
                         .environmentObject(appCore)
                         .environmentObject(tabPrefs)
+                } else {
+                    // Without this branch an unresolved id pushed an EMPTY view:
+                    // the row responded, a blank screen appeared, and nothing was
+                    // logged anywhere. To a tester that is "the page won't load"
+                    // (#1577); to CI it is indistinguishable from success. Say
+                    // what happened instead of showing nothing — the same reason
+                    // the Mac startup screen now prints its real error code.
+                    ContentUnavailableView {
+                        Label("Can't open this section", systemImage: "questionmark.folder")
+                    } description: {
+                        Text("\"\(moduleId)\" isn't a section this app knows about. "
+                             + "This is a bug — please report it with this screen.")
+                    }
+                    .onAppear {
+                        assertionFailure("Unresolved module id pushed from More: \(moduleId)")
+                    }
                 }
             }
         }
