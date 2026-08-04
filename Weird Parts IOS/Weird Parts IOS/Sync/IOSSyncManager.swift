@@ -300,9 +300,18 @@ final class IOSSyncManager {
                 totalPushed += r.pushed
                 totalPulled += r.pulled
             }
-            let failed = results.filter { !$0.success }
+            // A deferred peer is mid-onboarding, not broken (#1625) — counting
+            // it as a failure showed the HOST a red "Sync failed" while it was
+            // correctly waiting for the joiner's first download.
+            let failed = results.filter { !$0.success && !$0.deferred }
             if !failed.isEmpty, errorMessage == nil {
                 errorMessage = "Sync failed with \(failed.count) peer(s)"
+            }
+            let waiting = results.filter(\.deferred)
+            if !waiting.isEmpty, errorMessage == nil {
+                syncProgressMessage = waiting.count == 1
+                    ? "Waiting for \(waiting[0].peerName)'s first download to finish…"
+                    : "Waiting for \(waiting.count) devices' first download to finish…"
             }
         }
 
@@ -757,6 +766,13 @@ final class IOSSyncManager {
             lastHostSyncSummary = latest.success
                 ? "Sent \(latest.pushed) records to \(latest.peerName)"
                 : "Sync with \(latest.peerName) failed"
+        }
+
+        // Joiner-side live snapshot progress (#1417): show real movement while
+        // the initial download runs instead of a frozen message.
+        if syncStatus == .syncing,
+           let records = state.snapshotReceivedRecords.values.max(), records > 0 {
+            syncProgressMessage = "Downloading data… \(records) records received"
         }
 
         // Merge LAN peers into our peer list

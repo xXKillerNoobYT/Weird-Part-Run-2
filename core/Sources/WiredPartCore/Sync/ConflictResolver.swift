@@ -173,6 +173,18 @@ public enum ConflictResolver {
         "payment_records", "customer_communications", "contractor_notes", "contractor_ratings",
         // Work classification audit
         "classification_history",
+        // 100%-sync gap closure (owner directive 2026-08-01, audit on #1417):
+        // business tables that predated any classification gate. Their change
+        // triggers are installed by migration 119 (frozen copy of this list).
+        "wishlist_items", "color_brand_skus", "color_supplier_costs", "part_change_log",
+        "job_stages", "job_stage_templates", "job_stage_category_map",
+        "job_return_intakes", "job_return_intake_items",
+        "shift_templates", "company_holidays", "overtime_settings",
+        "vehicle_issue_reports", "vehicle_location_logs",
+        "warehouse_zones", "warehouse_walking_paths", "warehouse_walking_path_stops",
+        "staging_box_contents",
+        "audit_session_events", "multi_user_audit_assignments",
+        "timesheet_correction_audits", "labor_entry_correction_audits",
         // Estimation
         "estimation_questions", "estimation_responses", "estimation_results",
         "estimation_reviews", "estimation_question_rejections",
@@ -209,6 +221,11 @@ public enum ConflictResolver {
         // device-derived from local photos; binary payloads belong to
         // BinarySyncManager (Copilot review on PR #1422).
         "image_match_history",
+        // Fleet diagnostics — every device's technical log replicates so
+        // field failures are readable from the shop Mac (owner 2026-08-03).
+        // Its change triggers are installed by migration 121, NOT by 119:
+        // 119 uses a frozen table list that predates this table.
+        "device_logs",
         // Sync infrastructure (these are managed by sync itself)
         "_change_log", "_conflict_log", "_vector_clock", "_device_registry",
         "_binary_attachments", "_sync_transfer_log",
@@ -216,6 +233,30 @@ public enum ConflictResolver {
 
     /// Validate that a table name is in the whitelist.
     /// Returns false for unknown or potentially malicious table names.
+    /// Tables that intentionally NEVER sync — device-scoped by design.
+    /// Every table in the database must appear in exactly one of
+    /// `allowedSyncTables` or this set; `SyncTableClassificationTests`
+    /// fails the build when a new table is left unclassified (the gap that
+    /// silently accumulated 22 unsynced business tables until 2026-08-01).
+    static let deviceLocalTables: Set<String> = [
+        // Per-Mac AI agent keys and their audit trail — trust is per device.
+        "agent_links", "agent_link_calls",
+        // Per-device login sessions.
+        "auth_token_sessions",
+        // Local wizard/import scratch state.
+        "company_setup_draft", "part_import_sessions",
+        "part_import_row_evidence", "part_import_saved_mappings",
+        // Local operational logs and locks (lock semantics cannot survive
+        // asynchronous merge).
+        "background_task_log", "notebook_entry_edit_locks",
+        // On-device AI conversations (architecture: never leave the device).
+        "ai_conversation_messages",
+        // Regenerable ML derivatives.
+        "part_image_features",
+        // On-device estimation calibration.
+        "estimation_question_accuracy_reviews",
+    ]
+
     public static func isAllowedTable(_ name: String) -> Bool {
         allowedSyncTables.contains(name.lowercased())
     }
@@ -251,6 +292,19 @@ public enum ConflictResolver {
                     try dbConn.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
 
                     let outcome: (applied: Int, conflicts: Int, skipped: Int)
+
+                    // `_device_registry` is keyed by device_id (TEXT), not `id`,
+                    // so the generic id-keyed apply below could NEVER apply it —
+                    // every incoming row failed with "no such column: id" and was
+                    // swallowed as result.errors. Net effect (security audit
+                    // 2026-08-03, P0): deactivating a lost/stolen device revoked
+                    // it ONLY on the device that performed the revocation; every
+                    // other paired device kept treating it as trusted forever.
+                    if change.tableName == "_device_registry" {
+                        let applied = try applyDeviceRegistryChange(db: dbConn, change: change)
+                        try dbConn.execute(sql: "DELETE FROM _sync_apply_guard")
+                        return (applied, 0, applied == 1 ? 0 : 1)
+                    }
 
                     switch change.operation.uppercased() {
                     case "DELETE":
@@ -1042,6 +1096,69 @@ public enum ConflictResolver {
     }
 
     // MARK: - Private: Helpers
+
+    /// Apply an incoming `_device_registry` change.
+    ///
+    /// Two things make this table special:
+    /// 1. **Its primary key is `device_id` (TEXT), not `id`.** The producer
+    ///    (`DeviceResetService.deactivateCurrentDevice`) therefore writes
+    ///    `record_id = 0` and carries the real id inside `changed_fields`.
+    /// 2. **Revocation must be monotonic.** Sync may only ever make trust
+    ///    MORE restrictive: a device that has been deactivated cannot un-
+    ///    deactivate or re-trust itself by pushing a row back at us. Re-
+    ///    enabling a device is a deliberate local admin action, never a
+    ///    replicated one — otherwise revoking a stolen device would be
+    ///    undone by that same device's next sync.
+    ///
+    /// Returns 1 when a row was updated, 0 when there was nothing to apply.
+    static func applyDeviceRegistryChange(db: Database, change: IncomingChange) throws -> Int {
+        // The affected device id lives in changed_fields (preferred) or in a
+        // full record payload.
+        func stringField(_ json: String?, _ key: String) -> String? {
+            guard let json, let data = json.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { return nil }
+            if let s = obj[key] as? String { return s }
+            if let n = obj[key] as? NSNumber { return n.stringValue }
+            return nil
+        }
+        func intField(_ json: String?, _ key: String) -> Int? {
+            guard let json, let data = json.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { return nil }
+            if let n = obj[key] as? NSNumber { return n.intValue }
+            if let s = obj[key] as? String { return Int(s) }
+            return nil
+        }
+
+        let targetId = stringField(change.changedFields, "device_id")
+            ?? stringField(change.recordData, "device_id")
+        guard let targetId, !targetId.isEmpty else { return 0 }
+
+        let deactivated = intField(change.changedFields, "is_deactivated")
+            ?? intField(change.recordData, "is_deactivated")
+        let trusted = intField(change.changedFields, "is_trusted")
+            ?? intField(change.recordData, "is_trusted")
+
+        var applied = 0
+        // Monotonic revocation only: 1 -> deactivate; 0 is ignored.
+        if deactivated == 1 {
+            try db.execute(
+                sql: "UPDATE _device_registry SET is_deactivated = 1 WHERE device_id = ?",
+                arguments: [targetId]
+            )
+            applied = max(applied, db.changesCount)
+        }
+        // Monotonic distrust only: 0 -> untrust; 1 is ignored.
+        if trusted == 0 {
+            try db.execute(
+                sql: "UPDATE _device_registry SET is_trusted = 0 WHERE device_id = ?",
+                arguments: [targetId]
+            )
+            applied = max(applied, db.changesCount)
+        }
+        return applied > 0 ? 1 : 0
+    }
 
     /// Fetch a local record by ID from any table.
     private static func getLocalRecord(db: Database, tableName: String, recordId: String) throws -> Row? {
