@@ -57,6 +57,8 @@ private final class MockBootstrapTaskAuditor: AppCoreBackgroundTaskAuditing, @un
 
 private final class OperationProbe: @unchecked Sendable {
     var ran = false
+    var storedKey: Data?
+    var addCallCount = 0
 }
 
 private enum QuestionnaireBreakTestError: Error {
@@ -514,13 +516,242 @@ struct Weird_Parts_IOSTests {
         #expect(keyHex.count == 64)
     }
 
-    @Test func simulatorMissingEntitlementCanUseLocalBootstrapKeyFallback() {
-        #if targetEnvironment(simulator) || targetEnvironment(macCatalyst)
+    @Test func bootstrapFallbackUsesOnlyApprovedKeychainStatuses() {
         #expect(AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecMissingEntitlement))
-        #else
-        #expect(!AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecMissingEntitlement))
-        #endif
+        #expect(AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecNotAvailable))
+        #expect(!AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecInteractionNotAllowed))
         #expect(!AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecAuthFailed))
+    }
+
+    @Test func bootstrapFallbackPersistsForApprovedReadFailureAndCleansUp() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BootstrapFallback-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let unavailableKeychain = AppCore.BootstrapKeychainAccess(
+            read: { (errSecMissingEntitlement, nil) },
+            add: { _ in
+                Issue.record("fallback must be used before a Keychain write")
+                return errSecParam
+            },
+            delete: { errSecSuccess }
+        )
+
+        let first = try AppCore.deviceBootstrapKeyHex(
+            processArguments: [],
+            keychain: unavailableKeychain,
+            fallbackDirectory: directory
+        )
+        let second = try AppCore.deviceBootstrapKeyHex(
+            processArguments: [],
+            keychain: unavailableKeychain,
+            fallbackDirectory: directory
+        )
+        let fallbackURL = try AppCore.localFallbackBootstrapKeyURL(in: directory)
+
+        #expect(first.count == 64)
+        #expect(first == second)
+        #expect(FileManager.default.fileExists(atPath: fallbackURL.path))
+        #expect(try fallbackURL.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
+
+        try AppCore.deleteLocalFallbackBootstrapKey(in: directory)
+        #expect(!FileManager.default.fileExists(atPath: fallbackURL.path))
+    }
+
+    @Test func bootstrapFallbackExistingKeyRepairsBackupExclusion() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BootstrapFallback-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fallbackURL = try AppCore.localFallbackBootstrapKeyURL(in: directory)
+        let existingKey = Data(repeating: 0xa5, count: 32)
+        try existingKey.write(to: fallbackURL, options: .atomic)
+
+        var unexcludedValues = URLResourceValues()
+        unexcludedValues.isExcludedFromBackup = false
+        var mutableURL = fallbackURL
+        try mutableURL.setResourceValues(unexcludedValues)
+
+        let keyHex = try AppCore.localFallbackBootstrapKeyHex(in: directory)
+
+        #expect(keyHex == String(repeating: "a5", count: 32))
+        #expect(
+            try fallbackURL.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true
+        )
+    }
+
+    @Test func bootstrapFallbackPromotesExistingKeyWhenKeychainRecovers() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BootstrapFallback-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let unavailableKeychain = AppCore.BootstrapKeychainAccess(
+            read: { (errSecNotAvailable, nil) },
+            add: { _ in
+                Issue.record("unavailable Keychain must use the local fallback before a write")
+                return errSecParam
+            },
+            delete: { errSecSuccess }
+        )
+        let promotionProbe = OperationProbe()
+        let recoveredKeychain = AppCore.BootstrapKeychainAccess(
+            read: { (errSecItemNotFound, nil) },
+            add: { keyData in
+                promotionProbe.storedKey = keyData
+                return errSecSuccess
+            },
+            delete: { errSecSuccess }
+        )
+
+        let fallbackKey = try AppCore.deviceBootstrapKeyHex(
+            processArguments: [],
+            keychain: unavailableKeychain,
+            fallbackDirectory: directory
+        )
+        let recoveredKey = try AppCore.deviceBootstrapKeyHex(
+            processArguments: [],
+            keychain: recoveredKeychain,
+            fallbackDirectory: directory
+        )
+        let fallbackURL = try AppCore.localFallbackBootstrapKeyURL(in: directory)
+
+        #expect(recoveredKey == fallbackKey)
+        #expect(promotionProbe.storedKey?.map { String(format: "%02x", $0) }.joined() == fallbackKey)
+        #expect(try fallbackURL.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
+    }
+
+    @Test func bootstrapFallbackConcurrentCallersShareOnePersistedKey() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BootstrapFallback-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let keyHexes = try await withThrowingTaskGroup(of: String.self, returning: [String].self) { group in
+            for _ in 0..<16 {
+                group.addTask {
+                    try AppCore.localFallbackBootstrapKeyHex(in: directory)
+                }
+            }
+
+            var values: [String] = []
+            for try await keyHex in group {
+                values.append(keyHex)
+            }
+            return values
+        }
+        let fallbackURL = try AppCore.localFallbackBootstrapKeyURL(in: directory)
+
+        #expect(Set(keyHexes).count == 1)
+        #expect(try Data(contentsOf: fallbackURL).count == 32)
+        #expect(try fallbackURL.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
+    }
+
+    @Test func bootstrapFallbackUsesNotAvailableButRejectsLockedKeychain() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BootstrapFallback-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let unavailableKeychain = AppCore.BootstrapKeychainAccess(
+            read: { (errSecNotAvailable, nil) },
+            add: { _ in
+                Issue.record("fallback must be used before a Keychain write")
+                return errSecParam
+            },
+            delete: { errSecSuccess }
+        )
+        let lockedKeychain = AppCore.BootstrapKeychainAccess(
+            read: { (errSecInteractionNotAllowed, nil) },
+            add: { _ in
+                Issue.record("locked keychain must not attempt a write")
+                return errSecParam
+            },
+            delete: { errSecSuccess }
+        )
+
+        _ = try AppCore.deviceBootstrapKeyHex(
+            processArguments: [],
+            keychain: unavailableKeychain,
+            fallbackDirectory: directory
+        )
+        do {
+            _ = try AppCore.deviceBootstrapKeyHex(
+                processArguments: [],
+                keychain: lockedKeychain,
+                fallbackDirectory: directory
+            )
+            Issue.record("locked keychain unexpectedly used fallback")
+        } catch let CipherKeyError.keychainAccessFailed(status) {
+            #expect(status == errSecInteractionNotAllowed)
+        }
+        let fallbackURL = try AppCore.localFallbackBootstrapKeyURL(in: directory)
+        #expect(FileManager.default.fileExists(atPath: fallbackURL.path))
+    }
+
+    @Test func bootstrapFallbackRejectsLockedDuplicateRereadBeforeKeychainMutation() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BootstrapFallback-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let probe = OperationProbe()
+        let lockedDuplicateKeychain = AppCore.BootstrapKeychainAccess(
+            read: {
+                if probe.ran {
+                    return (errSecInteractionNotAllowed, nil)
+                }
+                probe.ran = true
+                return (errSecItemNotFound, nil)
+            },
+            add: { _ in
+                probe.addCallCount += 1
+                if probe.addCallCount > 1 {
+                    Issue.record("unexpected retry add after locked reread")
+                }
+                return errSecDuplicateItem
+            },
+            delete: {
+                Issue.record("locked duplicate reread must not delete the Keychain key")
+                return errSecSuccess
+            }
+        )
+
+        do {
+            _ = try AppCore.deviceBootstrapKeyHex(
+                processArguments: [],
+                keychain: lockedDuplicateKeychain,
+                fallbackDirectory: directory
+            )
+            Issue.record("locked duplicate reread unexpectedly recovered")
+        } catch let CipherKeyError.keychainAccessFailed(status) {
+            #expect(status == errSecInteractionNotAllowed)
+        }
+
+        let fallbackURL = try AppCore.localFallbackBootstrapKeyURL(in: directory)
+        #expect(!FileManager.default.fileExists(atPath: fallbackURL.path))
+    }
+
+    @Test func bootstrapFallbackUsesApprovedStatusAfterDuplicateItemReread() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BootstrapFallback-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let probe = OperationProbe()
+        let racingKeychain = AppCore.BootstrapKeychainAccess(
+            read: {
+                if probe.ran {
+                    return (errSecNotAvailable, nil)
+                }
+                probe.ran = true
+                return (errSecItemNotFound, nil)
+            },
+            add: { _ in errSecDuplicateItem },
+            delete: {
+                Issue.record("approved reread failure must use fallback before deleting")
+                return errSecSuccess
+            }
+        )
+
+        let keyHex = try AppCore.deviceBootstrapKeyHex(
+            processArguments: [],
+            keychain: racingKeychain,
+            fallbackDirectory: directory
+        )
+        let fallbackURL = try AppCore.localFallbackBootstrapKeyURL(in: directory)
+
+        #expect(keyHex.count == 64)
+        #expect(FileManager.default.fileExists(atPath: fallbackURL.path))
     }
 
     @Test func debugCipherRecoveryOnlyMatchesDecryptNotADB() {

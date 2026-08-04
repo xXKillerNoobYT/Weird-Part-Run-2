@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import GRDB
 import CryptoKit
+import Security
 @testable import WiredPartCore
 
 @Suite("AuthService Tests", .serialized)
@@ -88,6 +89,14 @@ struct AuthServiceTests {
     }
 
     // MARK: - Token Generation & Parsing
+
+    @Test("session signing-key fallback is limited to unavailable Keychain states")
+    func testSigningKeyFallbackStatesStayNarrow() {
+        #expect(AuthService.canUseSigningKeyFallback(for: errSecMissingEntitlement))
+        #expect(AuthService.canUseSigningKeyFallback(for: errSecNotAvailable))
+        #expect(!AuthService.canUseSigningKeyFallback(for: errSecInteractionNotAllowed))
+        #expect(!AuthService.canUseSigningKeyFallback(for: errSecAuthFailed))
+    }
 
     @Test("generateLocalToken produces signed payload.signature format")
     func testGenerateToken() throws {
