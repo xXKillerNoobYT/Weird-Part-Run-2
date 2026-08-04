@@ -108,27 +108,30 @@ public final class CipherKeyManager: Sendable {
             Self.logger.error("CipherKeyManager: salt write raced (errSecDuplicateItem) and re-read also failed")
             throw CipherKeyError.keychainAccessFailed(errSecDuplicateItem)
         } catch CipherKeyError.keychainAccessFailed(let status)
-            where status != errSecInteractionNotAllowed {
+            where KeychainAvailability.isUnusable(status) {
             // FIELD P0 (owner, 2026-08-04, builds 41 AND 47 both dead on Mac):
-            // the previous version rescued only errSecMissingEntitlement and
+            // the original version rescued only errSecMissingEntitlement and
             // errSecNotAvailable — an ALLOWLIST. The iPad-on-Mac keychain
             // rejects the write with a different status (errSecParam is the
             // documented one for iOS accessibility classes on Mac, and the
             // add query sets kSecAttrAccessible on this build), so the rescue
             // never fired and the app could not open its database at all.
             //
-            // Inverted to a DENYLIST, which is the correct shape: the sandbox
-            // fallback is safe wherever the keychain is genuinely unusable,
-            // and only ONE status is dangerous — errSecInteractionNotAllowed
-            // means "temporarily locked, try later", where minting a second
-            // salt would orphan an existing encrypted database. That one still
-            // throws.
+            // The condition now lives in KeychainAvailability, shared with
+            // AuthService, because answering this question independently in two
+            // files produced three bugs in a row (#1622, #1647, #1652). Read
+            // that type for the full rule; the short version is that a fallback
+            // is safe wherever the keychain is genuinely unusable, and unsafe
+            // wherever it works and merely denied this attempt — there, a real
+            // salt exists and minting a second one orphans the database.
             Self.logger.warning("CipherKeyManager: keychain unusable (OSStatus \(status)) — using sandbox fallback salt")
             try writeFallbackSalt(salt)
             return salt
         } catch {
-            // Any other write failure (e.g. errSecAuthFailed) — surface the
-            // original error directly so callers get the real failure reason.
+            // Reached when the keychain WORKS and merely denied this attempt —
+            // locked, auth failed, or user cancelled (#1652). Surface the real
+            // error rather than minting a second salt: the true one is still in
+            // the keychain, and a fallback here makes the database undecryptable.
             throw error
         }
     }

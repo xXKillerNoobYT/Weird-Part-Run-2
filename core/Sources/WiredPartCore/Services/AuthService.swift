@@ -1350,11 +1350,26 @@ public final class AuthService: Sendable {
         return SymmetricKey(data: keyData)
     }()
 
-    /// Sandbox fallback for the session signing key — used ONLY where the
-    /// keychain reports missing-entitlement/not-available (same tradeoff and
-    /// storage envelope as CipherKeyManager's salt fallback from #1622).
+    /// Sandbox fallback for the session signing key — used wherever the keychain
+    /// is *unusable*, which is a DENYLIST, not an allowlist.
+    ///
+    /// This was `status == errSecMissingEntitlement || status == errSecNotAvailable`,
+    /// copied from CipherKeyManager's original #1622 fix. That allowlist is
+    /// exactly what #1647 had to replace: the iPad-on-Mac keychain returns a
+    /// status outside that pair, so the rescue never fired and the app would not
+    /// start. Keeping the allowlist here reproduced the same failure one layer
+    /// up — the database would open but the signing key would not persist, so
+    /// the user had to log in on every single launch. Same mistake, same cause,
+    /// second symptom.
+    ///
+    /// Delegates to `KeychainAvailability`, which is the single shared answer to
+    /// "is the keychain unusable here?" — see that type for the rule and for why
+    /// it is shared. This used to be an independent copy of the condition, and
+    /// the divergence between the two copies caused three bugs in a row (#1622,
+    /// #1647, #1652). It stays as a named wrapper only because the call sites
+    /// read better with it; it must never regain its own logic.
     static func canUseSigningKeyFallback(for status: OSStatus) -> Bool {
-        status == errSecMissingEntitlement || status == errSecNotAvailable
+        KeychainAvailability.isUnusable(status)
     }
 
     private static func fallbackSigningKeyURL() -> URL? {
