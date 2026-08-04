@@ -68,7 +68,7 @@ struct DevicePairingView: View {
 
             Spacer()
 
-            Text("Both devices need Wi-Fi turned on — pairing connects over peer-to-peer Wi-Fi even with no network. Bluetooth helps them find each other; a shared network makes syncing fastest.")
+            Text("Works over Bluetooth alone (slower — keep both devices awake and close). Turning Wi-Fi ON on both makes it much faster and needs no network; a shared network is fastest of all.")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
@@ -360,11 +360,20 @@ struct DevicePairingView: View {
         }
     }
 
+    /// Shown after a connect timeout when this device's Wi-Fi radio is off.
+    ///
+    /// Rewritten 2026-08-03 after the owner tested Bluetooth-only on purpose
+    /// ("We are on Bluetooth only right now") and was told to turn Wi-Fi on as
+    /// if that were the only option. Bluetooth-only pairing IS attempted and
+    /// now gets a connect window that outlasts the invitation (PeerManager
+    /// .multipeerConnectWait) — it is simply much slower. So: lead with what
+    /// to do to make Bluetooth-only work, and offer Wi-Fi as the faster route
+    /// rather than the required one.
     private var wifiOffGuidance: String {
         #if targetEnvironment(macCatalyst)
-        return "Pairing connects over peer-to-peer Wi-Fi (Bluetooth only finds nearby devices). This Mac's Wi-Fi looks off — turn Wi-Fi ON in the menu bar (it doesn't need to join a network), or put both devices on the same network and enter the shop device's address manually below."
+        return "Couldn't connect yet. Bluetooth-only pairing works but is slow — keep both devices awake, unlocked, and close together, and give it up to a minute. Faster: turn Wi-Fi ON in the menu bar (no network needed), or enter the shop device's address manually below."
         #else
-        return "Pairing connects over peer-to-peer Wi-Fi (Bluetooth only finds nearby devices). This device's Wi-Fi looks off — turn Wi-Fi ON in Settings (it doesn't need to join a network), then try again."
+        return "Couldn't connect yet. Bluetooth-only pairing works but is slow — keep both devices awake, unlocked, and close together, and give it up to a minute. Faster: turn Wi-Fi ON in Settings (it doesn't need to join a network), then try again."
         #endif
     }
 
