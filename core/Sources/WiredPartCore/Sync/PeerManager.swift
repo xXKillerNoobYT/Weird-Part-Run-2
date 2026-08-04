@@ -515,11 +515,7 @@ public actor PeerManager {
                 // placeholder host, so HTTP could only throw badURL (-1000), which
                 // is the raw error the owner hit from the Nearby Devices sheet.
                 if !mpManager.isConnected(toPeer: peer.deviceId) {
-                    mpManager.invite(deviceId: peer.deviceId)
-                    let deadline = Date().addingTimeInterval(10)
-                    while !mpManager.isConnected(toPeer: peer.deviceId), Date() < deadline {
-                        try? await Task.sleep(nanoseconds: 300_000_000)
-                    }
+                    _ = await awaitMultipeerConnection(to: peer.deviceId, using: mpManager)
                 }
                 guard mpManager.isConnected(toPeer: peer.deviceId) else {
                     let result = PeerSyncResult(
@@ -1237,43 +1233,10 @@ public actor PeerManager {
                     }
                 },
                 readPage: { [db] table, limit, offset in
-                    let rows = try await db.writer.read { dbConn in
-                        try Row.fetchAll(
-                            dbConn,
-                            sql: "SELECT * FROM [\(table)] ORDER BY rowid LIMIT ? OFFSET ?",
-                            arguments: [limit, offset]
-                        )
-                    }
-                    var changes: [IncomingChange] = []
-                    changes.reserveCapacity(rows.count)
-                    for row in rows {
-                        if table == "settings" {
-                            let key = (row["key"] as? String) ?? ""
-                            let category = row["category"] as String?
-                            if SettingsService.syncScope(for: key, category: category) == .device { continue }
-                        }
-
-                        guard let idValue = row["id"] as? Int64 else {
-                            throw MultipeerSnapshotError.missingRecordID(table: table)
-                        }
-                        let dict = Self.jsonRecordDict(from: row)
-                        guard JSONSerialization.isValidJSONObject(dict) else {
-                            throw MultipeerSnapshotError.rowEncodingFailed(table: table)
-                        }
-                        let jsonData = try JSONSerialization.data(withJSONObject: dict)
-                        guard let recordData = String(data: jsonData, encoding: .utf8) else {
-                            throw MultipeerSnapshotError.rowEncodingFailed(table: table)
-                        }
-                        changes.append(IncomingChange(
-                            deviceId: hostDeviceId,
-                            tableName: table,
-                            recordId: String(idValue),
-                            operation: "INSERT",
-                            recordData: recordData,
-                            timestamp: (row["updated_at"] as? String) ?? fallbackTimestamp
-                        ))
-                    }
-                    return BluetoothSnapshotPage(changes: changes, sourceRowCount: rows.count)
+                    try await Self.hostedSnapshotPage(
+                        db: db, table: table, limit: limit, offset: offset,
+                        hostDeviceId: hostDeviceId, fallbackTimestamp: fallbackTimestamp
+                    )
                 },
                 encode: { changes in
                     let changesData = try JSONEncoder().encode(changes)
@@ -1308,6 +1271,72 @@ public actor PeerManager {
             )
             logger.error("[PeerManager] Full Bluetooth snapshot failed for peer \(String(peerDeviceId.prefix(8)), privacy: .public): \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    /// One page of the hosted initial snapshot. Internal + static so the
+    /// id-less-table guard is directly testable.
+    ///
+    /// Field P0 (owner, 2026-08-02, build 44): the snapshot died 5-8s into
+    /// every attempt — warehouse_user_positions is in allowedSyncTables but
+    /// has NO id column, and the row loop threw missingRecordID for it,
+    /// aborting the WHOLE company transfer. Migration 112's trigger installer
+    /// skips id-less tables; the snapshot must too (they cannot participate
+    /// in id-based sync at all). Checked once per table at offset 0.
+    static func hostedSnapshotPage(
+        db: AppDatabase,
+        table: String,
+        limit: Int,
+        offset: Int,
+        hostDeviceId: String,
+        fallbackTimestamp: String
+    ) async throws -> BluetoothSnapshotPage {
+        if offset == 0 {
+            let columns = try await db.writer.read { dbConn in
+                try String.fetchAll(
+                    dbConn, sql: "SELECT name FROM pragma_table_info(?)", arguments: [table]
+                )
+            }
+            guard columns.contains("id") else {
+                return BluetoothSnapshotPage(changes: [], sourceRowCount: 0)
+            }
+        }
+        let rows = try await db.writer.read { dbConn in
+            try Row.fetchAll(
+                dbConn,
+                sql: "SELECT * FROM [\(table)] ORDER BY rowid LIMIT ? OFFSET ?",
+                arguments: [limit, offset]
+            )
+        }
+        var changes: [IncomingChange] = []
+        changes.reserveCapacity(rows.count)
+        for row in rows {
+            if table == "settings" {
+                let key = (row["key"] as? String) ?? ""
+                let category = row["category"] as String?
+                if SettingsService.syncScope(for: key, category: category) == .device { continue }
+            }
+
+            guard let idValue = row["id"] as? Int64 else {
+                throw MultipeerSnapshotError.missingRecordID(table: table)
+            }
+            let dict = Self.jsonRecordDict(from: row)
+            guard JSONSerialization.isValidJSONObject(dict) else {
+                throw MultipeerSnapshotError.rowEncodingFailed(table: table)
+            }
+            let jsonData = try JSONSerialization.data(withJSONObject: dict)
+            guard let recordData = String(data: jsonData, encoding: .utf8) else {
+                throw MultipeerSnapshotError.rowEncodingFailed(table: table)
+            }
+            changes.append(IncomingChange(
+                deviceId: hostDeviceId,
+                tableName: table,
+                recordId: String(idValue),
+                operation: "INSERT",
+                recordData: recordData,
+                timestamp: (row["updated_at"] as? String) ?? fallbackTimestamp
+            ))
+        }
+        return BluetoothSnapshotPage(changes: changes, sourceRowCount: rows.count)
     }
 
     private func sendFullSyncCompletion(
@@ -1630,6 +1659,43 @@ public actor PeerManager {
         }
     }
 
+    /// Wait for an MCSession to reach `connected`, re-inviting once if the
+    /// first invitation lapses.
+    ///
+    /// FIELD P0 (owner, 2026-08-03, Bluetooth-only test): every wait here used
+    /// to be **20 s while `MultipeerManager.invite` sets a 30 s invitation
+    /// timeout** — the app gave up 10 s before iOS had finished trying, so a
+    /// link that needed longer than 20 s could never succeed. Peer-to-peer
+    /// Wi-Fi (AWDL) connects in ~1-3 s and hid this; **Bluetooth-only takes
+    /// far longer**, so the owner saw "couldn't connect" on every attempt with
+    /// Wi-Fi off. The wait must always exceed the invitation window, and a
+    /// dropped invitation (Multipeer delivers no failure callback) must be
+    /// re-sent rather than waited out.
+    static let multipeerInviteTimeout: TimeInterval = 30
+    static let multipeerConnectWait: TimeInterval = 75
+
+    private func awaitMultipeerConnection(
+        to deviceId: String,
+        using mpManager: MultipeerManager,
+        timeout: TimeInterval = PeerManager.multipeerConnectWait
+    ) async -> Bool {
+        if mpManager.isConnected(toPeer: deviceId) { return true }
+        mpManager.invite(deviceId: deviceId)
+        let started = Date()
+        var reinvited = false
+        while Date().timeIntervalSince(started) < timeout {
+            if mpManager.isConnected(toPeer: deviceId) { return true }
+            // Just past the invitation's own expiry, send exactly one more.
+            if !reinvited, Date().timeIntervalSince(started) > Self.multipeerInviteTimeout + 2 {
+                mpManager.invite(deviceId: deviceId)
+                reinvited = true
+                logger.info("[PeerManager] Re-invited \(String(deviceId.prefix(8)), privacy: .public) — first invitation lapsed without connecting")
+            }
+            try? await Task.sleep(nanoseconds: 300_000_000)
+        }
+        return mpManager.isConnected(toPeer: deviceId)
+    }
+
     /// Joiner side: request and await the full initial company sync over Bluetooth.
     public func requestFullSyncOverMultipeer(hostDeviceId: String) async throws {
         guard let mpManager = multipeerManager else { throw MultipeerPairingError.notAvailable }
@@ -1643,10 +1709,8 @@ public actor PeerManager {
         guard let authorizationToken = receivedSnapshotTokens[hostDeviceId] else {
             throw MultipeerPairingError.rejected
         }
-        let deadline = Date().addingTimeInterval(20)
-        while !mpManager.isConnected(toPeer: hostDeviceId) {
-            if Date() >= deadline { throw MultipeerPairingError.connectionTimeout }
-            try? await Task.sleep(nanoseconds: 300_000_000)
+        guard await awaitMultipeerConnection(to: hostDeviceId, using: mpManager) else {
+            throw MultipeerPairingError.connectionTimeout
         }
         let request = try JSONEncoder().encode(
             FullSyncRequest(authorizationToken: authorizationToken)
@@ -1999,12 +2063,10 @@ public actor PeerManager {
             throw MultipeerPairingError.responseVerificationFailed
         }
 
-        // 1. Invite the host and wait for the MCSession to connect.
-        mpManager.invite(deviceId: hostDeviceId)
-        let deadline = Date().addingTimeInterval(20)
-        while !mpManager.isConnected(toPeer: hostDeviceId) {
-            if Date() >= deadline { throw MultipeerPairingError.connectionTimeout }
-            try? await Task.sleep(nanoseconds: 300_000_000)
+        // 1. Invite the host and wait for the MCSession to connect. The wait
+        //    must outlast the invitation timeout (see awaitMultipeerConnection).
+        guard await awaitMultipeerConnection(to: hostDeviceId, using: mpManager) else {
+            throw MultipeerPairingError.connectionTimeout
         }
 
         // 2. Send a proof bound to this attempt, expected host, and durable device key.
