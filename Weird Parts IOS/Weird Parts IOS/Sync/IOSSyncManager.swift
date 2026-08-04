@@ -768,6 +768,13 @@ final class IOSSyncManager {
                 : "Sync with \(latest.peerName) failed"
         }
 
+        // Joiner-side live snapshot progress (#1417): show real movement while
+        // the initial download runs instead of a frozen message.
+        if syncStatus == .syncing,
+           let records = state.snapshotReceivedRecords.values.max(), records > 0 {
+            syncProgressMessage = "Downloading data… \(records) records received"
+        }
+
         // Merge LAN peers into our peer list
         let lanPeers = state.peers.map { peer in
             let address = formattedPeerAddress(host: peer.host, port: Int(peer.port))

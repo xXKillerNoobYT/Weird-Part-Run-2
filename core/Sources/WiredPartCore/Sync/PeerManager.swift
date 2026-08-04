@@ -49,6 +49,9 @@ public struct PeerManagerState: Sendable {
     public var peers: [DiscoveredPeer]
     public var lastPeerSyncs: [String: PeerSyncResult]
     public var syncingWith: String?
+    /// Joiner-side live progress: records received so far per host during an
+    /// initial full snapshot (#1417 hardening — the UI shows real movement).
+    public var snapshotReceivedRecords: [String: Int] = [:]
 
     public init(
         running: Bool = false,
@@ -175,6 +178,10 @@ public actor PeerManager {
     private var receivedSnapshotTokens: [String: String] = [:]
     private var inFlightPairRequests: Set<String> = []
     private var inFlightFullSyncRequests: Set<String> = []
+    /// Last moment a snapshot batch arrived per host — drives the idle
+    /// watchdog (#1417: the old absolute 60s cap killed legitimate large
+    /// transfers; only a STALLED transfer may time out).
+    private var snapshotLastActivity: [String: Date] = [:]
     private var isDrainingMultipeerMessages = false
     #endif
 
@@ -1096,6 +1103,12 @@ public actor PeerManager {
                         pendingSnapshotChanges[message.fromDeviceId, default: []]
                             .append(contentsOf: changes)
                         count = changes.count
+                        // #1417 hardening: every batch feeds the idle watchdog
+                        // (a live transfer must never be killed) and the UI.
+                        snapshotLastActivity[message.fromDeviceId] = Date()
+                        state.snapshotReceivedRecords[message.fromDeviceId] =
+                            pendingSnapshotChanges[message.fromDeviceId, default: []].count
+                        notifyStateChanged()
                     } else {
                         count = try applyIncomingChanges(changes)
                     }
@@ -1162,6 +1175,9 @@ public actor PeerManager {
                 }
                 pendingSnapshotChanges.removeValue(forKey: message.fromDeviceId)
                 failedSnapshotPeers.remove(message.fromDeviceId)
+                snapshotLastActivity.removeValue(forKey: message.fromDeviceId)
+                state.snapshotReceivedRecords.removeValue(forKey: message.fromDeviceId)
+                notifyStateChanged()
                 handleFullSyncComplete(from: message.fromDeviceId)
                 return .fullSyncCompleted
             case "fullSyncApplied":
@@ -1695,9 +1711,21 @@ public actor PeerManager {
         }
     }
 
+    private func isFullSyncSettled(with peerDeviceId: String) -> Bool {
+        pendingFullSyncContinuations[peerDeviceId] == nil
+    }
+
+    private func snapshotIdleSeconds(_ peerDeviceId: String) -> TimeInterval {
+        guard let last = snapshotLastActivity[peerDeviceId] else { return .infinity }
+        return Date().timeIntervalSince(last)
+    }
+
     private func timeoutFullSync(with peerDeviceId: String) {
         failedSnapshotPeers.insert(peerDeviceId)
         pendingSnapshotChanges.removeValue(forKey: peerDeviceId)
+        snapshotLastActivity.removeValue(forKey: peerDeviceId)
+        state.snapshotReceivedRecords.removeValue(forKey: peerDeviceId)
+        notifyStateChanged()
         if let cont = pendingFullSyncContinuations.removeValue(forKey: peerDeviceId) {
             cont.resume(throwing: MultipeerPairingError.responseTimeout)
         }
@@ -1771,9 +1799,22 @@ public actor PeerManager {
                     .resume(throwing: MultipeerPairingError.sendFailed)
                 return
             }
+            // Idle watchdog (#1417): a transfer that is MOVING never times out;
+            // 45s with no batch = stalled; 15 min hard cap guards runaways.
+            snapshotLastActivity[hostDeviceId] = Date()
             Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 60_000_000_000)   // 60s cap for a full sync
-                await self?.timeoutFullSync(with: hostDeviceId)
+                let started = Date()
+                while true {
+                    try? await Task.sleep(nanoseconds: 10_000_000_000)
+                    guard let self else { return }
+                    let done = await self.isFullSyncSettled(with: hostDeviceId)
+                    if done { return }
+                    let idle = await self.snapshotIdleSeconds(hostDeviceId)
+                    if idle > 45 || Date().timeIntervalSince(started) > 900 {
+                        await self.timeoutFullSync(with: hostDeviceId)
+                        return
+                    }
+                }
             }
         }
     }
