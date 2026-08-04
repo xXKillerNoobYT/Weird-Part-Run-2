@@ -242,7 +242,7 @@ struct AgentLinkServerTests {
             (listJSON?["result"] as? [String: Any])?["tools"] as? [[String: Any]]
         )
         let names = tools.compactMap { $0["name"] as? String }
-        #expect(names.count == 7)
+        #expect(names.count == 9)   // 7 data reads + 2 fleet-diagnostics reads
         #expect(!names.contains("job_note_append"))
         // Calling the hidden write tool anyway is refused.
         let denied = try await post(
@@ -283,12 +283,15 @@ struct AgentLinkToolsTests {
         return ["rows": json]
     }
 
-    @Test("v1 registry lists the plan's eight tools")
+    @Test("v1 registry lists the plan's tools plus fleet diagnostics")
     func registryRoster() throws {
         let (_, registry, _) = try makeRegistry()
         #expect(Set(registry.tools.map(\.name)) == [
             "parts_search", "stock_levels", "jobs_list", "job_detail",
             "orders_status", "reports_summary", "system_health", "job_note_append",
+            // Owner 2026-08-03: field devices sync their logs here; an agent
+            // reads them instead of asking for screenshots.
+            "device_logs_recent", "device_logs_summary",
         ])
     }
 
@@ -326,6 +329,28 @@ struct AgentLinkToolsTests {
         #expect(summary["days"] as? Int == 7)
         #expect(summary["poCount"] as? Int == 0)
         #expect((summary["jobsTotal"] as? Int) != nil)
+    }
+
+    @Test("device_logs tools expose this device's AND field devices' entries")
+    func deviceLogTools() async throws {
+        let (env, registry, link) = try makeRegistry()
+        let logs = DeviceLogService(db: env.db, deviceId: "mac-shop", deviceName: "Shop Mac", appVersion: "1.0.0")
+        logs.error("sync", "join failed at 8s")
+        // A field device's entry arriving via sync.
+        try await env.db.writer.write { dbc in
+            try dbc.execute(sql: """
+                INSERT INTO device_logs (device_id, device_name, app_version, level, category, message)
+                VALUES ('ipad-field', 'I Work Tablet', '1.0.0', 'error', 'pairing', 'bluetooth connect timeout')
+                """)
+        }
+        let recent = try await call(registry, "device_logs_recent", link: link, ["level": "error"])
+        let rows = try #require(recent["rows"] as? [[String: Any]])
+        #expect(rows.contains { ($0["message"] as? String) == "bluetooth connect timeout" })
+        #expect(rows.contains { ($0["device"] as? String) == "I Work Tablet" })
+
+        let summary = try await call(registry, "device_logs_summary", link: link)
+        let devices = try #require(summary["rows"] as? [[String: Any]])
+        #expect(devices.contains { ($0["deviceId"] as? String) == "ipad-field" })
     }
 
     @Test("job_note_append creates the notebook, attributes the entry, and needs an acting user")

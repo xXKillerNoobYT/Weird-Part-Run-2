@@ -48,9 +48,11 @@ public enum AgentLinkTools {
         orders: OrdersService,
         notebooks: NotebooksService,
         reports: ReportsService,
+        deviceLogs: DeviceLogService? = nil,
         appVersion: String = "dev"
     ) -> AgentLinkToolRegistry {
-        AgentLinkToolRegistry(tools: [
+        let logs = deviceLogs ?? DeviceLogService(db: db, appVersion: appVersion)
+        return AgentLinkToolRegistry(tools: [
 
             AgentLinkTool(
                 name: "parts_search",
@@ -179,6 +181,49 @@ public enum AgentLinkTools {
                     row["topSupplierAmount"] = spend.topSupplierAmount
                 }
                 return try encode(row)
+            },
+
+            // Fleet diagnostics (owner 2026-08-03): field devices replicate
+            // their technical logs to this Mac, and an agent reads them here
+            // instead of asking the owner for screenshots.
+            AgentLinkTool(
+                name: "device_logs_recent",
+                description: "Recent technical log entries from THIS device and every field device that has synced (sync failures, pairing errors, startup problems). Filter by level (error/warn/info), category, or device_id.",
+                inputSchemaJSON: #"{"type":"object","properties":{"limit":{"type":"integer","maximum":500},"level":{"type":"string","enum":["error","warn","info"]},"category":{"type":"string"},"device_id":{"type":"string"}}}"#
+            ) { _, data in
+                let a = args(data)
+                let level = (a["level"] as? String).flatMap(DeviceLogService.Level.init(rawValue:))
+                let entries = try logs.recent(
+                    limit: limit(a, cap: 500, default: 100),
+                    level: level,
+                    category: a["category"] as? String,
+                    deviceId: a["device_id"] as? String
+                )
+                return try encode(entries.map { e -> [String: Any] in
+                    var row: [String: Any] = [
+                        "at": e.createdAt, "device": e.deviceName ?? e.deviceId,
+                        "level": e.level.rawValue, "category": e.category,
+                        "message": e.message,
+                    ]
+                    if let d = e.detail { row["detail"] = d }
+                    if let v = e.appVersion { row["appVersion"] = v }
+                    return row
+                })
+            },
+
+            AgentLinkTool(
+                name: "device_logs_summary",
+                description: "Which devices have reported logs, with error counts and last-seen times — the fleet health view.",
+                inputSchemaJSON: #"{"type":"object","properties":{},"additionalProperties":false}"#
+            ) { _, _ in
+                try encode(try logs.deviceSummary().map { d -> [String: Any] in
+                    var row: [String: Any] = [
+                        "deviceId": d.deviceId, "errors": d.errors, "total": d.total,
+                    ]
+                    if let n = d.deviceName { row["device"] = n }
+                    if let s = d.lastSeen { row["lastSeen"] = s }
+                    return row
+                })
             },
 
             AgentLinkTool(

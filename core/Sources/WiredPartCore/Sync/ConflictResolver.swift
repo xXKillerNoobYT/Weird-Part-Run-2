@@ -173,6 +173,9 @@ public enum ConflictResolver {
         "payment_records", "customer_communications", "contractor_notes", "contractor_ratings",
         // Work classification audit
         "classification_history",
+        // Fleet diagnostics — every device's technical log replicates so field
+        // failures are readable from the shop Mac (owner 2026-08-03).
+        "device_logs",
         // Estimation
         "estimation_questions", "estimation_responses", "estimation_results",
         "estimation_reviews", "estimation_question_rejections",

@@ -31,6 +31,9 @@ public final class AgentLinkService: Sendable {
         static let readTools: Set<String> = [
             "parts_search", "stock_levels", "jobs_list", "job_detail",
             "orders_status", "reports_summary", "system_health",
+            // Fleet diagnostics — read-only, and the reason the link exists
+            // for the developer (owner 2026-08-03).
+            "device_logs_recent", "device_logs_summary",
         ]
         /// Write tools per scope. Explicit ALLOWLISTS (Copilot review,
         /// 2026-08-02): a future tool added to the registry is callable by
