@@ -1362,29 +1362,14 @@ public final class AuthService: Sendable {
     /// the user had to log in on every single launch. Same mistake, same cause,
     /// second symptom.
     ///
-    /// The rule: rescue when the keychain is UNUSABLE HERE; never rescue when the
-    /// keychain works and access was merely denied or the item is simply absent.
-    /// In those cases a real key exists (or belongs) in the keychain, and writing
-    /// a sandbox key would strand it and silently invalidate every live session.
-    ///
-    /// Excluded — keychain is fine, this attempt just did not get the item:
-    ///   - `errSecSuccess` — nothing failed; callers must not consult a fallback.
-    ///   - `errSecItemNotFound` — normal first run. Generate and store properly.
-    ///   - `errSecInteractionNotAllowed` — locked, no UI available.
-    ///   - `errSecAuthFailed` / `errSecUserCanceled` — the user failed or
-    ///     dismissed authentication. Transient, and the real key is still there.
-    ///
-    /// Everything else rescues. That deliberately includes statuses we have not
-    /// seen: the whole reason #1647 exists is that the iPad-on-Mac keychain
-    /// returns something outside the two values #1622 guessed at, and we still
-    /// do not know which. Enumerating failure modes is what failed twice; the
-    /// only safe default is to rescue unless we can name a reason not to.
+    /// Delegates to `KeychainAvailability`, which is the single shared answer to
+    /// "is the keychain unusable here?" — see that type for the rule and for why
+    /// it is shared. This used to be an independent copy of the condition, and
+    /// the divergence between the two copies caused three bugs in a row (#1622,
+    /// #1647, #1652). It stays as a named wrapper only because the call sites
+    /// read better with it; it must never regain its own logic.
     static func canUseSigningKeyFallback(for status: OSStatus) -> Bool {
-        status != errSecSuccess
-            && status != errSecItemNotFound
-            && status != errSecInteractionNotAllowed
-            && status != errSecAuthFailed
-            && status != errSecUserCanceled
+        KeychainAvailability.isUnusable(status)
     }
 
     private static func fallbackSigningKeyURL() -> URL? {
