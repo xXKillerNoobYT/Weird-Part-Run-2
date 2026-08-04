@@ -382,7 +382,9 @@ struct IOSBackupsPage: View {
         backupSuccess = false
         errorMessage = nil
 
-        guard let sourcePath = dbPath, let dir = backupDir, let database = appCore.db else {
+        // `appCore.db` is checked but not bound: the backup copies the file at
+        // sourcePath, so it needs the database to EXIST, not a handle to it.
+        guard let sourcePath = dbPath, let dir = backupDir, appCore.db != nil else {
             errorMessage = "Cannot locate database or backup directory."
             isCreatingBackup = false
             return

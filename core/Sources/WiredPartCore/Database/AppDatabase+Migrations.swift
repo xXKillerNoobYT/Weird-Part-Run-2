@@ -1,5 +1,11 @@
 import Foundation
 import GRDB
+import os.log
+
+/// Migrations that repair data need to report scale — how many rows they fixed
+/// and how many they could not. Silence there is indistinguishable from "no
+/// damage found", which is exactly the wrong thing to guess about.
+let migrationLogger = Logger(subsystem: "com.wiredpart.core", category: "Migrations")
 
 // MARK: - Safe Column Addition Helper (fixes #201)
 
@@ -154,6 +160,8 @@ extension AppDatabase {
         registerMigration114AIConversationRecency(&migrator)
         registerMigration115SyncReplayGuard(&migrator)
         registerMigration116TeamMutationAttribution(&migrator)
+        registerMigration119SyncGapTables(&migrator)
+        registerContactEmailRepair(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6175,5 +6183,108 @@ private func registerMigration116TeamMutationAttribution(_ migrator: inout Datab
         try addColumnIfMissing(db, table: "employee_teams", column: "deleted_by", type: .integer)
         try addColumnIfMissing(db, table: "employee_team_members", column: "added_by", type: .integer)
         try addColumnIfMissing(db, table: "employee_team_members", column: "removed_by", type: .integer)
+    }
+}
+
+private func registerMigration119SyncGapTables(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("119_sync_gap_tables") { db in
+        // 100%-sync gap closure (owner 2026-08-01; audit on issue #1417).
+        // Migration 112 installed change triggers for the tables in
+        // ConflictResolver.allowedSyncTables AS OF ITS RUN — devices that ran
+        // it before 2026-08-02 never got triggers for these 22 business
+        // tables, so their rows silently stayed device-local. This migration
+        // uses a FROZEN copy of the added set (a migration must not read the
+        // live allowlist — it drifts) and is idempotent (IF NOT EXISTS +
+        // backfill WHERE NOT EXISTS) for fresh installs where 112 already
+        // covered them.
+        let addedTables = [
+            "wishlist_items", "color_brand_skus", "color_supplier_costs", "part_change_log",
+            "job_stages", "job_stage_templates", "job_stage_category_map",
+            "job_return_intakes", "job_return_intake_items",
+            "shift_templates", "company_holidays", "overtime_settings",
+            "vehicle_issue_reports", "vehicle_location_logs",
+            "warehouse_zones", "warehouse_walking_paths", "warehouse_walking_path_stops",
+            "staging_box_contents",
+            "audit_session_events", "multi_user_audit_assignments",
+            "timesheet_correction_audits", "labor_entry_correction_audits",
+        ]
+        let existingTables = try Set(String.fetchAll(
+            db, sql: "SELECT name FROM sqlite_master WHERE type = 'table'"
+        ))
+        for table in addedTables {
+            guard existingTables.contains(table) else { continue }
+            let columns = try String.fetchAll(
+                db, sql: "SELECT name FROM pragma_table_info(?)", arguments: [table]
+            )
+            guard columns.contains("id") else { continue }
+
+            for (op, rowRef) in [("INSERT", "NEW"), ("UPDATE", "NEW"), ("DELETE", "OLD")] {
+                try db.execute(sql: """
+                    CREATE TRIGGER IF NOT EXISTS trg_sync_\(table)_\(op.lowercased())
+                    AFTER \(op) ON [\(table)]
+                    WHEN (SELECT COUNT(*) FROM _sync_apply_guard) = 0
+                    BEGIN
+                        INSERT INTO _change_log (device_id, table_name, record_id, operation)
+                        VALUES ('', '\(table)', \(rowRef).id, '\(op)');
+                    END
+                    """)
+            }
+
+            // Backfill exactly as migration 112 did: pre-existing rows get one
+            // bootstrap INSERT entry so the next sync delivers them.
+            try db.execute(sql: """
+                INSERT INTO _change_log (device_id, table_name, record_id, operation, changed_fields)
+                SELECT '', '\(table)', id, 'INSERT', '{"__backfill__":1}' FROM [\(table)]
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM _change_log
+                    WHERE table_name = '\(table)' AND record_id = [\(table)].id
+                )
+                """)
+        }
+    }
+}
+
+/// 120 — recover contact emails that `updateContact` encrypted and nothing
+/// could read back (#1656).
+///
+/// `createContact` wrote this column in plaintext, `updateContact` wrote it
+/// AES-GCM-sealed, and no decrypt path existed anywhere — so editing any
+/// contact replaced a readable address with an unreadable blob. This walks
+/// the damaged rows and restores the ones this device can still decrypt.
+///
+/// Deliberately best-effort. Where the sealing key is gone — every device
+/// whose Keychain is unusable regenerated it on each launch — the row is
+/// LEFT UNTOUCHED. An unreadable address is bad; overwriting the last copy
+/// of it with a blank is worse, and it forecloses recovery if the key ever
+/// turns up. The count of each outcome is logged so the scale is knowable.
+private func registerContactEmailRepair(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("120_repair_encrypted_contact_emails") { db in
+        let rows = try Row.fetchAll(
+            db,
+            sql: """
+                SELECT id, email FROM entity_contacts
+                WHERE email IS NOT NULL AND email <> '' AND email NOT LIKE '%@%'
+                """
+        )
+        guard !rows.isEmpty else { return }
+
+        var recovered = 0
+        var unrecoverable = 0
+        for row in rows {
+            let stored: String? = row["email"]
+            guard let id: Int64 = row["id"] else { continue }
+            if let email = PeopleService.recoverEncryptedContactEmail(stored) {
+                try db.execute(
+                    sql: "UPDATE entity_contacts SET email = ? WHERE id = ?",
+                    arguments: [email, id]
+                )
+                recovered += 1
+            } else {
+                unrecoverable += 1
+            }
+        }
+        migrationLogger.notice(
+            "120_repair_encrypted_contact_emails: recovered \(recovered), left intact \(unrecoverable)"
+        )
     }
 }
