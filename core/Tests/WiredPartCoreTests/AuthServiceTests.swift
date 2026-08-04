@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import GRDB
 import CryptoKit
+import Security
 @testable import WiredPartCore
 
 @Suite("AuthService Tests", .serialized)
@@ -88,6 +89,35 @@ struct AuthServiceTests {
     }
 
     // MARK: - Token Generation & Parsing
+
+    @Test("session signing-key fallback rescues any unusable Keychain, not a fixed list")
+    func testSigningKeyFallbackRescuesUnknownFailures() {
+        // Known-unusable states still rescue.
+        #expect(AuthService.canUseSigningKeyFallback(for: errSecMissingEntitlement))
+        #expect(AuthService.canUseSigningKeyFallback(for: errSecNotAvailable))
+
+        // THE REGRESSION GUARD. This is the whole point of the fix and the
+        // assertion the old allowlist failed. The iPad-on-Mac keychain returns
+        // a status outside the two values #1622 guessed at, so the rescue never
+        // fired: first the app would not start (#1647), then it started but made
+        // the user log in every launch. We do not know which status the Mac
+        // returns, so an arbitrary unrecognised failure MUST rescue.
+        // Synthetic values, deliberately not any documented SecBase constant —
+        // they stand in for whatever the Mac actually returns, which we still
+        // have not measured.
+        #expect(AuthService.canUseSigningKeyFallback(for: OSStatus(-77777)))
+        #expect(AuthService.canUseSigningKeyFallback(for: OSStatus(-88888)))
+        #expect(AuthService.canUseSigningKeyFallback(for: OSStatus(-99999)))
+
+        // Keychain works and access was merely denied, or the item is simply
+        // absent — a real key exists or belongs there. Rescuing would strand it
+        // and silently invalidate every live session.
+        #expect(!AuthService.canUseSigningKeyFallback(for: errSecSuccess))
+        #expect(!AuthService.canUseSigningKeyFallback(for: errSecItemNotFound))
+        #expect(!AuthService.canUseSigningKeyFallback(for: errSecInteractionNotAllowed))
+        #expect(!AuthService.canUseSigningKeyFallback(for: errSecAuthFailed))
+        #expect(!AuthService.canUseSigningKeyFallback(for: errSecUserCanceled))
+    }
 
     @Test("generateLocalToken produces signed payload.signature format")
     func testGenerateToken() throws {

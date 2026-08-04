@@ -523,10 +523,9 @@ public final class LanSyncServer: Sendable {
 
     /// Start the server. Returns the OS-assigned port number.
     public func start() async throws -> UInt16 {
-        let params = NWParameters.tcp
-        params.allowLocalEndpointReuse = true
-
-        let listener = try NWListener(using: params, on: .any)
+        // Each server binds a fresh OS-assigned port. Reuse can route a request
+        // to a concurrently stopping listener instead of this server instance.
+        let listener = try NWListener(using: .tcp, on: .any)
         listenerLock.withLock { $0 = listener }
 
         let stateRef = self.state

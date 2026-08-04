@@ -109,6 +109,47 @@ should_retry_ui_smoke_bootstrap_failure() {
     grep -Eq "Test crashed with signal (term|abrt) while preparing to run tests\." "$xcode_log"
 }
 
+result_bundle_is_corrupt() {
+  # A phase-timeout alarm (or runner starvation) can kill xcodebuild mid-write,
+  # leaving an xcresult directory without its Info.plist — xcresulttool then
+  # refuses the bundle and the gate fails with NO failing test. Observed 6x on
+  # 2026-08-02 (e.g. runs 30725941573, 30730370453, 30759152155). A MISSING
+  # bundle stays a hard fail; only the half-written state is retryable.
+  local result_bundle="$1"
+  [[ -d "$result_bundle" ]] || return 1
+  [[ ! -f "$result_bundle/Info.plist" ]]
+}
+
+preserve_corrupt_phase_attempt() {
+  # Same evidence discipline as the bootstrap retry: the corrupt attempt's raw
+  # output is retained before the retry may overwrite the result path.
+  local phase="$1"
+  local result_bundle="$2"
+  local xcode_log="$3"
+  mv "$xcode_log" "$artifact_dir/${phase}-corrupt-attempt-1-xcodebuild.log" || fail "could not preserve corrupt-attempt log for $phase"
+  mv "$artifact_dir/${phase}-xcode-status.txt" "$artifact_dir/${phase}-corrupt-attempt-1-xcode-status.txt" || fail "could not preserve corrupt-attempt Xcode status for $phase"
+  mv "$artifact_dir/${phase}-tee-status.txt" "$artifact_dir/${phase}-corrupt-attempt-1-tee-status.txt" || fail "could not preserve corrupt-attempt tee status for $phase"
+  mv "$result_bundle" "$artifact_dir/${phase}-corrupt-attempt-1-${gate_name}.xcresult" || fail "could not preserve corrupt-attempt xcresult for $phase"
+}
+
+retry_phase_if_bundle_corrupt() {
+  # One bounded re-run per phase, ONLY for the half-written-bundle state.
+  local phase="$1"
+  local scheme="$2"
+  local result_bundle="$3"
+  local xcode_log="$4"
+  local phase_timeout="$5"
+  shift 5
+  if result_bundle_is_corrupt "$result_bundle"; then
+    echo "$gate_name $phase produced a corrupt xcresult (no Info.plist); preserving evidence and retrying the phase once" | tee -a "$artifact_dir/gate.log"
+    preserve_corrupt_phase_attempt "$phase" "$result_bundle" "$xcode_log"
+    run_xcode_phase "$phase" "$scheme" "$result_bundle" "$xcode_log" "$phase_timeout" "$@"
+    echo "${phase}_corrupt_bundle_retry=1" >> "$metadata_file"
+  else
+    echo "${phase}_corrupt_bundle_retry=0" >> "$metadata_file"
+  fi
+}
+
 preserve_failed_ui_smoke_attempt() {
   # A bootstrap retry can only be trusted if the failed attempt's raw result is
   # retained. Do this check before moving any other evidence and before a retry
@@ -120,6 +161,26 @@ preserve_failed_ui_smoke_attempt() {
   mv "$artifact_dir/ui-smokes-xcode-status.txt" "$artifact_dir/ui-smokes-attempt-1-xcode-status.txt" || fail "could not preserve first UI-smoke Xcode status"
   mv "$artifact_dir/ui-smokes-tee-status.txt" "$artifact_dir/ui-smokes-attempt-1-tee-status.txt" || fail "could not preserve first UI-smoke tee status"
   mv "$ui_result" "$artifact_dir/ui-smokes-attempt-1-${gate_name}.xcresult" || fail "could not preserve first UI-smoke xcresult bundle"
+}
+
+wait_for_xcode_destination() {
+  local deadline=$((SECONDS + 120))
+  local destinations
+
+  # simctl bootstatus can finish before Xcode's destination registry observes a
+  # newly created simulator. Do not start a test phase until the exact UUID is
+  # visible to the same scheme that will run the UI smoke.
+  while (( SECONDS < deadline )); do
+    destinations="$(xcodebuild -showdestinations \
+      -workspace "$workspace/Weird Parts.xcworkspace" \
+      -scheme "WiredPart-iOS-Stage9-Smokes" 2>&1)"
+    printf '%s\n' "$destinations" >> "$artifact_dir/destination-readiness.log"
+    if grep -Fq "$simulator_id" <<< "$destinations"; then
+      return 0
+    fi
+    sleep 5
+  done
+  return 1
 }
 
 if [[ "${IOS_BETA_GATE_SELF_TEST:-}" == "1" ]]; then
@@ -147,6 +208,15 @@ if [[ "${IOS_BETA_GATE_SELF_TEST:-}" == "1" ]]; then
   gate_name="iPhone"
   ui_log="$self_test_dir/ui-smokes.log"
   ui_result="$self_test_dir/ui-smokes.xcresult"
+  workspace="$self_test_dir/workspace"
+  simulator_id="self-test-simulator-id"
+  mkdir -p "$workspace/Weird Parts.xcworkspace" "$artifact_dir"
+  xcodebuild() {
+    printf 'Available destinations: id:%s\n' "$simulator_id"
+  }
+  wait_for_xcode_destination || exit 1
+  [[ -s "$artifact_dir/destination-readiness.log" ]] || exit 1
+  unset -f xcodebuild
 
   mkdir -p "$artifact_dir/stale-ui-smokes-iPhone.xcresult"
   prepare_artifact_dir
@@ -212,6 +282,16 @@ if [[ "${IOS_BETA_GATE_SELF_TEST:-}" == "1" ]]; then
   [[ ! -e "$artifact_dir/ui-smokes-xcode-status.txt" ]] || exit 1
   [[ ! -e "$artifact_dir/ui-smokes-tee-status.txt" ]] || exit 1
   [[ ! -e "$ui_result" ]] || exit 1
+  # Corrupt-bundle detector: half-written (dir, no Info.plist) = corrupt;
+  # healthy (Info.plist present) and missing (no dir) = not retryable here.
+  corrupt_dir="$self_test_dir/corrupt.xcresult"
+  healthy_dir="$self_test_dir/healthy.xcresult"
+  mkdir -p "$corrupt_dir" "$healthy_dir"
+  touch "$healthy_dir/Info.plist"
+  result_bundle_is_corrupt "$corrupt_dir" || exit 1
+  result_bundle_is_corrupt "$healthy_dir" && exit 1
+  result_bundle_is_corrupt "$self_test_dir/absent.xcresult" && exit 1
+
   echo "iOS beta-gate bounded recovery self-test passed"
   exit 0
 fi
@@ -380,6 +460,11 @@ if (( first_boot_status != 0 )); then
   fi
 fi
 
+if ! wait_for_xcode_destination; then
+  capture_simulator_diagnostics "destination-readiness"
+  fail "$gate_name simulator booted but Xcode did not expose its UUID within 120 seconds"
+fi
+
 run_xcode_phase() {
   local phase="$1"
   local scheme="$2"
@@ -414,6 +499,9 @@ ui_log="$artifact_dir/ui-smokes-xcodebuild.log"
 run_xcode_phase \
   "unit-regression" "WiredPart-iOS" "$unit_result" "$unit_log" "$xcode_phase_timeout_seconds" \
   -skip-testing:"Weird PartsUITests"
+retry_phase_if_bundle_corrupt \
+  "unit-regression" "WiredPart-iOS" "$unit_result" "$unit_log" "$xcode_phase_timeout_seconds" \
+  -skip-testing:"Weird PartsUITests"
 run_xcode_phase \
   "ui-smokes" "WiredPart-iOS-Stage9-Smokes" "$ui_result" "$ui_log" "$ui_smoke_phase_timeout_seconds"
 
@@ -427,6 +515,8 @@ if should_retry_ui_smoke_bootstrap_failure "$(<"$artifact_dir/ui-smokes-xcode-st
     "ui-smokes" "WiredPart-iOS-Stage9-Smokes" "$ui_result" "$ui_log" "$ui_smoke_phase_timeout_seconds"
 fi
 echo "ui_smoke_bootstrap_retry=$ui_smoke_bootstrap_retry" >> "$metadata_file"
+retry_phase_if_bundle_corrupt \
+  "ui-smokes" "WiredPart-iOS-Stage9-Smokes" "$ui_result" "$ui_log" "$ui_smoke_phase_timeout_seconds"
 
 phase_failure=0
 aggregate_total=0
