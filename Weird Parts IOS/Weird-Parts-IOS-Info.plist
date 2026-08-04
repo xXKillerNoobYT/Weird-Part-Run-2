@@ -2,6 +2,33 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!--
+	  EXPORT COMPLIANCE — owner determination 2026-08-04. Do not remove.
+
+	  Without this key every upload lands in TestFlight as
+	  MISSING_EXPORT_COMPLIANCE and cannot be installed by any tester until
+	  the encryption and France questions are answered by hand in App Store
+	  Connect. Build 48 sat blocked on exactly that.
+
+	  The determination: all cryptography in this app is published-standard
+	  and is used only to protect the user's own data on their own device and
+	  to sign them in.
+	    - SQLCipher 4.7.0 (AES-256) — database at rest
+	    - scrypt, RFC 7914 — PIN hashing (AuthService.swift)
+	    - PBKDF2 / SHA-256 — legacy PIN hashes, migrated on next login
+	    - TLS — via the OS
+	  None of it is proprietary cryptography. A hand-written implementation of
+	  a published standard is still a published standard; "proprietary" means
+	  an algorithm we invented, and we invented none.
+
+	  This must live in the Info.plist. There is no INFOPLIST_KEY_ build
+	  setting for it — an earlier attempt to set one that way (#1610) merged
+	  as an empty commit and changed nothing, which is why the prompts kept
+	  coming. If the crypto above ever changes, redo the determination with
+	  the owner before touching this key.
+	-->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

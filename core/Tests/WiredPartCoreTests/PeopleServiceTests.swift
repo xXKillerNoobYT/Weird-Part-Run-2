@@ -987,6 +987,35 @@ struct PeopleServiceTests {
         #expect(updated.firstName == "Janet")
         #expect(updated.lastName == "Jones")
         #expect(updated.phone == "555-9999")
+        // THE ASSERTION THAT WAS MISSING (#1656). This test already passed
+        // "janet@example.com" and then never looked at it, so it exercised the
+        // corrupting path and could not see the corruption: updateContact stored
+        // the email AES-GCM-sealed while createContact stored it plaintext and
+        // no decrypt path existed anywhere, so editing a contact permanently
+        // replaced a readable address with an unreadable blob.
+        #expect(updated.email == "janet@example.com")
+    }
+
+    @Test("editing a contact twice keeps the email readable")
+    func testUpdateContactEmailSurvivesRepeatedEdits() throws {
+        let env = try E2ETestHelpers.setUp()
+        let contactId = try env.people.createContact(
+            entityType: "customer", entityId: 1,
+            firstName: "Jane", lastName: "Smith", role: "PM", phone: "555-0001",
+            email: "jane@example.com"
+        )
+        // Round-tripping matters more than a single write: the old bug sealed the
+        // value on every update, so a second edit would have re-sealed already
+        // sealed text and buried it a layer deeper.
+        for phone in ["555-0002", "555-0003"] {
+            try env.people.updateContact(
+                id: contactId, firstName: "Jane", lastName: "Smith",
+                phone: phone, email: "jane@example.com", role: "PM"
+            )
+            let c = try #require(try env.people.getContact(id: contactId))
+            #expect(c.email == "jane@example.com", "email must stay readable after edit to \(phone)")
+            #expect(c.email?.contains("@") == true)
+        }
     }
 
     @Test("getWorkersCurrentlyClocked shows Unknown for soft-deleted user")

@@ -303,6 +303,9 @@ struct PeerManagerTests {
         // Deferred: not a success (nothing was pushed), with the honest
         // waiting message — and NOT recorded as a completed sync.
         #expect(result.success == false)
+        // Deferral must be distinguishable from failure (#1625 follow-up): the
+        // host UI counts !success as a red "Sync failed" otherwise.
+        #expect(result.deferred == true)
         #expect(result.error == "Waiting for the new device's initial download to finish.")
         let state = await pm.getState()
         #expect(state.lastPeerSyncs["joiner-9"] == nil)
