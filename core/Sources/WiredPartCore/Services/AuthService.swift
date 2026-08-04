@@ -1350,11 +1350,41 @@ public final class AuthService: Sendable {
         return SymmetricKey(data: keyData)
     }()
 
-    /// Sandbox fallback for the session signing key — used ONLY where the
-    /// keychain reports missing-entitlement/not-available (same tradeoff and
-    /// storage envelope as CipherKeyManager's salt fallback from #1622).
+    /// Sandbox fallback for the session signing key — used wherever the keychain
+    /// is *unusable*, which is a DENYLIST, not an allowlist.
+    ///
+    /// This was `status == errSecMissingEntitlement || status == errSecNotAvailable`,
+    /// copied from CipherKeyManager's original #1622 fix. That allowlist is
+    /// exactly what #1647 had to replace: the iPad-on-Mac keychain returns a
+    /// status outside that pair, so the rescue never fired and the app would not
+    /// start. Keeping the allowlist here reproduced the same failure one layer
+    /// up — the database would open but the signing key would not persist, so
+    /// the user had to log in on every single launch. Same mistake, same cause,
+    /// second symptom.
+    ///
+    /// The rule: rescue when the keychain is UNUSABLE HERE; never rescue when the
+    /// keychain works and access was merely denied or the item is simply absent.
+    /// In those cases a real key exists (or belongs) in the keychain, and writing
+    /// a sandbox key would strand it and silently invalidate every live session.
+    ///
+    /// Excluded — keychain is fine, this attempt just did not get the item:
+    ///   - `errSecSuccess` — nothing failed; callers must not consult a fallback.
+    ///   - `errSecItemNotFound` — normal first run. Generate and store properly.
+    ///   - `errSecInteractionNotAllowed` — locked, no UI available.
+    ///   - `errSecAuthFailed` / `errSecUserCanceled` — the user failed or
+    ///     dismissed authentication. Transient, and the real key is still there.
+    ///
+    /// Everything else rescues. That deliberately includes statuses we have not
+    /// seen: the whole reason #1647 exists is that the iPad-on-Mac keychain
+    /// returns something outside the two values #1622 guessed at, and we still
+    /// do not know which. Enumerating failure modes is what failed twice; the
+    /// only safe default is to rescue unless we can name a reason not to.
     static func canUseSigningKeyFallback(for status: OSStatus) -> Bool {
-        status == errSecMissingEntitlement || status == errSecNotAvailable
+        status != errSecSuccess
+            && status != errSecItemNotFound
+            && status != errSecInteractionNotAllowed
+            && status != errSecAuthFailed
+            && status != errSecUserCanceled
     }
 
     private static func fallbackSigningKeyURL() -> URL? {
