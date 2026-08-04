@@ -718,10 +718,33 @@ public final class AuthService: Sendable {
             let revokedCount = try Self.revokeTokenFamily(rootTokenId: sessionId, in: dbConnection, revokedAt: now)
             if revokedCount > 0 { return }
 
+            // Resolve the row's device_id BEFORE updating so the revocation can
+            // be replicated: peers key `_device_registry` on device_id, not rowid.
+            let targetDeviceId = try String.fetchOne(
+                dbConnection,
+                sql: "SELECT device_id FROM _device_registry WHERE rowid = ?",
+                arguments: [sessionId]
+            )
             try dbConnection.execute(
                 sql: "UPDATE _device_registry SET is_deactivated = 1 WHERE rowid = ?",
                 arguments: [sessionId]
             )
+            // SECURITY (audit 2026-08-03, P0): this admin revoke path wrote the
+            // flag locally and logged NOTHING, so kicking a lost or compromised
+            // device only revoked it on the device the admin happened to use.
+            // Emit the same change-log entry DeviceResetService does so every
+            // paired peer converges on the revocation.
+            if let targetDeviceId, !targetDeviceId.isEmpty {
+                let changedFieldsJSON = #"{"is_deactivated":1,"device_id":"\#(targetDeviceId)"}"#
+                try dbConnection.execute(
+                    sql: """
+                        INSERT INTO _change_log
+                            (table_name, record_id, operation, device_id, changed_fields, timestamp)
+                        VALUES ('_device_registry', 0, 'UPDATE', ?, ?, datetime('now'))
+                        """,
+                    arguments: [targetDeviceId, changedFieldsJSON]
+                )
+            }
         }
     }
 
@@ -1290,6 +1313,14 @@ public final class AuthService: Sendable {
             _ = SecItemUpdate(migrateQuery as CFDictionary, migrateAttrs as CFDictionary)
             return SymmetricKey(data: data)
         }
+        // Keychain-less environments (iPad binary on Apple Silicon Macs —
+        // errSecMissingEntitlement, the #1622 class): reuse the sandbox
+        // fallback key so sessions survive relaunch there too. Locked and
+        // other Keychain failures must not use the fallback.
+        if AuthService.canUseSigningKeyFallback(for: status),
+           let fallback = AuthService.readFallbackSigningKey() {
+            return SymmetricKey(data: fallback)
+        }
         // Generate a new 256-bit key and persist it.
         var keyBytes = [UInt8](repeating: 0, count: 32)
         _ = SecRandomCopyBytes(kSecRandomDefault, 32, &keyBytes)
@@ -1304,12 +1335,69 @@ public final class AuthService: Sendable {
         ]
         let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
         if addStatus != errSecSuccess && addStatus != errSecDuplicateItem {
-            // Key generated but not persisted — tokens will invalidate on next app launch.
-            // errSecDuplicateItem is benign (item was added between our read and write).
-            AuthService.logger.warning("SecItemAdd failed (OSStatus \(addStatus)) — signing key in memory only. Tokens will not survive app restart.")
+            if AuthService.canUseSigningKeyFallback(for: addStatus) {
+                // Keychain unusable in THIS environment (not merely locked) —
+                // persist to the sandbox fallback so Mac sessions survive
+                // relaunch (issue: re-login every launch on iPad-on-Mac).
+                AuthService.logger.warning("SecItemAdd failed (OSStatus \(addStatus)) — persisting signing key to sandbox fallback (keychain-less environment).")
+                AuthService.writeFallbackSigningKey(keyData)
+            } else {
+                // Key generated but not persisted — tokens will invalidate on next app launch.
+                // errSecDuplicateItem is benign (item was added between our read and write).
+                AuthService.logger.warning("SecItemAdd failed (OSStatus \(addStatus)) — signing key in memory only. Tokens will not survive app restart.")
+            }
         }
         return SymmetricKey(data: keyData)
     }()
+
+    /// Sandbox fallback for the session signing key — used wherever the keychain
+    /// is *unusable*, which is a DENYLIST, not an allowlist.
+    ///
+    /// This was `status == errSecMissingEntitlement || status == errSecNotAvailable`,
+    /// copied from CipherKeyManager's original #1622 fix. That allowlist is
+    /// exactly what #1647 had to replace: the iPad-on-Mac keychain returns a
+    /// status outside that pair, so the rescue never fired and the app would not
+    /// start. Keeping the allowlist here reproduced the same failure one layer
+    /// up — the database would open but the signing key would not persist, so
+    /// the user had to log in on every single launch. Same mistake, same cause,
+    /// second symptom.
+    ///
+    /// Delegates to `KeychainAvailability`, which is the single shared answer to
+    /// "is the keychain unusable here?" — see that type for the rule and for why
+    /// it is shared. This used to be an independent copy of the condition, and
+    /// the divergence between the two copies caused three bugs in a row (#1622,
+    /// #1647, #1652). It stays as a named wrapper only because the call sites
+    /// read better with it; it must never regain its own logic.
+    static func canUseSigningKeyFallback(for status: OSStatus) -> Bool {
+        KeychainAvailability.isUnusable(status)
+    }
+
+    private static func fallbackSigningKeyURL() -> URL? {
+        guard let supportURL = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first else { return nil }
+        let dir = supportURL.appendingPathComponent("WiredPart", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("session-signing-key.bin")
+    }
+
+    private static func readFallbackSigningKey() -> Data? {
+        guard let url = fallbackSigningKeyURL(),
+              let data = try? Data(contentsOf: url), data.count == 32 else { return nil }
+        return data
+    }
+
+    private static func writeFallbackSigningKey(_ key: Data) {
+        guard var url = fallbackSigningKeyURL() else { return }
+        do {
+            try key.write(to: url, options: .atomic)
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try? url.setResourceValues(values)
+        } catch {
+            AuthService.logger.warning("Could not persist fallback signing key: \(error.localizedDescription)")
+        }
+    }
 
     /// Generate a signed local session token (base64 payload + HMAC-SHA256 signature).
     static func generateLocalToken(userId: Int64) -> String? {

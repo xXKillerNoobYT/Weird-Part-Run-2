@@ -12,6 +12,11 @@ public struct PeerSyncResult: Sendable {
     public var pulled: Int
     public var success: Bool
     public var error: String?
+    /// True when nothing was pushed BY DESIGN — the peer is mid-onboarding and
+    /// its initial snapshot has not been acknowledged yet (#1625). Callers must
+    /// not count a deferral as a sync failure: it is a normal waiting state and
+    /// the push resumes automatically once the snapshot lands.
+    public var deferred: Bool
     public let syncedAt: String
 
     public init(
@@ -21,6 +26,7 @@ public struct PeerSyncResult: Sendable {
         pulled: Int = 0,
         success: Bool = true,
         error: String? = nil,
+        deferred: Bool = false,
         syncedAt: String? = nil
     ) {
         self.peerDeviceId = peerDeviceId
@@ -29,6 +35,7 @@ public struct PeerSyncResult: Sendable {
         self.pulled = pulled
         self.success = success
         self.error = error
+        self.deferred = deferred
         self.syncedAt = syncedAt ?? CoreFormatters.iso8601Fractional.string(from: Date())
     }
 }
@@ -42,6 +49,9 @@ public struct PeerManagerState: Sendable {
     public var peers: [DiscoveredPeer]
     public var lastPeerSyncs: [String: PeerSyncResult]
     public var syncingWith: String?
+    /// Joiner-side live progress: records received so far per host during an
+    /// initial full snapshot (#1417 hardening — the UI shows real movement).
+    public var snapshotReceivedRecords: [String: Int] = [:]
 
     public init(
         running: Bool = false,
@@ -168,6 +178,10 @@ public actor PeerManager {
     private var receivedSnapshotTokens: [String: String] = [:]
     private var inFlightPairRequests: Set<String> = []
     private var inFlightFullSyncRequests: Set<String> = []
+    /// Last moment a snapshot batch arrived per host — drives the idle
+    /// watchdog (#1417: the old absolute 60s cap killed legitimate large
+    /// transfers; only a STALLED transfer may time out).
+    private var snapshotLastActivity: [String: Date] = [:]
     private var isDrainingMultipeerMessages = false
     #endif
 
@@ -474,7 +488,8 @@ public actor PeerManager {
                 peerDeviceId: peer.deviceId,
                 peerName: peer.deviceName,
                 success: false,
-                error: "Waiting for the new device's initial download to finish."
+                error: "Waiting for the new device's initial download to finish.",
+                deferred: true
             )
         }
         state.syncingWith = peer.deviceId
@@ -515,11 +530,7 @@ public actor PeerManager {
                 // placeholder host, so HTTP could only throw badURL (-1000), which
                 // is the raw error the owner hit from the Nearby Devices sheet.
                 if !mpManager.isConnected(toPeer: peer.deviceId) {
-                    mpManager.invite(deviceId: peer.deviceId)
-                    let deadline = Date().addingTimeInterval(10)
-                    while !mpManager.isConnected(toPeer: peer.deviceId), Date() < deadline {
-                        try? await Task.sleep(nanoseconds: 300_000_000)
-                    }
+                    _ = await awaitMultipeerConnection(to: peer.deviceId, using: mpManager)
                 }
                 guard mpManager.isConnected(toPeer: peer.deviceId) else {
                     let result = PeerSyncResult(
@@ -535,7 +546,13 @@ public actor PeerManager {
                     let encoder = JSONEncoder()
                     let changesData = try encoder.encode(enrichedChanges)
                     let payload = try encoder.encode(MPEnvelope(type: "changes", payload: changesData))
-                    if mpManager.send(data: payload, toPeer: peer.deviceId) {
+                    // A failed send used to fall through to success:true with
+                    // pushed:0 — indistinguishable from a real sync in the UI
+                    // (audit 2026-08-03, same dishonesty class as #1625).
+                    guard mpManager.send(data: payload, toPeer: peer.deviceId) else {
+                        throw MultipeerPairingError.sendFailed
+                    }
+                    do {
                         pushed = enrichedChanges.count
                         let syncedIds = pendingChanges.compactMap { $0.id }
                         try ChangeTracker.markSynced(
@@ -1009,6 +1026,20 @@ public actor PeerManager {
     // MARK: - Private: Multipeer Message Handling
 
     #if canImport(MultipeerConnectivity)
+    /// Whether a peer may WRITE company data to this device.
+    ///
+    /// A peer qualifies while it is trusted and not deactivated, OR while we
+    /// are mid-onboarding against it as our snapshot host (the host sends the
+    /// initial company snapshot as `changes` frames before our own trust row
+    /// for it is durable). Anything else is rejected — discovery is
+    /// deliberately open, writes never are.
+    func isTrustedWritePeer(_ peerDeviceId: String) -> Bool {
+        if (try? isTrustedBluetoothPeer(peerDeviceId)) == true { return true }
+        // In-flight initial snapshot from the host we are joining.
+        return pendingSnapshotChanges[peerDeviceId] != nil
+            || receivedSnapshotTokens[peerDeviceId] != nil
+    }
+
     func isTrustedBluetoothPeer(_ peerDeviceId: String) throws -> Bool {
         try db.writer.read { dbConn in
             try Bool.fetchOne(
@@ -1054,6 +1085,17 @@ public actor PeerManager {
             }
             switch env.type {
             case "changes":
+                // SECURITY (audit 2026-08-03): company data may only be written
+                // by a peer that completed pairing and is still trusted.
+                // handleFullSyncRequest checked this; the write paths did not —
+                // and MultipeerManager auto-accepts any invitation asserting our
+                // company_id, which is broadcast in cleartext in the Bonjour TXT
+                // record. Any nearby device could therefore INSERT/UPDATE/DELETE
+                // in every allowed table without ever pairing.
+                guard isTrustedWritePeer(message.fromDeviceId) else {
+                    logger.error("[PeerManager] Rejected changes from untrusted peer \(String(message.fromDeviceId.prefix(8)), privacy: .public)")
+                    return .ignored
+                }
                 do {
                     let changes = try decodeIncomingChanges(env.payload)
                     let count: Int
@@ -1061,6 +1103,12 @@ public actor PeerManager {
                         pendingSnapshotChanges[message.fromDeviceId, default: []]
                             .append(contentsOf: changes)
                         count = changes.count
+                        // #1417 hardening: every batch feeds the idle watchdog
+                        // (a live transfer must never be killed) and the UI.
+                        snapshotLastActivity[message.fromDeviceId] = Date()
+                        state.snapshotReceivedRecords[message.fromDeviceId] =
+                            pendingSnapshotChanges[message.fromDeviceId, default: []].count
+                        notifyStateChanged()
                     } else {
                         count = try applyIncomingChanges(changes)
                     }
@@ -1127,6 +1175,9 @@ public actor PeerManager {
                 }
                 pendingSnapshotChanges.removeValue(forKey: message.fromDeviceId)
                 failedSnapshotPeers.remove(message.fromDeviceId)
+                snapshotLastActivity.removeValue(forKey: message.fromDeviceId)
+                state.snapshotReceivedRecords.removeValue(forKey: message.fromDeviceId)
+                notifyStateChanged()
                 handleFullSyncComplete(from: message.fromDeviceId)
                 return .fullSyncCompleted
             case "fullSyncApplied":
@@ -1144,7 +1195,12 @@ public actor PeerManager {
             }
         }
 
-        // Legacy senders used a bare [IncomingChange] JSON array.
+        // Legacy senders used a bare [IncomingChange] JSON array. Same trust
+        // gate as the enveloped path above — this is a write path.
+        guard isTrustedWritePeer(message.fromDeviceId) else {
+            logger.error("[PeerManager] Rejected legacy changes payload from untrusted peer \(String(message.fromDeviceId.prefix(8)), privacy: .public)")
+            return .ignored
+        }
         guard !failedSnapshotPeers.contains(message.fromDeviceId) else { return .ignored }
         let changes = try decodeIncomingChanges(message.data)
         let count: Int
@@ -1655,12 +1711,61 @@ public actor PeerManager {
         }
     }
 
+    private func isFullSyncSettled(with peerDeviceId: String) -> Bool {
+        pendingFullSyncContinuations[peerDeviceId] == nil
+    }
+
+    private func snapshotIdleSeconds(_ peerDeviceId: String) -> TimeInterval {
+        guard let last = snapshotLastActivity[peerDeviceId] else { return .infinity }
+        return Date().timeIntervalSince(last)
+    }
+
     private func timeoutFullSync(with peerDeviceId: String) {
         failedSnapshotPeers.insert(peerDeviceId)
         pendingSnapshotChanges.removeValue(forKey: peerDeviceId)
+        snapshotLastActivity.removeValue(forKey: peerDeviceId)
+        state.snapshotReceivedRecords.removeValue(forKey: peerDeviceId)
+        notifyStateChanged()
         if let cont = pendingFullSyncContinuations.removeValue(forKey: peerDeviceId) {
             cont.resume(throwing: MultipeerPairingError.responseTimeout)
         }
+    }
+
+    /// Wait for an MCSession to reach `connected`, re-inviting once if the
+    /// first invitation lapses.
+    ///
+    /// FIELD P0 (owner, 2026-08-03, Bluetooth-only test): every wait here used
+    /// to be **20 s while `MultipeerManager.invite` sets a 30 s invitation
+    /// timeout** — the app gave up 10 s before iOS had finished trying, so a
+    /// link that needed longer than 20 s could never succeed. Peer-to-peer
+    /// Wi-Fi (AWDL) connects in ~1-3 s and hid this; **Bluetooth-only takes
+    /// far longer**, so the owner saw "couldn't connect" on every attempt with
+    /// Wi-Fi off. The wait must always exceed the invitation window, and a
+    /// dropped invitation (Multipeer delivers no failure callback) must be
+    /// re-sent rather than waited out.
+    static let multipeerInviteTimeout: TimeInterval = 30
+    static let multipeerConnectWait: TimeInterval = 75
+
+    private func awaitMultipeerConnection(
+        to deviceId: String,
+        using mpManager: MultipeerManager,
+        timeout: TimeInterval = PeerManager.multipeerConnectWait
+    ) async -> Bool {
+        if mpManager.isConnected(toPeer: deviceId) { return true }
+        mpManager.invite(deviceId: deviceId)
+        let started = Date()
+        var reinvited = false
+        while Date().timeIntervalSince(started) < timeout {
+            if mpManager.isConnected(toPeer: deviceId) { return true }
+            // Just past the invitation's own expiry, send exactly one more.
+            if !reinvited, Date().timeIntervalSince(started) > Self.multipeerInviteTimeout + 2 {
+                mpManager.invite(deviceId: deviceId)
+                reinvited = true
+                logger.info("[PeerManager] Re-invited \(String(deviceId.prefix(8)), privacy: .public) — first invitation lapsed without connecting")
+            }
+            try? await Task.sleep(nanoseconds: 300_000_000)
+        }
+        return mpManager.isConnected(toPeer: deviceId)
     }
 
     /// Joiner side: request and await the full initial company sync over Bluetooth.
@@ -1676,10 +1781,8 @@ public actor PeerManager {
         guard let authorizationToken = receivedSnapshotTokens[hostDeviceId] else {
             throw MultipeerPairingError.rejected
         }
-        let deadline = Date().addingTimeInterval(20)
-        while !mpManager.isConnected(toPeer: hostDeviceId) {
-            if Date() >= deadline { throw MultipeerPairingError.connectionTimeout }
-            try? await Task.sleep(nanoseconds: 300_000_000)
+        guard await awaitMultipeerConnection(to: hostDeviceId, using: mpManager) else {
+            throw MultipeerPairingError.connectionTimeout
         }
         let request = try JSONEncoder().encode(
             FullSyncRequest(authorizationToken: authorizationToken)
@@ -1696,9 +1799,22 @@ public actor PeerManager {
                     .resume(throwing: MultipeerPairingError.sendFailed)
                 return
             }
+            // Idle watchdog (#1417): a transfer that is MOVING never times out;
+            // 45s with no batch = stalled; 15 min hard cap guards runaways.
+            snapshotLastActivity[hostDeviceId] = Date()
             Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 60_000_000_000)   // 60s cap for a full sync
-                await self?.timeoutFullSync(with: hostDeviceId)
+                let started = Date()
+                while true {
+                    try? await Task.sleep(nanoseconds: 10_000_000_000)
+                    guard let self else { return }
+                    let done = await self.isFullSyncSettled(with: hostDeviceId)
+                    if done { return }
+                    let idle = await self.snapshotIdleSeconds(hostDeviceId)
+                    if idle > 45 || Date().timeIntervalSince(started) > 900 {
+                        await self.timeoutFullSync(with: hostDeviceId)
+                        return
+                    }
+                }
             }
         }
     }
@@ -2032,12 +2148,10 @@ public actor PeerManager {
             throw MultipeerPairingError.responseVerificationFailed
         }
 
-        // 1. Invite the host and wait for the MCSession to connect.
-        mpManager.invite(deviceId: hostDeviceId)
-        let deadline = Date().addingTimeInterval(20)
-        while !mpManager.isConnected(toPeer: hostDeviceId) {
-            if Date() >= deadline { throw MultipeerPairingError.connectionTimeout }
-            try? await Task.sleep(nanoseconds: 300_000_000)
+        // 1. Invite the host and wait for the MCSession to connect. The wait
+        //    must outlast the invitation timeout (see awaitMultipeerConnection).
+        guard await awaitMultipeerConnection(to: hostDeviceId, using: mpManager) else {
+            throw MultipeerPairingError.connectionTimeout
         }
 
         // 2. Send a proof bound to this attempt, expected host, and durable device key.

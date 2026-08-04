@@ -44,4 +44,16 @@ if ! grep -q 'INFOPLIST_KEY_LSApplicationCategoryType' "$pbxproj"; then
   exit 1
 fi
 
+# Without ITSAppUsesNonExemptEncryption every upload lands as
+# MISSING_EXPORT_COMPLIANCE and no tester can install it until the encryption
+# and France questions are answered by hand in App Store Connect. Build 48 sat
+# blocked on exactly that. The key must be a literal Info.plist entry — Xcode
+# has no INFOPLIST_KEY_ build setting for it, so the attempt to declare it that
+# way (#1610) merged as an empty commit and silently changed nothing.
+info_plist="$ROOT_DIR/Weird Parts IOS/Weird-Parts-IOS-Info.plist"
+if ! plutil -extract ITSAppUsesNonExemptEncryption raw "$info_plist" >/dev/null 2>&1; then
+  echo "Missing ITSAppUsesNonExemptEncryption in $info_plist — every TestFlight build will block on export compliance" >&2
+  exit 1
+fi
+
 echo "app-store readiness check passed"
