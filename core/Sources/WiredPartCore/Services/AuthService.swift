@@ -718,10 +718,33 @@ public final class AuthService: Sendable {
             let revokedCount = try Self.revokeTokenFamily(rootTokenId: sessionId, in: dbConnection, revokedAt: now)
             if revokedCount > 0 { return }
 
+            // Resolve the row's device_id BEFORE updating so the revocation can
+            // be replicated: peers key `_device_registry` on device_id, not rowid.
+            let targetDeviceId = try String.fetchOne(
+                dbConnection,
+                sql: "SELECT device_id FROM _device_registry WHERE rowid = ?",
+                arguments: [sessionId]
+            )
             try dbConnection.execute(
                 sql: "UPDATE _device_registry SET is_deactivated = 1 WHERE rowid = ?",
                 arguments: [sessionId]
             )
+            // SECURITY (audit 2026-08-03, P0): this admin revoke path wrote the
+            // flag locally and logged NOTHING, so kicking a lost or compromised
+            // device only revoked it on the device the admin happened to use.
+            // Emit the same change-log entry DeviceResetService does so every
+            // paired peer converges on the revocation.
+            if let targetDeviceId, !targetDeviceId.isEmpty {
+                let changedFieldsJSON = #"{"is_deactivated":1,"device_id":"\#(targetDeviceId)"}"#
+                try dbConnection.execute(
+                    sql: """
+                        INSERT INTO _change_log
+                            (table_name, record_id, operation, device_id, changed_fields, timestamp)
+                        VALUES ('_device_registry', 0, 'UPDATE', ?, ?, datetime('now'))
+                        """,
+                    arguments: [targetDeviceId, changedFieldsJSON]
+                )
+            }
         }
     }
 

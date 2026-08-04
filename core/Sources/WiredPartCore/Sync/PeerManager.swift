@@ -531,7 +531,13 @@ public actor PeerManager {
                     let encoder = JSONEncoder()
                     let changesData = try encoder.encode(enrichedChanges)
                     let payload = try encoder.encode(MPEnvelope(type: "changes", payload: changesData))
-                    if mpManager.send(data: payload, toPeer: peer.deviceId) {
+                    // A failed send used to fall through to success:true with
+                    // pushed:0 — indistinguishable from a real sync in the UI
+                    // (audit 2026-08-03, same dishonesty class as #1625).
+                    guard mpManager.send(data: payload, toPeer: peer.deviceId) else {
+                        throw MultipeerPairingError.sendFailed
+                    }
+                    do {
                         pushed = enrichedChanges.count
                         let syncedIds = pendingChanges.compactMap { $0.id }
                         try ChangeTracker.markSynced(
@@ -1005,6 +1011,20 @@ public actor PeerManager {
     // MARK: - Private: Multipeer Message Handling
 
     #if canImport(MultipeerConnectivity)
+    /// Whether a peer may WRITE company data to this device.
+    ///
+    /// A peer qualifies while it is trusted and not deactivated, OR while we
+    /// are mid-onboarding against it as our snapshot host (the host sends the
+    /// initial company snapshot as `changes` frames before our own trust row
+    /// for it is durable). Anything else is rejected — discovery is
+    /// deliberately open, writes never are.
+    func isTrustedWritePeer(_ peerDeviceId: String) -> Bool {
+        if (try? isTrustedBluetoothPeer(peerDeviceId)) == true { return true }
+        // In-flight initial snapshot from the host we are joining.
+        return pendingSnapshotChanges[peerDeviceId] != nil
+            || receivedSnapshotTokens[peerDeviceId] != nil
+    }
+
     func isTrustedBluetoothPeer(_ peerDeviceId: String) throws -> Bool {
         try db.writer.read { dbConn in
             try Bool.fetchOne(
@@ -1050,6 +1070,17 @@ public actor PeerManager {
             }
             switch env.type {
             case "changes":
+                // SECURITY (audit 2026-08-03): company data may only be written
+                // by a peer that completed pairing and is still trusted.
+                // handleFullSyncRequest checked this; the write paths did not —
+                // and MultipeerManager auto-accepts any invitation asserting our
+                // company_id, which is broadcast in cleartext in the Bonjour TXT
+                // record. Any nearby device could therefore INSERT/UPDATE/DELETE
+                // in every allowed table without ever pairing.
+                guard isTrustedWritePeer(message.fromDeviceId) else {
+                    logger.error("[PeerManager] Rejected changes from untrusted peer \(String(message.fromDeviceId.prefix(8)), privacy: .public)")
+                    return .ignored
+                }
                 do {
                     let changes = try decodeIncomingChanges(env.payload)
                     let count: Int
@@ -1140,7 +1171,12 @@ public actor PeerManager {
             }
         }
 
-        // Legacy senders used a bare [IncomingChange] JSON array.
+        // Legacy senders used a bare [IncomingChange] JSON array. Same trust
+        // gate as the enveloped path above — this is a write path.
+        guard isTrustedWritePeer(message.fromDeviceId) else {
+            logger.error("[PeerManager] Rejected legacy changes payload from untrusted peer \(String(message.fromDeviceId.prefix(8)), privacy: .public)")
+            return .ignored
+        }
         guard !failedSnapshotPeers.contains(message.fromDeviceId) else { return .ignored }
         let changes = try decodeIncomingChanges(message.data)
         let count: Int

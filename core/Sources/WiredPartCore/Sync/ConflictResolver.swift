@@ -252,6 +252,19 @@ public enum ConflictResolver {
 
                     let outcome: (applied: Int, conflicts: Int, skipped: Int)
 
+                    // `_device_registry` is keyed by device_id (TEXT), not `id`,
+                    // so the generic id-keyed apply below could NEVER apply it —
+                    // every incoming row failed with "no such column: id" and was
+                    // swallowed as result.errors. Net effect (security audit
+                    // 2026-08-03, P0): deactivating a lost/stolen device revoked
+                    // it ONLY on the device that performed the revocation; every
+                    // other paired device kept treating it as trusted forever.
+                    if change.tableName == "_device_registry" {
+                        let applied = try applyDeviceRegistryChange(db: dbConn, change: change)
+                        try dbConn.execute(sql: "DELETE FROM _sync_apply_guard")
+                        return (applied, 0, applied == 1 ? 0 : 1)
+                    }
+
                     switch change.operation.uppercased() {
                     case "DELETE":
                         try applyDelete(db: dbConn, change: change, localDeviceId: localDevice)
@@ -1042,6 +1055,69 @@ public enum ConflictResolver {
     }
 
     // MARK: - Private: Helpers
+
+    /// Apply an incoming `_device_registry` change.
+    ///
+    /// Two things make this table special:
+    /// 1. **Its primary key is `device_id` (TEXT), not `id`.** The producer
+    ///    (`DeviceResetService.deactivateCurrentDevice`) therefore writes
+    ///    `record_id = 0` and carries the real id inside `changed_fields`.
+    /// 2. **Revocation must be monotonic.** Sync may only ever make trust
+    ///    MORE restrictive: a device that has been deactivated cannot un-
+    ///    deactivate or re-trust itself by pushing a row back at us. Re-
+    ///    enabling a device is a deliberate local admin action, never a
+    ///    replicated one — otherwise revoking a stolen device would be
+    ///    undone by that same device's next sync.
+    ///
+    /// Returns 1 when a row was updated, 0 when there was nothing to apply.
+    static func applyDeviceRegistryChange(db: Database, change: IncomingChange) throws -> Int {
+        // The affected device id lives in changed_fields (preferred) or in a
+        // full record payload.
+        func stringField(_ json: String?, _ key: String) -> String? {
+            guard let json, let data = json.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { return nil }
+            if let s = obj[key] as? String { return s }
+            if let n = obj[key] as? NSNumber { return n.stringValue }
+            return nil
+        }
+        func intField(_ json: String?, _ key: String) -> Int? {
+            guard let json, let data = json.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { return nil }
+            if let n = obj[key] as? NSNumber { return n.intValue }
+            if let s = obj[key] as? String { return Int(s) }
+            return nil
+        }
+
+        let targetId = stringField(change.changedFields, "device_id")
+            ?? stringField(change.recordData, "device_id")
+        guard let targetId, !targetId.isEmpty else { return 0 }
+
+        let deactivated = intField(change.changedFields, "is_deactivated")
+            ?? intField(change.recordData, "is_deactivated")
+        let trusted = intField(change.changedFields, "is_trusted")
+            ?? intField(change.recordData, "is_trusted")
+
+        var applied = 0
+        // Monotonic revocation only: 1 -> deactivate; 0 is ignored.
+        if deactivated == 1 {
+            try db.execute(
+                sql: "UPDATE _device_registry SET is_deactivated = 1 WHERE device_id = ?",
+                arguments: [targetId]
+            )
+            applied = max(applied, db.changesCount)
+        }
+        // Monotonic distrust only: 0 -> untrust; 1 is ignored.
+        if trusted == 0 {
+            try db.execute(
+                sql: "UPDATE _device_registry SET is_trusted = 0 WHERE device_id = ?",
+                arguments: [targetId]
+            )
+            applied = max(applied, db.changesCount)
+        }
+        return applied > 0 ? 1 : 0
+    }
 
     /// Fetch a local record by ID from any table.
     private static func getLocalRecord(db: Database, tableName: String, recordId: String) throws -> Row? {
