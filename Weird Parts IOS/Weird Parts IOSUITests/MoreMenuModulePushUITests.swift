@@ -87,10 +87,27 @@ final class MoreMenuModulePushUITests: XCTestCase {
 
     // MARK: - Helpers
 
+    /// Opens a module by the route the current layout actually offers.
+    ///
+    /// iPhone puts overflow modules behind a **More** tab; iPad uses a split-view
+    /// **sidebar** and lists them directly, with no More tab at all. The first
+    /// version of this helper assumed a tab bar unconditionally and so passed on
+    /// iPhone and failed on iPad at "The More tab should be reachable" — a
+    /// layout assumption reported as an app failure. Probe, don't assume.
     private func openModuleFromMore(named name: String) {
         let moreTab = app.tabBars.buttons["More"]
-        XCTAssertTrue(moreTab.waitForExistence(timeout: 30), "The More tab should be reachable after login.")
-        moreTab.tap()
+        if moreTab.waitForExistence(timeout: 30) {
+            moreTab.tap()
+        } else {
+            // iPad/sidebar: modules are listed without an overflow step. Assert
+            // that SOMETHING navigable exists, so a genuinely broken launch still
+            // fails here rather than silently falling through to a missing row.
+            XCTAssertTrue(
+                app.buttons[name].waitForExistence(timeout: 30)
+                    || app.staticTexts[name].waitForExistence(timeout: 5),
+                "Neither a More tab nor a sidebar entry for \(name) appeared — the app did not reach a navigable state."
+            )
+        }
 
         let row = app.buttons[name]
         if !row.waitForExistence(timeout: 10) {
