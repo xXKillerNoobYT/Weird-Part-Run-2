@@ -28,9 +28,13 @@ final class MoreMenuModulePushUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITesting"]
+        // -UITestingWEI936AutoLogin is how the suite gets a logged-in session
+        // deterministically. The first version of this test hand-rolled a login
+        // helper instead and failed in CI at "The More tab should be reachable
+        // after login" — it never got as far as Notebooks, so the red gate was
+        // the test's fault and not the app's.
+        app.launchArguments += ["-UITesting", "-UITestingWEI936AutoLogin"]
         app.launch()
-        logInIfNeeded()
     }
 
     /// The originally reported flow.
@@ -82,19 +86,6 @@ final class MoreMenuModulePushUITests: XCTestCase {
     }
 
     // MARK: - Helpers
-
-    /// The UITest build lands on a user picker unless a session already exists.
-    /// Mirrors `logInAsUITestOwnerIfNeeded` in `Weird_Parts_IOSUITests`, kept
-    /// local because that one is private to its file.
-    private func logInIfNeeded() {
-        if app.tabBars.buttons["More"].waitForExistence(timeout: 5) { return }
-        let userRows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'loginUserRow_'"))
-        if userRows.firstMatch.waitForExistence(timeout: 30) {
-            userRows.firstMatch.tap()
-        } else if app.staticTexts["UITest Owner"].waitForExistence(timeout: 5) {
-            app.staticTexts["UITest Owner"].tap()
-        }
-    }
 
     private func openModuleFromMore(named name: String) {
         let moreTab = app.tabBars.buttons["More"]
