@@ -154,6 +154,7 @@ extension AppDatabase {
         registerMigration114AIConversationRecency(&migrator)
         registerMigration115SyncReplayGuard(&migrator)
         registerMigration116TeamMutationAttribution(&migrator)
+        registerMigration120DeviceLogs(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6175,5 +6176,57 @@ private func registerMigration116TeamMutationAttribution(_ migrator: inout Datab
         try addColumnIfMissing(db, table: "employee_teams", column: "deleted_by", type: .integer)
         try addColumnIfMissing(db, table: "employee_team_members", column: "added_by", type: .integer)
         try addColumnIfMissing(db, table: "employee_team_members", column: "removed_by", type: .integer)
+    }
+}
+
+/// Fleet diagnostics: every device keeps a bounded technical log and REPLICATES
+/// it, so a failure in the field is readable from the shop Mac instead of
+/// requiring the owner to screenshot and describe it (owner request
+/// 2026-08-03). `activity_log` records what USERS did; this records what the
+/// APP did — sync outcomes, pairing failures, startup errors.
+///
+/// Three properties make this safe to sync:
+/// 1. **Append-only and self-pruning** — rows older than the retention window
+///    are deleted on launch, so the table (and the sync payload) stay bounded.
+/// 2. **No secrets** — callers pass diagnostic text only; the service refuses
+///    obviously key-shaped payloads (see DeviceLogService).
+/// 3. **Device-stamped** — every row carries the originating device id/name and
+///    app version, so the Mac can tell which device in the field produced it.
+private func registerMigration120DeviceLogs(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("120_device_logs") { db in
+        try db.create(table: "device_logs", ifNotExists: true) { t in
+            t.autoIncrementedPrimaryKey("id")
+            t.column("device_id", .text).notNull()
+            t.column("device_name", .text)
+            t.column("app_version", .text)
+            t.column("level", .text).notNull()          // error | warn | info
+            t.column("category", .text).notNull()       // sync | pairing | startup | ...
+            t.column("message", .text).notNull()
+            t.column("detail", .text)                   // optional JSON
+            t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+            t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
+        }
+        try db.create(
+            index: "idx_device_logs_created", on: "device_logs",
+            columns: ["created_at"], ifNotExists: true
+        )
+        try db.create(
+            index: "idx_device_logs_device_level", on: "device_logs",
+            columns: ["device_id", "level"], ifNotExists: true
+        )
+
+        // Replicate like any other synced table (same trigger shape as
+        // migration 112, which only covered tables existing at ITS run).
+        for (op, rowRef) in [("INSERT", "NEW"), ("UPDATE", "NEW"), ("DELETE", "OLD")] {
+            try db.execute(sql: """
+                CREATE TRIGGER IF NOT EXISTS trg_sync_device_logs_\(op.lowercased())
+                AFTER \(op) ON [device_logs]
+                WHEN (SELECT COUNT(*) FROM _sync_apply_guard) = 0
+                BEGIN
+                    INSERT INTO _change_log (device_id, table_name, record_id, operation)
+                    VALUES ('', 'device_logs', \(rowRef).id, '\(op)');
+                END
+                """)
+        }
     }
 }
