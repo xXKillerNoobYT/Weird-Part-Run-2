@@ -1,5 +1,11 @@
 import Foundation
 import GRDB
+import os.log
+
+/// Migrations that repair data need to report scale — how many rows they fixed
+/// and how many they could not. Silence there is indistinguishable from "no
+/// damage found", which is exactly the wrong thing to guess about.
+let migrationLogger = Logger(subsystem: "com.wiredpart.core", category: "Migrations")
 
 // MARK: - Safe Column Addition Helper (fixes #201)
 
@@ -155,6 +161,7 @@ extension AppDatabase {
         registerMigration115SyncReplayGuard(&migrator)
         registerMigration116TeamMutationAttribution(&migrator)
         registerMigration119SyncGapTables(&migrator)
+        registerContactEmailRepair(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6234,5 +6241,50 @@ private func registerMigration119SyncGapTables(_ migrator: inout DatabaseMigrato
                 )
                 """)
         }
+    }
+}
+
+/// 120 — recover contact emails that `updateContact` encrypted and nothing
+/// could read back (#1656).
+///
+/// `createContact` wrote this column in plaintext, `updateContact` wrote it
+/// AES-GCM-sealed, and no decrypt path existed anywhere — so editing any
+/// contact replaced a readable address with an unreadable blob. This walks
+/// the damaged rows and restores the ones this device can still decrypt.
+///
+/// Deliberately best-effort. Where the sealing key is gone — every device
+/// whose Keychain is unusable regenerated it on each launch — the row is
+/// LEFT UNTOUCHED. An unreadable address is bad; overwriting the last copy
+/// of it with a blank is worse, and it forecloses recovery if the key ever
+/// turns up. The count of each outcome is logged so the scale is knowable.
+private func registerContactEmailRepair(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("120_repair_encrypted_contact_emails") { db in
+        let rows = try Row.fetchAll(
+            db,
+            sql: """
+                SELECT id, email FROM entity_contacts
+                WHERE email IS NOT NULL AND email <> '' AND email NOT LIKE '%@%'
+                """
+        )
+        guard !rows.isEmpty else { return }
+
+        var recovered = 0
+        var unrecoverable = 0
+        for row in rows {
+            let stored: String? = row["email"]
+            guard let id: Int64 = row["id"] else { continue }
+            if let email = PeopleService.recoverEncryptedContactEmail(stored) {
+                try db.execute(
+                    sql: "UPDATE entity_contacts SET email = ? WHERE id = ?",
+                    arguments: [email, id]
+                )
+                recovered += 1
+            } else {
+                unrecoverable += 1
+            }
+        }
+        migrationLogger.notice(
+            "120_repair_encrypted_contact_emails: recovered \(recovered), left intact \(unrecoverable)"
+        )
     }
 }
