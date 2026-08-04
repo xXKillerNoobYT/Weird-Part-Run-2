@@ -173,6 +173,18 @@ public enum ConflictResolver {
         "payment_records", "customer_communications", "contractor_notes", "contractor_ratings",
         // Work classification audit
         "classification_history",
+        // 100%-sync gap closure (owner directive 2026-08-01, audit on #1417):
+        // business tables that predated any classification gate. Their change
+        // triggers are installed by migration 119 (frozen copy of this list).
+        "wishlist_items", "color_brand_skus", "color_supplier_costs", "part_change_log",
+        "job_stages", "job_stage_templates", "job_stage_category_map",
+        "job_return_intakes", "job_return_intake_items",
+        "shift_templates", "company_holidays", "overtime_settings",
+        "vehicle_issue_reports", "vehicle_location_logs",
+        "warehouse_zones", "warehouse_walking_paths", "warehouse_walking_path_stops",
+        "staging_box_contents",
+        "audit_session_events", "multi_user_audit_assignments",
+        "timesheet_correction_audits", "labor_entry_correction_audits",
         // Estimation
         "estimation_questions", "estimation_responses", "estimation_results",
         "estimation_reviews", "estimation_question_rejections",
@@ -216,6 +228,30 @@ public enum ConflictResolver {
 
     /// Validate that a table name is in the whitelist.
     /// Returns false for unknown or potentially malicious table names.
+    /// Tables that intentionally NEVER sync — device-scoped by design.
+    /// Every table in the database must appear in exactly one of
+    /// `allowedSyncTables` or this set; `SyncTableClassificationTests`
+    /// fails the build when a new table is left unclassified (the gap that
+    /// silently accumulated 22 unsynced business tables until 2026-08-01).
+    static let deviceLocalTables: Set<String> = [
+        // Per-Mac AI agent keys and their audit trail — trust is per device.
+        "agent_links", "agent_link_calls",
+        // Per-device login sessions.
+        "auth_token_sessions",
+        // Local wizard/import scratch state.
+        "company_setup_draft", "part_import_sessions",
+        "part_import_row_evidence", "part_import_saved_mappings",
+        // Local operational logs and locks (lock semantics cannot survive
+        // asynchronous merge).
+        "background_task_log", "notebook_entry_edit_locks",
+        // On-device AI conversations (architecture: never leave the device).
+        "ai_conversation_messages",
+        // Regenerable ML derivatives.
+        "part_image_features",
+        // On-device estimation calibration.
+        "estimation_question_accuracy_reviews",
+    ]
+
     public static func isAllowedTable(_ name: String) -> Bool {
         allowedSyncTables.contains(name.lowercased())
     }
