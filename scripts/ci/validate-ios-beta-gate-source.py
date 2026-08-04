@@ -51,6 +51,10 @@ required_runner_fragments = {
     "UI-smoke retry preserves the required first-attempt xcresult": 'mv "$ui_result" "$artifact_dir/ui-smokes-attempt-1-${gate_name}.xcresult" || fail "could not preserve first UI-smoke xcresult bundle"',
     "UI-smoke retry remains one bounded pass": "ui_smoke_bootstrap_retry=1",
     "UI-smoke retry uses its separate bounded timeout": "ui_smoke_phase_timeout_seconds",
+    "corrupt-bundle retry detects only the half-written state": '[[ ! -f "$result_bundle/Info.plist" ]]',
+    "corrupt-bundle retry keeps a missing bundle a hard fail": '[[ -d "$result_bundle" ]] || return 1',
+    "corrupt-bundle retry preserves first-attempt evidence": "preserve_corrupt_phase_attempt",
+    "corrupt-bundle retry remains one bounded pass per phase": "corrupt_bundle_retry=1",
 }
 
 errors: list[str] = []
