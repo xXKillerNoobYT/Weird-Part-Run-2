@@ -14,7 +14,12 @@
 
 > Items the owner explicitly wants worked on next, regardless of area rotation. Empty when nothing is pinned.
 
-- [ ] _(empty — owner adds `[ ]` items here when they want a specific task picked up first)_
+- [ ] **Re-derive the Mac won't-start root cause against `main` at `6b5544013` or later** — owner-pinned 2026-08-05.
+      My #1663 root cause is RETRACTED: I read `/Users/IA/GitHub/Weird-Part-Run-2`, a second working copy ~30 commits behind, and the compile-time gate I blamed was already removed by #1629.
+      **Run `git log --oneline -1` and confirm `6b5544013`+ BEFORE reasoning about any source file.** The missed tell: "cannot find KeychainAvailability in scope" during a build is staleness, not linkage.
+      ESTABLISHED (from the tester screenshot, survives the retraction): `SQLite error 26: file is not a database` on `PRAGMA journal_mode = WAL` = the app got the WRONG key, not no key.
+      NOT established: which path produces it on current main. Candidates + the still-true two-value allowlist at `AppCore.swift:809` are on task #16 and issue #1663.
+      Gated on the "No Coding" directive being lifted.
 
 ## Active iteration carry-overs
 
