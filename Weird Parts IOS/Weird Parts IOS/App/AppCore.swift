@@ -736,6 +736,24 @@ final class AppCore: ObservableObject {
 
         let readResult = keychain.read()
         if readResult.status == errSecSuccess, let data = readResult.data, data.count == 32 {
+            // #1663 — when BOTH stores hold a key and they disagree, the file wins.
+            //
+            // A container-local fallback is only ever written when the Keychain was
+            // unusable, so its presence is evidence the database may be encrypted
+            // with IT rather than with whatever the Keychain returns today. On the
+            // iPad-on-Mac binary the Keychain answers inconsistently across launches,
+            // so preferring it here wrote the database under one key and opened it
+            // under another — SQLCipher then reports the page header as garbage:
+            // "SQLite error 26: file is not a database", which is what the tester saw
+            // on build 55.
+            //
+            // The empty-Keychain path below already promotes the file, so treating it
+            // as authoritative here is consistent rather than new. A healthy iPhone
+            // never creates one, so this cannot change behaviour there.
+            if let fallbackKeyData = try existingLocalFallbackBootstrapKeyData(in: fallbackDirectory),
+               fallbackKeyData != data {
+                return fallbackKeyData.map { String(format: "%02x", $0) }.joined()
+            }
             return data.map { String(format: "%02x", $0) }.joined()
         }
         if shouldUseLocalBootstrapKeyFallback(for: readResult.status) {
