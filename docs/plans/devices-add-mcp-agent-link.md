@@ -111,9 +111,51 @@ say so ("treat this like a key").
 7. Unit tests for token mint/verify/revoke + tool responses; UI smoke for the
    link sheet. Red-proof each guard (STEP 5.2 rule).
 
+## ANSWERED — identity model (owner, chat 2026-08-06)
+
+Verbatim:
+
+> "for the MCP i think we should have it treadted like a AGENT user and then can
+> pick the hat with permicions for the mcp like you for exsample by hat"
+
+> "Agent users limited to 2 per a user and the users hats permission"
+
+**The decision:** an MCP consumer is **not** a bespoke token with its own scope
+vocabulary. It is a first-class **agent user** — a user record of type `agent` —
+that **wears a hat**, exactly like a human user does. Its permissions *are* the
+hat's permissions. There is no second permission system to design, maintain, or
+get out of sync.
+
+Rules that follow directly:
+
+1. **Type.** `agent` joins the existing user types. It authenticates by token
+   rather than by login, but it is a user everywhere else — People lists, audit
+   trails, `created_by` / `updated_by` attribution.
+2. **Permissions come from the hat.** Picking the hat *is* picking the scope.
+   Changing the hat re-scopes the agent immediately; revoking the hat revokes
+   the access.
+3. **Cap: 2 agent users per human user.** Enforced at creation with a clear
+   message, not a silent failure.
+4. **Ceiling: the owning user's own hat permissions.** An agent user can never
+   exceed the human who created it — if that human is later demoted, the agent
+   is re-bounded too. An agent is a *delegation* of the creator's authority,
+   never an escalation of it.
+5. **Attribution stays honest.** Agent actions are written as the agent user,
+   never laundered through the human's id. This is the existing hardcoded-user-id
+   anti-pattern in a new costume; the real actor gets recorded.
+
+**Supersedes** decision 1 below (scope default) — scope is no longer a v1 choice,
+it is whatever hat the owner picks. The remaining decisions 2–5 still stand.
+
+Design consequence worth flagging at build time: rule 4 needs a re-evaluation
+hook. If the creator's hat changes, every agent user under them must be
+re-bounded in the same transaction, or a demoted user leaves behind an agent
+still holding the old authority.
+
 ## Owner decisions needed before build
 
-1. **Scope default** — Read-only only in v1, or include "append job note"?
+1. ~~**Scope default** — Read-only only in v1, or include "append job note"?~~
+   **SUPERSEDED** by the hat model above — the hat sets the scope.
 2. **Port 8471** OK, or prefer another?
 3. **Which device runs it** — shop device only, or any device with the toggle?
 4. **Tool list v1** — the 7 above right? Anything missing you'd ask first?
