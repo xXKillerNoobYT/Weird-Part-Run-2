@@ -617,6 +617,62 @@ struct Weird_Parts_IOSTests {
         #expect(try fallbackURL.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
     }
 
+    /// The Mac won-t-start bug (#1663), reduced to its mechanism.
+    ///
+    /// Two independent key stores exist — the Keychain and a container-local
+    /// fallback file — and they can disagree. When the Keychain is EMPTY the code
+    /// already treats the file as authoritative and promotes it. But when BOTH
+    /// hold a 32-byte key and they differ, the Keychain silently wins: the first
+    /// branch returns on errSecSuccess without ever consulting the file.
+    ///
+    /// On the iPad-on-Mac binary the Keychain answers inconsistently across
+    /// launches, so the database is written under the file-s key and later opened
+    /// under the Keychain-s. SQLCipher then reads the page header as garbage and
+    /// reports "SQLite error 26: file is not a database" — exactly what the tester
+    /// saw on build 55.
+    ///
+    /// The fallback file is only ever created when the Keychain was unusable, so
+    /// its presence is evidence the database may be encrypted with it. It must
+    /// win. A healthy iPhone never creates one, so this cannot regress that path.
+    @Test func bootstrapKeyPrefersExistingFallbackOverDivergentKeychainKey() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BootstrapDivergence-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        // Launch A — Keychain unusable, so the fallback file is created. The
+        // database would be encrypted with THIS key.
+        let unavailableKeychain = AppCore.BootstrapKeychainAccess(
+            read: { (errSecMissingEntitlement, nil) },
+            add: { _ in errSecParam },
+            delete: { errSecSuccess }
+        )
+        let keyThatEncryptedTheDatabase = try AppCore.deviceBootstrapKeyHex(
+            processArguments: [],
+            keychain: unavailableKeychain,
+            fallbackDirectory: directory
+        )
+
+        // Launch B — the Keychain now answers, holding a DIFFERENT 32-byte key
+        // left behind by an earlier attempt.
+        let divergentKeychainKey = Data(repeating: 0x5A, count: 32)
+        #expect(divergentKeychainKey.map { String(format: "%02x", $0) }.joined() != keyThatEncryptedTheDatabase)
+        let divergedKeychain = AppCore.BootstrapKeychainAccess(
+            read: { (errSecSuccess, divergentKeychainKey) },
+            add: { _ in errSecSuccess },
+            delete: { errSecSuccess }
+        )
+        let keyUsedOnNextLaunch = try AppCore.deviceBootstrapKeyHex(
+            processArguments: [],
+            keychain: divergedKeychain,
+            fallbackDirectory: directory
+        )
+
+        #expect(
+            keyUsedOnNextLaunch == keyThatEncryptedTheDatabase,
+            "A launch that finds an existing fallback file must reuse it. Returning the Keychain divergent key opens the database with the wrong key and yields SQLITE_NOTADB (#1663)."
+        )
+    }
+
     @Test func bootstrapFallbackConcurrentCallersShareOnePersistedKey() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("BootstrapFallback-\(UUID().uuidString)", isDirectory: true)
