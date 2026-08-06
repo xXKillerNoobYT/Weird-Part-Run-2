@@ -2,6 +2,7 @@
 import Testing
 import Foundation
 import GRDB
+import MultipeerConnectivity
 @testable import WiredPartCore
 
 @Suite("MultipeerManager Tests")
@@ -69,6 +70,80 @@ struct MultipeerTests {
         )
         let msg = manager.popReceivedMessage()
         #expect(msg == nil)
+    }
+
+    // MARK: - #1580 — a failed connection must not erase the discovered peer
+
+    /// The pairing bug behind "discovery works, connecting fails".
+    ///
+    /// `awaitMultipeerConnection` invites, waits, and re-invites once if the
+    /// first invitation lapses. Both `invite(deviceId:)` and
+    /// `isConnected(toPeer:)` look the peer up in `peers` by device id. The
+    /// session delegate used to REMOVE that entry on `.notConnected`, which
+    /// MCSession reports whenever an invitation lapses — so the re-invite found
+    /// nothing, returned a discarded `false`, and the join burned its whole
+    /// timeout against a host that was still advertising the entire time.
+    ///
+    /// Discovery lifetime belongs to the browser (`foundPeer` / `lostPeer`).
+    /// A dropped connection means "not connected", never "gone".
+    @Test("a failed connection keeps the discovered peer so re-invite still works (#1580)")
+    func testNotConnectedKeepsDiscoveredPeer() {
+        let manager = MultipeerManager(
+            deviceId: "joiner-1",
+            deviceName: "Joiner iPhone",
+            companyId: "company-abc",
+            autoInvitePeers: false        // keep the test off the radio
+        )
+        let hostPeerId = MCPeerID(displayName: "Shop Mac")
+        let browser = MCNearbyServiceBrowser(
+            peer: MCPeerID(displayName: "Joiner iPhone"),
+            serviceType: "wiredpart-sync"
+        )
+
+        manager.browser(browser, foundPeer: hostPeerId, withDiscoveryInfo: [
+            "device_id": "host-1",
+            "device_name": "Shop Mac",
+            "company_id": "company-abc"
+        ])
+        // `getPeers()` is syncQueue.sync, and the delegate hops are
+        // syncQueue.async on the same serial queue, so this observes them.
+        #expect(manager.getPeers().contains { $0.deviceId == "host-1" })
+
+        // The invitation lapses — exactly what the joiner hits in the field.
+        let session = MCSession(peer: MCPeerID(displayName: "Joiner iPhone"))
+        manager.session(session, peer: hostPeerId, didChange: .notConnected)
+
+        let after = manager.getPeers()
+        #expect(
+            after.contains { $0.deviceId == "host-1" },
+            "peer was erased on .notConnected — re-invite can never find it again"
+        )
+        #expect(after.first { $0.deviceId == "host-1" }?.state == .found)
+    }
+
+    /// `lostPeer` is the one thing that legitimately removes a peer.
+    @Test("lostPeer still removes the peer (#1580)")
+    func testLostPeerRemoves() {
+        let manager = MultipeerManager(
+            deviceId: "joiner-1",
+            deviceName: "Joiner iPhone",
+            companyId: "company-abc",
+            autoInvitePeers: false
+        )
+        let hostPeerId = MCPeerID(displayName: "Shop Mac")
+        let browser = MCNearbyServiceBrowser(
+            peer: MCPeerID(displayName: "Joiner iPhone"),
+            serviceType: "wiredpart-sync"
+        )
+        manager.browser(browser, foundPeer: hostPeerId, withDiscoveryInfo: [
+            "device_id": "host-1",
+            "device_name": "Shop Mac",
+            "company_id": "company-abc"
+        ])
+        #expect(manager.getPeers().contains { $0.deviceId == "host-1" })
+
+        manager.browser(browser, lostPeer: hostPeerId)
+        #expect(!manager.getPeers().contains { $0.deviceId == "host-1" })
     }
 
     // MARK: - Cross-Device Sync with Different Cipher Keys
