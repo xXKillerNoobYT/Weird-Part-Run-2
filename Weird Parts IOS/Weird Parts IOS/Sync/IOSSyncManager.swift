@@ -26,6 +26,14 @@ final class IOSSyncManager {
     var activeSyncPeerName: String?
     /// Host-side: human summary of the most recent completed peer transfer.
     var lastHostSyncSummary: String?
+    /// Why Bluetooth could not start, shown on screen with a code (#1580).
+    ///
+    /// Owner 2026-08-07: *"that would be a perfect spot to show an actual error
+    /// code… if we can't [extract the log easily] you might as well leave them
+    /// invisible."* Logs replicate over the very sync that is failing, so when
+    /// Bluetooth is down the log channel is down with it — the reason has to be
+    /// readable on the device itself, not retrieved afterwards.
+    var bluetoothTransportError: String?
     var isPaired: Bool {
         guard let service = settingsService else {
             return false
@@ -753,6 +761,10 @@ final class IOSSyncManager {
     }
 
     private func handlePeerStateChange(_ state: PeerManagerState) {
+        // Bluetooth is REQUIRED for server-free sync, so a transport that never
+        // started must say why on screen (#1580).
+        bluetoothTransportError = state.lastTransportError
+
         // Host-side transfer feedback: who we're actively sending to, and the last
         // completed transfer per peer (drives "Syncing…"/"Synced N records" UI).
         if let syncingId = state.syncingWith {

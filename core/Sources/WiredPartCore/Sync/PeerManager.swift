@@ -53,6 +53,13 @@ public struct PeerManagerState: Sendable {
     /// initial full snapshot (#1417 hardening — the UI shows real movement).
     public var snapshotReceivedRecords: [String: Int] = [:]
 
+    /// Last reason the OS refused to start Bluetooth advertising or browsing —
+    /// denied Local Network permission, a disabled radio, a missing Bonjour
+    /// entry (#1580). Bluetooth is REQUIRED for server-free sync, so when it
+    /// cannot start the user has to be told why rather than being left with a
+    /// silent empty peer list. Nil when the transport started cleanly.
+    public var lastTransportError: String? = nil
+
     public init(
         running: Bool = false,
         syncPort: UInt16 = 0,
@@ -313,6 +320,8 @@ public actor PeerManager {
         // 3. Start Multipeer Connectivity (Apple platforms)
         #if canImport(MultipeerConnectivity)
         if startMultipeer {
+            // Fresh attempt — don't let a previous failure linger in the UI.
+            state.lastTransportError = nil
             let mpManager = MultipeerManager(
                 deviceId: deviceId,
                 deviceName: deviceName,
@@ -324,6 +333,12 @@ public actor PeerManager {
             mpManager.onPeersChanged = { [weak self] _ in
                 guard let self else { return }
                 Task { await self.mergePeerLists() }
+            }
+            // Bluetooth is required for server-free sync, so a transport that
+            // never starts is a user-visible failure, not a log line (#1580).
+            mpManager.onTransportError = { [weak self] message in
+                guard let self else { return }
+                Task { await self.recordTransportError(message) }
             }
             mpManager.onDataReceived = { [weak self] _ in
                 guard let self else { return }
@@ -679,6 +694,13 @@ public actor PeerManager {
     public func clearPairingCode() async {
         await serverState?.clearActivePairingCode()
         setBluetoothPairingHostMode(false)
+    }
+
+    /// Record a Bluetooth transport-start failure so the UI can explain why no
+    /// devices are appearing, instead of showing an empty list forever (#1580).
+    private func recordTransportError(_ message: String) {
+        state.lastTransportError = message
+        logger.error("[PeerManager] Bluetooth transport did not start: \(message, privacy: .public)")
     }
 
     /// Host: allow cross-company Bluetooth connections while a pairing code is
