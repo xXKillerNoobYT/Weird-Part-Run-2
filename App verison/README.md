@@ -6,13 +6,30 @@ load-bearing** — Xcode Cloud Branch-Changes conditions reference it URL-encode
 only as an untracked local file on the shared Mac, so cloud conditions watching
 it could never fire — this commit makes the trigger real.
 
-- `INTERNAL-BETA.md` — Home Base group. Bumping it produces an internal build
-  automatically (no Apple review).
+**This folder is the EXTERNAL-release trigger and nothing else** (owner
+clarification 2026-08-01). Routine PR merges must NEVER touch it — internal
+builds already fire from any edit landing on `main` and do not require (or
+want) changes here. Change a file in this folder only when the intent is a
+release beyond the internal group:
+
+- `INTERNAL-BETA.md` — Home Base group reference info only. Internal builds
+  are triggered by main-branch edits, NOT by this file; do not bump it per
+  build.
 - `PUBLIC-BETA.md` — Camp 1 external group (public link). Full Xcode Cloud
-  workflow + Apple beta review. HARD CAP: one push per 5–9 days, owner-gated.
+  workflow + Apple beta review. **Cadence (owner 2026-08-01, supersedes the
+  5–9 day spec): at MOST one push every 5 days, and at LEAST one every 14
+  days** — a stable-ish external release lands every 5–14 days. Owner-gated;
+  agents never bump this autonomously.
 - `PUBLIC-RELEASE.md` — App Store. Owner-gated.
 
-Rules (owner spec, 2026-07-31): bump a channel file ONLY in the same commit/PR
-as everything its build needs (notes written, fixes merged). Strict `key: value`
-format so any agent or bot can parse and bump. Replaces the original single
-`Version File.md`.
+**External preflight (owner 2026-08-01): full testing, every test green on
+every device.** Before `PUBLIC-BETA.md` is bumped, the FULL test suite — the
+recommended testing package, not the PR quick gates — must pass on ALL device
+classes (iPhone + iPad at minimum, plus any other device in the package).
+A red or skipped test on any device blocks the external push; internal builds
+are not held to this bar.
+
+Rules (owner spec, 2026-07-31): when a bump does happen, it goes in the same
+commit/PR as everything its build needs (notes written, fixes merged). Strict
+`key: value` format so any agent or bot can parse and bump. Replaces the
+original single `Version File.md`.
