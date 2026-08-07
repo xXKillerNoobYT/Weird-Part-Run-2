@@ -148,6 +148,66 @@ is a secret and UX must say so ("treat this like a key").
 - Acceptance criterion 4 becomes: server unreachable from any non-loopback
   interface (and from other LAN hosts).
 
+## AMENDED 2026-08-06 (chat) — identity model supersedes the scope *mechanism*
+
+Verbatim:
+
+> "for the MCP i think we should have it treadted like a AGENT user and then can
+> pick the hat with permicions for the mcp like you for exsample by hat"
+
+> "Agent users limited to 2 per a user and the users hats permission"
+
+**The decision:** an MCP consumer is **not** a bespoke token with its own scope
+vocabulary. It is a first-class **agent user** — a user record of type `agent` —
+that **wears a hat**, exactly like a human user does. Its permissions *are* the
+hat's permissions. There is no second permission system to design, maintain, or
+get out of sync.
+
+Rules that follow directly:
+
+1. **Type.** `agent` joins the existing user types. It authenticates by token
+   rather than by login, but it is a user everywhere else — People lists, audit
+   trails, `created_by` / `updated_by` attribution.
+2. **Permissions come from the hat.** Picking the hat *is* picking the scope.
+   Changing the hat re-scopes the agent immediately; revoking the hat revokes
+   the access.
+3. **Cap: 2 agent users per human user.** Enforced at creation with a clear
+   message, not a silent failure.
+4. **Ceiling: the owning user's own hat permissions.** An agent user can never
+   exceed the human who created it — if that human is later demoted, the agent
+   is re-bounded too. An agent is a *delegation* of the creator's authority,
+   never an escalation of it.
+5. **Attribution stays honest.** Agent actions are written as the agent user,
+   never laundered through the human's id. This is the existing hardcoded-user-id
+   anti-pattern in a new costume; the real actor gets recorded.
+
+### Exactly what this changes, and what it does not
+
+| From 2026-08-01 | Status after 2026-08-06 |
+|---|---|
+| Decision 1 — *scope picker* ("Read-only \| Read + notes" as a sheet choice) | **SUPERSEDED.** There is no scope picker. The agent user wears a hat and the hat decides. |
+| Decision 1/4 — the **8-tool surface** (7 reads + `job_note_append`) | **STANDS.** These are the tools that exist. Whether a given agent may call `job_note_append` is now a hat question, not a separate scope flag. |
+| Decision 2 — port **8471** | **STANDS.** |
+| Decision 3 — **Macs only, loopback `127.0.0.1`** | **STANDS.** |
+| Decision 5 — naming **"Agent Link (MCP)"** | **STANDS.** |
+
+The Devices-page sheet therefore replaces its scope picker with a **hat picker**,
+and the "scope badge" on each row becomes the hat's name.
+
+**Bearer tokens still exist** and are unchanged (CSPRNG, SHA-256 digest at rest,
+constant-time compare, revoke immediately). The token answers *"which agent user
+is calling?"*; the hat answers *"what may that user do?"*. Do not collapse the
+two — authentication and authorization stay separate.
+
+Design consequence worth flagging at build time: rule 4 needs a re-evaluation
+hook. If the creator's hat changes, every agent user under them must be
+re-bounded in the same transaction, or a demoted user leaves behind an agent
+still holding the old authority.
+
+**Status: MCP is a FUTURE feature** (owner 2026-08-06: *"MCP is future plan, add
+as a feature GitHub issue"*). Tracked on #1573; no implementation is scheduled.
+
+
 ## Cross-references
 
 - Token and audit implementation: new `AgentLinkService`; do not reuse
