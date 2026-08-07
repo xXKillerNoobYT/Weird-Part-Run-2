@@ -89,11 +89,42 @@ struct IOSPeerBrowser: View {
                 .font(.title3)
                 .fontWeight(.semibold)
 
-            Text("Make sure other devices are on the same network or have Bluetooth enabled.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
+            // When the OS refused to start Bluetooth we know exactly why, so say
+            // it here rather than offering generic advice (#1580). Logs travel
+            // over the sync that is failing, so this is the only channel that
+            // still works when Bluetooth is down.
+            if let transportError = syncManager.bluetoothTransportError {
+                VStack(spacing: 8) {
+                    Label("Bluetooth could not start", systemImage: "exclamationmark.triangle.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.orange)
+
+                    Text(transportError)
+                        .font(.footnote.monospaced())
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.center)
+                        .textSelection(.enabled)
+
+                    Text("Bluetooth is required to find devices. Touch and hold the code above to copy it.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity)
+                .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                .padding(.horizontal, 24)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Bluetooth could not start")
+                .accessibilityValue(transportError)
+                .accessibilityIdentifier("peer-browser-transport-error")
+            } else {
+                Text("Bluetooth must be on and the devices near each other. Wi-Fi is optional — it only makes syncing faster.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
 
             if !syncManager.isScanning {
                 Button {
