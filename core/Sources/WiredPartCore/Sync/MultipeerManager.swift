@@ -430,7 +430,7 @@ extension MultipeerManager: MCNearbyServiceBrowserDelegate {
         _ browser: MCNearbyServiceBrowser,
         didNotStartBrowsingForPeers error: Error
     ) {
-        reportTransportError("Could not start looking for nearby devices: \(error.localizedDescription)")
+        reportTransportError("BT-SCAN-START — could not start looking for nearby devices: \(error.localizedDescription)")
     }
 
     public func browser(
@@ -461,7 +461,7 @@ extension MultipeerManager: MCNearbyServiceAdvertiserDelegate {
         _ advertiser: MCNearbyServiceAdvertiser,
         didNotStartAdvertisingPeer error: Error
     ) {
-        reportTransportError("Could not make this device discoverable: \(error.localizedDescription)")
+        reportTransportError("BT-ADV-START — could not make this device discoverable: \(error.localizedDescription)")
     }
 
     public func advertiser(
