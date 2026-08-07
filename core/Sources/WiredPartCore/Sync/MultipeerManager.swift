@@ -134,7 +134,30 @@ public final class MultipeerManager: NSObject, @unchecked Sendable {
         self.session = MCSession(
             peer: localPeerId,
             securityIdentity: nil,
-            encryptionPreference: .required
+            // #1580 — `.optional`, not `.required`.
+            //
+            // `.required` makes MCSession refuse to form unless both ends
+            // negotiate transport encryption, and it is a well-known source of
+            // connections that discover fine and then never connect — the exact
+            // field symptom here, across every device combination.
+            //
+            // This does NOT put company data on the air in the clear. Change
+            // payloads are already sealed at the APPLICATION layer with
+            // AES-GCM (`SyncCrypto.encryptAESGCM` in `PeerManager`), keyed by
+            // the X25519 agreement established during pairing, so transport
+            // encryption was a redundant second wrapper. The pairing handshake
+            // itself carries only a MAC-style proof bound to a nonce and the
+            // participants' PUBLIC keys — safe in the clear by construction.
+            //
+            // Owner authorization 2026-08-07: "i dont minde there being publice
+            // bluetooth fall back to start and encrpting it latter as long as
+            // we have the sycing working."
+            //
+            // `.optional` still uses encryption whenever the peer asks for it,
+            // so a device on an older build that still sends `.required` keeps
+            // an encrypted link — mixed-build fleets stay compatible during
+            // rollout.
+            encryptionPreference: .optional
         )
         self.session.delegate = self
     }
@@ -430,7 +453,7 @@ extension MultipeerManager: MCNearbyServiceBrowserDelegate {
         _ browser: MCNearbyServiceBrowser,
         didNotStartBrowsingForPeers error: Error
     ) {
-        reportTransportError("Could not start looking for nearby devices: \(error.localizedDescription)")
+        reportTransportError("BT-SCAN-START — could not start looking for nearby devices: \(error.localizedDescription)")
     }
 
     public func browser(
@@ -461,7 +484,7 @@ extension MultipeerManager: MCNearbyServiceAdvertiserDelegate {
         _ advertiser: MCNearbyServiceAdvertiser,
         didNotStartAdvertisingPeer error: Error
     ) {
-        reportTransportError("Could not make this device discoverable: \(error.localizedDescription)")
+        reportTransportError("BT-ADV-START — could not make this device discoverable: \(error.localizedDescription)")
     }
 
     public func advertiser(
