@@ -116,21 +116,27 @@ screenshots, categories, age rating.
 
 ## Release channels (owner directive 2026-07-31)
 
+> `App verison/` is the EXTERNAL trigger only (owner 2026-08-01): routine PR
+> merges never touch it — internal builds fire from any `main` edit on their
+> own. Only an intentional external release changes that folder.
+
 Two TestFlight channels with very different costs and cadences:
 
 | | **Internal** ("Home Base" group) | **External** ("Camp 1" group, public link) |
 |---|---|---|
 | Who | Owner's own devices (weirdnow@icloud.com) | Public beta testers via the ASC public link |
 | Apple review | None — build just has to pass | Apple **beta app review** + heavy Xcode Cloud processing |
-| Trigger | Any `main` edit touching the `App verison/` folder (Xcode Cloud Branch-Changes condition watches it), or a local archive+upload | The Xcode Cloud workflow with the full action set (Build/Test iOS+macOS, Archive, Analyze, Notarize, TestFlight External Testing post-action) |
-| Cadence | Whenever useful | **ONE per 5-9 days, no more** — external pushes are expensive and reviewed |
+| Trigger | Any `main` edit (automatic), or a local archive+upload; never change `App verison/` for an internal build | Intentional change to the external channel file in `App verison/`, then the Xcode Cloud workflow with the full action set (Build/Test iOS+macOS, Archive, Analyze, Notarize, TestFlight External Testing post-action) |
+| Test bar | PR gates green | **FULL suite green on every device in the recommended testing package** (owner 2026-08-01) — any red/skip on any device blocks the push |
+| Cadence | Every main edit (automatic) | **At most one per 5 days, at least one per 14** (owner 2026-08-01) — a stable-ish external release every 5–14 days; owner-gated |
 
-The `App verison/` folder (spelling is load-bearing — Xcode Cloud's condition
-references the URL-encoded name) holds one machine-parseable version file per
-channel: `INTERNAL-BETA.md`, `PUBLIC-BETA.md`, `PUBLIC-RELEASE.md`. Bumping a
-channel's file on `main` is the release trigger for that channel, so version
-bumps must ride the SAME commit/PR as everything the build needs (build number,
-notes) — never bump a channel file "in advance."
+The `App verison/` folder (spelling is load-bearing — Xcode Cloud's external
+release condition references the URL-encoded name) holds one machine-parseable
+version file per channel: `INTERNAL-BETA.md`, `PUBLIC-BETA.md`,
+`PUBLIC-RELEASE.md`. It is external-only: do not bump `INTERNAL-BETA.md` for
+an internal build. An intentional external channel bump must ride the SAME
+commit/PR as everything its build needs (build number, notes) — never bump a
+channel file "in advance."
 
 App Store Connect status emails land in Apple Mail for weirdnow@icloud.com on
 the shared Mac — check there (AppleScript/`osascript` against Mail.app) for
