@@ -72,6 +72,17 @@ public final class MultipeerManager: NSObject, @unchecked Sendable {
     /// Called when data is received from a peer. GUARDED BY syncQueue
     public var onDataReceived: ((ReceivedMultipeerMessage) -> Void)?
 
+    /// Called when the OS refuses to START advertising or browsing. (#1580)
+    ///
+    /// `MCNearbyServiceAdvertiserDelegate` / `MCNearbyServiceBrowserDelegate`
+    /// report denied Local Network permission, a missing `NSBonjourServices`
+    /// entry, and a disabled radio through these callbacks and nowhere else.
+    /// Both were unimplemented, so those failures were dropped on the floor and
+    /// every one of them reached the user as the same generic "couldn't
+    /// connect" — undiagnosable across four builds of fixes. Emitted as a
+    /// human-readable line so the caller can log or surface it.
+    public var onTransportError: ((String) -> Void)?
+
     private static let serviceType = "wiredpart-sync"
 
     private let deviceId: String
@@ -248,6 +259,14 @@ public final class MultipeerManager: NSObject, @unchecked Sendable {
         self.browser = browser
     }
 
+    /// Surface a transport-start failure. Delivered on the main queue so a UI
+    /// observer can present it directly. (#1580)
+    private func reportTransportError(_ message: String) {
+        DispatchQueue.main.async { [weak self] in
+            self?.onTransportError?(message)
+        }
+    }
+
     private func notifyPeersChanged() {
         let snapshot = peers.values.map { $0.info }
         DispatchQueue.main.async { [weak self] in
@@ -273,9 +292,25 @@ extension MultipeerManager: MCSessionDelegate {
                     let newState: MultipeerPeerState
                     switch state {
                     case .notConnected:
-                        self.peers.removeValue(forKey: key)
-                        self.notifyPeersChanged()
-                        return
+                        // #1580 — do NOT remove the peer here.
+                        //
+                        // Discovery lifetime belongs to the BROWSER (foundPeer /
+                        // lostPeer). The session only owns *connection* state. A
+                        // failed or dropped connection says nothing about whether
+                        // the peer is still advertising — and MCSession reports
+                        // `.notConnected` routinely when an invitation lapses.
+                        //
+                        // Removing the entry destroyed the record that
+                        // `invite(deviceId:)` looks up, so
+                        // `awaitMultipeerConnection`'s re-invite silently no-op'd
+                        // (its `false` return is discarded) and `isConnected` could
+                        // never become true again. The join then spun out the full
+                        // wait and failed with `connectionTimeout` — discovery
+                        // green, connection dead — on every device pairing,
+                        // regardless of transport.
+                        //
+                        // Revert to `.found` and let `lostPeer` do the removing.
+                        newState = .found
                     case .connecting:
                         newState = .connecting
                     case .connected:
@@ -389,6 +424,15 @@ extension MultipeerManager: MCNearbyServiceBrowserDelegate {
         }
     }
 
+    /// The OS refused to start browsing. Previously unimplemented, so a denied
+    /// Local Network permission looked identical to "no peers nearby". (#1580)
+    public func browser(
+        _ browser: MCNearbyServiceBrowser,
+        didNotStartBrowsingForPeers error: Error
+    ) {
+        reportTransportError("Could not start looking for nearby devices: \(error.localizedDescription)")
+    }
+
     public func browser(
         _ browser: MCNearbyServiceBrowser,
         lostPeer peerID: MCPeerID
@@ -410,6 +454,16 @@ extension MultipeerManager: MCNearbyServiceBrowserDelegate {
 // MARK: - MCNearbyServiceAdvertiserDelegate
 
 extension MultipeerManager: MCNearbyServiceAdvertiserDelegate {
+    /// The OS refused to start advertising. Previously unimplemented, so a host
+    /// that was never actually discoverable still showed the user a pairing code
+    /// and simply waited forever. (#1580)
+    public func advertiser(
+        _ advertiser: MCNearbyServiceAdvertiser,
+        didNotStartAdvertisingPeer error: Error
+    ) {
+        reportTransportError("Could not make this device discoverable: \(error.localizedDescription)")
+    }
+
     public func advertiser(
         _ advertiser: MCNearbyServiceAdvertiser,
         didReceiveInvitationFromPeer peerID: MCPeerID,
