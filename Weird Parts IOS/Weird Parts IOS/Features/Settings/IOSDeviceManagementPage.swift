@@ -114,8 +114,8 @@ struct IOSDeviceManagementPage: View {
             switch sheet {
             case .help:
                 PageHelpSheet(title: "Device Management Help", sections: [
-                    ("What This Page Does", "Shows this device's identity and lets you pair new devices into your shop network. Paired devices sync data with each other over the local network."),
-                    ("Pairing a New Device", "Tap Pair New Device to generate a one-time pairing code. On the new device, choose Join Existing Business during setup and enter the code when prompted. Keep both devices on the same Wi-Fi network."),
+                    ("What This Page Does", "Shows this device's identity and lets you pair new devices into your shop. Paired devices sync directly with each other — no server, no internet. On a job site with no signal at all, they sync over Bluetooth."),
+                    ("Pairing a New Device", "Tap Pair New Device to generate a one-time pairing code. On the new device, choose Join Existing Business during setup and enter the code when prompted. Bluetooth must be turned on for both devices, and they need to be near each other. Wi-Fi is not required — when both devices happen to be on the same network, syncing is simply faster."),
                 ])
             case .pairingCode(let code):
                 PairingCodeSheet(code: code)
@@ -186,9 +186,11 @@ private struct PairingCodeSheet: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
 
-                Text("Keep both devices on the same Wi-Fi network.")
+                Text("Bluetooth must be on for both devices, and keep them near each other. Wi-Fi isn't required — it just makes syncing faster when you have it.")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
 
                 Spacer()
             }
