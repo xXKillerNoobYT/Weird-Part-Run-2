@@ -11,6 +11,9 @@ struct WiredPartIOSApp: App {
     @StateObject private var appCore = AppCore()
     @StateObject private var tabPrefs = TabBarPreferences()
     @State private var showLaunchErrorReport = false
+    @State private var showUnreadableDatabaseRecoveryConfirmation = false
+    @State private var isPreparingUnreadableDatabaseRecovery = false
+    @State private var unreadableDatabaseRecoveryError: String?
     @State private var uiTestingPanelSchedule = PanelSchedule(
         panelName: "QA Panel A",
         panelType: .smallPanel,
@@ -151,6 +154,76 @@ struct WiredPartIOSApp: App {
         Color(hex: appCore.theme.primaryColor) ?? .accentColor
     }
 
+    private var unreadableDatabaseRecoveryView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "lock.trianglebadge.exclamationmark")
+                .font(.largeTitle)
+                .foregroundStyle(.orange)
+            Text("Database Needs Recovery")
+                .font(.headline)
+            Text("This device still has data, but it no longer has the encryption key needed to unlock it. The database has not been deleted or overwritten.")
+                .font(.body)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+            Text("To continue, keep this device near a trusted paired peer. The recovery action archives this unreadable database, then takes you to Join a Business so you can re-pair and download the company database again.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+            if let unreadableDatabaseRecoveryError {
+                Text(unreadableDatabaseRecoveryError)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+            }
+            Button {
+                showUnreadableDatabaseRecoveryConfirmation = true
+            } label: {
+                if isPreparingUnreadableDatabaseRecovery {
+                    ProgressView()
+                } else {
+                    Label("Archive and Re-pair", systemImage: "arrow.triangle.2.circlepath")
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(isPreparingUnreadableDatabaseRecovery)
+            .accessibilityIdentifier("startup-unreadable-database-recovery-button")
+            .accessibilityHint("Archives the unreadable encrypted database before opening the re-pairing flow.")
+            Button("Report this startup problem") {
+                showLaunchErrorReport = true
+            }
+            .buttonStyle(.bordered)
+        }
+        .confirmationDialog(
+            "Archive the unreadable database?",
+            isPresented: $showUnreadableDatabaseRecoveryConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Archive and Continue to Re-pair", role: .destructive) {
+                Task {
+                    isPreparingUnreadableDatabaseRecovery = true
+                    unreadableDatabaseRecoveryError = await appCore.archiveUnreadableDatabaseAndPrepareToRepair()
+                    isPreparingUnreadableDatabaseRecovery = false
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This copies the unreadable database and its recovery files into local backups before clearing only the active copy. It cannot recover the missing key. Continue only when a trusted peer can provide a fresh download.")
+        }
+        .sheet(isPresented: $showLaunchErrorReport) {
+            NavigationStack {
+                ReportABugPage(originModule: "Unreadable encrypted database")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Close") { showLaunchErrorReport = false }
+                        }
+                    }
+            }
+            .presentationDetents([.large])
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             Group {
@@ -237,6 +310,8 @@ struct WiredPartIOSApp: App {
                             .environmentObject(tabPrefs)
                             .environmentObject(appCore.badgeCountManager)
                     }
+                } else if appCore.requiresUnreadableDatabaseRecovery {
+                    unreadableDatabaseRecoveryView
                 } else if let error = appCore.loadError {
                     VStack(spacing: 16) {
                         Image(systemName: "exclamationmark.triangle.fill")
