@@ -857,7 +857,7 @@ final class AppCore: ObservableObject {
     }
 
     nonisolated static func shouldUseLocalBootstrapKeyFallback(for status: OSStatus) -> Bool {
-        status == errSecMissingEntitlement || status == errSecNotAvailable
+        KeychainAvailability.isUnusable(status)
     }
 
     nonisolated static func localFallbackBootstrapKeyURL(in directory: URL? = nil) throws -> URL {

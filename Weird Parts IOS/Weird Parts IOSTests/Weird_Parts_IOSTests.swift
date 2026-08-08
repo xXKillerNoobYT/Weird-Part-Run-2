@@ -516,11 +516,26 @@ struct Weird_Parts_IOSTests {
         #expect(keyHex.count == 64)
     }
 
-    @Test func bootstrapFallbackUsesOnlyApprovedKeychainStatuses() {
-        #expect(AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecMissingEntitlement))
-        #expect(AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecNotAvailable))
-        #expect(!AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecInteractionNotAllowed))
-        #expect(!AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecAuthFailed))
+    @Test func bootstrapFallbackDelegatesToSharedKeychainAvailabilityPredicate() {
+        // This intentionally includes statuses outside the old two-value allowlist.
+        // It must fail if this consumer narrows the shared denylist again.
+        for status in [
+            errSecSuccess,
+            errSecItemNotFound,
+            errSecInteractionNotAllowed,
+            errSecAuthFailed,
+            errSecUserCanceled,
+            errSecMissingEntitlement,
+            errSecNotAvailable,
+            errSecParam,
+            OSStatus(-77777)
+        ] {
+            #expect(
+                AppCore.shouldUseLocalBootstrapKeyFallback(for: status)
+                    == KeychainAvailability.isUnusable(status),
+                "AppCore diverged from KeychainAvailability on \(status)"
+            )
+        }
     }
 
     @Test func bootstrapFallbackPersistsForApprovedReadFailureAndCleansUp() throws {
