@@ -290,6 +290,15 @@ public final class MultipeerManager: NSObject, @unchecked Sendable {
         }
     }
 
+    #if DEBUG
+    /// Exercises the same main-queue delivery path as a framework transport
+    /// start callback. Internal so the Swift package test target can cover the
+    /// configured callback chain without exposing a product-facing control.
+    func testReportTransportError(_ message: String) {
+        reportTransportError(message)
+    }
+    #endif
+
     private func notifyPeersChanged() {
         let snapshot = peers.values.map { $0.info }
         DispatchQueue.main.async { [weak self] in
