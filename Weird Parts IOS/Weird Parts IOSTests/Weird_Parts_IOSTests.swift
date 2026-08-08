@@ -1510,3 +1510,18 @@ final class ReceiveShipmentPriceVerificationXCTests: XCTestCase {
         XCTAssertNil(message)
     }
 }
+
+final class IOSSyncManagerTransportErrorXCTests: XCTestCase {
+    @MainActor
+    func testBluetoothBrowserStartFailureStopsScanSoPairingDiagnosticIsReachable() {
+        let manager = IOSSyncManager()
+        manager.isScanning = true
+        var failedState = PeerManagerState()
+        failedState.lastTransportError = "BT-SCAN-START — access denied"
+
+        manager.handlePeerStateChange(failedState)
+
+        XCTAssertEqual(manager.bluetoothTransportError, "BT-SCAN-START — access denied")
+        XCTAssertFalse(manager.isScanning)
+    }
+}
