@@ -293,6 +293,71 @@ extension AppDatabase {
         return database
     }
 
+    /// Returns whether an encrypted-database open failed because the supplied
+    /// SQLCipher key cannot unlock the existing file.
+    ///
+    /// This is deliberately narrow: callers must not turn arbitrary startup
+    /// failures into a destructive recovery flow. SQLite reports this condition
+    /// as `SQLITE_NOTADB` (26), commonly while SQLCipher reads the first page.
+    public static func isCipherKeyMismatchError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        guard nsError.code == 26 else { return false }
+
+        let description = error.localizedDescription.lowercased()
+        return description.contains("file is not a database")
+            || description.contains("not a database")
+            || description.contains("decrypt")
+    }
+
+    /// Makes a complete, durable copy of an unreadable SQLCipher database bundle
+    /// before removing its canonical files so a user can explicitly re-pair and
+    /// download a replacement database.
+    ///
+    /// The archive is intentionally never pruned by automatic migration cleanup.
+    /// Every base/WAL/SHM file is copied before the original is touched. This method
+    /// is only for an explicit user-confirmed recovery action; normal startup must
+    /// never call it.
+    ///
+    /// - Returns: The archived database base-file path.
+    public static func archiveUnreadableCipherDatabase(atPath path: String) throws -> String {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: path) else {
+            throw CipherRecoveryError.databaseMissing
+        }
+
+        let directory = (path as NSString).deletingLastPathComponent
+        let backupsDirectory = directory + "/Backups"
+        try fileManager.createDirectory(atPath: backupsDirectory, withIntermediateDirectories: true)
+
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+            .replacingOccurrences(of: ":", with: "-")
+        let archivePath = backupsDirectory + "/unreadable-cipher-\(timestamp)-\(UUID().uuidString.prefix(8)).sqlite"
+        let suffixes = ["", "-wal", "-shm"]
+
+        do {
+            for suffix in suffixes where fileManager.fileExists(atPath: path + suffix) {
+                try fileManager.copyItem(atPath: path + suffix, toPath: archivePath + suffix)
+            }
+        } catch {
+            for suffix in suffixes {
+                try? fileManager.removeItem(atPath: archivePath + suffix)
+            }
+            throw error
+        }
+
+        do {
+            for suffix in suffixes where fileManager.fileExists(atPath: path + suffix) {
+                try fileManager.removeItem(atPath: path + suffix)
+            }
+        } catch {
+            // The complete archive remains available even if clearing the canonical
+            // bundle is interrupted. Do not retry bootstrap in that state.
+            throw error
+        }
+
+        return archivePath
+    }
+
     static func replacePlaintextDatabaseWithEncryptedTemp(
         atPath path: String,
         tempPath: String,
@@ -430,6 +495,19 @@ extension AppDatabase {
 }
 
 // MARK: - CipherMigrationError
+
+public enum CipherRecoveryError: Error, Sendable {
+    case databaseMissing
+}
+
+extension CipherRecoveryError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .databaseMissing:
+            return "The unreadable database file is no longer present."
+        }
+    }
+}
 
 public enum CipherMigrationError: Error, Sendable {
     case exportFailed(Error)

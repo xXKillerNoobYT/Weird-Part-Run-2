@@ -34,6 +34,10 @@ final class AppCore: ObservableObject {
 
     @Published var isReady = false
     @Published var loadError: String?
+    /// True only when SQLCipher reports that an existing database cannot be
+    /// unlocked by this device's current bootstrap key. The UI must require an
+    /// explicit archive-and-repair confirmation before it can create a new DB.
+    @Published private(set) var requiresUnreadableDatabaseRecovery = false
     @Published var needsBootstrap = false
     @Published var needsOnboarding = false
     @Published var currentUser: User?
@@ -392,15 +396,43 @@ final class AppCore: ObservableObject {
             logger.error(
                 "[AppCore] bootstrap failed domain=\(nsError.domain, privacy: .public) code=\(nsError.code, privacy: .public) description=\(error.localizedDescription, privacy: .public)"
             )
-            // A startup-failure screen is a DIAGNOSTIC surface: the generic
-            // "Couldn't start app. Pull down to retry." hid the OSStatus that
-            // would have identified the Mac keychain failure immediately
-            // (owner, 2026-08-04 — two builds burned guessing). Show the real
-            // reason underneath the friendly line.
-            let friendly = userFriendlyError(error, context: "start app")
-            let technical = "\(nsError.domain) \(nsError.code): \(error.localizedDescription)"
-            loadError = "\(friendly)\n\n\(technical)"
-            BugReportErrorLog.shared.record(loadError ?? friendly, context: "App startup")
+            if AppDatabase.isCipherKeyMismatchError(error) {
+                requiresUnreadableDatabaseRecovery = true
+                loadError = "This device has data it can no longer unlock. It has not been deleted or overwritten."
+            } else {
+                // A startup-failure screen is a DIAGNOSTIC surface: the generic
+                // "Couldn't start app. Pull down to retry." hid the OSStatus that
+                // would have identified the Mac keychain failure immediately
+                // (owner, 2026-08-04 — two builds burned guessing). Show the real
+                // reason underneath the friendly line.
+                let friendly = userFriendlyError(error, context: "start app")
+                let technical = "\(nsError.domain) \(nsError.code): \(error.localizedDescription)"
+                loadError = "\(friendly)\n\n\(technical)"
+            }
+            BugReportErrorLog.shared.record(loadError ?? error.localizedDescription, context: "App startup")
+        }
+    }
+
+    /// Archives the unreadable encrypted database only after an explicit user
+    /// confirmation, then boots an empty local database so the standard pairing
+    /// flow can download a replacement from a trusted peer.
+    func archiveUnreadableDatabaseAndPrepareToRepair() async -> String? {
+        guard requiresUnreadableDatabaseRecovery else {
+            return "Database recovery is not required."
+        }
+
+        do {
+            let path = try Self.databasePath()
+            let archivePath = try await Task.detached(priority: .userInitiated) {
+                try AppDatabase.archiveUnreadableCipherDatabase(atPath: path)
+            }.value
+            logger.notice("[AppCore] Archived unreadable encrypted database at \(archivePath, privacy: .private)")
+            requiresUnreadableDatabaseRecovery = false
+            loadError = nil
+            await bootstrap()
+            return nil
+        } catch {
+            return userFriendlyError(error, context: "archive unreadable database")
         }
     }
 
