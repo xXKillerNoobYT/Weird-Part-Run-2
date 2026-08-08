@@ -99,6 +99,21 @@ questions may be sent from weirdnow@icloud.com (owner-authorized, report each
 send). Kevin's and external testers' reports are never interpreted by guess —
 ask the owner.
 
+## App Store listing metadata — repo is the source of truth
+
+`docs/app-store/description.md` holds the listing copy; App Store Connect is a
+rendering of it. After ANY edit to that file (or before a submission), run:
+
+```bash
+~/.claude/scripts/ascenv/bin/python scripts/ci/sync-app-store-metadata.py
+```
+
+Idempotent, covers the iOS **and** macOS version records, skips versions that
+are live or in review, and enforces Apple's character limits before writing.
+`--check` gives a read-only drift report. Owner-only leftovers it reports
+rather than fakes: Privacy Policy URL (submission blocker), Marketing URL,
+screenshots, categories, age rating.
+
 ## Release channels (owner directive 2026-07-31)
 
 > `App verison/` is the EXTERNAL trigger only (owner 2026-08-01): routine PR
