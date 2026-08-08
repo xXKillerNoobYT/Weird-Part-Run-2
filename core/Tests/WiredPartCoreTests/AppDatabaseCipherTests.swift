@@ -350,6 +350,64 @@ struct AppDatabaseCipherTests {
         #expect(value == "still_here", "Data must be intact after idempotent second migration call")
     }
 
+    @Test("wrong SQLCipher key is classified and leaves the encrypted database readable with its original key")
+    func wrongKeyDoesNotDestroyExistingEncryptedDatabase() throws {
+        let path = tmpPath("wrong-key")
+        defer { cleanup(path) }
+
+        let originalKey = String(repeating: "a1", count: 32)
+        let wrongKey = String(repeating: "b2", count: 32)
+        let database = try AppDatabase.openEncryptedDatabase(atPath: path, keyHex: originalKey)
+        try database.writer.write { db in
+            try db.execute(sql: """
+                INSERT OR REPLACE INTO settings (key, value, category)
+                VALUES ('wrong_key_sentinel', 'must_survive', 'test')
+            """)
+        }
+        try (database.writer as? DatabasePool)?.close()
+        let bytesBeforeWrongKeyOpen = try Data(contentsOf: URL(fileURLWithPath: path))
+
+        do {
+            _ = try AppDatabase.openEncryptedDatabaseAfterReleaseMigration(atPath: path, keyHex: wrongKey)
+            Issue.record("Opening an existing encrypted database with a wrong key must fail")
+        } catch {
+            #expect(AppDatabase.isCipherKeyMismatchError(error))
+        }
+
+        #expect(
+            try Data(contentsOf: URL(fileURLWithPath: path)) == bytesBeforeWrongKeyOpen,
+            "A wrong-key open must not overwrite or delete the existing encrypted database."
+        )
+        let reopened = try AppDatabase.openEncryptedDatabase(atPath: path, keyHex: originalKey)
+        let sentinel: String? = try reopened.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT value FROM settings WHERE key = 'wrong_key_sentinel'")
+        }
+        #expect(sentinel == "must_survive")
+    }
+
+    @Test("explicit unreadable-database archive preserves the complete bundle before recovery clears the canonical path")
+    func archiveUnreadableCipherDatabasePreservesDatabaseBundle() throws {
+        let path = tmpPath("archive-unreadable")
+        defer { cleanup(path) }
+        let fileManager = FileManager.default
+        let baseBytes = Data("encrypted database bytes".utf8)
+        let walBytes = Data("encrypted WAL bytes".utf8)
+        let shmBytes = Data("encrypted SHM bytes".utf8)
+        try baseBytes.write(to: URL(fileURLWithPath: path))
+        try walBytes.write(to: URL(fileURLWithPath: path + "-wal"))
+        try shmBytes.write(to: URL(fileURLWithPath: path + "-shm"))
+
+        let archivePath = try AppDatabase.archiveUnreadableCipherDatabase(atPath: path)
+
+        #expect(try Data(contentsOf: URL(fileURLWithPath: archivePath)) == baseBytes)
+        #expect(try Data(contentsOf: URL(fileURLWithPath: archivePath + "-wal")) == walBytes)
+        #expect(try Data(contentsOf: URL(fileURLWithPath: archivePath + "-shm")) == shmBytes)
+        for suffix in ["", "-wal", "-shm"] {
+            #expect(!fileManager.fileExists(atPath: path + suffix), "The recovery action must clear only the canonical bundle after archiving: \(suffix)")
+            try? fileManager.removeItem(atPath: archivePath + suffix)
+        }
+    }
+
     @Test("testFailureMidImportLeavesOriginalDBIntact — original plaintext DB preserved on error")
     func testFailureMidImportLeavesOriginalDBIntact() throws {
         // Simulate a migration failure by making the parent directory read-only so the
