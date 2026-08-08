@@ -696,11 +696,12 @@ public actor PeerManager {
         setBluetoothPairingHostMode(false)
     }
 
-    /// Record a Bluetooth transport-start failure so the UI can explain why no
-    /// devices are appearing, instead of showing an empty list forever (#1580).
-    private func recordTransportError(_ message: String) {
+    /// Record and immediately publish a Bluetooth transport-start failure so the UI
+    /// can replace its spinner with the recovery code instead of waiting for polling.
+    func recordTransportError(_ message: String) {
         state.lastTransportError = message
         logger.error("[PeerManager] Bluetooth transport did not start: \(message, privacy: .public)")
+        notifyStateChanged()
     }
 
     /// Host: allow cross-company Bluetooth connections while a pairing code is

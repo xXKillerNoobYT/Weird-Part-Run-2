@@ -37,6 +37,18 @@ private final class SnapshotAcknowledgementCollector: @unchecked Sendable {
     }
 }
 
+private actor PeerManagerStateCollector {
+    private var snapshots: [PeerManagerState] = []
+
+    func append(_ state: PeerManagerState) {
+        snapshots.append(state)
+    }
+
+    func containsTransportError(_ message: String) -> Bool {
+        snapshots.contains { $0.lastTransportError == message }
+    }
+}
+
 private func authenticatedBluetoothPairingFixture(
     requestNonce: String = SyncCrypto.bluetoothPairingRequestNonce()
 ) throws -> (context: BluetoothPairingAttemptContext, response: SyncPairResponse) {
@@ -196,6 +208,27 @@ struct PeerManagerTests {
 
     private func freshDB() throws -> AppDatabase {
         try AppDatabase.openInMemoryDatabase()
+    }
+
+    @Test("Bluetooth startup errors immediately publish the recovery diagnostic")
+    func testTransportStartErrorPublishesStateImmediately() async throws {
+        let pm = PeerManager(db: try freshDB())
+        let collector = PeerManagerStateCollector()
+        let message = "BT-SCAN-START — access denied"
+
+        await pm.setOnStateChanged { state in
+            Task { await collector.append(state) }
+        }
+        await pm.recordTransportError(message)
+
+        for _ in 0..<20 {
+            if await collector.containsTransportError(message) {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        #expect(await collector.containsTransportError(message))
     }
 
     @Test("iOS unit-test runtime selects injected identity storage")
