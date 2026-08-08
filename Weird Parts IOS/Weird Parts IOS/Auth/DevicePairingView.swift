@@ -84,6 +84,7 @@ struct DevicePairingView: View {
                 .environmentObject(appCore)
         }
         .task {
+            guard !syncManager.applyDevicePairingUITestFixtureIfNeeded() else { return }
             await scanForShop()
         }
         .onDisappear {

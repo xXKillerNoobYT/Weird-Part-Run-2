@@ -98,6 +98,17 @@ struct WiredPartIOSApp: App {
         ProcessInfo.processInfo.arguments.contains("-UITestingWEI936Celebration")
     }
 
+    #if DEBUG && targetEnvironment(simulator)
+    private var shouldShowDevicePairingTransportErrorFixture: Bool {
+        let arguments = ProcessInfo.processInfo.arguments
+        return arguments.contains("-UITesting")
+            && (arguments.contains("-UITestingDevicePairingTransportError")
+                || arguments.contains("-UITestingDevicePairingNoTransportError"))
+    }
+    #else
+    private var shouldShowDevicePairingTransportErrorFixture: Bool { false }
+    #endif
+
     private var shouldOpenWEI3144MaterialsFixture: Bool {
         ProcessInfo.processInfo.arguments.contains("-UITestingWEI3144JobMaterials")
     }
@@ -248,6 +259,11 @@ struct WiredPartIOSApp: App {
                     #else
                     EmptyView()
                     #endif
+                } else if shouldShowDevicePairingTransportErrorFixture {
+                    NavigationStack {
+                        DevicePairingView()
+                            .environmentObject(appCore)
+                    }
                 } else if appCore.isReady {
                     if shouldShowWEI936WelcomeFixture {
                         OnboardingWelcomeView()
