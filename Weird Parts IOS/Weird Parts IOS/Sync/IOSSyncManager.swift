@@ -760,10 +760,17 @@ final class IOSSyncManager {
         pendingChanges = state.pendingCount
     }
 
-    private func handlePeerStateChange(_ state: PeerManagerState) {
+    func handlePeerStateChange(_ state: PeerManagerState) {
         // Bluetooth is REQUIRED for server-free sync, so a transport that never
         // started must say why on screen (#1580).
         bluetoothTransportError = state.lastTransportError
+        // DevicePairingView deliberately renders the empty-state diagnostic only
+        // after scanning ends. A browser/advertiser start failure is terminal for
+        // this attempt; otherwise the spinner masks the stable BT-*-START reason
+        // indefinitely and the user has no actionable recovery information.
+        if state.lastTransportError != nil {
+            isScanning = false
+        }
 
         // Host-side transfer feedback: who we're actively sending to, and the last
         // completed transfer per peer (drives "Syncing…"/"Synced N records" UI).
