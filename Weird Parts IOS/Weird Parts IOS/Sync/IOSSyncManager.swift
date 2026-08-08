@@ -860,6 +860,30 @@ final class IOSSyncManager {
         discoveredPeers = lanPeers + multipeerOnly
     }
 
+    /// Simulator-only fixture for UI accessibility coverage of the pairing
+    /// recovery state. It is unavailable from production builds and has no UI
+    /// affordance, so users cannot inject a shipping diagnostic.
+    func applyDevicePairingUITestFixtureIfNeeded() -> Bool {
+        #if DEBUG && targetEnvironment(simulator)
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains("-UITesting") else { return false }
+
+        if arguments.contains("-UITestingDevicePairingTransportError") {
+            discoveredPeers = []
+            isScanning = false
+            bluetoothTransportError = "BT-SCAN-START — access denied"
+            return true
+        }
+        if arguments.contains("-UITestingDevicePairingNoTransportError") {
+            discoveredPeers = []
+            isScanning = false
+            bluetoothTransportError = nil
+            return true
+        }
+        #endif
+        return false
+    }
+
     private func handleMultipeerPeersChanged(_ peers: [MultipeerPeerInfo]) {
         let mpPeers = peers.map { peer in
             PeerInfo(
