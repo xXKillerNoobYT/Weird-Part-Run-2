@@ -37,6 +37,28 @@ private final class SnapshotAcknowledgementCollector: @unchecked Sendable {
     }
 }
 
+private actor PeerManagerStateCollector {
+    private var snapshots: [PeerManagerState] = []
+    private var transportErrorWaiter: (message: String, continuation: CheckedContinuation<PeerManagerState, Never>)?
+
+    func append(_ state: PeerManagerState) {
+        snapshots.append(state)
+        guard let waiter = transportErrorWaiter,
+              state.lastTransportError == waiter.message else { return }
+        transportErrorWaiter = nil
+        waiter.continuation.resume(returning: state)
+    }
+
+    func nextTransportError(_ message: String) async -> PeerManagerState {
+        if let snapshot = snapshots.first(where: { $0.lastTransportError == message }) {
+            return snapshot
+        }
+        return await withCheckedContinuation { continuation in
+            transportErrorWaiter = (message, continuation)
+        }
+    }
+}
+
 private func authenticatedBluetoothPairingFixture(
     requestNonce: String = SyncCrypto.bluetoothPairingRequestNonce()
 ) throws -> (context: BluetoothPairingAttemptContext, response: SyncPairResponse) {
@@ -196,6 +218,30 @@ struct PeerManagerTests {
 
     private func freshDB() throws -> AppDatabase {
         try AppDatabase.openInMemoryDatabase()
+    }
+
+    @Test("Bluetooth startup errors immediately publish the recovery diagnostic")
+    func testTransportStartErrorPublishesStateImmediately() async throws {
+        let pm = PeerManager(db: try freshDB())
+        let collector = PeerManagerStateCollector()
+        let message = "BT-SCAN-START — access denied"
+
+        await pm.setOnStateChanged { state in
+            Task { await collector.append(state) }
+        }
+        try await pm.startPeerSync(
+            deviceId: "callback-test-device",
+            deviceName: "Callback Test Device",
+            companyId: "callback-test-company",
+            startSyncServer: false
+        )
+        defer { Task { await pm.stopPeerSync() } }
+
+        async let observedSnapshot = collector.nextTransportError(message)
+        await pm.testTriggerConfiguredTransportError(message)
+        let snapshot = await observedSnapshot
+
+        #expect(snapshot.lastTransportError == message)
     }
 
     @Test("iOS unit-test runtime selects injected identity storage")

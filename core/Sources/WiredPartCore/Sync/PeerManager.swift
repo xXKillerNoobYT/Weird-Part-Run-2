@@ -696,12 +696,22 @@ public actor PeerManager {
         setBluetoothPairingHostMode(false)
     }
 
-    /// Record a Bluetooth transport-start failure so the UI can explain why no
-    /// devices are appearing, instead of showing an empty list forever (#1580).
-    private func recordTransportError(_ message: String) {
+    /// Record and immediately publish a Bluetooth transport-start failure so the UI
+    /// can replace its spinner with the recovery code instead of waiting for polling.
+    func recordTransportError(_ message: String) {
         state.lastTransportError = message
         logger.error("[PeerManager] Bluetooth transport did not start: \(message, privacy: .public)")
+        notifyStateChanged()
     }
+
+    #if DEBUG && canImport(MultipeerConnectivity)
+    /// Test-only seam for the configured Multipeer callback. This intentionally
+    /// enters through `MultipeerManager.reportTransportError`, preserving the
+    /// main-queue → actor → main-actor observer chain used in production.
+    func testTriggerConfiguredTransportError(_ message: String) {
+        multipeerManager?.testReportTransportError(message)
+    }
+    #endif
 
     /// Host: allow cross-company Bluetooth connections while a pairing code is
     /// offered, so a not-yet-in-company device can connect to complete the code
