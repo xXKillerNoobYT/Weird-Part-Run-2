@@ -1,7 +1,23 @@
 # WiredPart — App Store Listing
 
-Complete metadata for App Store Connect. Copy each field verbatim into ASC
-(App Information + version page). Character limits noted per field.
+**This file is the SOURCE OF TRUTH for the App Store listing.** App Store
+Connect is a rendering of it, not the other way round — edit here, then run:
+
+```bash
+~/.claude/scripts/ascenv/bin/python scripts/ci/sync-app-store-metadata.py
+```
+
+The sync is idempotent, covers **both the iOS and macOS version records**, and
+refuses to write to a version that is live or in review. Add `--check` for a
+read-only drift report (exit 1 when ASC differs) — safe to wire into CI.
+
+Character limits below are enforced by the script; it fails loudly rather than
+letting Apple reject the write.
+
+**Fields the API cannot set — these stay owner/UI work:** Privacy Policy URL
+(required before submission; policy text is in `privacy-labels.md`, it needs
+hosting), Marketing URL, screenshots (`docs/app-store/screenshots/`),
+categories, and the age-rating questionnaire.
 
 ## App Name (30 chars max)
 ```
