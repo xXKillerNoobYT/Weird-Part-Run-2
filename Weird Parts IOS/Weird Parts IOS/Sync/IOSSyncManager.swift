@@ -63,6 +63,13 @@ final class IOSSyncManager {
         let success: Bool
         let error: String?
         let isOneWayBluetoothTransfer: Bool
+        let hasMixedPeerTransports: Bool
+    }
+
+    enum PeerTransportPresentation: Equatable {
+        case standard
+        case oneWayBluetooth(peerNames: [String], recordsSent: Int)
+        case mixed
     }
 
     private let logger = Logger(subsystem: "com.wiredpart.ios", category: "IOSSyncManager")
@@ -295,6 +302,8 @@ final class IOSSyncManager {
         let deviceId = DeviceIdentity.current
         var totalPushed = 0
         var totalPulled = 0
+        var completedConfiguredLANSync = false
+        var peerTransportPresentation: PeerTransportPresentation = .standard
 
         // Try LAN HTTP sync if a server is configured
         if let server = serverAddress {
@@ -303,6 +312,7 @@ final class IOSSyncManager {
                     deviceId: deviceId,
                     shopUrl: server
                 )
+                completedConfiguredLANSync = success
                 if !success {
                     let state = await engine.getState()
                     if let err = state.error {
@@ -332,13 +342,13 @@ final class IOSSyncManager {
                     ? "Waiting for \(waiting[0].peerName)'s first download to finish…"
                     : "Waiting for \(waiting.count) devices' first download to finish…"
             }
-            let oneWayBluetoothPeers = results.filter { result in
-                discoveredPeers.first(where: { $0.id == result.peerDeviceId })?.isBluetoothOnly == true
-            }
-            if errorMessage == nil, !oneWayBluetoothPeers.isEmpty {
+            peerTransportPresentation = Self.peerTransportPresentation(for: results)
+            if errorMessage == nil,
+               !completedConfiguredLANSync,
+               case let .oneWayBluetooth(peerNames, recordsSent) = peerTransportPresentation {
                 lastOneWayBluetoothSyncSummary = Self.oneWayBluetoothSyncSummary(
-                    peerNames: oneWayBluetoothPeers.map(\.peerName),
-                    recordsSent: oneWayBluetoothPeers.reduce(0) { $0 + $1.pushed }
+                    peerNames: peerNames,
+                    recordsSent: recordsSent
                 )
             }
         }
@@ -364,7 +374,8 @@ final class IOSSyncManager {
             conflicts: conflictCount,
             success: success,
             error: errorMessage,
-            isOneWayBluetoothTransfer: lastOneWayBluetoothSyncSummary != nil
+            isOneWayBluetoothTransfer: lastOneWayBluetoothSyncSummary != nil,
+            hasMixedPeerTransports: peerTransportPresentation == .mixed
         )
         syncHistory.insert(entry, at: 0)
         if syncHistory.count > 20 { syncHistory = Array(syncHistory.prefix(20)) }
@@ -387,7 +398,6 @@ final class IOSSyncManager {
             return
         }
 
-        let isBluetoothOnly = discoveredPeers.first(where: { $0.id == peerDeviceId })?.isBluetoothOnly == true
         syncStatus = .syncing
         errorMessage = nil
         lastOneWayBluetoothSyncSummary = nil
@@ -410,10 +420,10 @@ final class IOSSyncManager {
         if success {
             syncStatus = .synced
             lastSyncDate = Formatters.iso8601Basic.string(from: Date())
-            if isBluetoothOnly {
+            if case let .oneWayBluetooth(peerNames, recordsSent) = Self.peerTransportPresentation(for: [result]) {
                 lastOneWayBluetoothSyncSummary = Self.oneWayBluetoothSyncSummary(
-                    peerNames: [result.peerName],
-                    recordsSent: result.pushed
+                    peerNames: peerNames,
+                    recordsSent: recordsSent
                 )
             }
         } else {
@@ -427,7 +437,8 @@ final class IOSSyncManager {
             conflicts: conflictCount,
             success: success,
             error: errorMessage,
-            isOneWayBluetoothTransfer: success && isBluetoothOnly
+            isOneWayBluetoothTransfer: success && lastOneWayBluetoothSyncSummary != nil,
+            hasMixedPeerTransports: false
         )
         syncHistory.insert(entry, at: 0)
         if syncHistory.count > 20 { syncHistory = Array(syncHistory.prefix(20)) }
@@ -919,6 +930,24 @@ final class IOSSyncManager {
             : "\(uniqueNames.count) nearby devices"
         let nextAction = uniqueNames.count == 1 ? destination : "each device"
         return "Sent \(recordsSent) records to \(destination). To receive their changes, tap Send Changes on \(nextAction)."
+    }
+
+    /// Derives presentation only from the peer manager's executed transport.
+    /// Discovery snapshots are intentionally not consulted: LAN becomes preferred
+    /// when both transports discover the same device before dispatch.
+    static func peerTransportPresentation(for results: [PeerSyncResult]) -> PeerTransportPresentation {
+        let successful = results.filter(\.success)
+        guard !successful.isEmpty else { return .standard }
+
+        guard successful.allSatisfy({ $0.executedTransport != nil }) else { return .standard }
+        let transports = Set(successful.compactMap(\.executedTransport))
+        if transports == [.multipeer] {
+            return .oneWayBluetooth(
+                peerNames: successful.map(\.peerName),
+                recordsSent: successful.reduce(0) { $0 + $1.pushed }
+            )
+        }
+        return transports.contains(.multipeer) ? .mixed : .standard
     }
 
     private func refreshPendingCount() {

@@ -1922,6 +1922,7 @@ struct PeerManagerTests {
         #expect(result.pulled == 3)
         #expect(result.success == true)
         #expect(result.error == nil)
+        #expect(result.executedTransport == nil)
         #expect(!result.syncedAt.isEmpty)
     }
 

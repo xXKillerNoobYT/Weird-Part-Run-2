@@ -330,6 +330,51 @@ struct Weird_Parts_IOSTests {
     }
 
     @MainActor
+    @Test func peerTransportPresentationUsesExecutedTransportInsteadOfStaleDiscoveryState() {
+        // A row can initially be Multipeer-visible, then become LAN-preferred
+        // before PeerManager dispatches. The executed LAN result is reciprocal.
+        let lanResult = PeerSyncResult(
+            peerDeviceId: "field-ipad",
+            peerName: "Field iPad",
+            pushed: 3,
+            pulled: 2,
+            success: true,
+            executedTransport: .lan
+        )
+
+        #expect(IOSSyncManager.peerTransportPresentation(for: [lanResult]) == .standard)
+    }
+
+    @MainActor
+    @Test func mixedPeerTransportPresentationDoesNotClaimOneWayBluetooth() {
+        let results = [
+            PeerSyncResult(peerDeviceId: "field-ipad", peerName: "Field iPad", pushed: 3, success: true, executedTransport: .multipeer),
+            PeerSyncResult(peerDeviceId: "shop-mac", peerName: "Shop Mac", pulled: 2, success: true, executedTransport: .lan),
+        ]
+
+        #expect(IOSSyncManager.peerTransportPresentation(for: results) == .mixed)
+    }
+
+    @MainActor
+    @Test func failedOrUnexecutedPeerResultClearsOneWayPresentation() {
+        let failed = PeerSyncResult(
+            peerDeviceId: "field-ipad",
+            peerName: "Field iPad",
+            success: false,
+            error: "Connection failed",
+            executedTransport: .multipeer
+        )
+        let unexecuted = PeerSyncResult(
+            peerDeviceId: "field-ipad",
+            peerName: "Field iPad",
+            success: true
+        )
+
+        #expect(IOSSyncManager.peerTransportPresentation(for: [failed]) == .standard)
+        #expect(IOSSyncManager.peerTransportPresentation(for: [unexecuted]) == .standard)
+    }
+
+    @MainActor
     @Test func partsFlowDraftsAreScopedPerAuthenticatedUser() throws {
         let userA: Int64 = 101
         let userB: Int64 = 202

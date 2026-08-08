@@ -110,6 +110,10 @@ struct SyncPage: View {
                                     Text("One-way Bluetooth send — tap Send Changes on the other device to receive its changes.")
                                         .font(.caption2)
                                         .foregroundStyle(.orange)
+                                } else if entry.hasMixedPeerTransports {
+                                    Text("Mixed LAN and Bluetooth transfer — received changes reflect the LAN sync only.")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
                                 }
                                 HStack(spacing: 8) {
                                     if entry.changesSent > 0 {
