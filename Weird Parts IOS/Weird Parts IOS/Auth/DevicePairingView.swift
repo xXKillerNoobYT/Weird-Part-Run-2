@@ -108,6 +108,36 @@ struct DevicePairingView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
+                // Mirror the nearby-device empty state: when the OS refuses to
+                // start Bluetooth, the joiner otherwise has no way to retrieve
+                // the diagnostic because logs replicate over the failed sync.
+                if let transportError = syncManager.bluetoothTransportError {
+                    VStack(spacing: 8) {
+                        Label("Bluetooth could not start", systemImage: "exclamationmark.triangle.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.orange)
+
+                        Text(transportError)
+                            .font(.footnote.monospaced())
+                            .foregroundStyle(.primary)
+                            .multilineTextAlignment(.center)
+                            .textSelection(.enabled)
+
+                        Text("Bluetooth is required to find a shop. Touch and hold the code above to copy it.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity)
+                    .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                    .padding(.horizontal, 24)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Bluetooth could not start")
+                    .accessibilityValue(transportError)
+                    .accessibilityIdentifier("device-pairing-transport-error")
+                }
+
                 Button {
                     syncManager.setBluetoothEnabled(true, startDiscovery: false)
                     syncManager.startOnboardingPeerDiscovery()
