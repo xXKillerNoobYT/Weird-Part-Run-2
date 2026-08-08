@@ -106,6 +106,11 @@ struct SyncPage: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(entry.date, format: .dateTime.month(.abbreviated).day().hour().minute())
                                     .font(.caption)
+                                if entry.isOneWayBluetoothTransfer {
+                                    Text("One-way Bluetooth send — tap Send Changes on the other device to receive its changes.")
+                                        .font(.caption2)
+                                        .foregroundStyle(.orange)
+                                }
                                 HStack(spacing: 8) {
                                     if entry.changesSent > 0 {
                                         Text("\(entry.changesSent) sent")
@@ -135,7 +140,7 @@ struct SyncPage: View {
                             }
                         }
                         .rowAccessibility(
-                            label: "Sync \(entry.success ? "succeeded" : "failed") on \(entry.date.formatted(.dateTime.month(.abbreviated).day().hour().minute()))",
+                            label: "\(entry.isOneWayBluetoothTransfer ? "One-way Bluetooth send" : "Sync \(entry.success ? "succeeded" : "failed")") on \(entry.date.formatted(.dateTime.month(.abbreviated).day().hour().minute()))",
                             value: historyAccessibilityValue(entry),
                             id: "settings-sync-history-\(entry.id.uuidString)"
                         )
@@ -219,7 +224,10 @@ struct SyncPage: View {
                 Text("Syncing...")
             }
         case .synced:
-            if let lastSync = syncManager.lastSyncDate {
+            if let summary = syncManager.lastOneWayBluetoothSyncSummary {
+                Label(summary, systemImage: "arrow.up.circle.fill")
+                    .foregroundStyle(.orange)
+            } else if let lastSync = syncManager.lastSyncDate {
                 let displayDate = lastSync.prefix(19).replacingOccurrences(of: "T", with: " ")
                 Label("Last sync: \(displayDate)", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)

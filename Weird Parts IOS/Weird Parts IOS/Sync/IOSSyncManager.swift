@@ -26,6 +26,11 @@ final class IOSSyncManager {
     var activeSyncPeerName: String?
     /// Host-side: human summary of the most recent completed peer transfer.
     var lastHostSyncSummary: String?
+    /// Bluetooth change delivery is currently send-only for one manual action:
+    /// the other device must send its own pending changes back. Keeping this
+    /// separate from `syncStatus` prevents a successful send from rendering as
+    /// a completed two-way sync (#6916).
+    var lastOneWayBluetoothSyncSummary: String?
     /// Why Bluetooth could not start, shown on screen with a code (#1580).
     ///
     /// Owner 2026-08-07: *"that would be a perfect spot to show an actual error
@@ -57,6 +62,7 @@ final class IOSSyncManager {
         let conflicts: Int
         let success: Bool
         let error: String?
+        let isOneWayBluetoothTransfer: Bool
     }
 
     private let logger = Logger(subsystem: "com.wiredpart.ios", category: "IOSSyncManager")
@@ -83,6 +89,10 @@ final class IOSSyncManager {
         let discoveredAt: String
         let address: String?
         let isManuallySyncable: Bool
+
+        var isBluetoothOnly: Bool {
+            address == nil
+        }
     }
 
     enum PeerDiscoveryMode: Equatable {
@@ -280,6 +290,7 @@ final class IOSSyncManager {
         guard syncStatus != .syncing else { return }
         syncStatus = .syncing
         errorMessage = nil
+        lastOneWayBluetoothSyncSummary = nil
 
         let deviceId = DeviceIdentity.current
         var totalPushed = 0
@@ -321,6 +332,15 @@ final class IOSSyncManager {
                     ? "Waiting for \(waiting[0].peerName)'s first download to finish…"
                     : "Waiting for \(waiting.count) devices' first download to finish…"
             }
+            let oneWayBluetoothPeers = results.filter { result in
+                discoveredPeers.first(where: { $0.id == result.peerDeviceId })?.isBluetoothOnly == true
+            }
+            if errorMessage == nil, !oneWayBluetoothPeers.isEmpty {
+                lastOneWayBluetoothSyncSummary = Self.oneWayBluetoothSyncSummary(
+                    peerNames: oneWayBluetoothPeers.map(\.peerName),
+                    recordsSent: oneWayBluetoothPeers.reduce(0) { $0 + $1.pushed }
+                )
+            }
         }
 
         // Check for conflicts
@@ -343,7 +363,8 @@ final class IOSSyncManager {
             changesReceived: totalPulled,
             conflicts: conflictCount,
             success: success,
-            error: errorMessage
+            error: errorMessage,
+            isOneWayBluetoothTransfer: lastOneWayBluetoothSyncSummary != nil
         )
         syncHistory.insert(entry, at: 0)
         if syncHistory.count > 20 { syncHistory = Array(syncHistory.prefix(20)) }
@@ -366,8 +387,10 @@ final class IOSSyncManager {
             return
         }
 
+        let isBluetoothOnly = discoveredPeers.first(where: { $0.id == peerDeviceId })?.isBluetoothOnly == true
         syncStatus = .syncing
         errorMessage = nil
+        lastOneWayBluetoothSyncSummary = nil
 
         let result = await pm.syncWithPeer(deviceId: peerDeviceId)
         if !result.success {
@@ -387,6 +410,12 @@ final class IOSSyncManager {
         if success {
             syncStatus = .synced
             lastSyncDate = Formatters.iso8601Basic.string(from: Date())
+            if isBluetoothOnly {
+                lastOneWayBluetoothSyncSummary = Self.oneWayBluetoothSyncSummary(
+                    peerNames: [result.peerName],
+                    recordsSent: result.pushed
+                )
+            }
         } else {
             syncStatus = .error
         }
@@ -397,7 +426,8 @@ final class IOSSyncManager {
             changesReceived: result.pulled,
             conflicts: conflictCount,
             success: success,
-            error: errorMessage
+            error: errorMessage,
+            isOneWayBluetoothTransfer: success && isBluetoothOnly
         )
         syncHistory.insert(entry, at: 0)
         if syncHistory.count > 20 { syncHistory = Array(syncHistory.prefix(20)) }
@@ -873,6 +903,22 @@ final class IOSSyncManager {
             return multipeerState == "connected"
         }
         return transport == "lan" && address != nil
+    }
+
+    /// The Multipeer protocol currently sends local pending changes but does
+    /// not await a reciprocal batch in that same user action. This wording is
+    /// deliberately explicit so a green completion state never promises that
+    /// the selected device's changes were pulled too (#6916).
+    static func oneWayBluetoothSyncSummary(peerNames: [String], recordsSent: Int) -> String {
+        var uniqueNames: [String] = []
+        for name in peerNames where !uniqueNames.contains(name) {
+            uniqueNames.append(name)
+        }
+        let destination = uniqueNames.count == 1
+            ? (uniqueNames.first ?? "the nearby device")
+            : "\(uniqueNames.count) nearby devices"
+        let nextAction = uniqueNames.count == 1 ? destination : "each device"
+        return "Sent \(recordsSent) records to \(destination). To receive their changes, tap Send Changes on \(nextAction)."
     }
 
     private func refreshPendingCount() {
@@ -1409,6 +1455,9 @@ final class IOSSyncManager {
         case .syncing:
             return pendingChanges > 0 ? "Syncing \(pendingChanges) changes..." : "Syncing..."
         case .synced:
+            if let summary = lastOneWayBluetoothSyncSummary {
+                return summary
+            }
             if let date = lastSyncDate {
                 let display = date.prefix(19).replacingOccurrences(of: "T", with: " ")
                 return "Last sync: \(display)"

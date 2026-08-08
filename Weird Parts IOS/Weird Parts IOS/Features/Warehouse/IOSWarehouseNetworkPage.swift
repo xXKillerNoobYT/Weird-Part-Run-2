@@ -177,7 +177,7 @@ struct IOSWarehouseNetworkPage: View {
         if syncManager.discoveredPeers.isEmpty {
             return "Browse or scan for configured LAN/Bluetooth peers on the shop network."
         }
-        return "Open the browser to review discovered peers and start a sync."
+        return "Open the browser to review discovered peers. Bluetooth Send Changes actions must be used on both devices to exchange data."
     }
 
     private var syncSetupDetailText: String {
@@ -185,6 +185,9 @@ struct IOSWarehouseNetworkPage: View {
     }
 
     private var syncStatusLabel: String {
+        if let summary = syncManager.lastOneWayBluetoothSyncSummary {
+            return summary
+        }
         switch syncManager.syncStatus {
         case .idle: return "Idle"
         case .syncing: return "Syncing"

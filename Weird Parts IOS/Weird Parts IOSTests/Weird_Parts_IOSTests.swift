@@ -316,6 +316,20 @@ struct Weird_Parts_IOSTests {
     }
 
     @MainActor
+    @Test func oneWayBluetoothSyncSummaryNeverClaimsReciprocalSync() {
+        #expect(
+            IOSSyncManager.oneWayBluetoothSyncSummary(peerNames: ["Field iPad"], recordsSent: 3)
+                == "Sent 3 records to Field iPad. To receive their changes, tap Send Changes on Field iPad."
+        )
+        #expect(
+            IOSSyncManager.oneWayBluetoothSyncSummary(
+                peerNames: ["Field iPad", "Shop iPhone", "Field iPad"],
+                recordsSent: 5
+            ) == "Sent 5 records to 2 nearby devices. To receive their changes, tap Send Changes on each device."
+        )
+    }
+
+    @MainActor
     @Test func partsFlowDraftsAreScopedPerAuthenticatedUser() throws {
         let userA: Int64 = 101
         let userB: Int64 = 202
