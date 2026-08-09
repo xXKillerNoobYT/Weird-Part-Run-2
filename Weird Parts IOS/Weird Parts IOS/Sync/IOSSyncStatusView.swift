@@ -51,6 +51,9 @@ struct IOSSyncStatusView: View {
     }
 
     private var statusLabel: String {
+        if let summary = syncManager.lastOneWayBluetoothSyncSummary {
+            return summary
+        }
         switch syncManager.syncStatus {
         case .idle: return "Idle"
         case .syncing: return "Syncing..."
@@ -61,6 +64,9 @@ struct IOSSyncStatusView: View {
     }
 
     private var statusIcon: String {
+        if syncManager.lastOneWayBluetoothSyncSummary != nil {
+            return "arrow.up.circle.fill"
+        }
         switch syncManager.syncStatus {
         case .idle: return "circle"
         case .syncing: return "arrow.triangle.2.circlepath"
@@ -71,6 +77,9 @@ struct IOSSyncStatusView: View {
     }
 
     private var statusColor: Color {
+        if syncManager.lastOneWayBluetoothSyncSummary != nil {
+            return .orange
+        }
         switch syncManager.syncStatus {
         case .idle: return .gray
         case .syncing: return .blue

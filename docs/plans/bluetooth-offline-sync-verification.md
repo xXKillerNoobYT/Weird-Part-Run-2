@@ -173,11 +173,12 @@ code and automated tests; the cross-device hop needs the two real devices.
    permission is denied still sees an empty list with no explanation. *This is
    the highest-value remaining item — it converts every future Stage-A failure
    into a self-diagnosing one.*
-2. **Bluetooth sync is one-directional per tap.** In `syncWithPeer`'s multipeer
-   branch, `pushed` is set but `pulled` stays `0` — the peer's changes arrive
-   asynchronously rather than in the same action. Two devices therefore need a
-   Sync on each side to converge. Acceptable if intended, but the UI must not
-   imply a single tap synchronised both ways.
+2. **Bluetooth sync is one-directional per tap.** **UI wording fixed in #6916:**
+   the Multipeer branch still sets `pushed` while `pulled` remains `0`, so users
+   must tap **Send Changes** on each device to converge. Bluetooth-only rows,
+   completion status, accessibility copy, and history now explicitly describe
+   that send-only behavior rather than claiming a two-way sync. Physical proof
+   still requires two devices (Stage G).
 3. **`NSBluetoothPeripheralUsageDescription` is absent.** Only needed for iOS 12
    and earlier, so not a live defect at the current deployment target — recorded
    so it is not rediscovered.
@@ -194,8 +195,9 @@ code and automated tests; the cross-device hop needs the two real devices.
 3. Joiner: onboarding → **Join Existing Business** → host appears (Stage B).
 4. Enter the code → watch for Stage D logs → expect D5.
 5. Watch the snapshot count move (E5), expect **E1 then E2**.
-6. Make a change on each device, Sync from each, confirm both converge (Stage F,
-   noting gap 2 — a tap on each side).
+6. Make a change on each device, tap **Send Changes** on each, and confirm both
+   converge (Stage F). A single Bluetooth action sends only this device's
+   pending changes; the UI now says so explicitly.
 7. Pull device logs and confirm the exact strings above.
 
 Any failure: capture the log line and match it to the row here. The row names
