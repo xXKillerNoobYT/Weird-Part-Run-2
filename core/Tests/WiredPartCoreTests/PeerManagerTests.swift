@@ -1558,6 +1558,70 @@ struct PeerManagerTests {
     }
     #endif
 
+    /// The build-62 field failure: the Mac showed "connected" then
+    /// "Sync with iPhone failed" while the joiner sat around a quarter of the
+    /// download. A transient Multipeer flap made one `send` return `false`, and
+    /// the loop aborted the entire company transfer on that single batch.
+    ///
+    /// A batch that fails once must be re-attempted, not fatal.
+    @Test("A transient send failure is retried, not fatal (#1580 build 62)")
+    func testSnapshotTransferRetriesTransientSendFailure() async throws {
+        let change = IncomingChange(
+            deviceId: "host", tableName: "users", recordId: "1",
+            operation: "INSERT", changedFields: "{\"id\":\"1\"}", timestamp: "2026-08-09T00:00:00Z"
+        )
+        var attempts = 0
+        var pagesServed = 0
+
+        let sent = try await BluetoothSnapshotTransfer.run(
+            maxSendAttempts: 4,
+            interBatchPause: .zero,
+            sleep: { _ in },                       // no real waiting in tests
+            listTables: { ["users"] },
+            readPage: { _, _, _ in
+                pagesServed += 1
+                return pagesServed == 1
+                    ? BluetoothSnapshotPage(changes: [change], sourceRowCount: 1)
+                    : BluetoothSnapshotPage(changes: [], sourceRowCount: 0)
+            },
+            encode: { _ in Data([0x01]) },
+            send: { _ in
+                attempts += 1
+                return attempts >= 3          // fails twice, then the session recovers
+            }
+        )
+
+        #expect(sent == 1, "the batch should have landed after the session recovered")
+        #expect(attempts == 3, "expected two failed attempts then a success")
+    }
+
+    /// Retries are bounded — a genuinely dead session still fails, and it fails
+    /// naming the table and offset rather than hanging forever.
+    @Test("A permanently dead session still fails, with the table and offset (#1580)")
+    func testSnapshotTransferGivesUpOnPermanentSendFailure() async {
+        let change = IncomingChange(
+            deviceId: "host", tableName: "users", recordId: "1",
+            operation: "INSERT", changedFields: "{\"id\":\"1\"}", timestamp: "2026-08-09T00:00:00Z"
+        )
+        var attempts = 0
+
+        await #expect(throws: BluetoothSnapshotTransferError.self) {
+            _ = try await BluetoothSnapshotTransfer.run(
+                maxSendAttempts: 3,
+                interBatchPause: .zero,
+                sleep: { _ in },
+                listTables: { ["users"] },
+                readPage: { _, _, _ in BluetoothSnapshotPage(changes: [change], sourceRowCount: 1) },
+                encode: { _ in Data([0x01]) },
+                send: { _ in
+                    attempts += 1
+                    return false
+                }
+            )
+        }
+        #expect(attempts == 3, "should stop at maxSendAttempts rather than retrying forever")
+    }
+
     @Test("Snapshot transfer fails when table enumeration fails")
     func testSnapshotTableEnumerationFailurePropagates() async {
         await #expect(throws: SnapshotProbeError.self) {
