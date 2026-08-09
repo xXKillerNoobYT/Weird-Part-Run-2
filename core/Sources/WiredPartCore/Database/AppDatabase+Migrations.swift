@@ -163,6 +163,7 @@ extension AppDatabase {
         registerMigration119SyncGapTables(&migrator)
         registerContactEmailRepair(&migrator)
         registerMigration121DeviceLogs(&migrator)
+        registerMigration122SnapshotStaging(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -653,6 +654,44 @@ extension AppDatabase {
                 t.column("updated_at", .datetime).notNull().defaults(sql: "(datetime('now'))")
             }
         }
+    }
+}
+
+/// Private, transfer-scoped durable storage for Bluetooth initial snapshots.
+/// No sync triggers are installed: underscore-prefixed tables are excluded from
+/// snapshot enumeration and this table must never feed `_change_log`.
+private func registerMigration122SnapshotStaging(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("122_bluetooth_snapshot_staging") { db in
+        try db.create(table: "_snapshot_transfers", ifNotExists: true) { t in
+            t.column("transfer_id", .text).primaryKey()
+            t.column("host_device_id", .text).notNull()
+            t.column("authorization_token", .text).notNull()
+            t.column("state", .text).notNull()
+            t.column("final_sequence", .integer)
+            t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+            t.column("applied_at", .text)
+        }
+        try db.create(table: "_snapshot_staging", ifNotExists: true) { t in
+            t.column("transfer_id", .text).notNull()
+            t.column("sequence", .integer).notNull()
+            t.column("host_device_id", .text).notNull()
+            t.column("payload", .blob).notNull()
+            t.column("digest", .text).notNull()
+            t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+            t.primaryKey(["transfer_id", "sequence"])
+        }
+        try db.create(
+            index: "idx_snapshot_transfers_host",
+            on: "_snapshot_transfers",
+            columns: ["host_device_id", "transfer_id"],
+            ifNotExists: true
+        )
+        try db.create(
+            index: "idx_snapshot_staging_host",
+            on: "_snapshot_staging",
+            columns: ["host_device_id", "transfer_id"],
+            ifNotExists: true
+        )
     }
 }
 

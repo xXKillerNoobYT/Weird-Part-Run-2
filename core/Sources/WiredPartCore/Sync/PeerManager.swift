@@ -189,8 +189,11 @@ public actor PeerManager {
     private var pendingBluetoothPairingContexts: [String: BluetoothPairingAttemptContext] = [:]
     // Joiner-side: continuations awaiting a full initial sync to complete, keyed by host deviceId.
     private var pendingFullSyncContinuations: [String: CheckedContinuation<Void, Error>] = [:]
-    // Full-snapshot pages remain in memory until completion, then commit in one transaction.
-    private var pendingSnapshotChanges: [String: [IncomingChange]] = [:]
+    // Joiner-side transfer identity only; batch contents live durably in SQLite.
+    private var activeSnapshotTransfers: [String: String] = [:]
+    // Host-side durable acknowledgements observed by the independently running sender.
+    private var hostedStoredAcknowledgements: Set<String> = []
+    private var hostedTransferIds: [String: String] = [:]
     // Ignore remaining queued pages after a failed snapshot until an explicit retry starts.
     private var failedSnapshotPeers: Set<String> = []
     // Pairing-issued capabilities bind initial snapshots to the successful code exchange.
@@ -434,7 +437,9 @@ public actor PeerManager {
         pendingBluetoothPairingContexts.removeAll()
         let fullSyncContinuations = Array(pendingFullSyncContinuations.values)
         pendingFullSyncContinuations.removeAll()
-        pendingSnapshotChanges.removeAll()
+        activeSnapshotTransfers.removeAll()
+        hostedStoredAcknowledgements.removeAll()
+        hostedTransferIds.removeAll()
         failedSnapshotPeers.removeAll()
 
         for continuation in pairContinuations {
@@ -1088,7 +1093,7 @@ public actor PeerManager {
     func isTrustedWritePeer(_ peerDeviceId: String) -> Bool {
         if (try? isTrustedBluetoothPeer(peerDeviceId)) == true { return true }
         // In-flight initial snapshot from the host we are joining.
-        return pendingSnapshotChanges[peerDeviceId] != nil
+        return activeSnapshotTransfers[peerDeviceId] != nil
             || receivedSnapshotTokens[peerDeviceId] != nil
     }
 
@@ -1128,7 +1133,8 @@ public actor PeerManager {
     /// Internal visibility supports deterministic ordering/failure regression tests.
     func processMultipeerMessage(
         _ message: ReceivedMultipeerMessage,
-        sendApplyAcknowledgement: ((FullSyncApplyAcknowledgement, String) -> Bool)? = nil
+        sendApplyAcknowledgement: ((FullSyncApplyAcknowledgement, String) -> Bool)? = nil,
+        sendStoredAcknowledgement: ((SnapshotStored, String) -> Bool)? = nil
     ) async throws -> MultipeerMessageOutcome {
         if let env = try? JSONDecoder().decode(MPEnvelope.self, from: message.data) {
             if failedSnapshotPeers.contains(message.fromDeviceId),
@@ -1136,7 +1142,81 @@ public actor PeerManager {
                 return .ignored
             }
             switch env.type {
+            case "snapshotBegin":
+                let begin = try JSONDecoder().decode(SnapshotBegin.self, from: env.payload)
+                let hasFreshAuthorization = receivedSnapshotTokens[message.fromDeviceId] == begin.authorizationToken
+                if let active = activeSnapshotTransfers[message.fromDeviceId], active != begin.transferId {
+                    throw SnapshotStagingError.mixedTransfer
+                }
+                try BluetoothSnapshotStaging.authorize(
+                    db: db,
+                    hostDeviceId: message.fromDeviceId,
+                    begin: begin,
+                    allowNewTransfer: hasFreshAuthorization
+                )
+                activeSnapshotTransfers[message.fromDeviceId] = begin.transferId
+                failedSnapshotPeers.remove(message.fromDeviceId)
+                return .ignored
+            case "snapshotBatch":
+                let batch = try JSONDecoder().decode(SnapshotBatch.self, from: env.payload)
+                if let active = activeSnapshotTransfers[message.fromDeviceId], active != batch.transferId {
+                    throw SnapshotStagingError.mixedTransfer
+                }
+                try BluetoothSnapshotStaging.stage(db: db, hostDeviceId: message.fromDeviceId, batch: batch)
+                activeSnapshotTransfers[message.fromDeviceId] = batch.transferId
+                let stored = SnapshotStored(transferId: batch.transferId, sequence: batch.sequence)
+                let sent: Bool
+                if let sendStoredAcknowledgement {
+                    sent = sendStoredAcknowledgement(stored, message.fromDeviceId)
+                } else if let manager = multipeerManager,
+                          let payload = try? JSONEncoder().encode(stored),
+                          let data = try? JSONEncoder().encode(MPEnvelope(type: "snapshotStored", payload: payload)) {
+                    sent = manager.send(data: data, toPeer: message.fromDeviceId)
+                } else { sent = false }
+                // The row is already durable. If this send races a disconnect,
+                // keep the transfer active: the host's bounded retry will
+                // redeliver the exact batch and receive a fresh acknowledgement.
+                if !sent {
+                    logger.warning("[PeerManager] Snapshot batch staged but stored acknowledgement could not be sent")
+                }
+                snapshotLastActivity[message.fromDeviceId] = Date()
+                state.snapshotReceivedRecords[message.fromDeviceId, default: 0] += batch.changes.count
+                notifyStateChanged()
+                return .changesApplied(batch.changes.count)
+            case "snapshotStored":
+                let stored = try JSONDecoder().decode(SnapshotStored.self, from: env.payload)
+                guard hostedTransferIds[message.fromDeviceId] == stored.transferId else {
+                    throw SnapshotStagingError.unknownTransfer
+                }
+                hostedStoredAcknowledgements.insert("\(stored.transferId):\(stored.sequence)")
+                return .ignored
+            case "snapshotComplete":
+                let completion = try JSONDecoder().decode(SnapshotComplete.self, from: env.payload)
+                if let active = activeSnapshotTransfers[message.fromDeviceId], active != completion.transferId {
+                    throw SnapshotStagingError.mixedTransfer
+                }
+                let receipt = try BluetoothSnapshotStaging.complete(
+                    db: db,
+                    hostDeviceId: message.fromDeviceId,
+                    completion: completion
+                )
+                guard sendFullSyncApplyAcknowledgement(
+                    succeeded: true,
+                    error: nil,
+                    to: message.fromDeviceId,
+                    authorizationToken: receipt.authorizationToken,
+                    using: sendApplyAcknowledgement
+                ) else {
+                    throw MultipeerPairingError.sendFailed
+                }
+                receivedSnapshotTokens.removeValue(forKey: message.fromDeviceId)
+                activeSnapshotTransfers.removeValue(forKey: message.fromDeviceId)
+                handleFullSyncComplete(from: message.fromDeviceId)
+                return .fullSyncCompleted
             case "changes":
+                guard activeSnapshotTransfers[message.fromDeviceId] == nil else {
+                    throw SnapshotStagingError.mixedTransfer
+                }
                 // SECURITY (audit 2026-08-03): company data may only be written
                 // by a peer that completed pairing and is still trusted.
                 // handleFullSyncRequest checked this; the write paths did not —
@@ -1151,19 +1231,7 @@ public actor PeerManager {
                 do {
                     let changes = try decodeIncomingChanges(env.payload)
                     let count: Int
-                    if pendingSnapshotChanges[message.fromDeviceId] != nil {
-                        pendingSnapshotChanges[message.fromDeviceId, default: []]
-                            .append(contentsOf: changes)
-                        count = changes.count
-                        // #1417 hardening: every batch feeds the idle watchdog
-                        // (a live transfer must never be killed) and the UI.
-                        snapshotLastActivity[message.fromDeviceId] = Date()
-                        state.snapshotReceivedRecords[message.fromDeviceId] =
-                            pendingSnapshotChanges[message.fromDeviceId, default: []].count
-                        notifyStateChanged()
-                    } else {
-                        count = try applyIncomingChanges(changes)
-                    }
+                    count = try applyIncomingChanges(changes)
                     return .changesApplied(count)
                 } catch {
                     sendFullSyncApplyAcknowledgement(
@@ -1181,57 +1249,17 @@ public actor PeerManager {
                 return .pairResponse
             case "fullSyncRequest":
                 let request = try JSONDecoder().decode(FullSyncRequest.self, from: env.payload)
-                await handleFullSyncRequest(
-                    from: message.fromDeviceId,
-                    authorizationToken: request.authorizationToken
-                )
+                Task { [weak self] in
+                    await self?.handleFullSyncRequest(
+                        from: message.fromDeviceId,
+                        authorizationToken: request.authorizationToken
+                    )
+                }
                 return .fullSyncRequest
             case "fullSyncComplete":
-                let completion: FullSyncCompletion
-                if env.payload.isEmpty {
-                    completion = .success // Backward compatibility with pre-integrity hosts.
-                } else {
-                    completion = try JSONDecoder().decode(FullSyncCompletion.self, from: env.payload)
-                }
-                guard completion.succeeded else {
-                    throw MultipeerSnapshotError.remoteFailure(completion.error ?? "")
-                }
-                if pendingSnapshotChanges[message.fromDeviceId] != nil {
-                    do {
-                        _ = try applyIncomingChanges(
-                            pendingSnapshotChanges[message.fromDeviceId, default: []]
-                        )
-                    } catch {
-                        // Tell the host before the FIFO drain propagates the local
-                        // failure. The host can then consume the old capability and
-                        // release its reservation immediately instead of timing out.
-                        sendFullSyncApplyAcknowledgement(
-                            succeeded: false,
-                            error: error.localizedDescription,
-                            to: message.fromDeviceId,
-                            using: sendApplyAcknowledgement
-                        )
-                        throw error
-                    }
-                }
-                if pendingFullSyncContinuations[message.fromDeviceId] != nil {
-                    guard sendFullSyncApplyAcknowledgement(
-                        succeeded: true,
-                        error: nil,
-                        to: message.fromDeviceId,
-                        using: sendApplyAcknowledgement
-                    ) else {
-                        throw MultipeerPairingError.sendFailed
-                    }
-                    receivedSnapshotTokens.removeValue(forKey: message.fromDeviceId)
-                }
-                pendingSnapshotChanges.removeValue(forKey: message.fromDeviceId)
-                failedSnapshotPeers.remove(message.fromDeviceId)
-                snapshotLastActivity.removeValue(forKey: message.fromDeviceId)
-                state.snapshotReceivedRecords.removeValue(forKey: message.fromDeviceId)
-                notifyStateChanged()
-                handleFullSyncComplete(from: message.fromDeviceId)
-                return .fullSyncCompleted
+                // Legacy in-memory snapshot completion is deliberately not
+                // accepted by the durable-staging protocol.
+                throw MultipeerSnapshotError.malformedEnvelope
             case "fullSyncApplied":
                 let acknowledgement = try JSONDecoder().decode(
                     FullSyncApplyAcknowledgement.self,
@@ -1243,7 +1271,7 @@ public actor PeerManager {
                 )
                 return .ignored
             default:
-                return .ignored
+                throw MultipeerSnapshotError.malformedEnvelope
             }
         }
 
@@ -1256,13 +1284,8 @@ public actor PeerManager {
         guard !failedSnapshotPeers.contains(message.fromDeviceId) else { return .ignored }
         let changes = try decodeIncomingChanges(message.data)
         let count: Int
-        if pendingSnapshotChanges[message.fromDeviceId] != nil {
-            pendingSnapshotChanges[message.fromDeviceId, default: []]
-                .append(contentsOf: changes)
-            count = changes.count
-        } else {
-            count = try applyIncomingChanges(changes)
-        }
+        guard activeSnapshotTransfers[message.fromDeviceId] == nil else { throw SnapshotStagingError.mixedTransfer }
+        count = try applyIncomingChanges(changes)
         return .changesApplied(count)
     }
 
@@ -1335,7 +1358,19 @@ public actor PeerManager {
         }
 
         do {
-            let totalSent = try await BluetoothSnapshotTransfer.run(
+            let transferId = UUID().uuidString
+            hostedTransferIds[peerDeviceId] = transferId
+            defer { hostedTransferIds.removeValue(forKey: peerDeviceId) }
+            let beginPayload = try JSONEncoder().encode(SnapshotBegin(
+                transferId: transferId,
+                authorizationToken: authorizationToken
+            ))
+            let beginEnvelope = try JSONEncoder().encode(MPEnvelope(type: "snapshotBegin", payload: beginPayload))
+            guard mpManager.send(data: beginEnvelope, toPeer: peerDeviceId) else {
+                throw BluetoothSnapshotTransferError.batchSendFailed(table: "_snapshot_begin", offset: 0)
+            }
+            let result = try await BluetoothSnapshotTransfer.runStaged(
+                transferId: transferId,
                 listTables: { [db] in
                     try await db.writer.read { dbConn in
                         try String.fetchAll(
@@ -1350,23 +1385,35 @@ public actor PeerManager {
                         hostDeviceId: hostDeviceId, fallbackTimestamp: fallbackTimestamp
                     )
                 },
-                encode: { changes in
-                    let changesData = try JSONEncoder().encode(changes)
-                    return try JSONEncoder().encode(MPEnvelope(type: "changes", payload: changesData))
+                sendBatch: { batch in
+                    let payload = try JSONEncoder().encode(batch)
+                    let envelope = try JSONEncoder().encode(MPEnvelope(type: "snapshotBatch", payload: payload))
+                    return mpManager.send(data: envelope, toPeer: peerDeviceId)
                 },
-                send: { data in mpManager.send(data: data, toPeer: peerDeviceId) }
+                isStored: { [weak self] sequence in
+                    guard let self else { return false }
+                    return await self.consumeStoredAcknowledgement(
+                        transferId: transferId,
+                        sequence: sequence
+                    )
+                }
             )
 
-            guard try sendFullSyncCompletion(.success, to: peerDeviceId, using: mpManager) else {
+            let completePayload = try JSONEncoder().encode(SnapshotComplete(
+                transferId: transferId,
+                finalSequence: result.finalSequence
+            ))
+            let completeEnvelope = try JSONEncoder().encode(MPEnvelope(type: "snapshotComplete", payload: completePayload))
+            guard mpManager.send(data: completeEnvelope, toPeer: peerDeviceId) else {
                 hostedSnapshotReservations.removeValue(forKey: peerDeviceId)
                 throw BluetoothSnapshotTransferError.completionSendFailed
             }
-            hostedSnapshotReservations[peerDeviceId]?.rowsSent = totalSent
+            hostedSnapshotReservations[peerDeviceId]?.rowsSent = result.rows
             scheduleSnapshotAcknowledgementTimeout(
                 peerDeviceId: peerDeviceId,
                 authorizationToken: authorizationToken
             )
-            logger.info("[PeerManager] Sent full Bluetooth snapshot (\(totalSent) records); awaiting durable apply acknowledgement from \(String(peerDeviceId.prefix(8)), privacy: .public)")
+            logger.info("[PeerManager] Sent full Bluetooth snapshot (\(result.rows) records); awaiting durable apply acknowledgement from \(String(peerDeviceId.prefix(8)), privacy: .public)")
         } catch {
             if Self.shouldRestoreHostedSnapshot(after: error) {
                 restoreHostedSnapshot(
@@ -1383,6 +1430,10 @@ public actor PeerManager {
             )
             logger.error("[PeerManager] Full Bluetooth snapshot failed for peer \(String(peerDeviceId.prefix(8)), privacy: .public): \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    private func consumeStoredAcknowledgement(transferId: String, sequence: Int) -> Bool {
+        hostedStoredAcknowledgements.remove("\(transferId):\(sequence)") != nil
     }
 
     /// One page of the hosted initial snapshot. Internal + static so the
@@ -1476,12 +1527,11 @@ public actor PeerManager {
         succeeded: Bool,
         error: String?,
         to peerDeviceId: String,
+        authorizationToken authorizationTokenOverride: String? = nil,
         using sendOverride: ((FullSyncApplyAcknowledgement, String) -> Bool)? = nil
     ) -> Bool {
-        guard pendingFullSyncContinuations[peerDeviceId] != nil,
-              let authorizationToken = receivedSnapshotTokens[peerDeviceId] else {
-            return false
-        }
+        guard let authorizationToken = authorizationTokenOverride
+                ?? receivedSnapshotTokens[peerDeviceId] else { return false }
         let acknowledgement = FullSyncApplyAcknowledgement(
             authorizationToken: authorizationToken,
             succeeded: succeeded,
@@ -1656,7 +1706,7 @@ public actor PeerManager {
 
     func testBeginSnapshotBuffer(from peerDeviceId: String) {
         failedSnapshotPeers.remove(peerDeviceId)
-        pendingSnapshotChanges[peerDeviceId] = []
+        activeSnapshotTransfers[peerDeviceId] = "legacy-test-transfer"
     }
 
     func testAuthorizeReceivedSnapshot(_ token: String, from peerDeviceId: String) {
@@ -1688,7 +1738,7 @@ public actor PeerManager {
 
     func testAbandonSnapshotBuffer(from peerDeviceId: String) {
         failedSnapshotPeers.insert(peerDeviceId)
-        pendingSnapshotChanges.removeValue(forKey: peerDeviceId)
+        activeSnapshotTransfers.removeValue(forKey: peerDeviceId)
     }
 
     func testAwaitPairingTransport(
@@ -1753,11 +1803,11 @@ public actor PeerManager {
     }
 
     private func failPendingFullSync(from peerDeviceId: String, with error: Error) {
-        if pendingSnapshotChanges[peerDeviceId] != nil
+        if activeSnapshotTransfers[peerDeviceId] != nil
             || pendingFullSyncContinuations[peerDeviceId] != nil {
             failedSnapshotPeers.insert(peerDeviceId)
         }
-        pendingSnapshotChanges.removeValue(forKey: peerDeviceId)
+        activeSnapshotTransfers.removeValue(forKey: peerDeviceId)
         if let cont = pendingFullSyncContinuations.removeValue(forKey: peerDeviceId) {
             cont.resume(throwing: error)
         }
@@ -1774,7 +1824,7 @@ public actor PeerManager {
 
     private func timeoutFullSync(with peerDeviceId: String) {
         failedSnapshotPeers.insert(peerDeviceId)
-        pendingSnapshotChanges.removeValue(forKey: peerDeviceId)
+        activeSnapshotTransfers.removeValue(forKey: peerDeviceId)
         snapshotLastActivity.removeValue(forKey: peerDeviceId)
         state.snapshotReceivedRecords.removeValue(forKey: peerDeviceId)
         notifyStateChanged()
@@ -1841,12 +1891,10 @@ public actor PeerManager {
         )
         let env = try JSONEncoder().encode(MPEnvelope(type: "fullSyncRequest", payload: request))
         failedSnapshotPeers.remove(hostDeviceId)
-        pendingSnapshotChanges[hostDeviceId] = []
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             // Register before sending so a fast host response cannot beat the waiter.
             pendingFullSyncContinuations[hostDeviceId] = cont
             guard mpManager.send(data: env, toPeer: hostDeviceId) else {
-                pendingSnapshotChanges.removeValue(forKey: hostDeviceId)
                 pendingFullSyncContinuations.removeValue(forKey: hostDeviceId)?
                     .resume(throwing: MultipeerPairingError.sendFailed)
                 return

@@ -400,6 +400,78 @@ public enum ConflictResolver {
         }
     }
 
+    static func resolveAndApplyStagedSnapshotAtomically(
+        db: AppDatabase,
+        transferId: String,
+        hostDeviceId: String,
+        finalSequence: Int,
+        localDeviceId: String? = nil
+    ) throws -> SnapshotCompletionReceipt {
+        let localDevice = localDeviceId ?? DeviceIdentity.current
+        return try db.writer.write { conn in
+            guard let transfer = try Row.fetchOne(
+                conn,
+                sql: "SELECT authorization_token, state, final_sequence FROM _snapshot_transfers WHERE transfer_id = ? AND host_device_id = ?",
+                arguments: [transferId, hostDeviceId]
+            ) else { throw SnapshotStagingError.unknownTransfer }
+            let authorizationToken: String = transfer["authorization_token"]
+            let state: String = transfer["state"]
+            if state == "applied" {
+                let storedFinal: Int? = transfer["final_sequence"]
+                guard storedFinal == finalSequence else { throw SnapshotStagingError.mixedTransfer }
+                return SnapshotCompletionReceipt(
+                    authorizationToken: authorizationToken,
+                    result: MergeResult(),
+                    wasAlreadyApplied: true
+                )
+            }
+            guard state == "staging" else { throw SnapshotStagingError.unknownTransfer }
+            let rows = try Row.fetchAll(
+                conn,
+                sql: "SELECT sequence, payload FROM _snapshot_staging WHERE transfer_id = ? AND host_device_id = ? ORDER BY sequence",
+                arguments: [transferId, hostDeviceId]
+            )
+            let expected = finalSequence < 0 ? [] : Array(0...finalSequence)
+            let actual: [Int] = rows.map { $0["sequence"] }
+            guard actual == expected else { throw SnapshotStagingError.sequenceGap }
+
+            var changes: [IncomingChange] = []
+            for row in rows {
+                let payload: Data = row["payload"]
+                changes.append(contentsOf: try JSONDecoder().decode([IncomingChange].self, from: payload))
+            }
+            var result = MergeResult()
+            try conn.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
+            defer { try? conn.execute(sql: "DELETE FROM _sync_apply_guard") }
+            for change in changes {
+                guard isAllowedTable(change.tableName) else { throw SnapshotStagingError.disallowedTable }
+                switch change.operation.uppercased() {
+                case "DELETE":
+                    try applyDelete(db: conn, change: change, localDeviceId: localDevice)
+                    result.applied += 1
+                case "INSERT":
+                    result.conflicts += try applyInsert(db: conn, change: change, localDeviceId: localDevice)
+                    result.applied += 1
+                case "UPDATE":
+                    result.conflicts += try applyUpdate(db: conn, change: change, localDeviceId: localDevice)
+                    result.applied += 1
+                default: throw SnapshotStagingError.disallowedOperation
+                }
+            }
+            try conn.execute(sql: "DELETE FROM _snapshot_staging WHERE transfer_id = ?", arguments: [transferId])
+            try conn.execute(
+                sql: "UPDATE _snapshot_transfers SET state = 'applied', final_sequence = ?, applied_at = datetime('now') WHERE transfer_id = ?",
+                arguments: [finalSequence, transferId]
+            )
+            try conn.execute(sql: "DELETE FROM _sync_apply_guard")
+            return SnapshotCompletionReceipt(
+                authorizationToken: authorizationToken,
+                result: result,
+                wasAlreadyApplied: false
+            )
+        }
+    }
+
     /// Get unreviewed conflicts for admin review.
     public static func getUnreviewedConflicts(
         db: AppDatabase,

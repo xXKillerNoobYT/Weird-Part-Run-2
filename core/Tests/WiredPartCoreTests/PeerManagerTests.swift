@@ -37,6 +37,23 @@ private final class SnapshotAcknowledgementCollector: @unchecked Sendable {
     }
 }
 
+private final class SnapshotStoredCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [SnapshotStored] = []
+
+    func append(_ acknowledgement: SnapshotStored) {
+        lock.lock()
+        storage.append(acknowledgement)
+        lock.unlock()
+    }
+
+    var values: [SnapshotStored] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+}
+
 private actor PeerManagerStateCollector {
     private var snapshots: [PeerManagerState] = []
     private var transportErrorWaiter: (message: String, continuation: CheckedContinuation<PeerManagerState, Never>)?
@@ -1685,207 +1702,185 @@ struct PeerManagerTests {
     }
 
     #if canImport(MultipeerConnectivity)
-    @Test("Full-sync completion is processed only after the preceding batch is durable")
+    @Test("Legacy in-memory full-sync completion is intentionally rejected")
     func testFullSyncBatchAppliesBeforeCompletion() async throws {
-        let db = try freshDB()
-        let pm = PeerManager(db: db)
-        let changesData = try JSONEncoder().encode([snapshotUserChange(recordId: "7001")])
-        let changesEnvelope = try JSONEncoder().encode(MPEnvelope(type: "changes", payload: changesData))
-        let completionEnvelope = try JSONEncoder().encode(
+        let legacy = try JSONEncoder().encode(
             MPEnvelope(type: "fullSyncComplete", payload: try JSONEncoder().encode(FullSyncCompletion.success))
         )
-        await pm.testBeginSnapshotBuffer(from: "host")
-
-        let applied = try await pm.testProcessMultipeerMessage(
-            ReceivedMultipeerMessage(fromDeviceId: "host", data: changesEnvelope)
-        )
-        #expect(applied == .changesApplied(1))
-        let persisted = try await db.writer.read { dbConn in
-            try String.fetchOne(dbConn, sql: "SELECT display_name FROM users WHERE id = 7001")
+        await #expect(throws: MultipeerSnapshotError.self) {
+            _ = try await PeerManager(db: try freshDB()).testProcessMultipeerMessage(
+                ReceivedMultipeerMessage(fromDeviceId: "host", data: legacy)
+            )
         }
-        #expect(persisted == nil, "snapshot pages must remain uncommitted until completion")
-
-        let completed = try await pm.testProcessMultipeerMessage(
-            ReceivedMultipeerMessage(fromDeviceId: "host", data: completionEnvelope)
-        )
-        #expect(completed == .fullSyncCompleted)
-        let durableAfterCompletion = try await db.writer.read { dbConn in
-            try String.fetchOne(dbConn, sql: "SELECT display_name FROM users WHERE id = 7001")
-        }
-        #expect(durableAfterCompletion == "Snapshot User")
     }
 
-    @Test("A failed full-sync batch is visible and cannot advance completion")
+    @Test("Legacy in-memory changes cannot enter an active staged transfer")
     func testFullSyncApplyFailurePropagates() async throws {
-        let db = try freshDB()
-        let pm = PeerManager(db: db)
-        let valid = snapshotUserChange(recordId: "7002")
-        let databaseFailure = IncomingChange(
-            deviceId: "host",
-            tableName: "users",
-            recordId: "7003",
-            operation: "INSERT",
-            recordData: #"{"id":7003,"display_name":"Invalid","pin_hash":"hash","is_active":1,"not_a_real_column":"boom"}"#,
-            timestamp: "2026-07-15T00:00:00Z"
-        )
-        let validEnvelope = try JSONEncoder().encode(
-            MPEnvelope(type: "changes", payload: try JSONEncoder().encode([valid]))
-        )
-        let failingEnvelope = try JSONEncoder().encode(
-            MPEnvelope(type: "changes", payload: try JSONEncoder().encode([databaseFailure]))
-        )
-        let completionEnvelope = try JSONEncoder().encode(
-            MPEnvelope(type: "fullSyncComplete", payload: try JSONEncoder().encode(FullSyncCompletion.success))
-        )
-        await pm.testBeginSnapshotBuffer(from: "host")
-
-        _ = try await pm.testProcessMultipeerMessage(
-            ReceivedMultipeerMessage(fromDeviceId: "host", data: validEnvelope)
-        )
-        _ = try await pm.testProcessMultipeerMessage(
-            ReceivedMultipeerMessage(fromDeviceId: "host", data: failingEnvelope)
-        )
-
-        await #expect(throws: (any Error).self) {
-            _ = try await pm.testProcessMultipeerMessage(
-                ReceivedMultipeerMessage(fromDeviceId: "host", data: completionEnvelope)
+        let protocolPM = PeerManager(db: try freshDB())
+        await protocolPM.testBeginSnapshotBuffer(from: "host")
+        let legacy = try JSONEncoder().encode(MPEnvelope(
+            type: "changes",
+            payload: try JSONEncoder().encode([snapshotUserChange(recordId: "7002")])
+        ))
+        await #expect(throws: SnapshotStagingError.self) {
+            _ = try await protocolPM.testProcessMultipeerMessage(
+                ReceivedMultipeerMessage(fromDeviceId: "host", data: legacy)
             )
         }
-        await pm.testAbandonSnapshotBuffer(from: "host")
-
-        let latePage = try JSONEncoder().encode(
-            MPEnvelope(
-                type: "changes",
-                payload: try JSONEncoder().encode([snapshotUserChange(recordId: "7004")])
-            )
-        )
-        let lateOutcome = try await pm.testProcessMultipeerMessage(
-            ReceivedMultipeerMessage(fromDeviceId: "host", data: latePage)
-        )
-        #expect(lateOutcome == .ignored)
-
-        let committedPrefix = try await db.writer.read { dbConn in
-            try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM users WHERE id IN (7002, 7003, 7004)") ?? 0
-        }
-        #expect(
-            committedPrefix == 0,
-            "a failed later snapshot page must roll back earlier pages and quarantine queued remainder"
-        )
     }
 
-    @Test("Atomic apply failure negatively acknowledges, releases reservation, and requires fresh authorization")
+    @Test("Legacy completion cannot consume a staged snapshot capability")
     func testAtomicApplyFailureReleasesHostReservationAndRequiresFreshAuthorization() async throws {
-        let host = PeerManager(db: try freshDB())
-        let joiner = PeerManager(db: try freshDB())
-        let peer = "joiner"
-        let hostDeviceId = "host"
-        let consumedToken = "consumed-capability"
-
-        try await host.startPeerSync(deviceId: hostDeviceId, deviceName: "Host", companyId: "company")
-        await host.testIssueHostedSnapshotToken(consumedToken, for: peer)
-        #expect(await host.testReserveHostedSnapshot(token: consumedToken, for: peer))
-        await host.testSetHostedSnapshotRowsSent(1, for: peer)
-
-        await joiner.testAuthorizeReceivedSnapshot(consumedToken, from: hostDeviceId)
-        await joiner.testBeginSnapshotBuffer(from: hostDeviceId)
-        let fullSyncWaiter = Task {
-            try await joiner.testAwaitFullSyncTransport(peerDeviceId: hostDeviceId)
-        }
-        while await joiner.testPendingTransportOperationCount() == 0 {
-            await Task.yield()
-        }
-
-        let validEnvelope = try JSONEncoder().encode(MPEnvelope(
-            type: "changes",
-            payload: try JSONEncoder().encode([snapshotUserChange(recordId: "7101")])
-        ))
-        let invalidChange = IncomingChange(
-            deviceId: hostDeviceId,
-            tableName: "users",
-            recordId: "7102",
-            operation: "INSERT",
-            recordData: #"{"id":7102,"display_name":"Invalid","pin_hash":"hash","is_active":1,"not_a_real_column":"boom"}"#,
-            timestamp: "2026-07-15T00:00:00Z"
+        let pm = PeerManager(db: try freshDB())
+        await pm.testAuthorizeReceivedSnapshot("token", from: "host")
+        let legacy = try JSONEncoder().encode(
+            MPEnvelope(type: "fullSyncComplete", payload: try JSONEncoder().encode(FullSyncCompletion.success))
         )
-        let invalidEnvelope = try JSONEncoder().encode(MPEnvelope(
-            type: "changes",
-            payload: try JSONEncoder().encode([invalidChange])
-        ))
-        let completionEnvelope = try JSONEncoder().encode(MPEnvelope(
-            type: "fullSyncComplete",
-            payload: try JSONEncoder().encode(FullSyncCompletion.success)
-        ))
-        let acknowledgements = SnapshotAcknowledgementCollector()
+        await #expect(throws: MultipeerSnapshotError.self) {
+            _ = try await pm.testProcessMultipeerMessage(
+                ReceivedMultipeerMessage(fromDeviceId: "host", data: legacy)
+            )
+        }
+        #expect(await pm.testReceivedSnapshotToken(from: "host") == "token")
+    }
 
-        await #expect(throws: (any Error).self) {
-            _ = try await joiner.testProcessMultipeerMessagesInFIFO(
-                [
-                    ReceivedMultipeerMessage(fromDeviceId: hostDeviceId, data: validEnvelope),
-                    ReceivedMultipeerMessage(fromDeviceId: hostDeviceId, data: invalidEnvelope),
-                    ReceivedMultipeerMessage(fromDeviceId: hostDeviceId, data: completionEnvelope),
-                ],
-                sendApplyAcknowledgement: { acknowledgement, destination in
-                    #expect(destination == hostDeviceId)
-                    acknowledgements.append(acknowledgement)
-                    return true
+    @Test("Staged frames acknowledge durable storage and retry terminal acknowledgement after recreation")
+    func testStagedFramesRetryTerminalAcknowledgementAfterRecreation() async throws {
+        let db = try freshDB()
+        let host = "authorized-host"
+        let token = "durable-token"
+        let transfer = "durable-transfer"
+        let begin = try JSONEncoder().encode(MPEnvelope(
+            type: "snapshotBegin",
+            payload: try JSONEncoder().encode(SnapshotBegin(transferId: transfer, authorizationToken: token))
+        ))
+        let batch = try JSONEncoder().encode(MPEnvelope(
+            type: "snapshotBatch",
+            payload: try JSONEncoder().encode(SnapshotBatch(
+                transferId: transfer,
+                sequence: 0,
+                changes: [snapshotUserChange(recordId: "7201")]
+            ))
+        ))
+        let complete = try JSONEncoder().encode(MPEnvelope(
+            type: "snapshotComplete",
+            payload: try JSONEncoder().encode(SnapshotComplete(transferId: transfer, finalSequence: 0))
+        ))
+        let stored = SnapshotStoredCollector()
+        let failedAcks = SnapshotAcknowledgementCollector()
+        let first = PeerManager(db: db)
+        await first.testAuthorizeReceivedSnapshot(token, from: host)
+
+        _ = try await first.testProcessMultipeerMessage(.init(fromDeviceId: host, data: begin))
+        _ = try await first.testProcessMultipeerMessage(
+            .init(fromDeviceId: host, data: batch),
+            sendStoredAcknowledgement: { acknowledgement, destination in
+                #expect(destination == host)
+                stored.append(acknowledgement)
+                return true
+            }
+        )
+        #expect(stored.values == [SnapshotStored(transferId: transfer, sequence: 0)])
+        await #expect(throws: MultipeerPairingError.self) {
+            _ = try await first.testProcessMultipeerMessage(
+                .init(fromDeviceId: host, data: complete),
+                sendApplyAcknowledgement: { acknowledgement, _ in
+                    failedAcks.append(acknowledgement)
+                    return false
                 }
             )
         }
-        await #expect(throws: (any Error).self) {
-            try await fullSyncWaiter.value
-        }
 
-        let negativeAcknowledgement = try #require(acknowledgements.values.first)
-        #expect(acknowledgements.values.count == 1)
-        #expect(negativeAcknowledgement.authorizationToken == consumedToken)
-        #expect(negativeAcknowledgement.succeeded == false)
-        #expect(negativeAcknowledgement.error?.isEmpty == false)
-
-        let acknowledgementEnvelope = try JSONEncoder().encode(MPEnvelope(
-            type: "fullSyncApplied",
-            payload: try JSONEncoder().encode(negativeAcknowledgement)
-        ))
-        _ = try await host.testProcessMultipeerMessage(
-            ReceivedMultipeerMessage(fromDeviceId: peer, data: acknowledgementEnvelope)
+        let successfulAcks = SnapshotAcknowledgementCollector()
+        let recreated = PeerManager(db: db)
+        let outcome = try await recreated.testProcessMultipeerMessage(
+            .init(fromDeviceId: host, data: complete),
+            sendApplyAcknowledgement: { acknowledgement, destination in
+                #expect(destination == host)
+                successfulAcks.append(acknowledgement)
+                return true
+            }
         )
-        #expect(!(await host.testHostedSnapshotIsReserved(for: peer)))
-        #expect(!(await host.testHostedSnapshotTokenAvailable(consumedToken, for: peer)))
-        #expect(!(await host.testReserveHostedSnapshot(token: consumedToken, for: peer)))
-        #expect(await host.getState().lastPeerSyncs[peer]?.success == false)
-
-        let pairingCode = try await host.issuePairingCode()
-        let (_, peerKey) = SyncCrypto.generateKeyAgreementPair()
-        let nonce = SyncCrypto.bluetoothPairingRequestNonce()
-        let pairRequest = try JSONEncoder().encode(SyncPairRequest(
-            deviceId: peer,
-            deviceName: "Joiner",
-            pairingProof: SyncCrypto.bluetoothPairingProof(
-                normalizedCode: try #require(SyncCrypto.normalizedPairingCode(pairingCode)),
-                expectedHostDeviceId: hostDeviceId,
-                clientDeviceId: peer,
-                clientPublicKeyB64: peerKey,
-                requestNonce: nonce
-            ),
-            platform: "ios",
-            bluetoothProtocolVersion: 4,
-            bluetoothRequestNonce: nonce,
-            bluetoothExpectedHostDeviceId: hostDeviceId,
-            keyAgreementPublicKey: peerKey
-        ))
-        let responses = PairResponseCollector()
-        await host.processBluetoothPairRequest(from: peer, payload: pairRequest) { response in
-            responses.append(response)
-            return true
+        #expect(outcome == .fullSyncCompleted)
+        #expect(failedAcks.values.first?.authorizationToken == token)
+        #expect(successfulAcks.values.first?.authorizationToken == token)
+        let facts = try await db.writer.read { conn in
+            (try Int.fetchOne(conn, sql: "SELECT COUNT(*) FROM users WHERE id = 7201") ?? 0,
+             try String.fetchOne(conn, sql: "SELECT state FROM _snapshot_transfers WHERE transfer_id = ?", arguments: [transfer]))
         }
-        let freshToken = try #require(responses.values.first?.bluetoothSnapshotToken)
-        #expect(responses.values.count == 1)
-        #expect(freshToken != consumedToken)
+        #expect(facts.0 == 1)
+        #expect(facts.1 == "applied")
+    }
 
-        async let firstFreshReservation = host.testReserveHostedSnapshot(token: freshToken, for: peer)
-        async let duplicateFreshReservation = host.testReserveHostedSnapshot(token: freshToken, for: peer)
-        let freshReservationResults = await [firstFreshReservation, duplicateFreshReservation]
-        #expect(freshReservationResults.filter { $0 }.count == 1)
-        await host.stopPeerSync()
+    @Test("Recreated manager accepts authorized retransmission but rejects unknown, gap, mixed, and invalid staged frames")
+    func testStagedFrameValidationThroughPeerManager() async throws {
+        let db = try freshDB()
+        let host = "host"
+        let token = "token"
+        let transfer = "known"
+        let first = PeerManager(db: db)
+        await first.testAuthorizeReceivedSnapshot(token, from: host)
+        let begin = try JSONEncoder().encode(MPEnvelope(
+            type: "snapshotBegin",
+            payload: try JSONEncoder().encode(SnapshotBegin(transferId: transfer, authorizationToken: token))
+        ))
+        _ = try await first.testProcessMultipeerMessage(.init(fromDeviceId: host, data: begin))
+
+        let recreated = PeerManager(db: db)
+        let knownBatch = try JSONEncoder().encode(MPEnvelope(
+            type: "snapshotBatch",
+            payload: try JSONEncoder().encode(SnapshotBatch(
+                transferId: transfer, sequence: 0, changes: [snapshotUserChange(recordId: "7301")]
+            ))
+        ))
+        let stored = SnapshotStoredCollector()
+        _ = try await recreated.testProcessMultipeerMessage(
+            .init(fromDeviceId: host, data: knownBatch),
+            sendStoredAcknowledgement: { acknowledgement, _ in stored.append(acknowledgement); return true }
+        )
+        _ = try await recreated.testProcessMultipeerMessage(
+            .init(fromDeviceId: host, data: knownBatch),
+            sendStoredAcknowledgement: { acknowledgement, _ in stored.append(acknowledgement); return true }
+        )
+        #expect(stored.values.count == 2)
+
+        let unknown = try JSONEncoder().encode(MPEnvelope(
+            type: "snapshotBatch",
+            payload: try JSONEncoder().encode(SnapshotBatch(
+                transferId: "unknown", sequence: 0, changes: [snapshotUserChange(recordId: "7302")]
+            ))
+        ))
+        await #expect(throws: SnapshotStagingError.self) {
+            _ = try await PeerManager(db: db).testProcessMultipeerMessage(.init(fromDeviceId: host, data: unknown))
+        }
+
+        let gapComplete = try JSONEncoder().encode(MPEnvelope(
+            type: "snapshotComplete",
+            payload: try JSONEncoder().encode(SnapshotComplete(transferId: transfer, finalSequence: 1))
+        ))
+        await #expect(throws: SnapshotStagingError.self) {
+            _ = try await recreated.testProcessMultipeerMessage(.init(fromDeviceId: host, data: gapComplete))
+        }
+
+        let mixed = IncomingChange(
+            deviceId: host, tableName: "parts", recordId: "1", operation: "INSERT",
+            recordData: "{}", timestamp: "2026-08-09T00:00:00Z"
+        )
+        let mixedBatch = try JSONEncoder().encode(MPEnvelope(
+            type: "snapshotBatch",
+            payload: try JSONEncoder().encode(SnapshotBatch(
+                transferId: transfer, sequence: 1,
+                changes: [snapshotUserChange(recordId: "7303"), mixed]
+            ))
+        ))
+        await #expect(throws: SnapshotStagingError.self) {
+            _ = try await recreated.testProcessMultipeerMessage(.init(fromDeviceId: host, data: mixedBatch))
+        }
+
+        let invalid = try JSONEncoder().encode(MPEnvelope(type: "snapshotBatch", payload: Data("not-json".utf8)))
+        await #expect(throws: DecodingError.self) {
+            _ = try await recreated.testProcessMultipeerMessage(.init(fromDeviceId: host, data: invalid))
+        }
     }
     #endif
 
@@ -2162,8 +2157,16 @@ extension PeerManager {
     }
 
     #if canImport(MultipeerConnectivity)
-    func testProcessMultipeerMessage(_ message: ReceivedMultipeerMessage) async throws -> MultipeerMessageOutcome {
-        try await processMultipeerMessage(message)
+    func testProcessMultipeerMessage(
+        _ message: ReceivedMultipeerMessage,
+        sendApplyAcknowledgement: ((FullSyncApplyAcknowledgement, String) -> Bool)? = nil,
+        sendStoredAcknowledgement: ((SnapshotStored, String) -> Bool)? = nil
+    ) async throws -> MultipeerMessageOutcome {
+        try await processMultipeerMessage(
+            message,
+            sendApplyAcknowledgement: sendApplyAcknowledgement,
+            sendStoredAcknowledgement: sendStoredAcknowledgement
+        )
     }
     #endif
 }
