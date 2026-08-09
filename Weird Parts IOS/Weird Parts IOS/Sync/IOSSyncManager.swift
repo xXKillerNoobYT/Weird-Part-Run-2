@@ -26,6 +26,12 @@ final class IOSSyncManager {
     var activeSyncPeerName: String?
     /// Host-side: human summary of the most recent completed peer transfer.
     var lastHostSyncSummary: String?
+    /// Whether `lastHostSyncSummary` describes a SUCCESS.
+    ///
+    /// The Add-a-Device sheet used to render that summary with a hardcoded green
+    /// checkmark, so "Sync with iPhone failed" appeared under a success icon
+    /// (owner screenshot, build 62). A failure must never carry a success mark.
+    var lastHostSyncSucceeded = false
     /// Bluetooth change delivery is currently send-only for one manual action:
     /// the other device must send its own pending changes back. Keeping this
     /// separate from `syncStatus` prevents a successful send from rendering as
@@ -823,6 +829,7 @@ final class IOSSyncManager {
             activeSyncPeerName = nil
         }
         if let latest = state.lastPeerSyncs.values.max(by: { $0.syncedAt < $1.syncedAt }) {
+            lastHostSyncSucceeded = latest.success
             lastHostSyncSummary = latest.success
                 ? "Sent \(latest.pushed) records to \(latest.peerName)"
                 : "Sync with \(latest.peerName) failed"
