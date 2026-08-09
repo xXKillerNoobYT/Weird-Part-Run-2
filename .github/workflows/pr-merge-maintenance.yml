@@ -44,7 +44,6 @@ jobs:
       GH_TOKEN: ${{ secrets.PR_MAINTENANCE_PAT || github.token }}
       PR_MAINTENANCE_BASE: main
       PR_MAINTENANCE_TRUSTED_PR_AUTHORS: "xXKillerNoobYT"
-      PR_MAINTENANCE_REQUIRE_COPILOT_REVIEW: "0"
       PR_MAINTENANCE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true && '1' || '0' }}
 
     steps:
