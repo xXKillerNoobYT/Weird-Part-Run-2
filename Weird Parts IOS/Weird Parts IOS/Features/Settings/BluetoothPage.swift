@@ -81,13 +81,15 @@ struct BluetoothPage: View {
                                 Button {
                                     Task { await syncManager.syncWithPeer(peerDeviceId: peer.id) }
                                 } label: {
-                                    Text("Sync")
+                                    Text(peer.isBluetoothOnly ? "Send Changes" : "Sync")
                                         .dsMinTapTarget()
                                 }
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
-                                .accessibilityLabel("Sync with \(peer.name)")
-                                .accessibilityHint("Starts a data sync with this device.")
+                                .accessibilityLabel(peer.isBluetoothOnly ? "Send changes to \(peer.name)" : "Sync with \(peer.name)")
+                                .accessibilityHint(peer.isBluetoothOnly
+                                    ? "Sends this device's pending changes. To receive \(peer.name)'s changes, tap Send Changes on that device."
+                                    : "Exchanges data with this device.")
                                 .accessibilityIdentifier("settings-bluetooth-sync-peer-\(peer.id)")
                             } else if peer.state == "connecting" {
                                 ProgressView()
@@ -117,7 +119,7 @@ struct BluetoothPage: View {
                                 Button {
                                     Task { await syncManager.syncWithPeer(peerDeviceId: peer.id) }
                                 } label: {
-                                    Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
+                                    Label(peer.isBluetoothOnly ? "Send Changes" : "Sync Now", systemImage: "arrow.triangle.2.circlepath")
                                 }
                             }
                         }
@@ -156,7 +158,7 @@ struct BluetoothPage: View {
         .sheet(item: $activeSheet) { _ in
             PageHelpSheet(title: "Bluetooth Help", sections: [
                 ("What This Page Does", "Controls Bluetooth and Wi-Fi Direct peer-to-peer sync using Apple Multipeer Connectivity. Enables data exchange between nearby devices without a shop server."),
-                ("How to Use It", "Enable Bluetooth Sync to start, then toggle Discoverable to let other devices find you. Nearby WiredPart devices appear automatically. Tap Sync to exchange data with a discovered peer."),
+                ("How to Use It", "Enable Bluetooth Sync to start, then toggle Discoverable to let other devices find you. Nearby WiredPart devices appear automatically. Send Changes sends this device's pending data to a Bluetooth peer; tap Send Changes on the other device too to receive its pending data."),
             ])
         }
         .onAppear {

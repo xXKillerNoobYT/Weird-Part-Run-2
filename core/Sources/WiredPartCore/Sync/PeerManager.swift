@@ -4,6 +4,16 @@ import os.log
 
 // MARK: - Peer Sync Result
 
+/// The transport that actually executed a peer sync operation.
+///
+/// This is result data rather than discovery/UI state: a device can be visible
+/// through Multipeer when the actor refreshes discovery and selects a preferred
+/// LAN peer immediately before dispatching the operation.
+public enum PeerSyncTransport: Sendable, Equatable, Hashable {
+    case lan
+    case multipeer
+}
+
 /// Outcome of syncing with a single peer.
 public struct PeerSyncResult: Sendable {
     public let peerDeviceId: String
@@ -17,6 +27,8 @@ public struct PeerSyncResult: Sendable {
     /// not count a deferral as a sync failure: it is a normal waiting state and
     /// the push resumes automatically once the snapshot lands.
     public var deferred: Bool
+    /// Nil when no transport executed (for example, a deferred or preflight failure).
+    public let executedTransport: PeerSyncTransport?
     public let syncedAt: String
 
     public init(
@@ -27,6 +39,7 @@ public struct PeerSyncResult: Sendable {
         success: Bool = true,
         error: String? = nil,
         deferred: Bool = false,
+        executedTransport: PeerSyncTransport? = nil,
         syncedAt: String? = nil
     ) {
         self.peerDeviceId = peerDeviceId
@@ -36,6 +49,7 @@ public struct PeerSyncResult: Sendable {
         self.success = success
         self.error = error
         self.deferred = deferred
+        self.executedTransport = executedTransport
         self.syncedAt = syncedAt ?? CoreFormatters.iso8601Fractional.string(from: Date())
     }
 }
@@ -528,6 +542,7 @@ public actor PeerManager {
 
         let deviceId = sState.deviceId
         let companyId = sState.companyId
+        var executedTransport: PeerSyncTransport?
 
         do {
             // Get pending changes
@@ -539,6 +554,7 @@ public actor PeerManager {
 
             #if canImport(MultipeerConnectivity)
             if peer.transport == "multipeer", let mpManager = multipeerManager {
+                executedTransport = .multipeer
                 // Bluetooth/Multipeer path. If the session is still forming (user
                 // tapped Sync during "connecting"), wait briefly for it instead of
                 // falling through to the HTTP path — a multipeer-only peer has a
@@ -578,6 +594,7 @@ public actor PeerManager {
                     }
                 }
             } else {
+                executedTransport = .lan
                 // LAN HTTP sync path
                 (pushed, pulled) = try await syncViaHTTP(
                     peer: peer,
@@ -588,6 +605,7 @@ public actor PeerManager {
                 )
             }
             #else
+            executedTransport = .lan
             // LAN HTTP sync path (non-Apple platforms)
             (pushed, pulled) = try await syncViaHTTP(
                 peer: peer,
@@ -606,7 +624,8 @@ public actor PeerManager {
                 peerName: peer.deviceName,
                 pushed: pushed,
                 pulled: pulled,
-                success: true
+                success: true,
+                executedTransport: executedTransport
             )
             state.lastPeerSyncs[peer.deviceId] = result
             return result
@@ -616,7 +635,8 @@ public actor PeerManager {
                 peerDeviceId: peer.deviceId,
                 peerName: peer.deviceName,
                 success: false,
-                error: error.localizedDescription
+                error: error.localizedDescription,
+                executedTransport: executedTransport
             )
             state.lastPeerSyncs[peer.deviceId] = result
             return result
