@@ -152,9 +152,23 @@ struct IOSAddDeviceSheet: View {
                 }
                 .accessibilityElement(children: .combine)
             } else if let summary = syncManager.lastHostSyncSummary {
-                Label(summary, systemImage: "checkmark.circle.fill")
-                    .font(.subheadline)
-                    .foregroundStyle(.green)
+                // The icon must follow the OUTCOME. This was a hardcoded green
+                // checkmark, so "Sync with iPhone failed" shipped under a success
+                // mark (owner screenshot, build 62) — the screen told the user the
+                // opposite of what happened.
+                Label(
+                    summary,
+                    systemImage: syncManager.lastHostSyncSucceeded
+                        ? "checkmark.circle.fill"
+                        : "exclamationmark.triangle.fill"
+                )
+                .font(.subheadline)
+                .foregroundStyle(syncManager.lastHostSyncSucceeded ? .green : .orange)
+                .accessibilityLabel(
+                    syncManager.lastHostSyncSucceeded
+                        ? "Sync succeeded. \(summary)"
+                        : "Sync failed. \(summary)"
+                )
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
