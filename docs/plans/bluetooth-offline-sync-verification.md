@@ -32,7 +32,7 @@ Any code path that *requires* a LAN to complete pairing or sync is a bug.
 | A1 | Advertising + browsing start on `startPeerSync` | `PeerManager.swift` — `MultipeerManager(...)` then `mpManager.start()` | no error line from A3 |
 | A2 | `serviceType` matches the declared Bonjour services | `MultipeerManager.serviceType = "wiredpart-sync"`; `Weird-Parts-IOS-Info.plist` declares `_wiredpart-sync._tcp` **and** `._udp` | — (static; verified 2026-08-06) |
 | A3 | A refused start is REPORTED, never swallowed | `didNotStartAdvertisingPeer` / `didNotStartBrowsingForPeers` → `onTransportError` → `recordTransportError` | `[PeerManager] Bluetooth transport did not start: <reason>` |
-| A4 | The reason reaches the UI, not just the log | `PeerManagerState.lastTransportError` | surfaced in state; **UI binding still TODO — see Gaps** |
+| A4 | The reason reaches the UI, not just the log | `PeerManagerState.lastTransportError` → `IOSSyncManager.bluetoothTransportError` | **DONE** — shown as a selectable code on the Nearby Devices empty state (#1669) and the Join a Business screen (#1676) |
 
 **Red proof for A3:** deny Local Network permission in Settings, start discovery,
 confirm the log line appears with the OS reason. Before #1667 this produced
