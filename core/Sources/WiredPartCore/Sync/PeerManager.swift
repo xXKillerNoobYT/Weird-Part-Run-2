@@ -202,6 +202,10 @@ public actor PeerManager {
     // transaction commits, so it also IS the durable staged-row count for that
     // peer and can drive the progress UI without an O(n) COUNT(*) per batch.
     private var snapshotStagedRecords: [String: Int] = [:]
+    // Encoded payload bytes staged per peer — the twin of the counter above and
+    // held to the same post-commit discipline, so a rolled-back batch can never
+    // leave the cap accounting permanently inflated (#1688).
+    private var snapshotStagedBytes: [String: Int] = [:]
     // Ignore remaining queued pages after a failed snapshot until an explicit retry starts.
     private var failedSnapshotPeers: Set<String> = []
     // Pairing-issued capabilities bind initial snapshots to the successful code exchange.
@@ -1113,6 +1117,43 @@ public actor PeerManager {
 
     // MARK: - Durable Snapshot Staging (WEI-7022)
 
+    /// Ceiling on how much ONE peer may stage before its snapshot is abandoned
+    /// (#1688).
+    ///
+    /// Staging is unbounded without this, and the resource it exhausts is now
+    /// device storage rather than app memory. That distinction is the whole
+    /// point: a memory blow-up got the app jetsam-killed and cleared itself on
+    /// relaunch, whereas staged rows survive until `startPeerSync` or transport
+    /// shutdown calls `clearAllSnapshotStaging`. A wedged device that does not
+    /// self-heal is a far worse outcome than a killed app, and it lands during
+    /// onboarding, when the user has the least context to diagnose it.
+    ///
+    /// The sender is authenticated (`isTrustedWritePeer`), so this guards
+    /// against a buggy or compromised HOST — one stuck in a resend loop, or
+    /// that never emits `fullSyncComplete` — not against any nearby device.
+    ///
+    /// Sizing: #1683 puts a genuinely large real company at hundreds of
+    /// thousands of rows; at a typical ~1 KB encoded `IncomingChange` that is
+    /// roughly 500 MB. Both caps therefore sit at ~2-4x the largest plausible
+    /// legitimate company, and in the same order of magnitude as each other, so
+    /// neither dominates for a realistic payload mix: the record cap catches
+    /// pathological many-tiny-rows, the byte cap catches few-huge-rows. A
+    /// transfer that genuinely reaches 1 GiB over Bluetooth has been running
+    /// for hours — something is wrong regardless of which cap notices.
+    ///
+    /// Deliberately fixed constants rather than a free-disk-space probe: a
+    /// probe cannot be red-proofed in a unit test, is unreliable on iOS, and
+    /// would fail legitimate onboarding on an already-full device for a reason
+    /// that has nothing to do with sync.
+    static let defaultSnapshotStagingRecordLimit = 2_000_000
+    static let defaultSnapshotStagingByteLimit = 1 << 30 // 1 GiB
+
+    /// Per-instance so tests can drive the real production path at a small
+    /// limit instead of testing a parallel one. Actor-isolated, so each test's
+    /// `PeerManager` is independent and parallel tests cannot interfere.
+    private var snapshotStagingRecordLimit = PeerManager.defaultSnapshotStagingRecordLimit
+    private var snapshotStagingByteLimit = PeerManager.defaultSnapshotStagingByteLimit
+
     /// Start staging a fresh snapshot from `peerDeviceId`.
     ///
     /// Clears that peer's staging rows first. Leftovers are always scrap — from
@@ -1123,6 +1164,7 @@ public actor PeerManager {
         clearSnapshotStaging(for: peerDeviceId)
         snapshotStagingPeers.insert(peerDeviceId)
         snapshotStagedRecords[peerDeviceId] = 0
+        snapshotStagedBytes[peerDeviceId] = 0
     }
 
     /// Write one received batch to disk. Returns the number of records staged.
@@ -1130,13 +1172,30 @@ public actor PeerManager {
     /// One row per change, committed as a single transaction per batch: the
     /// batch is durable when this returns, and peak memory is one batch rather
     /// than the whole company.
+    ///
+    /// Throws `stagingLimitExceeded` if this batch would carry the peer past
+    /// either staging cap (#1688). Throwing is the entire mechanism: the
+    /// `case "changes"` catch in `processMultipeerMessage` already sends the
+    /// negative `fullSyncApplied` acknowledgement, and `failPendingFullSync`
+    /// already quarantines the peer and clears its staged rows.
     private func stageSnapshotChanges(
         _ changes: [IncomingChange],
         from peerDeviceId: String
     ) throws -> Int {
         guard !changes.isEmpty else { return 0 }
         var seq = snapshotStagedRecords[peerDeviceId] ?? 0
+        var bytes = snapshotStagedBytes[peerDeviceId] ?? 0
         let encoder = JSONEncoder()
+
+        // Record cap first, before any encoding: `changes.count` is already
+        // known, so a runaway peer is rejected without spending CPU on a batch
+        // that cannot be kept.
+        guard seq + changes.count <= snapshotStagingRecordLimit else {
+            throw MultipeerSnapshotError.stagingLimitExceeded(
+                records: seq + changes.count,
+                bytes: bytes
+            )
+        }
 
         try db.writer.write { dbConn in
             for change in changes {
@@ -1144,6 +1203,17 @@ public actor PeerManager {
                     data: try encoder.encode(change), encoding: .utf8
                 ) else {
                     throw MultipeerSnapshotError.rowEncodingFailed(table: change.tableName)
+                }
+                // Byte cap can only be measured once the row is encoded, so it
+                // is checked here. Throwing rolls the transaction back, so a
+                // batch that crosses the cap lands on disk in full or not at
+                // all — never half-written.
+                bytes += payload.utf8.count
+                guard bytes <= snapshotStagingByteLimit else {
+                    throw MultipeerSnapshotError.stagingLimitExceeded(
+                        records: seq + 1,
+                        bytes: bytes
+                    )
                 }
                 try dbConn.execute(
                     sql: """
@@ -1156,9 +1226,12 @@ public actor PeerManager {
             }
         }
 
-        // Advanced only after the commit, so the counter never claims durability
-        // the database does not have.
+        // Advanced only after the commit, so the counters never claim
+        // durability the database does not have. `bytes` is mutated inside the
+        // closure above, but a throw there skips both of these lines and the
+        // rolled-back batch leaves the accounting exactly where it was.
         snapshotStagedRecords[peerDeviceId] = seq
+        snapshotStagedBytes[peerDeviceId] = bytes
         return changes.count
     }
 
@@ -1203,6 +1276,7 @@ public actor PeerManager {
     private func endSnapshotStaging(for peerDeviceId: String) {
         snapshotStagingPeers.remove(peerDeviceId)
         snapshotStagedRecords.removeValue(forKey: peerDeviceId)
+        snapshotStagedBytes.removeValue(forKey: peerDeviceId)
         clearSnapshotStaging(for: peerDeviceId)
     }
 
@@ -1228,6 +1302,7 @@ public actor PeerManager {
     private func clearAllSnapshotStaging() {
         snapshotStagingPeers.removeAll()
         snapshotStagedRecords.removeAll()
+        snapshotStagedBytes.removeAll()
         do {
             try db.writer.write { dbConn in
                 try dbConn.execute(sql: "DELETE FROM _snapshot_staging")
@@ -1310,10 +1385,15 @@ public actor PeerManager {
                     }
                     return .changesApplied(count)
                 } catch {
+                    // `using:` matches the `fullSyncComplete` path below. It was
+                    // missing here, so this acknowledgement — the one a staging
+                    // failure mid-transfer depends on — could not be observed by
+                    // a test even though production has always sent it (#1688).
                     sendFullSyncApplyAcknowledgement(
                         succeeded: false,
                         error: error.localizedDescription,
-                        to: message.fromDeviceId
+                        to: message.fromDeviceId,
+                        using: sendApplyAcknowledgement
                     )
                     throw error
                 }
@@ -1801,6 +1881,18 @@ public actor PeerManager {
     func testBeginSnapshotBuffer(from peerDeviceId: String) {
         failedSnapshotPeers.remove(peerDeviceId)
         beginSnapshotStaging(for: peerDeviceId)
+    }
+
+    /// Shrink the staging caps so a test can cross them in milliseconds.
+    ///
+    /// The production ceilings are 2,000,000 records / 1 GiB — deliberately out
+    /// of reach of any legitimate company, and equally out of reach of a unit
+    /// test. Lowering them on the instance keeps the test on the real
+    /// `stageSnapshotChanges` path rather than a parallel one built to be
+    /// testable.
+    func testSetSnapshotStagingLimits(records: Int, bytes: Int) {
+        snapshotStagingRecordLimit = records
+        snapshotStagingByteLimit = bytes
     }
 
     /// Durable row count for one peer, read straight from `_snapshot_staging`.

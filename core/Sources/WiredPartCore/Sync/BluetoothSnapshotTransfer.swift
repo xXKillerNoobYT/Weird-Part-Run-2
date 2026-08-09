@@ -159,6 +159,11 @@ enum MultipeerSnapshotError: LocalizedError, Sendable {
     case batchApplyFailed(errorCount: Int)
     case unauthorizedPeer
     case remoteFailure(String)
+    /// One peer streamed more into `_snapshot_staging` than this device will
+    /// hold for a single transfer (#1688). Carries the size actually reached,
+    /// not the limit — the limit is a constant the user cannot act on, whereas
+    /// "it got to 2 GB and still wasn't done" tells them the host is broken.
+    case stagingLimitExceeded(records: Int, bytes: Int)
 
     var errorDescription: String? {
         switch self {
@@ -178,6 +183,11 @@ enum MultipeerSnapshotError: LocalizedError, Sendable {
             return "The Bluetooth peer is not a trusted company device. Pair it before requesting a snapshot."
         case .remoteFailure(let message):
             return message.isEmpty ? "The host could not complete the Bluetooth snapshot. Retry the sync." : message
+        case .stagingLimitExceeded(let records, let bytes):
+            // Round up so a sub-megabyte limit (tests, future tuning) never
+            // reports a bewildering "0 MB".
+            let megabytes = (bytes + 1_048_575) / 1_048_576
+            return "The Bluetooth snapshot grew past what this device will hold for one transfer (\(records) records, \(megabytes) MB) without finishing. Restart the sending device, then retry the sync."
         }
     }
 }

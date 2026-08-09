@@ -2130,6 +2130,171 @@ struct PeerManagerTests {
         )
     }
 
+    /// Nothing bounded how much ONE peer could stage (#1688). The in-memory
+    /// buffer this replaced was unbounded too, so it is not a regression — but
+    /// the resource changed from app memory to device storage, and so did the
+    /// recovery. A jetsam kill clears itself on relaunch; staged rows sit on
+    /// disk until `startPeerSync` or transport shutdown clears them. A runaway
+    /// host can therefore wedge the entire device, during onboarding, when the
+    /// user has the least context to work out why their phone is suddenly full.
+    ///
+    /// The sender is authenticated, so this is a guard against a buggy or
+    /// compromised host rather than a nearby attacker — but "the host we paired
+    /// with is stuck in a resend loop" is an ordinary bug, not an exotic one.
+    @Test("A peer that stages past the record cap is failed, cleared, and quarantined (#1688)")
+    func testSnapshotStagingRecordCapFailsAndQuarantinesPeer() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+        let hostDeviceId = "runaway-host"
+
+        // Crossable in one extra batch. The byte cap is left wide open so this
+        // test can only ever be tripped by the record cap.
+        await pm.testSetSnapshotStagingLimits(records: 300, bytes: 1 << 30)
+        await pm.testAuthorizeReceivedSnapshot("staging-token", from: hostDeviceId)
+        await pm.testBeginSnapshotBuffer(from: hostDeviceId)
+        let waiter = Task { try await pm.testAwaitFullSyncTransport(peerDeviceId: hostDeviceId) }
+        while await pm.testPendingTransportOperationCount() == 0 {
+            await Task.yield()
+        }
+
+        let underCapEnvelope = try JSONEncoder().encode(MPEnvelope(
+            type: "changes",
+            payload: try JSONEncoder().encode(
+                (60_000..<60_200).map { snapshotUserChange(recordId: String($0)) }
+            )
+        ))
+        let overCapEnvelope = try JSONEncoder().encode(MPEnvelope(
+            type: "changes",
+            payload: try JSONEncoder().encode(
+                (60_200..<60_400).map { snapshotUserChange(recordId: String($0)) }
+            )
+        ))
+
+        // 200 stages fine — the cap admits legitimate traffic rather than
+        // rejecting everything.
+        _ = try await pm.testProcessMultipeerMessage(
+            ReceivedMultipeerMessage(fromDeviceId: hostDeviceId, data: underCapEnvelope)
+        )
+        #expect(try await pm.testStagedSnapshotRowCount(for: hostDeviceId) == 200)
+
+        // The next 200 would reach 400, past the cap of 300.
+        let acknowledgements = SnapshotAcknowledgementCollector()
+        var thrown: (any Error)?
+        do {
+            _ = try await pm.testProcessMultipeerMessagesInFIFO(
+                [ReceivedMultipeerMessage(fromDeviceId: hostDeviceId, data: overCapEnvelope)],
+                sendApplyAcknowledgement: { acknowledgement, destination in
+                    #expect(destination == hostDeviceId)
+                    acknowledgements.append(acknowledgement)
+                    return true
+                }
+            )
+        } catch {
+            thrown = error
+        }
+
+        // The TYPED error, not merely "something failed": its message is what
+        // the joining user is shown, and it has to name an action.
+        let snapshotError = try #require(thrown as? MultipeerSnapshotError)
+        guard case .stagingLimitExceeded(let records, _) = snapshotError else {
+            Issue.record("expected .stagingLimitExceeded, got \(snapshotError)")
+            return
+        }
+        #expect(records == 400, "the error must report the size actually reached")
+        #expect(
+            snapshotError.errorDescription?.contains("Restart the sending device") == true,
+            "the message must tell the user what to do"
+        )
+        await #expect(throws: (any Error).self) { try await waiter.value }
+
+        // The host learns immediately, so it can consume its one-time
+        // capability now instead of waiting out a timeout.
+        #expect(acknowledgements.values.first?.succeeded == false)
+        // Staging is cleared — including the 200 rows that were under the cap.
+        #expect(try await pm.testStagedSnapshotRowCount(for: hostDeviceId) == 0)
+        #expect(!(await pm.testIsStagingSnapshot(from: hostDeviceId)))
+
+        // Quarantined: the remaining queued pages are dropped rather than
+        // applied piecemeal into a company that was never completed. The peer
+        // still holds a valid snapshot token, so `.ignored` here can only be
+        // the quarantine — without it these changes would apply and report
+        // `.changesApplied(200)`.
+        let afterFailure = try await pm.testProcessMultipeerMessage(
+            ReceivedMultipeerMessage(fromDeviceId: hostDeviceId, data: underCapEnvelope)
+        )
+        #expect(afterFailure == .ignored)
+    }
+
+    /// The byte cap is the one that actually bounds disk: rows vary enormously
+    /// in size, so a record count alone cannot. A long notebook body is orders
+    /// of magnitude larger than a parts row, and 2,000,000 of the former is a
+    /// very different number of gigabytes than 2,000,000 of the latter.
+    ///
+    /// This also pins the granularity. A batch that crosses the cap must roll
+    /// back WHOLE — `seq` numbering assumes contiguous rows, so a half-written
+    /// batch would leave a gap that replay would silently accept.
+    @Test("A peer that stages past the byte cap fails, and the over-cap batch rolls back whole (#1688)")
+    func testSnapshotStagingByteCapRollsBackWholeBatch() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+        let hostDeviceId = "fat-host"
+
+        // Measured, never hardcoded: `IncomingChange` gaining a field must not
+        // silently turn this into a test that can no longer reach the cap.
+        let bytesPerChange = try JSONEncoder().encode(snapshotUserChange(recordId: "70000")).count
+        #expect(bytesPerChange > 0)
+
+        // Room for exactly 10 records. The record cap is left wide open so only
+        // the byte cap can trip.
+        await pm.testSetSnapshotStagingLimits(records: 1_000_000, bytes: bytesPerChange * 10)
+        await pm.testBeginSnapshotBuffer(from: hostDeviceId)
+
+        // Every id below is five digits, so every encoded change is exactly
+        // `bytesPerChange` and the arithmetic is exact rather than approximate.
+        let underCapEnvelope = try JSONEncoder().encode(MPEnvelope(
+            type: "changes",
+            payload: try JSONEncoder().encode(
+                (70_000..<70_008).map { snapshotUserChange(recordId: String($0)) }
+            )
+        ))
+        let overCapEnvelope = try JSONEncoder().encode(MPEnvelope(
+            type: "changes",
+            payload: try JSONEncoder().encode(
+                (70_008..<70_016).map { snapshotUserChange(recordId: String($0)) }
+            )
+        ))
+
+        _ = try await pm.testProcessMultipeerMessage(
+            ReceivedMultipeerMessage(fromDeviceId: hostDeviceId, data: underCapEnvelope)
+        )
+        #expect(try await pm.testStagedSnapshotRowCount(for: hostDeviceId) == 8)
+
+        // Deliberately the DIRECT call, not the FIFO wrapper: this skips
+        // `failPendingFullSync`, so the staging rows survive the throw and the
+        // rollback is observable. Through the wrapper the table is cleared
+        // either way, and a half-written batch would be indistinguishable from
+        // a cleanly rejected one.
+        var thrown: (any Error)?
+        do {
+            _ = try await pm.testProcessMultipeerMessage(
+                ReceivedMultipeerMessage(fromDeviceId: hostDeviceId, data: overCapEnvelope)
+            )
+        } catch {
+            thrown = error
+        }
+        let snapshotError = try #require(thrown as? MultipeerSnapshotError)
+        guard case .stagingLimitExceeded = snapshotError else {
+            Issue.record("expected .stagingLimitExceeded, got \(snapshotError)")
+            return
+        }
+        // Rows 9 and 10 fit under the cap and are written before row 11 trips
+        // it. All three must be gone.
+        #expect(
+            try await pm.testStagedSnapshotRowCount(for: hostDeviceId) == 8,
+            "the over-cap batch must roll back whole — no partially staged rows"
+        )
+    }
+
     /// The staging table is sync INFRASTRUCTURE. If it ever became a synced
     /// table it would replicate one device's half-finished download to the rest
     /// of the company — and, being id-keyed, would do so silently.
