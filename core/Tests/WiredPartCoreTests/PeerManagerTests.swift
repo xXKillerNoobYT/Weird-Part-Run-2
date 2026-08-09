@@ -1887,6 +1887,291 @@ struct PeerManagerTests {
         #expect(freshReservationResults.filter { $0 }.count == 1)
         await host.stopPeerSync()
     }
+
+    // MARK: - Durable snapshot staging (WEI-7022)
+
+    /// The memory fix, proven where it matters: every batch is on DISK the
+    /// moment it is accepted, not accumulating in the actor. A real company is
+    /// hundreds of thousands of rows, and holding them all as decoded
+    /// `IncomingChange` objects is what makes iOS jetsam-kill the joiner
+    /// mid-download — a failure mode indistinguishable from a dropped link.
+    ///
+    /// The all-or-nothing contract has to survive the change, so this also
+    /// pins the two invariants that protect it: nothing is visible in the real
+    /// tables before completion, and everything is visible after it.
+    @Test("A large snapshot stages durably and applies in full on completion (WEI-7022)")
+    func testLargeSnapshotStagesDurablyThenAppliesAtomically() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+        let batchSize = 200
+        let batchCount = 6
+        let totalRecords = batchSize * batchCount
+
+        await pm.testBeginSnapshotBuffer(from: "host")
+
+        var staged = 0
+        for batch in 0..<batchCount {
+            let changes = (0..<batchSize).map {
+                snapshotUserChange(recordId: String(20_000 + batch * batchSize + $0))
+            }
+            let envelope = try JSONEncoder().encode(
+                MPEnvelope(type: "changes", payload: try JSONEncoder().encode(changes))
+            )
+            let outcome = try await pm.testProcessMultipeerMessage(
+                ReceivedMultipeerMessage(fromDeviceId: "host", data: envelope)
+            )
+            #expect(outcome == .changesApplied(batchSize))
+            staged += batchSize
+
+            // Durability, batch by batch: the rows are queryable from the
+            // database, not merely retained by the actor.
+            #expect(try await pm.testStagedSnapshotRowCount(for: "host") == staged)
+            // The progress UI reads this; it must track the durable count.
+            #expect(await pm.getState().snapshotReceivedRecords["host"] == staged)
+        }
+
+        let visibleBeforeCompletion = try await db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM users WHERE id >= 20000") ?? 0
+        }
+        #expect(
+            visibleBeforeCompletion == 0,
+            "staged rows must not reach the real tables before completion"
+        )
+
+        let completionEnvelope = try JSONEncoder().encode(MPEnvelope(
+            type: "fullSyncComplete",
+            payload: try JSONEncoder().encode(FullSyncCompletion.success)
+        ))
+        let completed = try await pm.testProcessMultipeerMessage(
+            ReceivedMultipeerMessage(fromDeviceId: "host", data: completionEnvelope)
+        )
+        #expect(completed == .fullSyncCompleted)
+
+        let applied = try await db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM users WHERE id >= 20000") ?? 0
+        }
+        #expect(applied == totalRecords, "every staged record must be applied")
+        #expect(
+            try await pm.testStagedSnapshotRowCount(for: "host") == 0,
+            "staging must be cleared once the snapshot is applied and acknowledged"
+        )
+        #expect(!(await pm.testIsStagingSnapshot(from: "host")))
+    }
+
+    /// Injected failure AFTER staging, BEFORE apply — the exact window the
+    /// staging table introduces. A poisoned record cannot be detected until it
+    /// is replayed, so the guarantee has to come from the transaction: the
+    /// company must be entirely absent afterwards, never partially populated.
+    ///
+    /// A half-populated company is the worst outcome available. It looks like a
+    /// successful onboarding to every screen in the app.
+    @Test("A failure between staging and apply leaves no partial company data (WEI-7022)")
+    func testStagedSnapshotFailureLeavesNoPartialCompanyData() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+        let hostDeviceId = "host"
+
+        await pm.testAuthorizeReceivedSnapshot("staging-token", from: hostDeviceId)
+        await pm.testBeginSnapshotBuffer(from: hostDeviceId)
+        let waiter = Task { try await pm.testAwaitFullSyncTransport(peerDeviceId: hostDeviceId) }
+        while await pm.testPendingTransportOperationCount() == 0 {
+            await Task.yield()
+        }
+
+        // 500 perfectly good records...
+        let goodChanges = (0..<500).map { snapshotUserChange(recordId: String(30_000 + $0)) }
+        let goodEnvelope = try JSONEncoder().encode(
+            MPEnvelope(type: "changes", payload: try JSONEncoder().encode(goodChanges))
+        )
+        // ...then one that only fails when it is actually applied.
+        let poisoned = IncomingChange(
+            deviceId: hostDeviceId,
+            tableName: "users",
+            recordId: "30999",
+            operation: "INSERT",
+            recordData: #"{"id":30999,"display_name":"Invalid","pin_hash":"hash","is_active":1,"not_a_real_column":"boom"}"#,
+            timestamp: "2026-07-15T00:00:00Z"
+        )
+        let poisonedEnvelope = try JSONEncoder().encode(
+            MPEnvelope(type: "changes", payload: try JSONEncoder().encode([poisoned]))
+        )
+        let completionEnvelope = try JSONEncoder().encode(MPEnvelope(
+            type: "fullSyncComplete",
+            payload: try JSONEncoder().encode(FullSyncCompletion.success)
+        ))
+
+        _ = try await pm.testProcessMultipeerMessage(
+            ReceivedMultipeerMessage(fromDeviceId: hostDeviceId, data: goodEnvelope)
+        )
+        _ = try await pm.testProcessMultipeerMessage(
+            ReceivedMultipeerMessage(fromDeviceId: hostDeviceId, data: poisonedEnvelope)
+        )
+        // Everything staged cleanly — the failure is still ahead of us.
+        #expect(try await pm.testStagedSnapshotRowCount(for: hostDeviceId) == 501)
+
+        let acknowledgements = SnapshotAcknowledgementCollector()
+        await #expect(throws: (any Error).self) {
+            _ = try await pm.testProcessMultipeerMessagesInFIFO(
+                [ReceivedMultipeerMessage(fromDeviceId: hostDeviceId, data: completionEnvelope)],
+                sendApplyAcknowledgement: { acknowledgement, _ in
+                    acknowledgements.append(acknowledgement)
+                    return true
+                }
+            )
+        }
+        await #expect(throws: (any Error).self) { try await waiter.value }
+
+        let visible = try await db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM users WHERE id >= 30000") ?? 0
+        }
+        #expect(
+            visible == 0,
+            "the 500 valid staged records must roll back with the poisoned one"
+        )
+        // The host is told before it waits out its timeout, and never records
+        // a success against a joiner that stored nothing.
+        #expect(acknowledgements.values.first?.succeeded == false)
+        // Failure clears staging: a retry starts from a clean slate.
+        #expect(try await pm.testStagedSnapshotRowCount(for: hostDeviceId) == 0)
+        #expect(!(await pm.testIsStagingSnapshot(from: hostDeviceId)))
+    }
+
+    /// A snapshot that dies mid-transfer can leave rows behind — a jetsam kill
+    /// is exactly that scenario, and it is the one durable staging is meant to
+    /// survive. The next attempt must not replay them: mixing two snapshots
+    /// produces a company assembled from two different points in time.
+    @Test("A second snapshot from the same peer discards leftover staging (WEI-7022)")
+    func testSecondSnapshotDoesNotMixWithLeftoverStaging() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+
+        // Simulate the wreckage of a previous, killed transfer.
+        let leftoverPayloads: [String] = try (0..<3).map { seq in
+            let data = try JSONEncoder().encode(snapshotUserChange(recordId: String(40_000 + seq)))
+            return try #require(String(data: data, encoding: .utf8))
+        }
+        try await db.writer.write { dbConn in
+            for (seq, payload) in leftoverPayloads.enumerated() {
+                try dbConn.execute(
+                    sql: """
+                        INSERT INTO _snapshot_staging (peer_device_id, seq, payload)
+                        VALUES (?, ?, ?)
+                        """,
+                    arguments: ["host", seq, payload]
+                )
+            }
+        }
+        #expect(try await pm.testStagedSnapshotRowCount(for: "host") == 3)
+
+        // A fresh snapshot begins for the SAME peer.
+        await pm.testBeginSnapshotBuffer(from: "host")
+        #expect(
+            try await pm.testStagedSnapshotRowCount(for: "host") == 0,
+            "beginning a snapshot must discard the previous attempt's rows"
+        )
+
+        let envelope = try JSONEncoder().encode(MPEnvelope(
+            type: "changes",
+            payload: try JSONEncoder().encode([snapshotUserChange(recordId: "41000")])
+        ))
+        _ = try await pm.testProcessMultipeerMessage(
+            ReceivedMultipeerMessage(fromDeviceId: "host", data: envelope)
+        )
+        let completionEnvelope = try JSONEncoder().encode(MPEnvelope(
+            type: "fullSyncComplete",
+            payload: try JSONEncoder().encode(FullSyncCompletion.success)
+        ))
+        _ = try await pm.testProcessMultipeerMessage(
+            ReceivedMultipeerMessage(fromDeviceId: "host", data: completionEnvelope)
+        )
+
+        let leftoverApplied = try await db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM users WHERE id >= 40000 AND id < 41000") ?? 0
+        }
+        let currentApplied = try await db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM users WHERE id = 41000") ?? 0
+        }
+        #expect(leftoverApplied == 0, "leftover staging must never be replayed")
+        #expect(currentApplied == 1, "the current snapshot must still apply in full")
+    }
+
+    /// Staging is scratch space for ONE in-flight transfer. A timeout is the
+    /// silent path — nothing throws, nothing is logged by the caller — so it
+    /// needs its own proof that the rows do not survive.
+    @Test("Snapshot staging is cleared on timeout and on transport shutdown (WEI-7022)")
+    func testSnapshotStagingClearedOnTimeoutAndShutdown() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+        let envelope = try JSONEncoder().encode(MPEnvelope(
+            type: "changes",
+            payload: try JSONEncoder().encode([snapshotUserChange(recordId: "50001")])
+        ))
+
+        // 1. Idle-watchdog timeout.
+        await pm.testBeginSnapshotBuffer(from: "host-a")
+        _ = try await pm.testProcessMultipeerMessage(
+            ReceivedMultipeerMessage(fromDeviceId: "host-a", data: envelope)
+        )
+        #expect(try await pm.testStagedSnapshotRowCount(for: "host-a") == 1)
+        await pm.testTimeoutFullSync(with: "host-a")
+        #expect(try await pm.testStagedSnapshotRowCount(for: "host-a") == 0)
+        #expect(await pm.getState().snapshotReceivedRecords["host-a"] == nil)
+
+        // 2. Transport shutdown, which fails every pending operation at once.
+        await pm.testBeginSnapshotBuffer(from: "host-b")
+        _ = try await pm.testProcessMultipeerMessage(
+            ReceivedMultipeerMessage(fromDeviceId: "host-b", data: envelope)
+        )
+        #expect(try await pm.testStagedSnapshotRowCount(for: "host-b") == 1)
+        await pm.testFailPendingTransportOperations()
+        #expect(
+            try await pm.testTotalStagedSnapshotRowCount() == 0,
+            "transport shutdown must leave no staged rows for any peer"
+        )
+    }
+
+    /// The staging table is sync INFRASTRUCTURE. If it ever became a synced
+    /// table it would replicate one device's half-finished download to the rest
+    /// of the company — and, being id-keyed, would do so silently.
+    ///
+    /// This also proves migration 122 is actually REGISTERED. A migration
+    /// that is defined but never wired into the migrator does nothing at all,
+    /// and the failure is invisible until a query hits a missing table.
+    @Test("Snapshot staging exists, is indexed, and never syncs (WEI-7022)")
+    func testSnapshotStagingIsRegisteredInfrastructureAndNeverSyncs() throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+
+        let tableExists = try db.writer.read { dbConn in
+            try Bool.fetchOne(dbConn, sql: """
+                SELECT EXISTS(
+                    SELECT 1 FROM sqlite_master
+                    WHERE type = 'table' AND name = '_snapshot_staging'
+                )
+                """) ?? false
+        }
+        #expect(tableExists, "migration 122 is not registered in the migrator")
+
+        let indexExists = try db.writer.read { dbConn in
+            try Bool.fetchOne(dbConn, sql: """
+                SELECT EXISTS(
+                    SELECT 1 FROM sqlite_master
+                    WHERE type = 'index' AND name = 'idx_snapshot_staging_peer_seq'
+                )
+                """) ?? false
+        }
+        #expect(indexExists, "ordered replay and per-peer clear both need this index")
+
+        #expect(!ConflictResolver.isAllowedTable("_snapshot_staging"))
+        #expect(!ConflictResolver.allowedSyncTables.contains("_snapshot_staging"))
+
+        let triggerCount = try db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM sqlite_master
+                WHERE type = 'trigger' AND tbl_name = '_snapshot_staging'
+                """) ?? 0
+        }
+        #expect(triggerCount == 0, "staging writes must never enter the change log")
+    }
     #endif
 
     @Test("LAN sync base URL is built from host and discovered port")

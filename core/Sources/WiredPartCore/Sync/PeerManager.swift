@@ -189,8 +189,19 @@ public actor PeerManager {
     private var pendingBluetoothPairingContexts: [String: BluetoothPairingAttemptContext] = [:]
     // Joiner-side: continuations awaiting a full initial sync to complete, keyed by host deviceId.
     private var pendingFullSyncContinuations: [String: CheckedContinuation<Void, Error>] = [:]
-    // Full-snapshot pages remain in memory until completion, then commit in one transaction.
-    private var pendingSnapshotChanges: [String: [IncomingChange]] = [:]
+    // Hosts whose initial snapshot is currently being STAGED to `_snapshot_staging`.
+    //
+    // WEI-7022: membership means "route this peer's incoming batches to durable
+    // staging" and nothing more. The batches themselves are written to disk as
+    // they arrive rather than accumulated here, so a company-sized snapshot no
+    // longer scales the joiner's resident memory with the company. Completion
+    // still commits the whole thing in ONE transaction, so the ordering that
+    // protects the host's one-time capability is untouched.
+    private var snapshotStagingPeers: Set<String> = []
+    // Next staging sequence number per peer. Written only after the staging
+    // transaction commits, so it also IS the durable staged-row count for that
+    // peer and can drive the progress UI without an O(n) COUNT(*) per batch.
+    private var snapshotStagedRecords: [String: Int] = [:]
     // Ignore remaining queued pages after a failed snapshot until an explicit retry starts.
     private var failedSnapshotPeers: Set<String> = []
     // Pairing-issued capabilities bind initial snapshots to the successful code exchange.
@@ -287,6 +298,14 @@ public actor PeerManager {
         kaPublicKeyB64 = identity.publicKeyB64
         self.companyId = companyId          // Fix #191: stored for key-exchange requests
         peerKAPublicKeys.removeAll()
+
+        #if canImport(MultipeerConnectivity)
+        // WEI-7022: any snapshot staging rows on disk at startup belong to a
+        // previous process — a crash, a force-quit, or the jetsam kill this
+        // change exists to survive. No transfer is in flight yet, so they are
+        // unreplayable scrap and would otherwise grow the database forever.
+        clearAllSnapshotStaging()
+        #endif
 
         // 1. Start LAN sync server unless this is discovery-only onboarding.
         let port: UInt16
@@ -434,7 +453,7 @@ public actor PeerManager {
         pendingBluetoothPairingContexts.removeAll()
         let fullSyncContinuations = Array(pendingFullSyncContinuations.values)
         pendingFullSyncContinuations.removeAll()
-        pendingSnapshotChanges.removeAll()
+        clearAllSnapshotStaging()
         failedSnapshotPeers.removeAll()
 
         for continuation in pairContinuations {
@@ -1088,8 +1107,134 @@ public actor PeerManager {
     func isTrustedWritePeer(_ peerDeviceId: String) -> Bool {
         if (try? isTrustedBluetoothPeer(peerDeviceId)) == true { return true }
         // In-flight initial snapshot from the host we are joining.
-        return pendingSnapshotChanges[peerDeviceId] != nil
+        return snapshotStagingPeers.contains(peerDeviceId)
             || receivedSnapshotTokens[peerDeviceId] != nil
+    }
+
+    // MARK: - Durable Snapshot Staging (WEI-7022)
+
+    /// Start staging a fresh snapshot from `peerDeviceId`.
+    ///
+    /// Clears that peer's staging rows first. Leftovers are always scrap — from
+    /// a transfer that failed, timed out, or was killed by the OS mid-download —
+    /// and replaying them alongside a new snapshot would silently mix two
+    /// different versions of the company.
+    private func beginSnapshotStaging(for peerDeviceId: String) {
+        clearSnapshotStaging(for: peerDeviceId)
+        snapshotStagingPeers.insert(peerDeviceId)
+        snapshotStagedRecords[peerDeviceId] = 0
+    }
+
+    /// Write one received batch to disk. Returns the number of records staged.
+    ///
+    /// One row per change, committed as a single transaction per batch: the
+    /// batch is durable when this returns, and peak memory is one batch rather
+    /// than the whole company.
+    private func stageSnapshotChanges(
+        _ changes: [IncomingChange],
+        from peerDeviceId: String
+    ) throws -> Int {
+        guard !changes.isEmpty else { return 0 }
+        var seq = snapshotStagedRecords[peerDeviceId] ?? 0
+        let encoder = JSONEncoder()
+
+        try db.writer.write { dbConn in
+            for change in changes {
+                guard let payload = String(
+                    data: try encoder.encode(change), encoding: .utf8
+                ) else {
+                    throw MultipeerSnapshotError.rowEncodingFailed(table: change.tableName)
+                }
+                try dbConn.execute(
+                    sql: """
+                        INSERT INTO _snapshot_staging (peer_device_id, seq, payload)
+                        VALUES (?, ?, ?)
+                        """,
+                    arguments: [peerDeviceId, seq, payload]
+                )
+                seq += 1
+            }
+        }
+
+        // Advanced only after the commit, so the counter never claims durability
+        // the database does not have.
+        snapshotStagedRecords[peerDeviceId] = seq
+        return changes.count
+    }
+
+    /// Replay one peer's staged snapshot into the real tables, atomically.
+    ///
+    /// Streams straight off the staging cursor in `seq` order so the whole
+    /// company is never decoded into memory at once, and runs inside a single
+    /// transaction so any failure leaves NO partial company behind.
+    private func applyStagedSnapshot(from peerDeviceId: String) throws -> Int {
+        let did = serverState?.deviceId ?? "unknown"
+        let result = try ConflictResolver.resolveAndApplyStreamedChangesAtomically(
+            db: db,
+            localDeviceId: did
+        ) { dbConn, apply in
+            let cursor = try Row.fetchCursor(
+                dbConn,
+                sql: """
+                    SELECT payload FROM _snapshot_staging
+                    WHERE peer_device_id = ? ORDER BY seq
+                    """,
+                arguments: [peerDeviceId]
+            )
+            while let row = try cursor.next() {
+                let payload: String = row["payload"]
+                guard let data = payload.data(using: .utf8),
+                      let change = try? JSONDecoder().decode(IncomingChange.self, from: data) else {
+                    throw MultipeerSnapshotError.malformedChanges
+                }
+                try apply(change)
+            }
+        }
+        guard result.errors == 0 else {
+            throw MultipeerSnapshotError.batchApplyFailed(errorCount: result.errors)
+        }
+        return result.applied
+    }
+
+    /// Stop staging for one peer and drop its staged rows.
+    ///
+    /// Called on success, on failure, and on timeout. Staging is scratch space
+    /// for one in-flight transfer; nothing may outlive that transfer.
+    private func endSnapshotStaging(for peerDeviceId: String) {
+        snapshotStagingPeers.remove(peerDeviceId)
+        snapshotStagedRecords.removeValue(forKey: peerDeviceId)
+        clearSnapshotStaging(for: peerDeviceId)
+    }
+
+    private func clearSnapshotStaging(for peerDeviceId: String) {
+        do {
+            try db.writer.write { dbConn in
+                try dbConn.execute(
+                    sql: "DELETE FROM _snapshot_staging WHERE peer_device_id = ?",
+                    arguments: [peerDeviceId]
+                )
+            }
+        } catch {
+            // Not fatal: the next `beginSnapshotStaging` clears again before
+            // staging anything, so stale rows can never be replayed. Log it
+            // rather than failing a transfer over scratch-space cleanup.
+            logger.error("[PeerManager] Could not clear snapshot staging for \(String(peerDeviceId.prefix(8)), privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Drop every peer's staged rows. Used on transport shutdown and on
+    /// startup, where anything on disk is left over from a previous process
+    /// (including one the OS killed mid-download) and can only be scrap.
+    private func clearAllSnapshotStaging() {
+        snapshotStagingPeers.removeAll()
+        snapshotStagedRecords.removeAll()
+        do {
+            try db.writer.write { dbConn in
+                try dbConn.execute(sql: "DELETE FROM _snapshot_staging")
+            }
+        } catch {
+            logger.error("[PeerManager] Could not clear snapshot staging: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     func isTrustedBluetoothPeer(_ peerDeviceId: String) throws -> Bool {
@@ -1151,15 +1296,14 @@ public actor PeerManager {
                 do {
                     let changes = try decodeIncomingChanges(env.payload)
                     let count: Int
-                    if pendingSnapshotChanges[message.fromDeviceId] != nil {
-                        pendingSnapshotChanges[message.fromDeviceId, default: []]
-                            .append(contentsOf: changes)
-                        count = changes.count
+                    if snapshotStagingPeers.contains(message.fromDeviceId) {
+                        // WEI-7022: durable staging, not an in-memory buffer.
+                        count = try stageSnapshotChanges(changes, from: message.fromDeviceId)
                         // #1417 hardening: every batch feeds the idle watchdog
                         // (a live transfer must never be killed) and the UI.
                         snapshotLastActivity[message.fromDeviceId] = Date()
                         state.snapshotReceivedRecords[message.fromDeviceId] =
-                            pendingSnapshotChanges[message.fromDeviceId, default: []].count
+                            snapshotStagedRecords[message.fromDeviceId] ?? 0
                         notifyStateChanged()
                     } else {
                         count = try applyIncomingChanges(changes)
@@ -1196,11 +1340,12 @@ public actor PeerManager {
                 guard completion.succeeded else {
                     throw MultipeerSnapshotError.remoteFailure(completion.error ?? "")
                 }
-                if pendingSnapshotChanges[message.fromDeviceId] != nil {
+                if snapshotStagingPeers.contains(message.fromDeviceId) {
                     do {
-                        _ = try applyIncomingChanges(
-                            pendingSnapshotChanges[message.fromDeviceId, default: []]
-                        )
+                        // One transaction over the whole staged snapshot. The
+                        // acknowledgement below is truthful only because this
+                        // has already committed.
+                        _ = try applyStagedSnapshot(from: message.fromDeviceId)
                     } catch {
                         // Tell the host before the FIFO drain propagates the local
                         // failure. The host can then consume the old capability and
@@ -1225,7 +1370,8 @@ public actor PeerManager {
                     }
                     receivedSnapshotTokens.removeValue(forKey: message.fromDeviceId)
                 }
-                pendingSnapshotChanges.removeValue(forKey: message.fromDeviceId)
+                // Applied and acknowledged — the staged copy has no further use.
+                endSnapshotStaging(for: message.fromDeviceId)
                 failedSnapshotPeers.remove(message.fromDeviceId)
                 snapshotLastActivity.removeValue(forKey: message.fromDeviceId)
                 state.snapshotReceivedRecords.removeValue(forKey: message.fromDeviceId)
@@ -1256,10 +1402,8 @@ public actor PeerManager {
         guard !failedSnapshotPeers.contains(message.fromDeviceId) else { return .ignored }
         let changes = try decodeIncomingChanges(message.data)
         let count: Int
-        if pendingSnapshotChanges[message.fromDeviceId] != nil {
-            pendingSnapshotChanges[message.fromDeviceId, default: []]
-                .append(contentsOf: changes)
-            count = changes.count
+        if snapshotStagingPeers.contains(message.fromDeviceId) {
+            count = try stageSnapshotChanges(changes, from: message.fromDeviceId)
         } else {
             count = try applyIncomingChanges(changes)
         }
@@ -1656,7 +1800,33 @@ public actor PeerManager {
 
     func testBeginSnapshotBuffer(from peerDeviceId: String) {
         failedSnapshotPeers.remove(peerDeviceId)
-        pendingSnapshotChanges[peerDeviceId] = []
+        beginSnapshotStaging(for: peerDeviceId)
+    }
+
+    /// Durable row count for one peer, read straight from `_snapshot_staging`.
+    /// Proves the batches really are on disk rather than in actor memory.
+    func testStagedSnapshotRowCount(for peerDeviceId: String) throws -> Int {
+        try db.writer.read { dbConn in
+            try Int.fetchOne(
+                dbConn,
+                sql: "SELECT COUNT(*) FROM _snapshot_staging WHERE peer_device_id = ?",
+                arguments: [peerDeviceId]
+            ) ?? 0
+        }
+    }
+
+    func testTotalStagedSnapshotRowCount() throws -> Int {
+        try db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM _snapshot_staging") ?? 0
+        }
+    }
+
+    func testIsStagingSnapshot(from peerDeviceId: String) -> Bool {
+        snapshotStagingPeers.contains(peerDeviceId)
+    }
+
+    func testTimeoutFullSync(with peerDeviceId: String) {
+        timeoutFullSync(with: peerDeviceId)
     }
 
     func testAuthorizeReceivedSnapshot(_ token: String, from peerDeviceId: String) {
@@ -1688,7 +1858,7 @@ public actor PeerManager {
 
     func testAbandonSnapshotBuffer(from peerDeviceId: String) {
         failedSnapshotPeers.insert(peerDeviceId)
-        pendingSnapshotChanges.removeValue(forKey: peerDeviceId)
+        endSnapshotStaging(for: peerDeviceId)
     }
 
     func testAwaitPairingTransport(
@@ -1753,11 +1923,11 @@ public actor PeerManager {
     }
 
     private func failPendingFullSync(from peerDeviceId: String, with error: Error) {
-        if pendingSnapshotChanges[peerDeviceId] != nil
+        if snapshotStagingPeers.contains(peerDeviceId)
             || pendingFullSyncContinuations[peerDeviceId] != nil {
             failedSnapshotPeers.insert(peerDeviceId)
         }
-        pendingSnapshotChanges.removeValue(forKey: peerDeviceId)
+        endSnapshotStaging(for: peerDeviceId)
         if let cont = pendingFullSyncContinuations.removeValue(forKey: peerDeviceId) {
             cont.resume(throwing: error)
         }
@@ -1774,7 +1944,7 @@ public actor PeerManager {
 
     private func timeoutFullSync(with peerDeviceId: String) {
         failedSnapshotPeers.insert(peerDeviceId)
-        pendingSnapshotChanges.removeValue(forKey: peerDeviceId)
+        endSnapshotStaging(for: peerDeviceId)
         snapshotLastActivity.removeValue(forKey: peerDeviceId)
         state.snapshotReceivedRecords.removeValue(forKey: peerDeviceId)
         notifyStateChanged()
@@ -1841,12 +2011,12 @@ public actor PeerManager {
         )
         let env = try JSONEncoder().encode(MPEnvelope(type: "fullSyncRequest", payload: request))
         failedSnapshotPeers.remove(hostDeviceId)
-        pendingSnapshotChanges[hostDeviceId] = []
+        beginSnapshotStaging(for: hostDeviceId)
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             // Register before sending so a fast host response cannot beat the waiter.
             pendingFullSyncContinuations[hostDeviceId] = cont
             guard mpManager.send(data: env, toPeer: hostDeviceId) else {
-                pendingSnapshotChanges.removeValue(forKey: hostDeviceId)
+                endSnapshotStaging(for: hostDeviceId)
                 pendingFullSyncContinuations.removeValue(forKey: hostDeviceId)?
                     .resume(throwing: MultipeerPairingError.sendFailed)
                 return

@@ -163,6 +163,7 @@ extension AppDatabase {
         registerMigration119SyncGapTables(&migrator)
         registerContactEmailRepair(&migrator)
         registerMigration121DeviceLogs(&migrator)
+        registerMigration122SnapshotStaging(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6326,5 +6327,52 @@ private func registerMigration121DeviceLogs(_ migrator: inout DatabaseMigrator) 
                 END
                 """)
         }
+    }
+}
+
+/// 122 — durable staging for the joiner's initial Bluetooth snapshot
+/// (WEI-7022, #1580, #1417).
+///
+/// The joiner used to hold EVERY received snapshot batch in memory as decoded
+/// `IncomingChange` objects and apply nothing until the host's
+/// `fullSyncComplete` arrived. A real company is hundreds of thousands of
+/// rows, so that buffer grew without bound; on iOS the likely outcome is a
+/// jetsam kill mid-download, which is indistinguishable from a transfer
+/// failure. It was also all-or-nothing in the worst way — a drop at 99%
+/// discarded the whole buffer and the retry restarted from zero.
+///
+/// Batches now land here, on disk, as they arrive. Completion replays this
+/// table in `seq` order inside ONE transaction, so the apply-then-acknowledge
+/// ordering that protects the host's one-time snapshot capability is
+/// unchanged: the joiner still acknowledges only after the data is durable,
+/// and a failure still leaves no half-populated company behind.
+///
+/// This is sync INFRASTRUCTURE, not company data:
+/// - `_` prefix keeps it out of `SyncTableClassificationTests`' business-table
+///   sweep and out of `BluetoothSnapshotTransfer` (which skips `_`-prefixed
+///   tables), so a host never ships its own staging scraps to a joiner;
+/// - it is deliberately ABSENT from `ConflictResolver.allowedSyncTables`, so
+///   an incoming change can never target it;
+/// - it gets NO change-tracking triggers, so staging writes never enter
+///   `_change_log` and never replicate.
+private func registerMigration122SnapshotStaging(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("122_snapshot_staging") { db in
+        try db.create(table: "_snapshot_staging", ifNotExists: true) { t in
+            t.autoIncrementedPrimaryKey("id")
+            // Which host's snapshot this row belongs to. Staging is cleared
+            // per peer so two hosts can never contaminate each other.
+            t.column("peer_device_id", .text).notNull()
+            // Host send order. Replay MUST follow it: later pages legitimately
+            // update rows written by earlier ones.
+            t.column("seq", .integer).notNull()
+            // One JSON-encoded `IncomingChange` per row.
+            t.column("payload", .text).notNull()
+            t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+        }
+        // Both the ordered replay and the per-peer clear key off this pair.
+        try db.create(
+            index: "idx_snapshot_staging_peer_seq", on: "_snapshot_staging",
+            columns: ["peer_device_id", "seq"], ifNotExists: true
+        )
     }
 }
