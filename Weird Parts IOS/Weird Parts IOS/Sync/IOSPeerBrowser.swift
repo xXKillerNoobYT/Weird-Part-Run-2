@@ -157,16 +157,26 @@ struct IOSPeerBrowser: View {
                             Text(peer.state.capitalized)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            if peer.isBluetoothOnly {
+                                Text("Send changes one way; use this on both devices to exchange data.")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
 
                         Spacer()
 
                         if peer.isManuallySyncable {
-                            Button("Sync") {
+                            Button(peer.isBluetoothOnly ? "Send Changes" : "Sync") {
                                 Task { await syncManager.syncWithPeer(peerDeviceId: peer.id) }
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
+                            .disabled(syncManager.syncStatus == .syncing)
+                            .accessibilityLabel(peer.isBluetoothOnly ? "Send changes to \(peer.name)" : "Sync with \(peer.name)")
+                            .accessibilityHint(peer.isBluetoothOnly
+                                ? "Sends this device's pending changes. To receive \(peer.name)'s changes, tap Send Changes on that device."
+                                : "Exchanges data with this device.")
                         } else if peer.state == "connecting" {
                             ProgressView()
                                 .scaleEffect(0.7)
