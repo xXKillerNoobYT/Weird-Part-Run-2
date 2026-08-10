@@ -27,12 +27,35 @@ are iOS-only.
 2. `INFOPLIST_KEY_LSApplicationCategoryType` set in the app target.
 3. `CURRENT_PROJECT_VERSION` (build number) is **higher than any build already
    uploaded** to App Store Connect for this version. ASC rejects re-used build
-   numbers. Bump it in `project.pbxproj` (app target, Debug + Release) before
-   every upload.
+   numbers.
+
+## Build numbers — Xcode Cloud owns them, local archives must not guess
+
+**`CURRENT_PROJECT_VERSION` in `project.pbxproj` is stale (`2`) and that is
+fine.** Xcode Cloud injects the build number itself, and the mapping is exact:
+
+> **Xcode Cloud run number == TestFlight build number.**
+> Run #62 → build 62, run #61 → build 61. Each build's `uploadedDate` matches
+> its run's `finishedDate` to the minute.
+
+Consequences when archiving locally:
+
+- You **must** pass the build number explicitly — `CURRENT_PROJECT_VERSION=<N>`
+  on the `xcodebuild` command line. Don't edit `project.pbxproj` for a one-off
+  local build; the cloud lane ignores it and the edit is pure noise in the diff.
+- Pick `<N>` **above the highest uploaded build but below the next Xcode Cloud
+  run number**, so a restored cloud lane can't collide with you. On 2026-08-09
+  the highest upload was 62 and the cloud run counter was at 70, so **63** was
+  the safe choice.
+- Check both numbers before choosing: highest uploaded build via the ASC API
+  (`/v1/apps/<APP_ID>/builds`), and the run counter via
+  `/v1/ciWorkflows/<WORKFLOW_ID>/buildRuns?sort=-number`.
 
 ## Upload — Xcode Organizer path (simplest)
 
-1. Open `Weird Parts.xcworkspace`, scheme **WiredPart-iOS**.
+1. Open `Weird Parts IOS/Weird Parts.xcodeproj`, scheme **Weird Parts**.
+   (There is **no** `.xcworkspace` and no `WiredPart-iOS` scheme — both were
+   renamed away; corrected 2026-08-09.)
 2. Destination: **Any iOS Device (arm64)** — not a simulator, not My Mac.
 3. Product → Archive.
 4. Organizer opens → select the archive → **Distribute App** → **TestFlight &
@@ -44,13 +67,20 @@ are iOS-only.
 ## Upload — CLI path
 
 ```bash
+cd "Weird Parts IOS"
 xcodebuild archive \
-  -workspace "Weird Parts.xcworkspace" \
-  -scheme "WiredPart-iOS" \
+  -project "Weird Parts.xcodeproj" \
+  -scheme "Weird Parts" \
   -destination 'generic/platform=iOS' \
   -archivePath /tmp/WiredPart-iOS.xcarchive \
-  -allowProvisioningUpdates
+  -allowProvisioningUpdates \
+  CURRENT_PROJECT_VERSION=<N>
 ```
+
+Budget ~15–25 min for a cold archive (GRDB + WiredPartCore compile from
+scratch). Avoid starting one while the local Mac Actions runner is executing
+an iOS Beta Gate if you can help it — see
+`docs/runbooks/local-mac-actions-runner.md`.
 
 Verify the archive really is iOS before uploading:
 
@@ -166,8 +196,48 @@ notes. A build without them is not done uploading.
    feedback item gets a GitHub issue and a line in the next build's "What to
    look for".
 
+## The internal lane can die silently — check it, don't assume it
+
+"Internal builds fire automatically on any `main` edit" is true only while
+Xcode Cloud is willing to run. When it isn't, **the runs are still created and
+then cancelled seconds later, and nobody is emailed.** Failed builds send mail;
+cancelled-before-start builds do not. So the lane can be dead for days while
+`main` keeps merging and everyone assumes a build exists.
+
+That happened 2026-08-08 → 08-09 (#1682): runs #63–#70 all
+`COMPLETE/CANCELED`, `startedDate = null`, finished 5–15 s after creation, zero
+actions recorded. The owner spent two days field-testing build 62 and
+re-reporting bugs against a stale binary.
+
+**Check for it like this** — a healthy run has a non-null `startedDate`:
+
+```bash
+~/.claude/scripts/ascenv/bin/python - <<'PY'
+import sys; sys.path.insert(0,'/Users/IA/.claude/scripts')
+import asc_feedback as a
+WF="7B586229-3468-43B7-9FB1-69EE85618761"   # "Weird Part Manger" (internal lane)
+for br in a.get(f"/v1/ciWorkflows/{WF}/buildRuns?limit=10&sort=-number")["data"]:
+    b=br["attributes"]
+    print(f'#{b["number"]:>3} {b["completionStatus"]:<10} started={b["startedDate"]}')
+PY
+```
+
+Distinguish the two cancel shapes:
+
+| Shape | `startedDate` | Meaning |
+|---|---|---|
+| Cancelled **after** starting, ends exactly when the next run is created | set | normal `autoCancel` supersede — harmless |
+| Cancelled **before** starting, ends 5–15 s in, no actions | `null` | **service/account refusal** — usually exhausted Xcode Cloud compute hours; owner must check the subscription |
+
+When the lane is down, ship with the local archive path above. It does not
+depend on Xcode Cloud at all.
+
 ## History
 
+- **2026-08-09** — internal Xcode Cloud lane found dead since 08-08 (#1682);
+  build 63 cut locally to unblock hardware testing. Runbook corrected: no
+  workspace, scheme is `Weird Parts`, build number must be passed on the
+  command line.
 - **2026-07-27 23:07** — upload of build 1 failed: archive was Mac Catalyst
   (wrong destination) *and* the app had no icon at all (empty
   `AppIcon.appiconset`). Fixed 2026-07-28: placeholder icon added,
