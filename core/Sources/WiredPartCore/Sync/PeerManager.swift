@@ -1160,8 +1160,21 @@ public actor PeerManager {
     /// a transfer that failed, timed out, or was killed by the OS mid-download —
     /// and replaying them alongside a new snapshot would silently mix two
     /// different versions of the company.
-    private func beginSnapshotStaging(for peerDeviceId: String) {
-        clearSnapshotStaging(for: peerDeviceId)
+    ///
+    /// **This clear THROWS, and the caller must abort the transfer.** It used
+    /// to swallow its failure on the reasoning that "the next
+    /// `beginSnapshotStaging` clears again before staging anything" — which is
+    /// circular, because that next attempt discharges the guarantee by calling
+    /// this same function. Whatever broke the first DELETE (locked database,
+    /// I/O error, full disk — and a full disk is exactly what the staging caps
+    /// exist to bound) is very likely still true a moment later.
+    ///
+    /// Left unchecked the consequences compound: leftovers survive at
+    /// `seq 0..N`, this new transfer restarts `seq` at 0 because the
+    /// accounting entry was removed, and replay interleaves two snapshots.
+    /// Refusing to start is the only outcome that cannot corrupt the company.
+    private func beginSnapshotStaging(for peerDeviceId: String) throws {
+        try clearSnapshotStaging(for: peerDeviceId)
         snapshotStagingPeers.insert(peerDeviceId)
         snapshotStagedRecords[peerDeviceId] = 0
         snapshotStagedBytes[peerDeviceId] = 0
@@ -1244,28 +1257,63 @@ public actor PeerManager {
         let did = serverState?.deviceId ?? "unknown"
         let result = try ConflictResolver.resolveAndApplyStreamedChangesAtomically(
             db: db,
-            localDeviceId: did
-        ) { dbConn, apply in
-            let cursor = try Row.fetchCursor(
-                dbConn,
-                sql: """
-                    SELECT payload FROM _snapshot_staging
-                    WHERE peer_device_id = ? ORDER BY seq
-                    """,
-                arguments: [peerDeviceId]
-            )
-            while let row = try cursor.next() {
-                let payload: String = row["payload"]
-                guard let data = payload.data(using: .utf8),
-                      let change = try? JSONDecoder().decode(IncomingChange.self, from: data) else {
-                    throw MultipeerSnapshotError.malformedChanges
+            localDeviceId: did,
+            produceChanges: { dbConn, apply in
+                let cursor = try Row.fetchCursor(
+                    dbConn,
+                    sql: """
+                        SELECT payload FROM _snapshot_staging
+                        WHERE peer_device_id = ? ORDER BY seq
+                        """,
+                    arguments: [peerDeviceId]
+                )
+                while let row = try cursor.next() {
+                    let payload: String = row["payload"]
+                    guard let data = payload.data(using: .utf8),
+                          let change = try? JSONDecoder().decode(
+                            IncomingChange.self, from: data
+                          ) else {
+                        throw MultipeerSnapshotError.malformedChanges
+                    }
+                    try apply(change)
                 }
-                try apply(change)
+            },
+            // Runs INSIDE the transaction, so throwing here rolls the snapshot
+            // back. Checking after the write would be too late: the rows would
+            // already be committed and the "failure" would be a complaint about
+            // a company that had, in fact, just been half-populated.
+            validate: { result in
+                guard result.errors == 0 else {
+                    throw MultipeerSnapshotError.batchApplyFailed(errorCount: result.errors)
+                }
+                // `skipped` is the third outcome, and in an INITIAL FULL
+                // SNAPSHOT it must be zero. Neither way of incrementing it can
+                // legitimately happen here:
+                //
+                // - table outside `allowedSyncTables` — the host filters by
+                //   that same allowlist in `BluetoothSnapshotTransfer.run`, and
+                //   protocol v4 is an exact floor with no mixed-version
+                //   onboarding, so both ends agree on the list;
+                // - UPDATE whose local record is missing — `hostedSnapshotPage`
+                //   emits every row as an INSERT, so a snapshot contains no
+                //   UPDATEs at all.
+                //
+                // So a skip means the snapshot did NOT fully land. Left
+                // ungated, the apply returns normally, a POSITIVE
+                // acknowledgement goes back, and the host consumes its one-time
+                // capability against a company with holes in it — precisely
+                // what apply-then-acknowledge exists to prevent. It is also how
+                // a `seq` collision would surface: scrambled order lands
+                // UPDATEs before their INSERTs, which count as skips, not
+                // errors.
+                guard result.skipped == 0 else {
+                    throw MultipeerSnapshotError.snapshotIncomplete(
+                        applied: result.applied,
+                        skipped: result.skipped
+                    )
+                }
             }
-        }
-        guard result.errors == 0 else {
-            throw MultipeerSnapshotError.batchApplyFailed(errorCount: result.errors)
-        }
+        )
         return result.applied
     }
 
@@ -1277,21 +1325,35 @@ public actor PeerManager {
         snapshotStagingPeers.remove(peerDeviceId)
         snapshotStagedRecords.removeValue(forKey: peerDeviceId)
         snapshotStagedBytes.removeValue(forKey: peerDeviceId)
-        clearSnapshotStaging(for: peerDeviceId)
+        discardSnapshotStaging(for: peerDeviceId)
     }
 
-    private func clearSnapshotStaging(for peerDeviceId: String) {
+    /// Drop one peer's staged rows, or throw.
+    ///
+    /// The single primitive behind both the correctness-critical pre-staging
+    /// clear and the best-effort post-transfer cleanup, so the two can never
+    /// disagree about what "cleared" means.
+    private func clearSnapshotStaging(for peerDeviceId: String) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "DELETE FROM _snapshot_staging WHERE peer_device_id = ?",
+                arguments: [peerDeviceId]
+            )
+        }
+    }
+
+    /// Post-transfer cleanup. Best-effort BY DESIGN, and safe to be so.
+    ///
+    /// The transfer is already over, so leftovers cannot corrupt it. They also
+    /// cannot corrupt the next one: `beginSnapshotStaging` now refuses to start
+    /// when it cannot clear them, and the UNIQUE index would reject a colliding
+    /// insert even if it somehow did. Failing a completed transfer over
+    /// scratch-space cleanup would report a false failure for a snapshot that
+    /// actually landed.
+    private func discardSnapshotStaging(for peerDeviceId: String) {
         do {
-            try db.writer.write { dbConn in
-                try dbConn.execute(
-                    sql: "DELETE FROM _snapshot_staging WHERE peer_device_id = ?",
-                    arguments: [peerDeviceId]
-                )
-            }
+            try clearSnapshotStaging(for: peerDeviceId)
         } catch {
-            // Not fatal: the next `beginSnapshotStaging` clears again before
-            // staging anything, so stale rows can never be replayed. Log it
-            // rather than failing a transfer over scratch-space cleanup.
             logger.error("[PeerManager] Could not clear snapshot staging for \(String(peerDeviceId.prefix(8)), privacy: .public): \(error.localizedDescription, privacy: .public)")
         }
     }
@@ -1299,6 +1361,12 @@ public actor PeerManager {
     /// Drop every peer's staged rows. Used on transport shutdown and on
     /// startup, where anything on disk is left over from a previous process
     /// (including one the OS killed mid-download) and can only be scrap.
+    ///
+    /// Best-effort for the same reason as `discardSnapshotStaging`, and with
+    /// the same backstop: refusing to START peer sync because a scratch-table
+    /// DELETE failed would take out LAN sync and discovery too, and the
+    /// per-peer pre-staging clear still fails closed before any of those
+    /// leftovers could be replayed.
     private func clearAllSnapshotStaging() {
         snapshotStagingPeers.removeAll()
         snapshotStagedRecords.removeAll()
@@ -1878,9 +1946,9 @@ public actor PeerManager {
         hasHostedSnapshotReservation(for: peerDeviceId, requestToken: token)
     }
 
-    func testBeginSnapshotBuffer(from peerDeviceId: String) {
+    func testBeginSnapshotBuffer(from peerDeviceId: String) throws {
         failedSnapshotPeers.remove(peerDeviceId)
-        beginSnapshotStaging(for: peerDeviceId)
+        try beginSnapshotStaging(for: peerDeviceId)
     }
 
     /// Shrink the staging caps so a test can cross them in milliseconds.
@@ -2103,7 +2171,12 @@ public actor PeerManager {
         )
         let env = try JSONEncoder().encode(MPEnvelope(type: "fullSyncRequest", payload: request))
         failedSnapshotPeers.remove(hostDeviceId)
-        beginSnapshotStaging(for: hostDeviceId)
+        // Before the request goes out: if the previous attempt's staged rows
+        // cannot be cleared, refuse the whole transfer rather than stage a new
+        // snapshot on top of an old one. The host has not been asked for
+        // anything yet, so its one-time capability is still intact and a later
+        // retry remains possible.
+        try beginSnapshotStaging(for: hostDeviceId)
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             // Register before sending so a fast host response cannot beat the waiter.
             pendingFullSyncContinuations[hostDeviceId] = cont

@@ -1694,7 +1694,7 @@ struct PeerManagerTests {
         let completionEnvelope = try JSONEncoder().encode(
             MPEnvelope(type: "fullSyncComplete", payload: try JSONEncoder().encode(FullSyncCompletion.success))
         )
-        await pm.testBeginSnapshotBuffer(from: "host")
+        try await pm.testBeginSnapshotBuffer(from: "host")
 
         let applied = try await pm.testProcessMultipeerMessage(
             ReceivedMultipeerMessage(fromDeviceId: "host", data: changesEnvelope)
@@ -1737,7 +1737,7 @@ struct PeerManagerTests {
         let completionEnvelope = try JSONEncoder().encode(
             MPEnvelope(type: "fullSyncComplete", payload: try JSONEncoder().encode(FullSyncCompletion.success))
         )
-        await pm.testBeginSnapshotBuffer(from: "host")
+        try await pm.testBeginSnapshotBuffer(from: "host")
 
         _ = try await pm.testProcessMultipeerMessage(
             ReceivedMultipeerMessage(fromDeviceId: "host", data: validEnvelope)
@@ -1787,7 +1787,7 @@ struct PeerManagerTests {
         await host.testSetHostedSnapshotRowsSent(1, for: peer)
 
         await joiner.testAuthorizeReceivedSnapshot(consumedToken, from: hostDeviceId)
-        await joiner.testBeginSnapshotBuffer(from: hostDeviceId)
+        try await joiner.testBeginSnapshotBuffer(from: hostDeviceId)
         let fullSyncWaiter = Task {
             try await joiner.testAwaitFullSyncTransport(peerDeviceId: hostDeviceId)
         }
@@ -1907,7 +1907,7 @@ struct PeerManagerTests {
         let batchCount = 6
         let totalRecords = batchSize * batchCount
 
-        await pm.testBeginSnapshotBuffer(from: "host")
+        try await pm.testBeginSnapshotBuffer(from: "host")
 
         var staged = 0
         for batch in 0..<batchCount {
@@ -1972,7 +1972,7 @@ struct PeerManagerTests {
         let hostDeviceId = "host"
 
         await pm.testAuthorizeReceivedSnapshot("staging-token", from: hostDeviceId)
-        await pm.testBeginSnapshotBuffer(from: hostDeviceId)
+        try await pm.testBeginSnapshotBuffer(from: hostDeviceId)
         let waiter = Task { try await pm.testAwaitFullSyncTransport(peerDeviceId: hostDeviceId) }
         while await pm.testPendingTransportOperationCount() == 0 {
             await Task.yield()
@@ -2064,7 +2064,7 @@ struct PeerManagerTests {
         #expect(try await pm.testStagedSnapshotRowCount(for: "host") == 3)
 
         // A fresh snapshot begins for the SAME peer.
-        await pm.testBeginSnapshotBuffer(from: "host")
+        try await pm.testBeginSnapshotBuffer(from: "host")
         #expect(
             try await pm.testStagedSnapshotRowCount(for: "host") == 0,
             "beginning a snapshot must discard the previous attempt's rows"
@@ -2108,7 +2108,7 @@ struct PeerManagerTests {
         ))
 
         // 1. Idle-watchdog timeout.
-        await pm.testBeginSnapshotBuffer(from: "host-a")
+        try await pm.testBeginSnapshotBuffer(from: "host-a")
         _ = try await pm.testProcessMultipeerMessage(
             ReceivedMultipeerMessage(fromDeviceId: "host-a", data: envelope)
         )
@@ -2118,7 +2118,7 @@ struct PeerManagerTests {
         #expect(await pm.getState().snapshotReceivedRecords["host-a"] == nil)
 
         // 2. Transport shutdown, which fails every pending operation at once.
-        await pm.testBeginSnapshotBuffer(from: "host-b")
+        try await pm.testBeginSnapshotBuffer(from: "host-b")
         _ = try await pm.testProcessMultipeerMessage(
             ReceivedMultipeerMessage(fromDeviceId: "host-b", data: envelope)
         )
@@ -2151,7 +2151,7 @@ struct PeerManagerTests {
         // test can only ever be tripped by the record cap.
         await pm.testSetSnapshotStagingLimits(records: 300, bytes: 1 << 30)
         await pm.testAuthorizeReceivedSnapshot("staging-token", from: hostDeviceId)
-        await pm.testBeginSnapshotBuffer(from: hostDeviceId)
+        try await pm.testBeginSnapshotBuffer(from: hostDeviceId)
         let waiter = Task { try await pm.testAwaitFullSyncTransport(peerDeviceId: hostDeviceId) }
         while await pm.testPendingTransportOperationCount() == 0 {
             await Task.yield()
@@ -2247,7 +2247,7 @@ struct PeerManagerTests {
         // Room for exactly 10 records. The record cap is left wide open so only
         // the byte cap can trip.
         await pm.testSetSnapshotStagingLimits(records: 1_000_000, bytes: bytesPerChange * 10)
-        await pm.testBeginSnapshotBuffer(from: hostDeviceId)
+        try await pm.testBeginSnapshotBuffer(from: hostDeviceId)
 
         // Every id below is five digits, so every encoded change is exactly
         // `bytesPerChange` and the arithmetic is exact rather than approximate.
@@ -2336,6 +2336,160 @@ struct PeerManagerTests {
                 """) ?? 0
         }
         #expect(triggerCount == 0, "staging writes must never enter the change log")
+    }
+
+    // MARK: - Review defects: incomplete apply and seq collision (WEI-7022)
+
+    /// **The acknowledgement must not be sent when the apply is incomplete.**
+    ///
+    /// This is the failure mode the whole apply-then-acknowledge ordering
+    /// exists to prevent, and it is the one shape the original five tests
+    /// missed: they covered the success path and injected *throws*, but an
+    /// incomplete apply does not throw on its own. `MergeResult` has three
+    /// counters and `applyStagedSnapshot` only gated on `errors`, so a change
+    /// counted as `skipped` returned normally, sent a POSITIVE acknowledgement,
+    /// and burned the host's one-time capability against a company with holes.
+    ///
+    /// A change for a table outside `allowedSyncTables` is the cheapest way to
+    /// produce a real skip — it takes the same code path a version-skewed or
+    /// order-scrambled snapshot would.
+    @Test("An incomplete staged apply is never acknowledged as success (WEI-7022 review)")
+    func testIncompleteStagedApplyIsNotAcknowledgedAsSuccess() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+        let hostDeviceId = "host"
+
+        await pm.testAuthorizeReceivedSnapshot("incomplete-token", from: hostDeviceId)
+        try await pm.testBeginSnapshotBuffer(from: hostDeviceId)
+        let waiter = Task { try await pm.testAwaitFullSyncTransport(peerDeviceId: hostDeviceId) }
+        while await pm.testPendingTransportOperationCount() == 0 {
+            await Task.yield()
+        }
+
+        // Valid, appliable rows.
+        let good = (0..<25).map { snapshotUserChange(recordId: String(60_000 + $0)) }
+        // One row for a device-local table. It stages fine and applies without
+        // erroring — `resolveAndApply*` counts it `skipped`, not `errors`.
+        let unsynced = IncomingChange(
+            deviceId: hostDeviceId,
+            tableName: "background_task_log",
+            recordId: "1",
+            operation: "INSERT",
+            recordData: #"{"id":1,"task_name":"never-syncs","status":"done"}"#,
+            timestamp: "2026-07-15T00:00:00Z"
+        )
+        #expect(
+            !ConflictResolver.isAllowedTable("background_task_log"),
+            "fixture assumption: this table must be outside the sync allowlist"
+        )
+
+        let envelope = try JSONEncoder().encode(MPEnvelope(
+            type: "changes",
+            payload: try JSONEncoder().encode(good + [unsynced])
+        ))
+        _ = try await pm.testProcessMultipeerMessage(
+            ReceivedMultipeerMessage(fromDeviceId: hostDeviceId, data: envelope)
+        )
+        #expect(try await pm.testStagedSnapshotRowCount(for: hostDeviceId) == 26)
+
+        let completionEnvelope = try JSONEncoder().encode(MPEnvelope(
+            type: "fullSyncComplete",
+            payload: try JSONEncoder().encode(FullSyncCompletion.success)
+        ))
+        let acknowledgements = SnapshotAcknowledgementCollector()
+        await #expect(throws: (any Error).self) {
+            _ = try await pm.testProcessMultipeerMessagesInFIFO(
+                [ReceivedMultipeerMessage(fromDeviceId: hostDeviceId, data: completionEnvelope)],
+                sendApplyAcknowledgement: { acknowledgement, _ in
+                    acknowledgements.append(acknowledgement)
+                    return true
+                }
+            )
+        }
+        await #expect(throws: (any Error).self) { try await waiter.value }
+
+        // THE ASSERTION THIS TEST EXISTS FOR.
+        #expect(
+            !acknowledgements.values.contains(where: { $0.succeeded }),
+            "an incomplete snapshot must never be acknowledged as a success"
+        )
+        #expect(acknowledgements.values.first?.succeeded == false)
+
+        // And the incomplete company must not be left behind either.
+        let visible = try await db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM users WHERE id >= 60000") ?? 0
+        }
+        #expect(visible == 0, "the appliable rows must roll back with the skipped one")
+        #expect(try await pm.testStagedSnapshotRowCount(for: hostDeviceId) == 0)
+    }
+
+    /// Defect 1(a): the index is UNIQUE, so a `seq` collision is a loud
+    /// constraint violation rather than a silent interleave.
+    ///
+    /// `seq` restarts at 0 for every transfer. If one attempt's rows ever
+    /// outlive it, the next attempt writes the same numbers, and `ORDER BY seq`
+    /// then replays two snapshots interleaved in undefined order.
+    @Test("Staging seq is UNIQUE per peer, so a collision cannot interleave (WEI-7022 review)")
+    func testSnapshotStagingSeqIsUniquePerPeer() throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+
+        let isUnique = try db.writer.read { dbConn in
+            try Bool.fetchOne(dbConn, sql: """
+                SELECT "unique" FROM pragma_index_list('_snapshot_staging')
+                WHERE name = 'idx_snapshot_staging_peer_seq'
+                """) ?? false
+        }
+        #expect(isUnique, "a plain index lets two transfers collide on seq and both apply")
+
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "INSERT INTO _snapshot_staging (peer_device_id, seq, payload) VALUES (?, ?, ?)",
+                arguments: ["host", 0, "{}"]
+            )
+        }
+        // Same peer, same seq — a leftover row meeting a restarted transfer.
+        #expect(throws: (any Error).self) {
+            try db.writer.write { dbConn in
+                try dbConn.execute(
+                    sql: "INSERT INTO _snapshot_staging (peer_device_id, seq, payload) VALUES (?, ?, ?)",
+                    arguments: ["host", 0, "{}"]
+                )
+            }
+        }
+        // A DIFFERENT peer at the same seq is legitimate and must still work.
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "INSERT INTO _snapshot_staging (peer_device_id, seq, payload) VALUES (?, ?, ?)",
+                arguments: ["other-host", 0, "{}"]
+            )
+        }
+    }
+
+    /// Defect 1(b): when the pre-staging clear fails, the transfer must ABORT.
+    ///
+    /// The old code swallowed that failure on the reasoning that the next
+    /// `beginSnapshotStaging` would clear again — circular, since that next
+    /// attempt calls the same fallible function, and whatever broke the DELETE
+    /// is probably still broken.
+    ///
+    /// Dropping the table is a deterministic stand-in for the real causes
+    /// (locked database, I/O error, full disk).
+    @Test("A failed pre-staging clear aborts instead of staging on leftovers (WEI-7022 review)")
+    func testFailedPreStagingClearAbortsTheTransfer() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+
+        try await db.writer.write { dbConn in
+            try dbConn.execute(sql: "DROP TABLE _snapshot_staging")
+        }
+
+        await #expect(throws: (any Error).self) {
+            try await pm.testBeginSnapshotBuffer(from: "host")
+        }
+        #expect(
+            !(await pm.testIsStagingSnapshot(from: "host")),
+            "staging must not be marked active when its own precondition failed"
+        )
     }
     #endif
 

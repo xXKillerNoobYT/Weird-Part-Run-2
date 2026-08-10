@@ -164,6 +164,12 @@ enum MultipeerSnapshotError: LocalizedError, Sendable {
     /// not the limit — the limit is a constant the user cannot act on, whereas
     /// "it got to 2 GB and still wasn't done" tells them the host is broken.
     case stagingLimitExceeded(records: Int, bytes: Int)
+    /// The staged snapshot applied cleanly but did not apply COMPLETELY — some
+    /// changes were skipped rather than errored (WEI-7022 review). In an
+    /// initial full snapshot that must never happen, so it is a failure rather
+    /// than a statistic: acknowledging it as success would consume the host's
+    /// one-time capability against a company with holes in it.
+    case snapshotIncomplete(applied: Int, skipped: Int)
 
     var errorDescription: String? {
         switch self {
@@ -188,6 +194,8 @@ enum MultipeerSnapshotError: LocalizedError, Sendable {
             // reports a bewildering "0 MB".
             let megabytes = (bytes + 1_048_575) / 1_048_576
             return "The Bluetooth snapshot grew past what this device will hold for one transfer (\(records) records, \(megabytes) MB) without finishing. Restart the sending device, then retry the sync."
+        case .snapshotIncomplete(let applied, let skipped):
+            return "The Bluetooth snapshot was incomplete — \(skipped) of \(applied + skipped) record(s) could not be applied. Nothing was kept. Make sure both devices are on the same app version, then retry the sync."
         }
     }
 }

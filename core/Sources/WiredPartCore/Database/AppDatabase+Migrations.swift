@@ -6370,9 +6370,22 @@ private func registerMigration122SnapshotStaging(_ migrator: inout DatabaseMigra
             t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
         }
         // Both the ordered replay and the per-peer clear key off this pair.
+        //
+        // UNIQUE is load-bearing, not tidiness. `seq` restarts at 0 for every
+        // new transfer, so if a peer's rows ever survive into the next attempt
+        // the two runs collide on the same numbers. Replay is `ORDER BY seq`,
+        // so a plain index would interleave old and new rows in undefined
+        // order and apply BOTH — a company silently assembled from two
+        // different points in time, reported as a success. UNIQUE turns that
+        // into a constraint violation on the very first colliding INSERT,
+        // which the existing failure path already handles correctly.
+        //
+        // This is the backstop. `beginSnapshotStaging` refuses to start when
+        // it cannot clear the previous attempt, so a collision should be
+        // unreachable; the index is what makes "should be" enforceable.
         try db.create(
             index: "idx_snapshot_staging_peer_seq", on: "_snapshot_staging",
-            columns: ["peer_device_id", "seq"], ifNotExists: true
+            columns: ["peer_device_id", "seq"], unique: true, ifNotExists: true
         )
     }
 }

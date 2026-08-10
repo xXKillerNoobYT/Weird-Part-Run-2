@@ -390,10 +390,18 @@ public enum ConflictResolver {
     /// transaction, one echo guard, and any throw rolls the ENTIRE snapshot
     /// back. A partially applied company is worse than no company, because
     /// nothing downstream can tell the difference between the two.
+    /// - Parameter validate: Caller's completeness rule, run INSIDE the
+    ///   transaction once every change has been applied. It must be here
+    ///   rather than at the call site: a rule that throws after `write`
+    ///   returns is checking a transaction that has already committed, so it
+    ///   can report a bad outcome but cannot undo one. Throwing from here rolls
+    ///   the whole snapshot back, which is the only useful response to
+    ///   "this did not fully land".
     static func resolveAndApplyStreamedChangesAtomically(
         db: AppDatabase,
         localDeviceId: String? = nil,
-        produceChanges: (Database, (IncomingChange) throws -> Void) throws -> Void
+        produceChanges: (Database, (IncomingChange) throws -> Void) throws -> Void,
+        validate: ((MergeResult) throws -> Void)? = nil
     ) throws -> MergeResult {
         let localDevice = localDeviceId ?? DeviceIdentity.current
 
@@ -405,6 +413,7 @@ public enum ConflictResolver {
             try produceChanges(dbConn) { change in
                 result.add(try applyOneAtomically(dbConn, change, localDevice))
             }
+            try validate?(result)
 
             return result
         }
