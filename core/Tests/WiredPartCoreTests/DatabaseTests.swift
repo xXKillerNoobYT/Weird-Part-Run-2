@@ -132,9 +132,28 @@ struct DatabaseTests {
         #expect(result.indexExists)
     }
 
-    @Test("Schema version is 116")
+    @Test("Schema version includes Bluetooth snapshot staging migrations")
     func testSchemaVersion() throws {
-        #expect(AppDatabase.schemaVersion == 116)
+        #expect(AppDatabase.schemaVersion == 123)
+    }
+
+    @Test("Bluetooth snapshot staging migrations create the durable recovery schema")
+    func testBluetoothSnapshotStagingSchema() throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+        let schema = try db.writer.read { dbConn in
+            (
+                try dbConn.tableExists("_bluetooth_snapshot_transfers"),
+                try dbConn.tableExists("_bluetooth_snapshot_batches"),
+                Set(try String.fetchAll(
+                    dbConn,
+                    sql: "SELECT name FROM pragma_table_info('_bluetooth_snapshot_transfers')"
+                ))
+            )
+        }
+
+        #expect(schema.0)
+        #expect(schema.1)
+        #expect(schema.2.contains("authorization_token"))
     }
 
     @Test("Persisted schema version matches AppDatabase schemaVersion")
