@@ -1150,12 +1150,16 @@ public actor PeerManager {
             switch env.type {
             case "snapshotBegin":
                 guard isTrustedWritePeer(message.fromDeviceId),
-                      pendingFullSyncContinuations[message.fromDeviceId] != nil else {
+                      pendingFullSyncContinuations[message.fromDeviceId] != nil,
+                      let authorizationToken = receivedSnapshotTokens[message.fromDeviceId] else {
                     throw MultipeerSnapshotError.unauthorizedPeer
                 }
                 let begin = try JSONDecoder().decode(BluetoothSnapshotBegin.self, from: env.payload)
                 try BluetoothSnapshotStaging.begin(
-                    db: db, peerDeviceID: message.fromDeviceId, transferID: begin.transferID
+                    db: db,
+                    peerDeviceID: message.fromDeviceId,
+                    transferID: begin.transferID,
+                    authorizationToken: authorizationToken
                 )
                 pendingSnapshotChanges[message.fromDeviceId] = []
                 snapshotLastActivity[message.fromDeviceId] = Date()
@@ -1189,10 +1193,23 @@ public actor PeerManager {
                 receivedStoredFrames.insert("\(message.fromDeviceId)|\(stored.transferID)|\(stored.sequence)")
                 return .ignored
             case "snapshotComplete":
-                guard pendingSnapshotChanges[message.fromDeviceId] != nil else {
-                    throw MultipeerSnapshotError.transferMismatch
-                }
                 let complete = try JSONDecoder().decode(BluetoothSnapshotComplete.self, from: env.payload)
+                if pendingSnapshotChanges[message.fromDeviceId] == nil {
+                    // App recreation loses actor memory, but a pairing-authorized
+                    // staged transfer remains private in SQLite. Recover only for
+                    // the same durable trusted host and exact transfer capability.
+                    guard (try? isTrustedBluetoothPeer(message.fromDeviceId)) == true,
+                          let authorizationToken = try BluetoothSnapshotStaging.recoveryAuthorizationToken(
+                            db: db,
+                            peerDeviceID: message.fromDeviceId,
+                            transferID: complete.transferID
+                          ) else {
+                        throw MultipeerSnapshotError.transferMismatch
+                    }
+                    pendingSnapshotChanges[message.fromDeviceId] = []
+                    receivedSnapshotTokens[message.fromDeviceId] = authorizationToken
+                    snapshotLastActivity[message.fromDeviceId] = Date()
+                }
                 _ = try BluetoothSnapshotStaging.complete(
                     db: db, peerDeviceID: message.fromDeviceId,
                     transferID: complete.transferID, batchCount: complete.batchCount,
@@ -1641,7 +1658,7 @@ public actor PeerManager {
         to peerDeviceId: String,
         using sendOverride: ((FullSyncApplyAcknowledgement, String) -> Bool)? = nil
     ) -> Bool {
-        guard pendingFullSyncContinuations[peerDeviceId] != nil,
+        guard pendingSnapshotChanges[peerDeviceId] != nil,
               let authorizationToken = receivedSnapshotTokens[peerDeviceId] else {
             return false
         }
@@ -1825,14 +1842,16 @@ public actor PeerManager {
 
     func testBeginDurableSnapshot(
         from peerDeviceId: String,
-        transferID: String
+        transferID: String,
+        authorizationToken: String? = nil
     ) throws {
         failedSnapshotPeers.remove(peerDeviceId)
         legacySnapshotTestPeers.remove(peerDeviceId)
         try BluetoothSnapshotStaging.begin(
             db: db,
             peerDeviceID: peerDeviceId,
-            transferID: transferID
+            transferID: transferID,
+            authorizationToken: authorizationToken
         )
         pendingSnapshotChanges[peerDeviceId] = []
         snapshotLastActivity[peerDeviceId] = Date()

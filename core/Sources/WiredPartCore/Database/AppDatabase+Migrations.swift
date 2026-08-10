@@ -164,6 +164,7 @@ extension AppDatabase {
         registerContactEmailRepair(&migrator)
         registerMigration121DeviceLogs(&migrator)
         registerMigration122BluetoothSnapshotStaging(&migrator)
+        registerMigration123BluetoothSnapshotRecoveryAuthorization(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -670,6 +671,17 @@ private func registerMigration122BluetoothSnapshotStaging(_ migrator: inout Data
             t.column("sequence", .integer).notNull()
             t.column("payload", .blob).notNull()
             t.primaryKey(["transfer_id", "sequence"])
+        }
+    }
+}
+
+private func registerMigration123BluetoothSnapshotRecoveryAuthorization(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("123_bluetooth_snapshot_recovery_authorization") { db in
+        // The encrypted, private transfer journal is the sole durable authority
+        // for a joiner that restarts after staging. The one-time capability is
+        // retained only until terminal completion or discard cascades the row.
+        try db.alter(table: "_bluetooth_snapshot_transfers") { t in
+            t.add(column: "authorization_token", .text)
         }
     }
 }
