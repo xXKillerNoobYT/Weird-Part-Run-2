@@ -66,6 +66,14 @@ public struct MergeResult: Sendable {
         self.skipped = skipped
         self.errors = errors
     }
+
+    /// Accumulate one change's outcome. Keeps the batched and streamed atomic
+    /// apply paths tallying identically instead of by copy-paste.
+    mutating func add(_ outcome: (applied: Int, conflicts: Int, skipped: Int)) {
+        applied += outcome.applied
+        conflicts += outcome.conflicts
+        skipped += outcome.skipped
+    }
 }
 
 /// Conflict statistics for admin review.
@@ -362,41 +370,92 @@ public enum ConflictResolver {
             defer { try? dbConn.execute(sql: "DELETE FROM _sync_apply_guard") }
 
             for change in changes {
-                guard isAllowedTable(change.tableName) else {
-                    result.skipped += 1
-                    continue
-                }
-
-                do {
-                    switch change.operation.uppercased() {
-                    case "DELETE":
-                        try applyDelete(db: dbConn, change: change, localDeviceId: localDevice)
-                        result.applied += 1
-                    case "INSERT":
-                        let conflictCount = try applyInsert(
-                            db: dbConn,
-                            change: change,
-                            localDeviceId: localDevice
-                        )
-                        result.applied += 1
-                        result.conflicts += conflictCount
-                    case "UPDATE":
-                        let conflictCount = try applyUpdate(
-                            db: dbConn,
-                            change: change,
-                            localDeviceId: localDevice
-                        )
-                        result.applied += 1
-                        result.conflicts += conflictCount
-                    default:
-                        result.skipped += 1
-                    }
-                } catch ApplyError.missingLocalRecord {
-                    result.skipped += 1
-                }
+                result.add(try applyOneAtomically(dbConn, change, localDevice))
             }
 
             return result
+        }
+    }
+
+    /// Streaming twin of `resolveAndApplyChangesAtomically` for a change source
+    /// too large to hold in memory (WEI-7022).
+    ///
+    /// The joiner's initial Bluetooth snapshot is a whole company. Decoding it
+    /// into one `[IncomingChange]` before applying is exactly the unbounded
+    /// allocation this exists to avoid, so the caller instead *produces*
+    /// changes one at a time — typically by walking a cursor over its durable
+    /// staging table on the very connection this transaction owns.
+    ///
+    /// The contract is otherwise identical and deliberately so: one
+    /// transaction, one echo guard, and any throw rolls the ENTIRE snapshot
+    /// back. A partially applied company is worse than no company, because
+    /// nothing downstream can tell the difference between the two.
+    /// - Parameter validate: Caller's completeness rule, run INSIDE the
+    ///   transaction once every change has been applied. It must be here
+    ///   rather than at the call site: a rule that throws after `write`
+    ///   returns is checking a transaction that has already committed, so it
+    ///   can report a bad outcome but cannot undo one. Throwing from here rolls
+    ///   the whole snapshot back, which is the only useful response to
+    ///   "this did not fully land".
+    static func resolveAndApplyStreamedChangesAtomically(
+        db: AppDatabase,
+        localDeviceId: String? = nil,
+        produceChanges: (Database, (IncomingChange) throws -> Void) throws -> Void,
+        validate: ((MergeResult) throws -> Void)? = nil
+    ) throws -> MergeResult {
+        let localDevice = localDeviceId ?? DeviceIdentity.current
+
+        return try db.writer.write { dbConn in
+            var result = MergeResult()
+            try dbConn.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
+            defer { try? dbConn.execute(sql: "DELETE FROM _sync_apply_guard") }
+
+            try produceChanges(dbConn) { change in
+                result.add(try applyOneAtomically(dbConn, change, localDevice))
+            }
+            try validate?(result)
+
+            return result
+        }
+    }
+
+    /// Apply one change inside a caller-owned atomic transaction.
+    ///
+    /// Anything other than `missingLocalRecord` propagates so the caller's
+    /// transaction rolls back — that is the all-or-nothing guarantee.
+    private static func applyOneAtomically(
+        _ dbConn: Database,
+        _ change: IncomingChange,
+        _ localDeviceId: String
+    ) throws -> (applied: Int, conflicts: Int, skipped: Int) {
+        guard isAllowedTable(change.tableName) else { return (0, 0, 1) }
+
+        do {
+            switch change.operation.uppercased() {
+            case "DELETE":
+                try applyDelete(db: dbConn, change: change, localDeviceId: localDeviceId)
+                return (1, 0, 0)
+            case "INSERT":
+                let conflictCount = try applyInsert(
+                    db: dbConn,
+                    change: change,
+                    localDeviceId: localDeviceId
+                )
+                return (1, conflictCount, 0)
+            case "UPDATE":
+                let conflictCount = try applyUpdate(
+                    db: dbConn,
+                    change: change,
+                    localDeviceId: localDeviceId
+                )
+                return (1, conflictCount, 0)
+            default:
+                return (0, 0, 1)
+            }
+        } catch ApplyError.missingLocalRecord {
+            // Fix #220: an UPDATE for a record we do not have yet is a skip,
+            // not an error — a later full-record resync re-delivers it.
+            return (0, 0, 1)
         }
     }
 
