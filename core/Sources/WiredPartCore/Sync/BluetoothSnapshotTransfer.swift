@@ -1,10 +1,133 @@
 import Foundation
+import GRDB
 
 /// A page read from one business table during a Bluetooth initial snapshot.
 /// `sourceRowCount` drives paging even when device-scoped rows are filtered out.
 struct BluetoothSnapshotPage: Sendable {
     let changes: [IncomingChange]
     let sourceRowCount: Int
+}
+
+struct BluetoothSnapshotBegin: Codable, Sendable, Equatable {
+    let transferID: String
+}
+
+struct BluetoothSnapshotBatch: Codable, Sendable {
+    let transferID: String
+    let sequence: Int
+    let changes: [IncomingChange]
+}
+
+struct BluetoothSnapshotStored: Codable, Sendable, Equatable {
+    let transferID: String
+    let sequence: Int
+}
+
+struct BluetoothSnapshotComplete: Codable, Sendable, Equatable {
+    let transferID: String
+    let batchCount: Int
+}
+
+/// Durable receiver-side journal for the staged snapshot protocol. Payload bytes
+/// are retained verbatim so a repeated sequence can be distinguished from a
+/// conflicting frame without relying on JSON re-encoding stability.
+enum BluetoothSnapshotStaging {
+    static func begin(db: AppDatabase, peerDeviceID: String, transferID: String) throws {
+        guard !transferID.isEmpty else { throw MultipeerSnapshotError.malformedEnvelope }
+        try db.writer.write { dbConn in
+            let active = try String.fetchOne(
+                dbConn,
+                sql: "SELECT transfer_id FROM _bluetooth_snapshot_transfers WHERE peer_device_id = ?",
+                arguments: [peerDeviceID]
+            )
+            if active == transferID { return }
+            try dbConn.execute(
+                sql: "DELETE FROM _bluetooth_snapshot_transfers WHERE peer_device_id = ?",
+                arguments: [peerDeviceID]
+            )
+            try dbConn.execute(
+                sql: "INSERT INTO _bluetooth_snapshot_transfers (peer_device_id, transfer_id) VALUES (?, ?)",
+                arguments: [peerDeviceID, transferID]
+            )
+        }
+    }
+
+    /// Returns true for a newly stored frame and false for an identical retry.
+    static func stage(
+        db: AppDatabase,
+        peerDeviceID: String,
+        transferID: String,
+        sequence: Int,
+        payload: Data
+    ) throws -> Bool {
+        guard sequence >= 0 else { throw MultipeerSnapshotError.invalidSequence }
+        return try db.writer.write { dbConn in
+            let active = try String.fetchOne(
+                dbConn,
+                sql: "SELECT transfer_id FROM _bluetooth_snapshot_transfers WHERE peer_device_id = ?",
+                arguments: [peerDeviceID]
+            )
+            guard active == transferID else { throw MultipeerSnapshotError.transferMismatch }
+            if let stored = try Data.fetchOne(
+                dbConn,
+                sql: "SELECT payload FROM _bluetooth_snapshot_batches WHERE transfer_id = ? AND sequence = ?",
+                arguments: [transferID, sequence]
+            ) {
+                guard stored == payload else { throw MultipeerSnapshotError.duplicateFrameMismatch }
+                return false
+            }
+            try dbConn.execute(
+                sql: "INSERT INTO _bluetooth_snapshot_batches (transfer_id, sequence, payload) VALUES (?, ?, ?)",
+                arguments: [transferID, sequence, payload]
+            )
+            return true
+        }
+    }
+
+    static func complete(
+        db: AppDatabase,
+        peerDeviceID: String,
+        transferID: String,
+        batchCount: Int,
+        localDeviceID: String
+    ) throws -> Int {
+        guard batchCount >= 0 else { throw MultipeerSnapshotError.invalidSequence }
+        return try db.writer.write { dbConn in
+            let active = try String.fetchOne(
+                dbConn,
+                sql: "SELECT transfer_id FROM _bluetooth_snapshot_transfers WHERE peer_device_id = ?",
+                arguments: [peerDeviceID]
+            )
+            guard active == transferID else { throw MultipeerSnapshotError.transferMismatch }
+            let rows = try Row.fetchAll(
+                dbConn,
+                sql: "SELECT sequence, payload FROM _bluetooth_snapshot_batches WHERE transfer_id = ? ORDER BY sequence",
+                arguments: [transferID]
+            )
+            let sequences: [Int] = rows.map { $0["sequence"] }
+            guard rows.count == batchCount,
+                  sequences == Array(0..<batchCount) else {
+                throw MultipeerSnapshotError.nonContiguousSequence
+            }
+            var changes: [IncomingChange] = []
+            for row in rows {
+                let payload: Data = row["payload"]
+                guard let batch = try? JSONDecoder().decode(BluetoothSnapshotBatch.self, from: payload),
+                      batch.transferID == transferID else {
+                    throw MultipeerSnapshotError.malformedChanges
+                }
+                changes.append(contentsOf: batch.changes)
+            }
+            let result = try ConflictResolver.resolveAndApplyChangesAtomically(
+                db: dbConn, changes: changes, localDeviceId: localDeviceID
+            )
+            try dbConn.execute(
+                sql: "DELETE FROM _bluetooth_snapshot_transfers WHERE peer_device_id = ?",
+                arguments: [peerDeviceID]
+            )
+            return result.applied
+        }
+    }
 }
 
 enum BluetoothSnapshotTransferError: LocalizedError, Sendable {
@@ -33,6 +156,37 @@ enum BluetoothSnapshotTransfer {
     /// not connected. Multipeer flaps under load; a single transient `false` must
     /// not destroy a transfer that is otherwise progressing.
     static let defaultMaxSendAttempts = 6
+
+    /// Sequenced variant used by the durable protocol. The next page is not
+    /// read until `sendAndAwaitStored` confirms the current page is durable.
+    static func runStaged(
+        transferID: String,
+        batchSize: Int = 200,
+        listTables: () async throws -> [String],
+        readPage: (_ table: String, _ limit: Int, _ offset: Int) async throws -> BluetoothSnapshotPage,
+        sendAndAwaitStored: (_ batch: BluetoothSnapshotBatch) async throws -> Void
+    ) async throws -> (rows: Int, batches: Int) {
+        precondition(batchSize > 0)
+        var rows = 0
+        var sequence = 0
+        for table in try await listTables() where !table.hasPrefix("_") && ConflictResolver.isAllowedTable(table) {
+            var offset = 0
+            while true {
+                let page = try await readPage(table, batchSize, offset)
+                guard page.sourceRowCount > 0 else { break }
+                if !page.changes.isEmpty {
+                    try await sendAndAwaitStored(BluetoothSnapshotBatch(
+                        transferID: transferID, sequence: sequence, changes: page.changes
+                    ))
+                    rows += page.changes.count
+                    sequence += 1
+                }
+                if page.sourceRowCount < batchSize { break }
+                offset += batchSize
+            }
+        }
+        return (rows, sequence)
+    }
 
     /// Host-side initial snapshot, paced and retried.
     ///
@@ -159,6 +313,10 @@ enum MultipeerSnapshotError: LocalizedError, Sendable {
     case batchApplyFailed(errorCount: Int)
     case unauthorizedPeer
     case remoteFailure(String)
+    case transferMismatch
+    case invalidSequence
+    case nonContiguousSequence
+    case duplicateFrameMismatch
 
     var errorDescription: String? {
         switch self {
@@ -178,6 +336,10 @@ enum MultipeerSnapshotError: LocalizedError, Sendable {
             return "The Bluetooth peer is not a trusted company device. Pair it before requesting a snapshot."
         case .remoteFailure(let message):
             return message.isEmpty ? "The host could not complete the Bluetooth snapshot. Retry the sync." : message
+        case .transferMismatch: return "Bluetooth snapshot transfer identity did not match. Retry the sync."
+        case .invalidSequence: return "Bluetooth snapshot batch sequence was invalid. Retry the sync."
+        case .nonContiguousSequence: return "Bluetooth snapshot was incomplete. Retry the sync."
+        case .duplicateFrameMismatch: return "Bluetooth snapshot repeated a batch with different data. Retry the sync."
         }
     }
 }

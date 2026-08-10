@@ -357,7 +357,21 @@ public enum ConflictResolver {
         let localDevice = localDeviceId ?? DeviceIdentity.current
 
         return try db.writer.write { dbConn in
-            var result = MergeResult()
+            try resolveAndApplyChangesAtomically(
+                db: dbConn, changes: changes, localDeviceId: localDevice
+            )
+        }
+    }
+
+    /// Transaction-preserving variant used when snapshot journal cleanup must
+    /// commit in the same SQLite transaction as the business rows.
+    static func resolveAndApplyChangesAtomically(
+        db dbConn: Database,
+        changes: [IncomingChange],
+        localDeviceId: String
+    ) throws -> MergeResult {
+        let localDevice = localDeviceId
+        var result = MergeResult()
             try dbConn.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
             defer { try? dbConn.execute(sql: "DELETE FROM _sync_apply_guard") }
 
@@ -397,7 +411,6 @@ public enum ConflictResolver {
             }
 
             return result
-        }
     }
 
     /// Get unreviewed conflicts for admin review.

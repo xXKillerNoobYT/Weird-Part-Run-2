@@ -1684,6 +1684,120 @@ struct PeerManagerTests {
         #expect(sent == 2)
     }
 
+    @Test("Staged host keeps a window of one batch until stored acknowledgement")
+    func testStagedSnapshotUsesStoredAcknowledgementWindow() async throws {
+        var pages: [String: Int] = [:]
+        var sentSequences: [Int] = []
+        var acknowledgedSequences: [Int] = []
+        let result = try await BluetoothSnapshotTransfer.runStaged(
+            transferID: "window-one",
+            batchSize: 1,
+            listTables: { ["users", "jobs"] },
+            readPage: { table, _, _ in
+                let count = pages[table, default: 0]
+                pages[table] = count + 1
+                guard count == 0 else {
+                    return BluetoothSnapshotPage(changes: [], sourceRowCount: 0)
+                }
+                return BluetoothSnapshotPage(
+                    changes: [snapshotUserChange(recordId: table == "users" ? "7204" : "7205")],
+                    sourceRowCount: 1
+                )
+            },
+            sendAndAwaitStored: { batch in
+                #expect(sentSequences == acknowledgedSequences)
+                sentSequences.append(batch.sequence)
+                acknowledgedSequences.append(batch.sequence)
+            }
+        )
+        #expect(result.rows == 2)
+        #expect(result.batches == 2)
+        #expect(sentSequences == [0, 1])
+        #expect(acknowledgedSequences == [0, 1])
+    }
+
+    @Test("Staged snapshot retries are idempotent and conflicting duplicates fail")
+    func testStagedSnapshotDuplicateValidation() async throws {
+        let db = try freshDB()
+        let batch = BluetoothSnapshotBatch(
+            transferID: "transfer-a", sequence: 0,
+            changes: [snapshotUserChange(recordId: "7201")]
+        )
+        let payload = try JSONEncoder().encode(batch)
+        try BluetoothSnapshotStaging.begin(db: db, peerDeviceID: "host", transferID: "transfer-a")
+        #expect(try BluetoothSnapshotStaging.stage(
+            db: db, peerDeviceID: "host", transferID: "transfer-a", sequence: 0, payload: payload
+        ))
+        #expect(try !BluetoothSnapshotStaging.stage(
+            db: db, peerDeviceID: "host", transferID: "transfer-a", sequence: 0, payload: payload
+        ))
+        #expect(throws: MultipeerSnapshotError.self) {
+            _ = try BluetoothSnapshotStaging.stage(
+                db: db, peerDeviceID: "host", transferID: "transfer-a",
+                sequence: 0, payload: Data("different".utf8)
+            )
+        }
+    }
+
+    @Test("Completion rejects gaps and preserves staged state")
+    func testStagedSnapshotRejectsSequenceGap() async throws {
+        let db = try freshDB()
+        let batch = BluetoothSnapshotBatch(
+            transferID: "transfer-gap", sequence: 1,
+            changes: [snapshotUserChange(recordId: "7202")]
+        )
+        try BluetoothSnapshotStaging.begin(db: db, peerDeviceID: "host", transferID: "transfer-gap")
+        _ = try BluetoothSnapshotStaging.stage(
+            db: db, peerDeviceID: "host", transferID: "transfer-gap", sequence: 1,
+            payload: JSONEncoder().encode(batch)
+        )
+        #expect(throws: MultipeerSnapshotError.self) {
+            _ = try BluetoothSnapshotStaging.complete(
+                db: db, peerDeviceID: "host", transferID: "transfer-gap",
+                batchCount: 2, localDeviceID: "joiner"
+            )
+        }
+        let retained = try await db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM _bluetooth_snapshot_batches") ?? 0
+        }
+        #expect(retained == 1)
+    }
+
+    @Test("Completion atomically applies rows and removes private staging")
+    func testStagedSnapshotCompletionCommitsAndCleansUp() async throws {
+        let db = try freshDB()
+        let batch = BluetoothSnapshotBatch(
+            transferID: "transfer-complete", sequence: 0,
+            changes: [snapshotUserChange(recordId: "7203")]
+        )
+        try BluetoothSnapshotStaging.begin(
+            db: db, peerDeviceID: "host", transferID: "transfer-complete"
+        )
+        _ = try BluetoothSnapshotStaging.stage(
+            db: db, peerDeviceID: "host", transferID: "transfer-complete", sequence: 0,
+            payload: JSONEncoder().encode(batch)
+        )
+        #expect(try BluetoothSnapshotStaging.complete(
+            db: db, peerDeviceID: "host", transferID: "transfer-complete",
+            batchCount: 1, localDeviceID: "joiner"
+        ) == 1)
+        let result = try await db.writer.read { dbConn in
+            (
+                try String.fetchOne(dbConn, sql: "SELECT display_name FROM users WHERE id = 7203"),
+                try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM _bluetooth_snapshot_transfers") ?? 0,
+                try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM _bluetooth_snapshot_batches") ?? 0,
+                try Int.fetchOne(
+                    dbConn,
+                    sql: "SELECT COUNT(*) FROM _change_log WHERE table_name LIKE '_bluetooth_snapshot_%'"
+                ) ?? 0
+            )
+        }
+        #expect(result.0 == "Snapshot User")
+        #expect(result.1 == 0)
+        #expect(result.2 == 0)
+        #expect(result.3 == 0)
+    }
+
     #if canImport(MultipeerConnectivity)
     @Test("Full-sync completion is processed only after the preceding batch is durable")
     func testFullSyncBatchAppliesBeforeCompletion() async throws {

@@ -163,6 +163,7 @@ extension AppDatabase {
         registerMigration119SyncGapTables(&migrator)
         registerContactEmailRepair(&migrator)
         registerMigration121DeviceLogs(&migrator)
+        registerMigration122BluetoothSnapshotStaging(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -652,6 +653,23 @@ extension AppDatabase {
                 t.column("selected_state", .text)
                 t.column("updated_at", .datetime).notNull().defaults(sql: "(datetime('now'))")
             }
+        }
+    }
+}
+
+private func registerMigration122BluetoothSnapshotStaging(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("122_bluetooth_snapshot_staging") { db in
+        try db.create(table: "_bluetooth_snapshot_transfers") { t in
+            t.column("peer_device_id", .text).primaryKey()
+            t.column("transfer_id", .text).notNull().unique()
+            t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+        }
+        try db.create(table: "_bluetooth_snapshot_batches") { t in
+            t.column("transfer_id", .text).notNull()
+                .references("_bluetooth_snapshot_transfers", column: "transfer_id", onDelete: .cascade)
+            t.column("sequence", .integer).notNull()
+            t.column("payload", .blob).notNull()
+            t.primaryKey(["transfer_id", "sequence"])
         }
     }
 }
