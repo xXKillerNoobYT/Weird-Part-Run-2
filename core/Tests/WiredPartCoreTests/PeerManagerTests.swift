@@ -1763,6 +1763,92 @@ struct PeerManagerTests {
         #expect(retained == 1)
     }
 
+    @Test("Completion applies aggregate snapshots in bounded decoded frames")
+    func testStagedSnapshotCompletionBoundsDecodedFrameMemory() async throws {
+        let db = try freshDB()
+        let transferID = "transfer-bounded"
+        try BluetoothSnapshotStaging.begin(db: db, peerDeviceID: "host", transferID: transferID)
+        for sequence in 0..<3 {
+            let batch = BluetoothSnapshotBatch(
+                transferID: transferID,
+                sequence: sequence,
+                changes: [snapshotUserChange(recordId: "730\(sequence)")]
+            )
+            _ = try BluetoothSnapshotStaging.stage(
+                db: db,
+                peerDeviceID: "host",
+                transferID: transferID,
+                sequence: sequence,
+                payload: JSONEncoder().encode(batch)
+            )
+        }
+
+        // The aggregate has three changes, but the completion path may retain only
+        // one decoded change at a time. A whole-snapshot [IncomingChange] array
+        // would exceed this injected bound.
+        #expect(try BluetoothSnapshotStaging.complete(
+            db: db,
+            peerDeviceID: "host",
+            transferID: transferID,
+            batchCount: 3,
+            localDeviceID: "joiner",
+            maximumDecodedChangesPerBatch: 1
+        ) == 3)
+        let applied = try await db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM users WHERE id BETWEEN 7300 AND 7302") ?? 0
+        }
+        #expect(applied == 3)
+    }
+
+    @Test("Completion rolls back all business rows when a later staged frame fails")
+    func testStagedSnapshotCompletionFailureRollsBackAndRetainsJournal() async throws {
+        let db = try freshDB()
+        let transferID = "transfer-rollback"
+        try BluetoothSnapshotStaging.begin(db: db, peerDeviceID: "host", transferID: transferID)
+        let valid = BluetoothSnapshotBatch(
+            transferID: transferID,
+            sequence: 0,
+            changes: [snapshotUserChange(recordId: "7310")]
+        )
+        let invalid = BluetoothSnapshotBatch(
+            transferID: transferID,
+            sequence: 1,
+            changes: [IncomingChange(
+                deviceId: "host-device",
+                tableName: "users",
+                recordId: "7311",
+                operation: "INSERT",
+                recordData: #"{"id":7311,"display_name":"Invalid","pin_hash":"hash","is_active":1,"not_a_real_column":"boom"}"#,
+                timestamp: "2026-07-15T00:00:00Z"
+            )]
+        )
+        _ = try BluetoothSnapshotStaging.stage(
+            db: db, peerDeviceID: "host", transferID: transferID, sequence: 0,
+            payload: JSONEncoder().encode(valid)
+        )
+        _ = try BluetoothSnapshotStaging.stage(
+            db: db, peerDeviceID: "host", transferID: transferID, sequence: 1,
+            payload: JSONEncoder().encode(invalid)
+        )
+
+        #expect(throws: (any Error).self) {
+            _ = try BluetoothSnapshotStaging.complete(
+                db: db, peerDeviceID: "host", transferID: transferID,
+                batchCount: 2, localDeviceID: "joiner"
+            )
+        }
+        let state = try await db.writer.read { dbConn in
+            (
+                try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM users WHERE id IN (7310, 7311)") ?? 0,
+                try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM _bluetooth_snapshot_transfers WHERE peer_device_id = 'host'") ?? 0,
+                try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM _bluetooth_snapshot_batches WHERE transfer_id = ?", arguments: [transferID]) ?? 0
+            )
+        }
+        #expect(state.0 == 0, "a failed later frame must not expose a partial company")
+        #expect(state.1 == 1, "the failure contract retains durable staging for cleanup/retry")
+        #expect(state.2 == 2)
+    }
+
     @Test("Completion atomically applies rows and removes private staging")
     func testStagedSnapshotCompletionCommitsAndCleansUp() async throws {
         let db = try freshDB()

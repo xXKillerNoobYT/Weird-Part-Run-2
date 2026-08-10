@@ -84,14 +84,25 @@ enum BluetoothSnapshotStaging {
         }
     }
 
+    /// Decodes and applies one durable frame at a time inside a single SQLite
+    /// transaction. The cursor and per-frame decoded array are bounded by the
+    /// sender's acknowledged frame size; the complete snapshot is never materialized
+    /// as one `[IncomingChange]` array.
+    ///
+    /// `maximumDecodedChangesPerBatch` is an internal regression-test seam. A test
+    /// can set it below the snapshot aggregate to prove the completion path observes
+    /// only bounded frames, while production uses the frame's natural size.
     static func complete(
         db: AppDatabase,
         peerDeviceID: String,
         transferID: String,
         batchCount: Int,
-        localDeviceID: String
+        localDeviceID: String,
+        maximumDecodedChangesPerBatch: Int = .max
     ) throws -> Int {
-        guard batchCount >= 0 else { throw MultipeerSnapshotError.invalidSequence }
+        guard batchCount >= 0, maximumDecodedChangesPerBatch > 0 else {
+            throw MultipeerSnapshotError.invalidSequence
+        }
         return try db.writer.write { dbConn in
             let active = try String.fetchOne(
                 dbConn,
@@ -99,33 +110,57 @@ enum BluetoothSnapshotStaging {
                 arguments: [peerDeviceID]
             )
             guard active == transferID else { throw MultipeerSnapshotError.transferMismatch }
-            let rows = try Row.fetchAll(
+
+            // The primary key is (transfer_id, sequence), so count + min/max prove
+            // the exact 0...(batchCount - 1) sequence without materializing rows.
+            let stagedCount = try Int.fetchOne(
                 dbConn,
-                sql: "SELECT sequence, payload FROM _bluetooth_snapshot_batches WHERE transfer_id = ? ORDER BY sequence",
+                sql: "SELECT COUNT(*) FROM _bluetooth_snapshot_batches WHERE transfer_id = ?",
                 arguments: [transferID]
-            )
-            let sequences: [Int] = rows.map { $0["sequence"] }
-            guard rows.count == batchCount,
-                  sequences == Array(0..<batchCount) else {
+            ) ?? 0
+            guard stagedCount == batchCount else {
                 throw MultipeerSnapshotError.nonContiguousSequence
             }
-            var changes: [IncomingChange] = []
-            for row in rows {
+            if batchCount > 0 {
+                let bounds = try Row.fetchOne(
+                    dbConn,
+                    sql: "SELECT MIN(sequence) AS first_sequence, MAX(sequence) AS last_sequence FROM _bluetooth_snapshot_batches WHERE transfer_id = ?",
+                    arguments: [transferID]
+                )
+                let first: Int? = bounds?["first_sequence"]
+                let last: Int? = bounds?["last_sequence"]
+                guard first == 0, last == batchCount - 1 else {
+                    throw MultipeerSnapshotError.nonContiguousSequence
+                }
+            }
+
+            var applied = 0
+            let cursor = try Row.fetchCursor(
+                dbConn,
+                sql: "SELECT payload FROM _bluetooth_snapshot_batches WHERE transfer_id = ? ORDER BY sequence",
+                arguments: [transferID]
+            )
+            while let row = try cursor.next() {
                 let payload: Data = row["payload"]
                 guard let batch = try? JSONDecoder().decode(BluetoothSnapshotBatch.self, from: payload),
-                      batch.transferID == transferID else {
+                      batch.transferID == transferID,
+                      batch.changes.count <= maximumDecodedChangesPerBatch else {
                     throw MultipeerSnapshotError.malformedChanges
                 }
-                changes.append(contentsOf: batch.changes)
+                let result = try ConflictResolver.resolveAndApplyChangesAtomically(
+                    db: dbConn, changes: batch.changes, localDeviceId: localDeviceID
+                )
+                applied += result.applied
             }
-            let result = try ConflictResolver.resolveAndApplyChangesAtomically(
-                db: dbConn, changes: changes, localDeviceId: localDeviceID
-            )
+
+            // This delete is part of the same transaction. Any decoding or apply
+            // failure rolls back both business writes and this cleanup, retaining
+            // the durable journal for the caller's failure/retry handling.
             try dbConn.execute(
                 sql: "DELETE FROM _bluetooth_snapshot_transfers WHERE peer_device_id = ?",
                 arguments: [peerDeviceID]
             )
-            return result.applied
+            return applied
         }
     }
 }
