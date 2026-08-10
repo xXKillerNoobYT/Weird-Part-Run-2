@@ -213,6 +213,23 @@ private func seedPriorTrust(
     return try #require(snapshot)
 }
 
+private func seedTrustedBluetoothPeer(
+    in db: AppDatabase,
+    peerDeviceId: String = "host"
+) async throws {
+    try await db.writer.write { dbConn in
+        try dbConn.execute(
+            sql: """
+                INSERT INTO _device_registry (
+                    device_id, device_name, platform, role, certificate,
+                    is_trusted, is_deactivated, created_at
+                ) VALUES (?, 'Trusted Host', 'ios', 'admin', 'test-certificate', 1, 0, ?)
+                """,
+            arguments: [peerDeviceId, "2026-08-10T00:00:00Z"]
+        )
+    }
+}
+
 @Suite("PeerManager Tests")
 struct PeerManagerTests {
 
@@ -1885,6 +1902,128 @@ struct PeerManagerTests {
     }
 
     #if canImport(MultipeerConnectivity)
+    @Test("Recreated joiner recovers staged snapshot authority and sends final acknowledgement")
+    func testRecreatedJoinerCompletesDurableSnapshot() async throws {
+        let db = try freshDB()
+        let peer = "host"
+        let transferID = "transfer-restart-recovery"
+        let authorizationToken = "restart-capability"
+        try await seedTrustedBluetoothPeer(in: db, peerDeviceId: peer)
+
+        let stagingManager = PeerManager(db: db)
+        try await stagingManager.testBeginDurableSnapshot(
+            from: peer,
+            transferID: transferID,
+            authorizationToken: authorizationToken
+        )
+        let batch = BluetoothSnapshotBatch(
+            transferID: transferID,
+            sequence: 0,
+            changes: [snapshotUserChange(recordId: "7430")]
+        )
+        _ = try BluetoothSnapshotStaging.stage(
+            db: db,
+            peerDeviceID: peer,
+            transferID: transferID,
+            sequence: 0,
+            payload: JSONEncoder().encode(batch)
+        )
+
+        // Simulate process death: actor state and callbacks disappear, while the
+        // private journal is retained. No business data is visible pre-reconnect.
+        let beforeReconnect = try await db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM users WHERE id = 7430") ?? 0
+        }
+        #expect(beforeReconnect == 0)
+
+        let recreatedManager = PeerManager(db: db)
+        let completion = try JSONEncoder().encode(MPEnvelope(
+            type: "snapshotComplete",
+            payload: try JSONEncoder().encode(
+                BluetoothSnapshotComplete(transferID: transferID, batchCount: 1)
+            )
+        ))
+        let acknowledgements = SnapshotAcknowledgementCollector()
+        let outcomes = try await recreatedManager.testProcessMultipeerMessagesInFIFO(
+            [ReceivedMultipeerMessage(fromDeviceId: peer, data: completion)],
+            sendApplyAcknowledgement: { acknowledgement, destination in
+                #expect(destination == peer)
+                acknowledgements.append(acknowledgement)
+                return true
+            }
+        )
+
+        let finalState = try await db.writer.read { dbConn in
+            (
+                try String.fetchOne(dbConn, sql: "SELECT display_name FROM users WHERE id = 7430"),
+                try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM _bluetooth_snapshot_transfers WHERE peer_device_id = ?", arguments: [peer]) ?? 0,
+                try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM _bluetooth_snapshot_batches WHERE transfer_id = ?", arguments: [transferID]) ?? 0
+            )
+        }
+        let acknowledgement = try #require(acknowledgements.values.first)
+        #expect(outcomes == [.fullSyncCompleted])
+        #expect(finalState.0 == "Snapshot User")
+        #expect(finalState.1 == 0)
+        #expect(finalState.2 == 0)
+        #expect(acknowledgements.values.count == 1)
+        #expect(acknowledgement.authorizationToken == authorizationToken)
+        #expect(acknowledgement.succeeded)
+    }
+
+    @Test("Restarted joiner rejects an untrusted completion without exposing staged rows")
+    func testRestartedJoinerRejectsUntrustedDurableCompletion() async throws {
+        let db = try freshDB()
+        let peer = "untrusted-host"
+        let transferID = "transfer-restart-untrusted"
+        let stagingManager = PeerManager(db: db)
+        try await stagingManager.testBeginDurableSnapshot(
+            from: peer,
+            transferID: transferID,
+            authorizationToken: "paired-capability"
+        )
+        let batch = BluetoothSnapshotBatch(
+            transferID: transferID,
+            sequence: 0,
+            changes: [snapshotUserChange(recordId: "7431")]
+        )
+        _ = try BluetoothSnapshotStaging.stage(
+            db: db,
+            peerDeviceID: peer,
+            transferID: transferID,
+            sequence: 0,
+            payload: JSONEncoder().encode(batch)
+        )
+        let completion = try JSONEncoder().encode(MPEnvelope(
+            type: "snapshotComplete",
+            payload: try JSONEncoder().encode(
+                BluetoothSnapshotComplete(transferID: transferID, batchCount: 1)
+            )
+        ))
+        let acknowledgements = SnapshotAcknowledgementCollector()
+
+        await #expect(throws: MultipeerSnapshotError.self) {
+            _ = try await PeerManager(db: db).testProcessMultipeerMessagesInFIFO(
+                [ReceivedMultipeerMessage(fromDeviceId: peer, data: completion)],
+                sendApplyAcknowledgement: { acknowledgement, _ in
+                    acknowledgements.append(acknowledgement)
+                    return true
+                }
+            )
+        }
+
+        let state = try await db.writer.read { dbConn in
+            (
+                try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM users WHERE id = 7431") ?? 0,
+                try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM _bluetooth_snapshot_transfers WHERE peer_device_id = ?", arguments: [peer]) ?? 0,
+                try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM _bluetooth_snapshot_batches WHERE transfer_id = ?", arguments: [transferID]) ?? 0
+            )
+        }
+        #expect(state.0 == 0)
+        #expect(state.1 == 1, "an untrusted peer cannot recover or discard this private journal")
+        #expect(state.2 == 1)
+        #expect(acknowledgements.values.isEmpty)
+    }
+
     @Test("Terminal durable completion failure clears staging before reporting failure")
     func testDurableSnapshotCompletionFailureCleansStaging() async throws {
         let db = try freshDB()

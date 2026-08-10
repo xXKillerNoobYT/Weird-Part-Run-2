@@ -32,7 +32,12 @@ struct BluetoothSnapshotComplete: Codable, Sendable, Equatable {
 /// are retained verbatim so a repeated sequence can be distinguished from a
 /// conflicting frame without relying on JSON re-encoding stability.
 enum BluetoothSnapshotStaging {
-    static func begin(db: AppDatabase, peerDeviceID: String, transferID: String) throws {
+    static func begin(
+        db: AppDatabase,
+        peerDeviceID: String,
+        transferID: String,
+        authorizationToken: String? = nil
+    ) throws {
         guard !transferID.isEmpty else { throw MultipeerSnapshotError.malformedEnvelope }
         try db.writer.write { dbConn in
             let active = try String.fetchOne(
@@ -46,7 +51,28 @@ enum BluetoothSnapshotStaging {
                 arguments: [peerDeviceID]
             )
             try dbConn.execute(
-                sql: "INSERT INTO _bluetooth_snapshot_transfers (peer_device_id, transfer_id) VALUES (?, ?)",
+                sql: "INSERT INTO _bluetooth_snapshot_transfers (peer_device_id, transfer_id, authorization_token) VALUES (?, ?, ?)",
+                arguments: [peerDeviceID, transferID, authorizationToken]
+            )
+        }
+    }
+
+    /// Returns the pairing-issued capability only when the durable journal still
+    /// belongs to this exact peer and transfer. Callers must also authenticate the
+    /// peer through the normal trusted-device path before recovering a transfer.
+    static func recoveryAuthorizationToken(
+        db: AppDatabase,
+        peerDeviceID: String,
+        transferID: String
+    ) throws -> String? {
+        try db.writer.read { dbConn in
+            try String.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT authorization_token
+                    FROM _bluetooth_snapshot_transfers
+                    WHERE peer_device_id = ? AND transfer_id = ?
+                    """,
                 arguments: [peerDeviceID, transferID]
             )
         }
