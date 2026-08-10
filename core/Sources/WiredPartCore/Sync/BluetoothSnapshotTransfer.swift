@@ -84,6 +84,19 @@ enum BluetoothSnapshotStaging {
         }
     }
 
+    /// Discards only the active private journal for this joiner peer. Deleting
+    /// the transfer row cascades its frames and never touches business tables.
+    /// Call this only after `complete` has committed or rolled back; `complete`
+    /// owns cleanup while its transaction is still active.
+    static func discard(db: AppDatabase, peerDeviceID: String) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "DELETE FROM _bluetooth_snapshot_transfers WHERE peer_device_id = ?",
+                arguments: [peerDeviceID]
+            )
+        }
+    }
+
     /// Decodes and applies one durable frame at a time inside a single SQLite
     /// transaction. The cursor and per-frame decoded array are bounded by the
     /// sender's acknowledged frame size; the complete snapshot is never materialized

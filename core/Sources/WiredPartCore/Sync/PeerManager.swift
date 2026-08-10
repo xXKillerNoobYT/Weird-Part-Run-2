@@ -433,6 +433,14 @@ public actor PeerManager {
 
     #if canImport(MultipeerConnectivity)
     private func failPendingMultipeerOperations(with error: Error) {
+        let snapshotPeers = Set(pendingSnapshotChanges.keys).union(pendingFullSyncContinuations.keys)
+        for peerDeviceId in snapshotPeers {
+            do {
+                try BluetoothSnapshotStaging.discard(db: db, peerDeviceID: peerDeviceId)
+            } catch {
+                logger.error("[PeerManager] Could not discard staged Bluetooth snapshot for \(String(peerDeviceId.prefix(8)), privacy: .public): \(error.localizedDescription, privacy: .public)")
+            }
+        }
         let pairContinuations = pendingPairContinuations.values.map(\.continuation)
         pendingPairContinuations.removeAll()
         pendingBluetoothPairingContexts.removeAll()
@@ -1815,6 +1823,25 @@ public actor PeerManager {
         pendingSnapshotChanges[peerDeviceId] = []
     }
 
+    func testBeginDurableSnapshot(
+        from peerDeviceId: String,
+        transferID: String
+    ) throws {
+        failedSnapshotPeers.remove(peerDeviceId)
+        legacySnapshotTestPeers.remove(peerDeviceId)
+        try BluetoothSnapshotStaging.begin(
+            db: db,
+            peerDeviceID: peerDeviceId,
+            transferID: transferID
+        )
+        pendingSnapshotChanges[peerDeviceId] = []
+        snapshotLastActivity[peerDeviceId] = Date()
+    }
+
+    func testTimeoutFullSync(from peerDeviceId: String) {
+        timeoutFullSync(with: peerDeviceId)
+    }
+
     func testAuthorizeReceivedSnapshot(_ token: String, from peerDeviceId: String) {
         receivedSnapshotTokens[peerDeviceId] = token
     }
@@ -1910,11 +1937,20 @@ public actor PeerManager {
     }
 
     private func failPendingFullSync(from peerDeviceId: String, with error: Error) {
-        if pendingSnapshotChanges[peerDeviceId] != nil
-            || pendingFullSyncContinuations[peerDeviceId] != nil {
-            failedSnapshotPeers.insert(peerDeviceId)
+        guard pendingSnapshotChanges[peerDeviceId] != nil
+            || pendingFullSyncContinuations[peerDeviceId] != nil else {
+            return
         }
+        do {
+            try BluetoothSnapshotStaging.discard(db: db, peerDeviceID: peerDeviceId)
+        } catch {
+            logger.error("[PeerManager] Could not discard failed Bluetooth snapshot for \(String(peerDeviceId.prefix(8)), privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
+        failedSnapshotPeers.insert(peerDeviceId)
         pendingSnapshotChanges.removeValue(forKey: peerDeviceId)
+        snapshotLastActivity.removeValue(forKey: peerDeviceId)
+        state.snapshotReceivedRecords.removeValue(forKey: peerDeviceId)
+        notifyStateChanged()
         if let cont = pendingFullSyncContinuations.removeValue(forKey: peerDeviceId) {
             cont.resume(throwing: error)
         }
@@ -1930,6 +1966,15 @@ public actor PeerManager {
     }
 
     private func timeoutFullSync(with peerDeviceId: String) {
+        guard pendingSnapshotChanges[peerDeviceId] != nil
+            || pendingFullSyncContinuations[peerDeviceId] != nil else {
+            return
+        }
+        do {
+            try BluetoothSnapshotStaging.discard(db: db, peerDeviceID: peerDeviceId)
+        } catch {
+            logger.error("[PeerManager] Could not discard timed-out Bluetooth snapshot for \(String(peerDeviceId.prefix(8)), privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
         failedSnapshotPeers.insert(peerDeviceId)
         pendingSnapshotChanges.removeValue(forKey: peerDeviceId)
         snapshotLastActivity.removeValue(forKey: peerDeviceId)
