@@ -143,7 +143,24 @@ struct SyncWaitingView: View {
             try await syncManager.performInitialSync()
             syncComplete = true
         } catch {
-            syncError = userFriendlyError(error, context: "sync data")
+            // Prefer the reason the sync manager already composed.
+            //
+            // `IOSSyncManager.performInitialSync` builds a transport-specific
+            // explanation with `initialSyncFailureMessage` — "generate a NEW
+            // code on the shop device", "keep both devices close and retry" —
+            // and throws it as `SyncError.syncFailed`. Routing that through
+            // `userFriendlyError` threw it away: that helper matches the
+            // description against a list of substrings and, when none hit,
+            // returns the generic "Couldn't sync data. Pull down to retry."
+            //
+            // The owner's build-63 screenshot is exactly that dead end — a
+            // failure the app had already diagnosed, displayed as a shrug
+            // (#1580). The composed message is the whole point of that
+            // helper; the fallback is only for errors nobody has explained.
+            syncError = IOSSyncManager.displayableSyncFailure(
+                composed: syncManager.errorMessage,
+                thrown: error
+            )
         }
     }
 }
