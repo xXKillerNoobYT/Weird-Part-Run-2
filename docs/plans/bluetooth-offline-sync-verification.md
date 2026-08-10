@@ -32,7 +32,7 @@ Any code path that *requires* a LAN to complete pairing or sync is a bug.
 | A1 | Advertising + browsing start on `startPeerSync` | `PeerManager.swift` — `MultipeerManager(...)` then `mpManager.start()` | no error line from A3 |
 | A2 | `serviceType` matches the declared Bonjour services | `MultipeerManager.serviceType = "wiredpart-sync"`; `Weird-Parts-IOS-Info.plist` declares `_wiredpart-sync._tcp` **and** `._udp` | — (static; verified 2026-08-06) |
 | A3 | A refused start is REPORTED, never swallowed | `didNotStartAdvertisingPeer` / `didNotStartBrowsingForPeers` → `onTransportError` → `recordTransportError` | `[PeerManager] Bluetooth transport did not start: <reason>` |
-| A4 | The reason reaches the UI, not just the log | `PeerManagerState.lastTransportError` | surfaced in state; **UI binding still TODO — see Gaps** |
+| A4 | The reason reaches the UI, not just the log | `PeerManagerState.lastTransportError` → `IOSSyncManager.bluetoothTransportError` | **DONE** — shown as a selectable code on the Nearby Devices empty state (#1669) and the Join a Business screen (#1676) |
 
 **Red proof for A3:** deny Local Network permission in Settings, start discovery,
 confirm the log line appears with the OS reason. Before #1667 this produced
@@ -166,25 +166,35 @@ code and automated tests; the cross-device hop needs the two real devices.
 
 ---
 
-## Gaps found by this audit — not yet fixed
+## Gap status — updated 2026-08-09
 
-1. **`lastTransportError` is not shown in the UI yet.** The reason now reaches
-   `PeerManagerState`; no screen binds it. Until it does, a user whose Bluetooth
-   permission is denied still sees an empty list with no explanation. *This is
-   the highest-value remaining item — it converts every future Stage-A failure
-   into a self-diagnosing one.*
-2. **Bluetooth sync is one-directional per tap.** **UI wording fixed in #6916:**
-   the Multipeer branch still sets `pushed` while `pulled` remains `0`, so users
-   must tap **Send Changes** on each device to converge. Bluetooth-only rows,
-   completion status, accessibility copy, and history now explicitly describe
-   that send-only behavior rather than claiming a two-way sync. Physical proof
-   still requires two devices (Stage G).
-3. **`NSBluetoothPeripheralUsageDescription` is absent.** Only needed for iOS 12
-   and earlier, so not a live defect at the current deployment target — recorded
-   so it is not rediscovered.
-4. **Stage G needs real hardware.** Everything above is verified by code reading
-   and the automated suite; G2/G3 can only be closed by two devices with Wi-Fi
-   genuinely off.
+Every gap this audit found now has an outcome. **Fixed** means merged to `main`;
+**tracked** means it has a GitHub issue and is not lost.
+
+| # | Gap | Status |
+|---|---|---|
+| 1 | `lastTransportError` not shown in the UI | **FIXED** — #1669 binds it into the Nearby Devices empty state with stable codes (`BT-ADV-START`, `BT-SCAN-START`); #1676 extends it to the Join a Business screen |
+| 2 | Bluetooth sync one-directional per tap | **Wording FIXED** (#1674 — rows say "Send Changes", history no longer claims a two-way sync). **Behaviour tracked** in #1684 — `pulled` still stays `0`; whether to make it symmetric is a product decision |
+| 3 | Snapshot flow control | **FIXED** — #1680 paces batches and retries a transient send instead of aborting the whole transfer |
+| 4 | Joiner buffers the whole snapshot in memory | **TRACKED — #1683.** Unbounded memory plus all-or-nothing with no resume. A jetsam kill here looks identical to a transfer failure, so this is a plausible second cause of the build-62 stall |
+| 5 | Orphaned database dead-ends on `SQLITE_NOTADB` | **FIXED** — #1672 adds non-destructive wrong-key detection (`isCipherKeyMismatchError`) and an archive-and-re-pair path. The file is never silently deleted |
+| 6 | `NSBluetoothPeripheralUsageDescription` absent | **Not a defect** at the current deployment target — iOS 12 and earlier only. Recorded so it is not rediscovered |
+| 7 | Stage G / H need real hardware | **OPEN — owner action.** Code and the automated suite cannot close these; two devices with Wi-Fi genuinely off can. See the 10-minute pass below |
+
+### What the field evidence proved (build 62, 2026-08-07)
+
+The chain reaches much further than when this document was written:
+
+```
+discover ✅ → connect ✅ ("iPhone connected") → pair ✅
+   → snapshot transfer STARTS ✅ ("Downloading data over Bluetooth…")
+   → stalls ~25% ❌
+```
+
+Connect and pair are **solved and field-confirmed**. Everything merged after
+build 62 — #1667, #1669, #1671, #1680 — is **untested on hardware**, because no
+build has shipped since. Cutting one is the highest-value single action
+available.
 
 ---
 
