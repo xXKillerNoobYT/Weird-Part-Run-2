@@ -1538,10 +1538,36 @@ final class IOSSyncManager {
         }
     }
 
+    /// Pick what the user actually sees when initial sync fails.
+    ///
+    /// The composed reason wins whenever there is one. `performInitialSync`
+    /// builds a transport-specific explanation with `initialSyncFailureMessage`
+    /// — "generate a NEW code on the shop device", "keep both devices close and
+    /// retry" — and throws it wrapped in `SyncError.syncFailed`.
+    ///
+    /// The view used to hand that straight to `userFriendlyError`, which
+    /// matches a description against a list of substrings and, when none match,
+    /// returns the generic "Couldn't <context>. Pull down to retry." So a
+    /// failure the app had ALREADY diagnosed reached the user as a shrug —
+    /// the owner's build-63 screenshot (#1580).
+    ///
+    /// Extracted and made static purely so this choice is unit-testable: three
+    /// separate attempts have now been made to get a real reason onto this
+    /// screen, and a rule with no test is a rule that regresses.
+    /// `nonisolated` deliberately: this is a pure choice between two strings
+    /// with no actor state, and it must be callable from tests and from any
+    /// context that has already caught the error. Matches `userFriendlyError`.
+    nonisolated static func displayableSyncFailure(composed: String?, thrown: Error) -> String {
+        if let composed, !composed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return composed
+        }
+        return userFriendlyError(thrown, context: "sync data")
+    }
+
     /// Compose an honest initial-sync failure covering every transport tried.
     /// The generic "Couldn't sync data" hid the real cause in the 2026-08-01
     /// field failure — never collapse distinct transport failures again.
-    static func initialSyncFailureMessage(
+    nonisolated static func initialSyncFailureMessage(
         wifiFailure: String?,
         bluetoothError: Error
     ) -> String {
