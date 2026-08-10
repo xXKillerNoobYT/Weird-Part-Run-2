@@ -189,6 +189,14 @@ enum BluetoothSnapshotStaging {
                 let result = try ConflictResolver.resolveAndApplyChangesAtomically(
                     db: dbConn, changes: batch.changes, localDeviceId: localDeviceID
                 )
+                // Snapshot completion is all-or-nothing: a strict resolver skip
+                // means the joiner did not reproduce the host's complete state.
+                // Throw inside this outer transaction so all earlier frames roll
+                // back and PeerManager can discard the terminal journal before
+                // surfacing failure, without sending a success acknowledgement.
+                guard result.skipped == 0 else {
+                    throw MultipeerSnapshotError.skippedChanges(count: result.skipped)
+                }
                 applied += result.applied
             }
 
@@ -385,6 +393,7 @@ enum MultipeerSnapshotError: LocalizedError, Sendable {
     case missingRecordID(table: String)
     case invalidRecordData(table: String, recordID: String)
     case batchApplyFailed(errorCount: Int)
+    case skippedChanges(count: Int)
     case unauthorizedPeer
     case remoteFailure(String)
     case transferMismatch
@@ -406,6 +415,8 @@ enum MultipeerSnapshotError: LocalizedError, Sendable {
             return "Bluetooth snapshot received invalid row data for \(table) record \(recordID). Retry the sync."
         case .batchApplyFailed(let errorCount):
             return "Bluetooth snapshot could not apply \(errorCount) change(s). Retry the sync."
+        case .skippedChanges(let count):
+            return "Bluetooth snapshot rejected \(count) unsupported or missing record change(s). Retry the sync."
         case .unauthorizedPeer:
             return "The Bluetooth peer is not a trusted company device. Pair it before requesting a snapshot."
         case .remoteFailure(let message):
