@@ -1885,6 +1885,131 @@ struct PeerManagerTests {
     }
 
     #if canImport(MultipeerConnectivity)
+    @Test("Terminal durable completion failure clears staging before reporting failure")
+    func testDurableSnapshotCompletionFailureCleansStaging() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+        let peer = "host"
+        let transferID = "transfer-terminal-failure"
+        try await pm.testBeginDurableSnapshot(from: peer, transferID: transferID)
+        let valid = BluetoothSnapshotBatch(
+            transferID: transferID,
+            sequence: 0,
+            changes: [snapshotUserChange(recordId: "7400")]
+        )
+        let invalid = BluetoothSnapshotBatch(
+            transferID: transferID,
+            sequence: 1,
+            changes: [IncomingChange(
+                deviceId: peer,
+                tableName: "users",
+                recordId: "7401",
+                operation: "INSERT",
+                recordData: #"{"id":7401,"display_name":"Invalid","pin_hash":"hash","is_active":1,"not_a_real_column":"boom"}"#,
+                timestamp: "2026-07-15T00:00:00Z"
+            )]
+        )
+        _ = try BluetoothSnapshotStaging.stage(
+            db: db, peerDeviceID: peer, transferID: transferID, sequence: 0,
+            payload: JSONEncoder().encode(valid)
+        )
+        _ = try BluetoothSnapshotStaging.stage(
+            db: db, peerDeviceID: peer, transferID: transferID, sequence: 1,
+            payload: JSONEncoder().encode(invalid)
+        )
+        let completion = try JSONEncoder().encode(MPEnvelope(
+            type: "snapshotComplete",
+            payload: try JSONEncoder().encode(
+                BluetoothSnapshotComplete(transferID: transferID, batchCount: 2)
+            )
+        ))
+        let acknowledgements = SnapshotAcknowledgementCollector()
+
+        await #expect(throws: (any Error).self) {
+            _ = try await pm.testProcessMultipeerMessagesInFIFO(
+                [ReceivedMultipeerMessage(fromDeviceId: peer, data: completion)],
+                sendApplyAcknowledgement: { acknowledgement, _ in
+                    acknowledgements.append(acknowledgement)
+                    return true
+                }
+            )
+        }
+
+        let state = try await db.writer.read { dbConn in
+            (
+                try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM users WHERE id IN (7400, 7401)") ?? 0,
+                try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM _bluetooth_snapshot_transfers WHERE peer_device_id = ?", arguments: [peer]) ?? 0,
+                try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM _bluetooth_snapshot_batches WHERE transfer_id = ?", arguments: [transferID]) ?? 0
+            )
+        }
+        #expect(state.0 == 0)
+        #expect(state.1 == 0)
+        #expect(state.2 == 0)
+        #expect(acknowledgements.values.isEmpty, "completion must not report success after rollback")
+    }
+
+    @Test("Idle timeout clears the durable journal without applying business rows")
+    func testDurableSnapshotTimeoutCleansStaging() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+        let peer = "host"
+        let transferID = "transfer-timeout"
+        try await pm.testBeginDurableSnapshot(from: peer, transferID: transferID)
+        let batch = BluetoothSnapshotBatch(
+            transferID: transferID,
+            sequence: 0,
+            changes: [snapshotUserChange(recordId: "7410")]
+        )
+        _ = try BluetoothSnapshotStaging.stage(
+            db: db, peerDeviceID: peer, transferID: transferID, sequence: 0,
+            payload: JSONEncoder().encode(batch)
+        )
+
+        await pm.testTimeoutFullSync(from: peer)
+
+        let state = try await db.writer.read { dbConn in
+            (
+                try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM users WHERE id = 7410") ?? 0,
+                try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM _bluetooth_snapshot_transfers WHERE peer_device_id = ?", arguments: [peer]) ?? 0,
+                try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM _bluetooth_snapshot_batches WHERE transfer_id = ?", arguments: [transferID]) ?? 0
+            )
+        }
+        #expect(state.0 == 0)
+        #expect(state.1 == 0)
+        #expect(state.2 == 0)
+    }
+
+    @Test("Transport stop clears a pending durable snapshot journal")
+    func testTransportStopCleansDurableSnapshotStaging() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+        let peer = "host"
+        let transferID = "transfer-transport-stop"
+        try await pm.testBeginDurableSnapshot(from: peer, transferID: transferID)
+        let batch = BluetoothSnapshotBatch(
+            transferID: transferID,
+            sequence: 0,
+            changes: [snapshotUserChange(recordId: "7420")]
+        )
+        _ = try BluetoothSnapshotStaging.stage(
+            db: db, peerDeviceID: peer, transferID: transferID, sequence: 0,
+            payload: JSONEncoder().encode(batch)
+        )
+
+        await pm.testFailPendingTransportOperations()
+
+        let state = try await db.writer.read { dbConn in
+            (
+                try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM users WHERE id = 7420") ?? 0,
+                try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM _bluetooth_snapshot_transfers WHERE peer_device_id = ?", arguments: [peer]) ?? 0,
+                try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM _bluetooth_snapshot_batches WHERE transfer_id = ?", arguments: [transferID]) ?? 0
+            )
+        }
+        #expect(state.0 == 0)
+        #expect(state.1 == 0)
+        #expect(state.2 == 0)
+    }
+
     @Test("Full-sync completion is processed only after the preceding batch is durable")
     func testFullSyncBatchAppliesBeforeCompletion() async throws {
         let db = try freshDB()
