@@ -198,5 +198,54 @@ final class SyncManagerFailureSurfacingRegressionTests: XCTestCase {
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 
+    // MARK: - #1580 — the Sync Error screen must show the REAL reason
 
+    /// Behavioural, not a source scan: it calls the production decision
+    /// directly, so it fails if the behaviour regresses even when the source
+    /// still *looks* right.
+    ///
+    /// Build 63 showed the owner "Couldn't sync data. Pull down to retry." on a
+    /// failure the app had already diagnosed. `performInitialSync` composes a
+    /// transport-specific reason with `initialSyncFailureMessage`, but the view
+    /// handed the thrown error to `userFriendlyError`, which matches against a
+    /// substring list and falls back to that generic template when none hit —
+    /// discarding the good message.
+    func testComposedSyncFailureIsPreferredOverTheGenericFallback() {
+        let composed = IOSSyncManager.initialSyncFailureMessage(
+            wifiFailure: nil,
+            bluetoothError: MultipeerPairingError.rejected
+        )
+
+        let shown = IOSSyncManager.displayableSyncFailure(
+            composed: composed,
+            thrown: IOSSyncManager.SyncError.syncFailed(composed)
+        )
+
+        XCTAssertEqual(shown, composed, "the composed reason must reach the screen verbatim")
+        XCTAssertFalse(
+            shown.contains("Pull down to retry"),
+            "the generic fallback replaced a reason the app had already worked out"
+        )
+        XCTAssertTrue(
+            shown.contains("NEW code"),
+            "a rejected pairing must tell the user to generate a new code — that is the actionable part"
+        )
+    }
+
+    /// The fallback still has to work for errors nobody has explained, and an
+    /// empty or whitespace-only message must not count as "composed".
+    func testGenericFallbackStillUsedWhenNothingWasComposed() {
+        struct Unexplained: Error {}
+
+        for empty in [nil, "", "   \n"] as [String?] {
+            let shown = IOSSyncManager.displayableSyncFailure(
+                composed: empty,
+                thrown: Unexplained()
+            )
+            XCTAssertTrue(
+                shown.contains("Pull down to retry"),
+                "with no composed reason (\(String(describing: empty))) the generic fallback must still appear"
+            )
+        }
+    }
 }
