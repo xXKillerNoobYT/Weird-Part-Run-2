@@ -1210,11 +1210,21 @@ public actor PeerManager {
                     receivedSnapshotTokens[message.fromDeviceId] = authorizationToken
                     snapshotLastActivity[message.fromDeviceId] = Date()
                 }
-                _ = try BluetoothSnapshotStaging.complete(
-                    db: db, peerDeviceID: message.fromDeviceId,
-                    transferID: complete.transferID, batchCount: complete.batchCount,
-                    localDeviceID: serverState?.deviceId ?? "unknown"
-                )
+                do {
+                    _ = try BluetoothSnapshotStaging.complete(
+                        db: db, peerDeviceID: message.fromDeviceId,
+                        transferID: complete.transferID, batchCount: complete.batchCount,
+                        localDeviceID: serverState?.deviceId ?? "unknown"
+                    )
+                } catch {
+                    _ = sendFullSyncApplyAcknowledgement(
+                        succeeded: false,
+                        error: error.localizedDescription,
+                        to: message.fromDeviceId,
+                        using: sendApplyAcknowledgement
+                    )
+                    throw error
+                }
                 guard sendFullSyncApplyAcknowledgement(
                     succeeded: true, error: nil, to: message.fromDeviceId,
                     using: sendApplyAcknowledgement

@@ -189,6 +189,11 @@ enum BluetoothSnapshotStaging {
                 let result = try ConflictResolver.resolveAndApplyChangesAtomically(
                     db: dbConn, changes: batch.changes, localDeviceId: localDeviceID
                 )
+                // A full snapshot is all-or-nothing. Incremental sync can defer
+                // missing records, but completion must reject a partial company.
+                guard result.skipped == 0 else {
+                    throw MultipeerSnapshotError.skippedChanges(result.skipped)
+                }
                 applied += result.applied
             }
 
@@ -391,6 +396,7 @@ enum MultipeerSnapshotError: LocalizedError, Sendable {
     case invalidSequence
     case nonContiguousSequence
     case duplicateFrameMismatch
+    case skippedChanges(Int)
 
     var errorDescription: String? {
         switch self {
@@ -414,6 +420,7 @@ enum MultipeerSnapshotError: LocalizedError, Sendable {
         case .invalidSequence: return "Bluetooth snapshot batch sequence was invalid. Retry the sync."
         case .nonContiguousSequence: return "Bluetooth snapshot was incomplete. Retry the sync."
         case .duplicateFrameMismatch: return "Bluetooth snapshot repeated a batch with different data. Retry the sync."
+        case .skippedChanges(let count): return "Bluetooth snapshot could not apply \(count) change(s). Retry the sync."
         }
     }
 }

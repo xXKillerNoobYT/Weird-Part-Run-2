@@ -2087,6 +2087,78 @@ struct PeerManagerTests {
         #expect(acknowledgements.values.isEmpty, "completion must not report success after rollback")
     }
 
+    @Test("Skipped staged changes roll back and send a negative final acknowledgement")
+    func testDurableSnapshotCompletionRejectsSkippedChanges() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+        let peer = "host"
+        let transferID = "transfer-skipped-change"
+        try await pm.testBeginDurableSnapshot(
+            from: peer,
+            transferID: transferID,
+            authorizationToken: "skipped-change-capability"
+        )
+        await pm.testAuthorizeReceivedSnapshot("skipped-change-capability", from: peer)
+        let valid = BluetoothSnapshotBatch(
+            transferID: transferID,
+            sequence: 0,
+            changes: [snapshotUserChange(recordId: "7402")]
+        )
+        let skipped = BluetoothSnapshotBatch(
+            transferID: transferID,
+            sequence: 1,
+            changes: [IncomingChange(
+                deviceId: peer,
+                tableName: "not_a_synced_table",
+                recordId: "ignored",
+                operation: "INSERT",
+                recordData: "{}",
+                timestamp: "2026-07-15T00:00:00Z"
+            )]
+        )
+        _ = try BluetoothSnapshotStaging.stage(
+            db: db, peerDeviceID: peer, transferID: transferID, sequence: 0,
+            payload: JSONEncoder().encode(valid)
+        )
+        _ = try BluetoothSnapshotStaging.stage(
+            db: db, peerDeviceID: peer, transferID: transferID, sequence: 1,
+            payload: JSONEncoder().encode(skipped)
+        )
+        let completion = try JSONEncoder().encode(MPEnvelope(
+            type: "snapshotComplete",
+            payload: try JSONEncoder().encode(
+                BluetoothSnapshotComplete(transferID: transferID, batchCount: 2)
+            )
+        ))
+        let acknowledgements = SnapshotAcknowledgementCollector()
+
+        await #expect(throws: MultipeerSnapshotError.self) {
+            _ = try await pm.testProcessMultipeerMessagesInFIFO(
+                [ReceivedMultipeerMessage(fromDeviceId: peer, data: completion)],
+                sendApplyAcknowledgement: { acknowledgement, destination in
+                    #expect(destination == peer)
+                    acknowledgements.append(acknowledgement)
+                    return true
+                }
+            )
+        }
+
+        let state = try await db.writer.read { dbConn in
+            (
+                try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM users WHERE id = 7402") ?? 0,
+                try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM _bluetooth_snapshot_transfers WHERE peer_device_id = ?", arguments: [peer]) ?? 0,
+                try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM _bluetooth_snapshot_batches WHERE transfer_id = ?", arguments: [transferID]) ?? 0
+            )
+        }
+        let acknowledgement = try #require(acknowledgements.values.first)
+        #expect(state.0 == 0, "a skipped change must roll back every business write")
+        #expect(state.1 == 0, "terminal failure must remove the private transfer journal")
+        #expect(state.2 == 0)
+        #expect(acknowledgements.values.count == 1)
+        #expect(!acknowledgement.succeeded, "a rejected snapshot must never acknowledge success")
+        #expect(acknowledgement.error?.contains("could not apply") == true)
+    }
+
     @Test("Idle timeout clears the durable journal without applying business rows")
     func testDurableSnapshotTimeoutCleansStaging() async throws {
         let db = try freshDB()
