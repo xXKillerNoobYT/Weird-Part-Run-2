@@ -829,10 +829,41 @@ final class IOSSyncManager {
             activeSyncPeerName = nil
         }
         if let latest = state.lastPeerSyncs.values.max(by: { $0.syncedAt < $1.syncedAt }) {
-            lastHostSyncSucceeded = latest.success
-            lastHostSyncSummary = latest.success
-                ? "Sent \(latest.pushed) records to \(latest.peerName)"
-                : "Sync with \(latest.peerName) failed"
+            // `lastPeerSyncs` is ONE newest-wins slot shared by every peer and
+            // every KIND of sync, so the routine 60-second incremental push --
+            // which returns success with nothing sent -- overwrote a real
+            // pairing failure with a green "Sent 0 records". That is verbatim
+            // what the owner photographed on build 63: the phone was erroring
+            // while the host painted a checkmark (#1693).
+            //
+            // A sync that moved nothing is not evidence that syncing works, so
+            // it must not replace a recorded failure. This deliberately biases
+            // toward showing the failure: a stale failure is recoverable (tap
+            // Sync again), a false success sends the user away believing the
+            // pairing worked. A success that actually moved records still wins,
+            // which is what clears the failure once syncing recovers.
+            let movedRecords = latest.pushed > 0 || latest.pulled > 0
+            let wouldMaskFailure = latest.success
+                && !movedRecords
+                && lastHostSyncSummary != nil
+                && !lastHostSyncSucceeded
+
+            if !wouldMaskFailure {
+                lastHostSyncSucceeded = latest.success
+                if latest.success {
+                    lastHostSyncSummary = "Sent \(latest.pushed) records to \(latest.peerName)"
+                } else if let reason = latest.error?.trimmingCharacters(in: .whitespacesAndNewlines),
+                          !reason.isEmpty {
+                    // Say WHY, not just THAT. The host end was undiagnosable
+                    // from the screen: the reason was computed, stored on the
+                    // result, and then dropped here. Device logs replicate over
+                    // sync, so when this fires the logs cannot reach anyone --
+                    // the screen is the only diagnostic channel that survives.
+                    lastHostSyncSummary = "Sync with \(latest.peerName) failed — \(reason)"
+                } else {
+                    lastHostSyncSummary = "Sync with \(latest.peerName) failed"
+                }
+            }
         }
 
         // Joiner-side live snapshot progress (#1417): show real movement while
@@ -1375,6 +1406,14 @@ final class IOSSyncManager {
         syncStatus = .syncing
         syncProgressMessage = "Starting initial sync..."
         syncProgressPercent = 0.0
+        // A retry must not inherit the PREVIOUS attempt's diagnosis. Tapping
+        // "Try Again" clears the view's own copy, but the composed reason lives
+        // here, and not every failure path rewrites it -- the `guard db != nil`
+        // throw below is one. Without this, a second attempt failing for a new
+        // reason redisplays the first attempt's advice ("keep both devices
+        // close and retry") for an unrelated error, which reads as a confirmed
+        // diagnosis rather than a leftover (#1693).
+        errorMessage = nil
 
         guard db != nil else {
             syncProgressMessage = nil
