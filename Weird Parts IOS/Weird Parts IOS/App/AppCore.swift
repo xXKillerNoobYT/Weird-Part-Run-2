@@ -797,6 +797,19 @@ final class AppCore: ObservableObject {
             if addStatus == errSecSuccess {
                 return fallbackKeyData.map { String(format: "%02x", $0) }.joined()
             }
+            // Deliberately NOT guarded against `errSecDuplicateItem` the way the
+            // mint path below is, even though the three lines look identical.
+            //
+            // Reaching here means a local fallback file EXISTS, so
+            // `localFallbackBootstrapKeyHex` returns that file's key rather than
+            // minting a new one — and per #1663 the file is the authoritative
+            // store when the two disagree. Falling back here therefore yields the
+            // key the database is actually encrypted with. Adding the guard would
+            // turn a divergent re-read into a thrown error and stop the app from
+            // starting at all, which is the more expensive direction to be wrong
+            // in. On the mint path below no file exists, so the same call invents
+            // a key instead of recovering one — hence the guard is correct there
+            // and wrong here.
             if shouldUseLocalBootstrapKeyFallback(for: addStatus) {
                 return try localFallbackBootstrapKeyHex(in: fallbackDirectory)
             }
@@ -826,7 +839,39 @@ final class AppCore: ObservableObject {
         if addStatus == errSecSuccess {
             return keyData.map { String(format: "%02x", $0) }.joined()
         }
-        if shouldUseLocalBootstrapKeyFallback(for: addStatus) {
+        // `errSecDuplicateItem` must be handled BEFORE asking whether the
+        // Keychain is unusable, and the order here is the whole bug.
+        //
+        // `KeychainAvailability.isUnusable` is a DENYLIST: everything except an
+        // enumerated "works, but this attempt didn't get the item" set counts as
+        // unusable. `errSecDuplicateItem` is not in that set, so it answered
+        // `true` — and duplicate is the one status that most certainly means the
+        // Keychain WORKS and is already holding our key. Rescuing on it wrote a
+        // container-local key while the real key sat in the Keychain, so the
+        // database was encrypted under one key and reopened under another. That
+        // is the "file is not a database" / app-won't-start report, and it is
+        // why the symptom was the app getting the WRONG key rather than no key.
+        //
+        // The block directly below already recovers correctly: re-read, adopt
+        // the existing key, and refuse to mutate the Keychain from a locked or
+        // unapproved state. It was simply unreachable. This guard is what makes
+        // it run, and it is what turns
+        // `bootstrapFallbackRejectsLockedDuplicateRereadBeforeKeychainMutation`
+        // green — that test is the regression detector for exactly this path.
+        //
+        // Every other keychain call site in the codebase already treats a
+        // duplicate as benign rather than as a reason to fall back:
+        // `AuthService.swift:1337`, `CipherKeyManager.swift:235`, and
+        // `SyncDeviceIdentityStore.swift:180`. This restores that consistency
+        // instead of introducing a new rule.
+        //
+        // Note this narrows the rescue by exactly ONE status. The deliberate
+        // fail-open direction of the denylist (#1622 → #1647: guessing wrong
+        // toward "unusable" costs a re-login, guessing wrong the other way costs
+        // the app starting at all) is preserved for every status but this one,
+        // where the correct handler already exists and is strictly better.
+        if addStatus != errSecDuplicateItem,
+           shouldUseLocalBootstrapKeyFallback(for: addStatus) {
             return try localFallbackBootstrapKeyHex(in: fallbackDirectory)
         }
         if addStatus == errSecDuplicateItem {
@@ -857,7 +902,7 @@ final class AppCore: ObservableObject {
     }
 
     nonisolated static func shouldUseLocalBootstrapKeyFallback(for status: OSStatus) -> Bool {
-        status == errSecMissingEntitlement || status == errSecNotAvailable
+        KeychainAvailability.isUnusable(status)
     }
 
     nonisolated static func localFallbackBootstrapKeyURL(in directory: URL? = nil) throws -> URL {
