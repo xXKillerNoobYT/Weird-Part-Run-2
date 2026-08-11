@@ -575,11 +575,26 @@ struct Weird_Parts_IOSTests {
         #expect(keyHex.count == 64)
     }
 
-    @Test func bootstrapFallbackUsesOnlyApprovedKeychainStatuses() {
-        #expect(AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecMissingEntitlement))
-        #expect(AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecNotAvailable))
-        #expect(!AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecInteractionNotAllowed))
-        #expect(!AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecAuthFailed))
+    @Test func bootstrapFallbackDelegatesToSharedKeychainAvailabilityPredicate() {
+        // This intentionally includes statuses outside the old two-value allowlist.
+        // It must fail if this consumer narrows the shared denylist again.
+        for status in [
+            errSecSuccess,
+            errSecItemNotFound,
+            errSecInteractionNotAllowed,
+            errSecAuthFailed,
+            errSecUserCanceled,
+            errSecMissingEntitlement,
+            errSecNotAvailable,
+            errSecParam,
+            OSStatus(-77777)
+        ] {
+            #expect(
+                AppCore.shouldUseLocalBootstrapKeyFallback(for: status)
+                    == KeychainAvailability.isUnusable(status),
+                "AppCore diverged from KeychainAvailability on \(status)"
+            )
+        }
     }
 
     @Test func bootstrapFallbackPersistsForApprovedReadFailureAndCleansUp() throws {
@@ -867,6 +882,70 @@ struct Weird_Parts_IOSTests {
 
         #expect(keyHex.count == 64)
         #expect(FileManager.default.fileExists(atPath: fallbackURL.path))
+    }
+
+    /// The wrong-key defect, pinned.
+    ///
+    /// A Keychain that answers `errSecItemNotFound` on read and then
+    /// `errSecDuplicateItem` on write is telling us plainly that it holds a key
+    /// after all — this is the inconsistent iPad-on-Mac behaviour documented in
+    /// `deviceBootstrapKeyHex`. `errSecDuplicateItem` is absent from
+    /// `KeychainAvailability.worksButAccessDenied`, so the shared denylist calls
+    /// it "unusable"; before the ordering guard that sent this path off to mint a
+    /// brand-new container-local key while the real one sat in the Keychain.
+    ///
+    /// The database is then encrypted under one key and reopened under another,
+    /// which surfaces as "file is not a database" — the app getting the WRONG
+    /// key, not no key. The existing recovery block adopts the Keychain's key
+    /// correctly; it was simply unreachable.
+    @Test func bootstrapDuplicateItemAdoptsExistingKeychainKeyRatherThanMintingASandboxKey() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BootstrapFallback-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        // The key the database was really encrypted with, already in the Keychain.
+        let establishedKey = Data((0..<32).map { UInt8($0 &+ 1) })
+        let establishedKeyHex = establishedKey.map { String(format: "%02x", $0) }.joined()
+
+        let probe = OperationProbe()
+        let inconsistentKeychain = AppCore.BootstrapKeychainAccess(
+            read: {
+                // First read denies the key exists; the re-read admits it. This
+                // is the behaviour that makes the duplicate-on-write happen.
+                if probe.ran {
+                    return (errSecSuccess, establishedKey)
+                }
+                probe.ran = true
+                return (errSecItemNotFound, nil)
+            },
+            add: { _ in
+                probe.addCallCount += 1
+                return errSecDuplicateItem
+            },
+            delete: {
+                Issue.record("a recoverable duplicate must not delete the established Keychain key")
+                return errSecSuccess
+            }
+        )
+
+        let keyHex = try AppCore.deviceBootstrapKeyHex(
+            processArguments: [],
+            keychain: inconsistentKeychain,
+            fallbackDirectory: directory
+        )
+
+        #expect(
+            keyHex == establishedKeyHex,
+            "A duplicate-on-add means the Keychain already holds the key. Minting a new one opens the database with the wrong key (SQLITE_NOTADB)."
+        )
+        // A sandbox key must never have been written: its presence would make the
+        // *next* launch prefer the file (#1663) and strand the real key for good.
+        let fallbackURL = try AppCore.localFallbackBootstrapKeyURL(in: directory)
+        #expect(
+            !FileManager.default.fileExists(atPath: fallbackURL.path),
+            "Rescuing to a container-local key here is what stranded the real Keychain key."
+        )
+        #expect(probe.addCallCount == 1, "The established key was recovered, so no retry write should occur.")
     }
 
     @Test func debugCipherRecoveryOnlyMatchesDecryptNotADB() {
