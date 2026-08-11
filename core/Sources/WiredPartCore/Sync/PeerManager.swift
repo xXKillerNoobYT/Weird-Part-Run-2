@@ -1148,6 +1148,21 @@ public actor PeerManager {
     static let defaultSnapshotStagingRecordLimit = 2_000_000
     static let defaultSnapshotStagingByteLimit = 1 << 30 // 1 GiB
 
+    /// Seconds of NO batch arriving before the joiner declares the snapshot
+    /// dead. Idle-based on purpose: it fires when nothing is moving, never
+    /// because a transfer is merely large. There is deliberately no total
+    /// wall-clock cap — see the watchdog in `requestFullSyncOverMultipeer`.
+    /// Public because the iOS layer quotes this number back to the user when a
+    /// download is stopped ("no data arrived for N minutes"). The message and
+    /// the watchdog must never drift apart.
+    public static let snapshotIdleTimeoutSeconds: TimeInterval = 180
+
+    /// Seconds the HOST waits for the joiner to confirm it durably applied the
+    /// snapshot. This covers the joiner's entire single-transaction apply of a
+    /// whole company, which on a large database is minutes, so 60s (the old
+    /// value) failed routinely while the joiner was still working correctly.
+    static let snapshotAcknowledgementTimeoutSeconds: TimeInterval = 600
+
     /// Per-instance so tests can drive the real production path at a small
     /// limit instead of testing a parallel one. Actor-isolated, so each test's
     /// `PeerManager` is independent and parallel tests cannot interfere.
@@ -1628,6 +1643,12 @@ public actor PeerManager {
 
         do {
             let totalSent = try await BluetoothSnapshotTransfer.run(
+                // 50, not the 200 default. `docs/plans/sync-standalone-transports.md:36,:52`
+                // specified 50 precisely "so the idle watchdog sees steady
+                // progress", and the call site never passed it. Idleness is only
+                // observed when a WHOLE batch lands, so a large batch on a slow
+                // radio is indistinguishable from silence.
+                batchSize: 50,
                 listTables: { [db] in
                     try await db.writer.read { dbConn in
                         try String.fetchAll(
@@ -1864,7 +1885,9 @@ public actor PeerManager {
         authorizationToken: String
     ) {
         Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 60_000_000_000)
+            try? await Task.sleep(
+                nanoseconds: UInt64(Self.snapshotAcknowledgementTimeoutSeconds) * 1_000_000_000
+            )
             await self?.timeoutSnapshotAcknowledgement(
                 peerDeviceId: peerDeviceId,
                 authorizationToken: authorizationToken
@@ -1878,12 +1901,27 @@ public actor PeerManager {
     ) {
         guard let reservation = hostedSnapshotReservations[peerDeviceId],
               reservation.authorizationToken == authorizationToken else { return }
+        // Give the capability BACK. This path used to drop the reservation
+        // without restoring the token, unlike `restoreHostedSnapshot` directly
+        // above, so the peer silently lost its one-time snapshot permission.
+        // The message then told the user to "Retry the sync" and the retry was
+        // answered with "The Bluetooth peer is not a trusted company device.
+        // Pair it before requesting a snapshot." — the pairing was dead and had
+        // to be redone, with nothing on screen saying so.
+        //
+        // A timeout is not evidence the peer is untrusted. It is evidence we
+        // stopped waiting. Restoring the token makes the advice we print true.
         hostedSnapshotReservations.removeValue(forKey: peerDeviceId)
+        hostedSnapshotTokens[peerDeviceId] = authorizationToken
         state.lastPeerSyncs[peerDeviceId] = PeerSyncResult(
             peerDeviceId: peerDeviceId,
             peerName: reservation.peerName,
             success: false,
-            error: "The joiner did not acknowledge durable snapshot application. Retry the sync."
+            error: """
+            Stopped waiting for \(reservation.peerName) to confirm it saved the data \
+            (no confirmation after \(Int(Self.snapshotAcknowledgementTimeoutSeconds / 60)) minutes). \
+            It may still be finishing — check that device. The pairing is still valid, so you can Sync again.
+            """
         )
         notifyStateChanged()
     }
@@ -1913,6 +1951,15 @@ public actor PeerManager {
 
     func testSetHostedSnapshotRowsSent(_ rowsSent: Int, for peerDeviceId: String) {
         hostedSnapshotReservations[peerDeviceId]?.rowsSent = rowsSent
+    }
+
+    /// Fire the acknowledgement watchdog without waiting out its real timer, so
+    /// the capability lifecycle on that path stays covered.
+    func testTimeoutSnapshotAcknowledgement(token: String, for peerDeviceId: String) {
+        timeoutSnapshotAcknowledgement(
+            peerDeviceId: peerDeviceId,
+            authorizationToken: token
+        )
     }
 
     func testAcknowledgeHostedSnapshot(
@@ -2186,18 +2233,39 @@ public actor PeerManager {
                     .resume(throwing: MultipeerPairingError.sendFailed)
                 return
             }
-            // Idle watchdog (#1417): a transfer that is MOVING never times out;
-            // 45s with no batch = stalled; 15 min hard cap guards runaways.
+            // Idle watchdog (#1417): a transfer that is MOVING never times out.
+            //
+            // That sentence used to be a lie. The loop also carried a 15-minute
+            // TOTAL wall-clock cap, stamped once when the request was sent and
+            // never reset by incoming data, so a perfectly healthy transfer was
+            // killed at 900s. `docs/plans/sync-standalone-transports.md:21` says
+            // a real company over Bluetooth-only takes "minutes-to-tens-of-
+            // minutes", which means any company past that line could NEVER
+            // join — every retry hit the same wall, and `timeoutFullSync`
+            // discards all staged rows, so each attempt restarted from zero.
+            //
+            // The owner settled this on 2026-08-10: "is slow Bluetooth only
+            // pair acceptable? Yes. It is acceptable." A total-elapsed deadline
+            // contradicts that requirement outright, so it is gone.
+            //
+            // Runaways are still bounded, by SIZE rather than by clock — the
+            // per-peer staging ceilings above (2,000,000 rows / 1 GiB). Size is
+            // the honest dimension: it does not punish a slow radio.
+            //
+            // The idle window is raised 45s -> 180s because idleness is only
+            // sampled when a WHOLE batch lands. Bluetooth throughput on real
+            // hardware has never been measured (the plan doc flags it
+            // UNVERIFIED), so the old 45s left an unknown and possibly negative
+            // margin against a single batch's crossing time.
             snapshotLastActivity[hostDeviceId] = Date()
             Task { [weak self] in
-                let started = Date()
                 while true {
                     try? await Task.sleep(nanoseconds: 10_000_000_000)
                     guard let self else { return }
                     let done = await self.isFullSyncSettled(with: hostDeviceId)
                     if done { return }
                     let idle = await self.snapshotIdleSeconds(hostDeviceId)
-                    if idle > 45 || Date().timeIntervalSince(started) > 900 {
+                    if idle > Self.snapshotIdleTimeoutSeconds {
                         await self.timeoutFullSync(with: hostDeviceId)
                         return
                     }
