@@ -159,7 +159,7 @@ private struct PendingBluetoothPairingAttempt {
     let continuation: CheckedContinuation<SyncPairResponse, Error>
 }
 
-public enum MultipeerPairingError: Error {
+public enum MultipeerPairingError: Error, CaseIterable {
     case notAvailable
     case connectionTimeout
     case sendFailed
@@ -169,6 +169,69 @@ public enum MultipeerPairingError: Error {
     case protocolUpgradeRequired
     case responseVerificationFailed
     case transportStopped
+}
+
+/// Stable, greppable failure codes for pairing. (#1693)
+///
+/// This enum was declared as a bare `Error`, so it had no `errorDescription`.
+/// The joiner's `initialSyncFailureMessage` switch handles three cases and
+/// falls through to `(error as? LocalizedError)?.errorDescription ?? "generic"`
+/// — which meant **all nine causes collapsed into one code-less sentence** on
+/// screen. `MultipeerSnapshotError` already conformed, which is why *transfer*
+/// failures read sensibly while *pairing* failures did not.
+///
+/// Codes follow the shipped `BT-*` convention (`BT-SCAN-START`, `BT-ADV-START`
+/// in `MultipeerManager`), so a photograph of the screen is enough to identify
+/// the branch without asking for device logs — which is the entire point, since
+/// logs replicate over the sync that is broken.
+extension MultipeerPairingError: LocalizedError {
+
+    /// Short, stable identifier. Never localise or reword this — it is matched
+    /// in bug reports and greppable in source.
+    public var code: String {
+        switch self {
+        case .notAvailable:              return "BT-PAIR-UNAVAILABLE"
+        case .connectionTimeout:         return "BT-PAIR-CONNECT-TIMEOUT"
+        case .sendFailed:                return "BT-PAIR-SEND"
+        case .responseTimeout:           return "BT-PAIR-RESPONSE-TIMEOUT"
+        case .rejected:                  return "BT-PAIR-REJECTED"
+        case .requestAlreadyInProgress:  return "BT-PAIR-IN-PROGRESS"
+        case .protocolUpgradeRequired:   return "BT-PAIR-VERSION"
+        case .responseVerificationFailed: return "BT-PAIR-VERIFY"
+        case .transportStopped:          return "BT-PAIR-TRANSPORT-STOPPED"
+        }
+    }
+
+    /// Plain-English cause plus what to actually do about it. Written for an
+    /// electrician on a job site with no signal, not for a developer.
+    public var failureReason: String {
+        switch self {
+        case .notAvailable:
+            return "Bluetooth sync isn't running on this device. Close and reopen the app, then try again."
+        case .connectionTimeout:
+            return "The other device was found but never finished connecting. Keep both devices awake and within a few feet, then try again."
+        case .sendFailed:
+            return "The connection dropped while sending the pairing request. Try again."
+        case .responseTimeout:
+            return "The other device never answered the pairing request. Make sure it is showing its pairing code, then try again."
+        case .rejected:
+            return "The other device turned down the pairing request. Check that the code matches the one on its screen, and that you picked the right device."
+        case .requestAlreadyInProgress:
+            return "A pairing attempt is already running. Wait for it to finish or reopen the app, then try again."
+        case .protocolUpgradeRequired:
+            return "The two devices are on different app versions and can't pair. Update both to the same build."
+        case .responseVerificationFailed:
+            return "The other device's response failed its security check. Make sure you are pairing with your own device and not one nearby with the same name."
+        case .transportStopped:
+            return "Bluetooth stopped while pairing was in progress. Check that Bluetooth is on, then try again."
+        }
+    }
+
+    /// What the user sees. Code first so it survives being read aloud,
+    /// photographed, or retyped into a bug report.
+    public var errorDescription: String? {
+        "\(code) — \(failureReason)"
+    }
 }
 
 public actor PeerManager {
