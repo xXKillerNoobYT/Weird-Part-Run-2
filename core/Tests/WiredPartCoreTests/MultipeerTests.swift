@@ -64,6 +64,56 @@ struct MultipeerTests {
         #expect(!MultipeerManager.isValidBonjourServiceType("12345"))  // no letter
     }
 
+    // MARK: - #1693 — every pairing failure must name itself on screen
+    //
+    // MultipeerPairingError was a bare `Error`, so all nine cases fell through
+    // the joiner's `default:` into one generic sentence. Driven off
+    // `CaseIterable` so a newly added case fails these tests instead of
+    // shipping code-less.
+
+    @Test("every pairing failure has a distinct, stable BT-PAIR-* code (#1693)")
+    func testPairingErrorsHaveDistinctCodes() {
+        let all = MultipeerPairingError.allCases
+        #expect(all.count == 9, "a case was added or removed — give it a code and update this count")
+
+        let codes = all.map(\.code)
+        #expect(Set(codes).count == codes.count, "two pairing causes share a code — they'd be indistinguishable in a bug report")
+        for code in codes {
+            #expect(code.hasPrefix("BT-PAIR-"), "\(code) breaks the shipped BT-* convention")
+            #expect(code == code.uppercased(), "\(code) must stay stable and greppable")
+            #expect(!code.hasSuffix("-"), "\(code) looks truncated")
+        }
+    }
+
+    @Test("every pairing failure reaches the user as code + reason (#1693)")
+    func testPairingErrorsSurfaceCodeAndReason() {
+        for error in MultipeerPairingError.allCases {
+            guard let shown = error.errorDescription else {
+                Issue.record("\(error) has no errorDescription — it would render as the generic 'Couldn't sync data.'")
+                continue
+            }
+            #expect(shown.hasPrefix(error.code + " — "), "code must lead so it survives a photograph: \(shown)")
+            #expect(shown.count > error.code.count + 20, "\(error) has no usable reason after its code")
+            #expect(!error.failureReason.isEmpty)
+            // The whole point: no two causes may read identically.
+            #expect(shown.contains(error.failureReason))
+        }
+
+        let rendered = MultipeerPairingError.allCases.compactMap(\.errorDescription)
+        #expect(Set(rendered).count == rendered.count, "two pairing causes render the same sentence")
+    }
+
+    @Test("pairing errors are LocalizedError, so the joiner's default branch can render them (#1693)")
+    func testPairingErrorIsLocalizedError() {
+        // This is the exact cast IOSSyncManager's `default:` performs. If the
+        // conformance is lost, every case silently reverts to the generic text.
+        for error in MultipeerPairingError.allCases {
+            let asLocalized = (error as Error) as? LocalizedError
+            #expect(asLocalized != nil, "\(error) is not LocalizedError — the joiner would show no reason")
+            #expect(asLocalized?.errorDescription != nil)
+        }
+    }
+
     @Test("MultipeerPeerInfo stores all fields")
     func testPeerInfoInit() {
         let info = MultipeerPeerInfo(
