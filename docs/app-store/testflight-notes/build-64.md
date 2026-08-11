@@ -9,19 +9,26 @@
 
 **Build 63 could not tell you why sync failed. This one can — on both devices.**
 
-Build 63 fixed the message on the *joining* device, but the device *hosting* the
-company still showed a green checkmark while the other end was erroring. That is
-what you photographed. This build fixes the host end, so a failed sync now names
-its own reason on the screen that has the data.
+Build 63 had **neither** side of that fix. It was archived from `4d7cc3274` at
+00:04Z on 2026-08-10; the joining-device fix (#1692) landed at 05:19Z and the
+hosting-device fix (#1698) at 16:13Z, both after the archive was cut. So the
+green checkmark you photographed on the Mac, and the reasonless "Couldn't sync
+data." on the phone, were *both* still present in 63.
+
+Build 64 is the first build carrying both. A failed sync now names its own
+reason on each screen, including the host's — the screen that actually has the
+data.
 
 This build does **not** claim sync is fixed. It claims a failure is now
 **legible**. If it fails again, the screens should finally tell us where.
 
 ## What's changed
 
-- **The host device now says WHY a sync failed**, not just that it failed. The
-  reason was already being worked out and then thrown away one line before it
-  reached the screen.
+- **The joining device now says WHY a sync failed** instead of the fixed
+  sentence "Couldn't sync data." The specific reason was already being worked
+  out and then discarded one line before it reached the Sync Error screen.
+- **The host device now says WHY a sync failed**, not just that it failed. Same
+  defect, other end — and this is the screen that has never once been captured.
 - **A do-nothing sync can no longer paint over a real failure.** The background
   sync that runs every 60 seconds reports "success, sent 0 records" — and
   because it happened later, it was overwriting your real failure with a green
@@ -59,6 +66,22 @@ This build does **not** claim sync is fixed. It claims a failure is now
 | Permissions page shows Local Network as "pending" after you allow it | Not fixed (P2) |
 | An interrupted transfer restarts from zero rather than resuming | Planned, not built (#1695) |
 | Rows that collide with existing data are skipped silently | Known gap, being tracked (#1645) |
+| **A failure while _pairing_ — before the transfer starts — is still silent** | **Not fixed (#1693)** — see below |
+
+### The one gap that could still waste your test
+
+Everything above is about a failure *during the transfer*. If the join is
+rejected **during pairing**, before any data moves, this build still tells you
+nothing useful: all six rejection paths write to the device log only, and the
+host's reason panel cannot even be reached until pairing has already succeeded.
+
+**What that looks like:** you type the code, it fails quickly, and the phone
+shows a generic sentence with no code while the Mac shows nothing new at all.
+
+**If that happens, this build has not given us the reason** — say so plainly and
+don't spend more attempts on it. That case is tracked on #1693 and needs one
+more fix before it is legible. A failure that happens *after* "connected", once
+records start moving, is the case this build does cover.
 
 ## For the record
 
