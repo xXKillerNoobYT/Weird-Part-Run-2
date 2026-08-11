@@ -8,6 +8,62 @@ import MultipeerConnectivity
 @Suite("MultipeerManager Tests")
 struct MultipeerTests {
 
+    // MARK: - #1701 — CI must never advertise on the real Bluetooth mesh
+    //
+    // The suite stands up REAL advertisers (PeerManagerTests calls
+    // startPeerSync on a real PeerManager) and the gate runs on a self-hosted
+    // Mac beside the owner's devices, so a shared service type put fixture
+    // peers into the production picker and broke live pairing.
+
+    @Test("test processes never advertise on the production service type (#1701)")
+    func testServiceTypeIsNotProductionUnderTest() {
+        // This test itself runs under the test runner, so the detection that
+        // gates the whole fix must be true here. If it is not, every assertion
+        // below would pass vacuously.
+        #expect(
+            MultipeerManager.isRunningUnderTests,
+            "test-process detection failed — the production service type would be used on the real mesh"
+        )
+        #expect(
+            MultipeerManager.activeServiceType != MultipeerManager.productionServiceType,
+            "CI is advertising on the production mesh; the owner's device picker will fill with fixture peers"
+        )
+        #expect(MultipeerManager.activeServiceType.hasPrefix("wpr2t-"))
+    }
+
+    @Test("the service type stays stable within a process so peers still find each other (#1701)")
+    func testServiceTypeIsStableWithinProcess() {
+        // Two managers in one test process must share a type, or any test that
+        // relies on real discovery would silently stop discovering.
+        #expect(MultipeerManager.activeServiceType == MultipeerManager.activeServiceType)
+    }
+
+    @Test("each generated test service type is unique and Bonjour-legal (#1701)")
+    func testGeneratedServiceTypesAreUniqueAndValid() {
+        let generated = (0..<50).map { _ in MultipeerManager.testScopedServiceType() }
+        #expect(Set(generated).count == generated.count, "collision — two runs could see each other")
+        for value in generated {
+            #expect(
+                MultipeerManager.isValidBonjourServiceType(value),
+                "\(value) is not a legal Bonjour type; the advertiser would fail to start"
+            )
+            #expect(value != MultipeerManager.productionServiceType)
+        }
+    }
+
+    @Test("Bonjour service-type validation rejects what MCNearbyService would reject (#1701)")
+    func testBonjourValidationRules() {
+        #expect(MultipeerManager.isValidBonjourServiceType("wiredpart-sync"))
+        #expect(MultipeerManager.isValidBonjourServiceType("wpr2t-0a1b2c3d"))
+        #expect(!MultipeerManager.isValidBonjourServiceType(""))
+        #expect(!MultipeerManager.isValidBonjourServiceType("way-too-long-service"))  // 20 chars
+        #expect(!MultipeerManager.isValidBonjourServiceType("-leadinghyphen"))
+        #expect(!MultipeerManager.isValidBonjourServiceType("trailinghyphen-"))
+        #expect(!MultipeerManager.isValidBonjourServiceType("double--hyphen"))
+        #expect(!MultipeerManager.isValidBonjourServiceType("under_score"))
+        #expect(!MultipeerManager.isValidBonjourServiceType("12345"))  // no letter
+    }
+
     @Test("MultipeerPeerInfo stores all fields")
     func testPeerInfoInit() {
         let info = MultipeerPeerInfo(
