@@ -56,7 +56,9 @@ public struct ReceivedMultipeerMessage: Sendable {
 ///
 /// Ported from: `src-tauri/objc/MultipeerBridge.m`
 ///
-/// Service type: `"wiredpart-sync"` (matching existing ObjC bridge)
+/// Service type: `"wiredpart-sync"` in production (matching existing ObjC
+/// bridge); a per-process `wpr2t-*` type under test so CI can never advertise
+/// onto the real mesh (#1701).
 /// Discovery info: `device_id`, `device_name`, `company_id`
 /// Auto-invite same-company peers, auto-accept same-company invitations.
 /// Join/onboarding discovery can browse any company before the local company ID
@@ -83,7 +85,101 @@ public final class MultipeerManager: NSObject, @unchecked Sendable {
     /// human-readable line so the caller can log or surface it.
     public var onTransportError: ((String) -> Void)?
 
-    private static let serviceType = "wiredpart-sync"
+    /// The production Bonjour service type. Every shipping device uses this.
+    static let productionServiceType = "wiredpart-sync"
+
+    /// Set this in the environment of any process that must stay off the real
+    /// mesh. Required for **UI tests**, where the app under test is a separate
+    /// process and therefore is *not* itself running under XCTest — the
+    /// in-process detection below cannot see it. CI exports it into the
+    /// simulator via `SIMCTL_CHILD_`-prefixed environment.
+    static let testServiceTypeEnvVar = "WIREDPART_SYNC_TEST_SERVICE"
+
+    /// Escape hatch for a developer who deliberately wants a Simulator to join
+    /// the real mesh. Off by default and never set in CI. Documented rather
+    /// than hidden so the one legitimate case does not tempt anyone into
+    /// weakening the rules above it.
+    static let forceProductionMeshEnvVar = "WIREDPART_SYNC_FORCE_PRODUCTION_MESH"
+
+    /// True when this process must not advertise on the real Bluetooth mesh.
+    ///
+    /// Three independent conditions, because relying on any single one has
+    /// already failed in the field (#1701):
+    ///
+    /// 1. **Simulator** — compile-time, and the load-bearing one. The peer the
+    ///    owner actually saw was `WPR2-CI-iPad-<run-id>`, a CI *simulator*
+    ///    running the app as its own process. That process is not itself under
+    ///    XCTest, so in-process test detection cannot see it, and a per-test
+    ///    opt-in would silently rot the first time someone adds a UI test file
+    ///    without it. A Simulator is never an electrician's phone, so it has no
+    ///    business on the production mesh.
+    /// 2. **In-process test detection** — covers SwiftPM/XCTest bundles and
+    ///    Xcode test hosts, including unit tests that stand up a real
+    ///    `PeerManager`.
+    /// 3. **Environment variable** — lets a physical-device test rig opt out
+    ///    explicitly.
+    static let isRunningUnderTests: Bool = {
+        let env = ProcessInfo.processInfo.environment
+        if env[forceProductionMeshEnvVar] == "1" { return false }
+
+        #if targetEnvironment(simulator)
+        return true
+        #else
+        if env[testServiceTypeEnvVar] != nil { return true }
+        if env["XCTestConfigurationFilePath"] != nil { return true }
+        if env["XCTestBundlePath"] != nil { return true }
+        if env["XCTestSessionIdentifier"] != nil { return true }
+        if NSClassFromString("XCTestCase") != nil { return true }
+        if Bundle.main.bundlePath.hasSuffix(".xctest") { return true }
+        return false
+        #endif
+    }()
+
+    /// The service type the advertiser and browser actually use. (#1701)
+    ///
+    /// Production and tests shared one hardcoded string, and the test suite
+    /// stands up **real** `MCNearbyServiceAdvertiser`s (`PeerManagerTests`
+    /// calls `startPeerSync` on a real `PeerManager`). Because the gate runs on
+    /// a self-hosted Mac physically beside the owner's devices, fixture peers
+    /// —`Test Device`, `Shop Mac`, `Host`, `WPR2-CI-iPad-<run-id>`— were
+    /// appearing in the production "Join a Business" picker. The joiner then
+    /// auto-selected a CI ghost while the real host displayed a pairing code,
+    /// so pairing could not succeed and failed with no usable reason.
+    ///
+    /// Under test this becomes a per-process value that is unique, so two
+    /// managers inside one test process still discover each other, while no
+    /// real device can ever see them.
+    ///
+    /// Bonjour constrains the type to 1–15 characters of letters, digits and
+    /// hyphens, with at least one letter and no leading/trailing hyphen —
+    /// `"wpr2t-" + 8 hex` is 14, and is validated by
+    /// `isValidBonjourServiceType` below.
+    private static let serviceType: String = {
+        guard isRunningUnderTests else { return productionServiceType }
+        return testScopedServiceType()
+    }()
+
+    /// Build a per-process service type that can never collide with production.
+    static func testScopedServiceType() -> String {
+        let suffix = UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(8).lowercased()
+        let candidate = "wpr2t-\(suffix)"
+        // Defensive: a malformed type makes the advertiser fail to start, which
+        // would look exactly like the transport bug this code reports on.
+        return isValidBonjourServiceType(candidate) ? candidate : "wpr2t-fallback"
+    }
+
+    /// RFC 6335 / Bonjour service-type rules, as enforced by `MCNearbyService*`.
+    static func isValidBonjourServiceType(_ value: String) -> Bool {
+        guard (1...15).contains(value.count) else { return false }
+        guard value.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }) else { return false }
+        guard value.contains(where: { $0.isLetter }) else { return false }
+        guard !value.hasPrefix("-"), !value.hasSuffix("-") else { return false }
+        return !value.contains("--")
+    }
+
+    /// The service type in effect for this process. Exposed so a regression
+    /// test can assert that a test process is never on the production mesh.
+    static var activeServiceType: String { serviceType }
 
     private let deviceId: String
     private let deviceName: String
