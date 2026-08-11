@@ -829,10 +829,41 @@ final class IOSSyncManager {
             activeSyncPeerName = nil
         }
         if let latest = state.lastPeerSyncs.values.max(by: { $0.syncedAt < $1.syncedAt }) {
-            lastHostSyncSucceeded = latest.success
-            lastHostSyncSummary = latest.success
-                ? "Sent \(latest.pushed) records to \(latest.peerName)"
-                : "Sync with \(latest.peerName) failed"
+            // `lastPeerSyncs` is ONE newest-wins slot shared by every peer and
+            // every KIND of sync, so the routine 60-second incremental push --
+            // which returns success with nothing sent -- overwrote a real
+            // pairing failure with a green "Sent 0 records". That is verbatim
+            // what the owner photographed on build 63: the phone was erroring
+            // while the host painted a checkmark (#1693).
+            //
+            // A sync that moved nothing is not evidence that syncing works, so
+            // it must not replace a recorded failure. This deliberately biases
+            // toward showing the failure: a stale failure is recoverable (tap
+            // Sync again), a false success sends the user away believing the
+            // pairing worked. A success that actually moved records still wins,
+            // which is what clears the failure once syncing recovers.
+            let movedRecords = latest.pushed > 0 || latest.pulled > 0
+            let wouldMaskFailure = latest.success
+                && !movedRecords
+                && lastHostSyncSummary != nil
+                && !lastHostSyncSucceeded
+
+            if !wouldMaskFailure {
+                lastHostSyncSucceeded = latest.success
+                if latest.success {
+                    lastHostSyncSummary = "Sent \(latest.pushed) records to \(latest.peerName)"
+                } else if let reason = latest.error?.trimmingCharacters(in: .whitespacesAndNewlines),
+                          !reason.isEmpty {
+                    // Say WHY, not just THAT. The host end was undiagnosable
+                    // from the screen: the reason was computed, stored on the
+                    // result, and then dropped here. Device logs replicate over
+                    // sync, so when this fires the logs cannot reach anyone --
+                    // the screen is the only diagnostic channel that survives.
+                    lastHostSyncSummary = "Sync with \(latest.peerName) failed — \(reason)"
+                } else {
+                    lastHostSyncSummary = "Sync with \(latest.peerName) failed"
+                }
+            }
         }
 
         // Joiner-side live snapshot progress (#1417): show real movement while
@@ -1375,6 +1406,14 @@ final class IOSSyncManager {
         syncStatus = .syncing
         syncProgressMessage = "Starting initial sync..."
         syncProgressPercent = 0.0
+        // A retry must not inherit the PREVIOUS attempt's diagnosis. Tapping
+        // "Try Again" clears the view's own copy, but the composed reason lives
+        // here, and not every failure path rewrites it -- the `guard db != nil`
+        // throw below is one. Without this, a second attempt failing for a new
+        // reason redisplays the first attempt's advice ("keep both devices
+        // close and retry") for an unrelated error, which reads as a confirmed
+        // diagnosis rather than a leftover (#1693).
+        errorMessage = nil
 
         guard db != nil else {
             syncProgressMessage = nil
@@ -1538,10 +1577,36 @@ final class IOSSyncManager {
         }
     }
 
+    /// Pick what the user actually sees when initial sync fails.
+    ///
+    /// The composed reason wins whenever there is one. `performInitialSync`
+    /// builds a transport-specific explanation with `initialSyncFailureMessage`
+    /// — "generate a NEW code on the shop device", "keep both devices close and
+    /// retry" — and throws it wrapped in `SyncError.syncFailed`.
+    ///
+    /// The view used to hand that straight to `userFriendlyError`, which
+    /// matches a description against a list of substrings and, when none match,
+    /// returns the generic "Couldn't <context>. Pull down to retry." So a
+    /// failure the app had ALREADY diagnosed reached the user as a shrug —
+    /// the owner's build-63 screenshot (#1580).
+    ///
+    /// Extracted and made static purely so this choice is unit-testable: three
+    /// separate attempts have now been made to get a real reason onto this
+    /// screen, and a rule with no test is a rule that regresses.
+    /// `nonisolated` deliberately: this is a pure choice between two strings
+    /// with no actor state, and it must be callable from tests and from any
+    /// context that has already caught the error. Matches `userFriendlyError`.
+    nonisolated static func displayableSyncFailure(composed: String?, thrown: Error) -> String {
+        if let composed, !composed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return composed
+        }
+        return userFriendlyError(thrown, context: "sync data")
+    }
+
     /// Compose an honest initial-sync failure covering every transport tried.
     /// The generic "Couldn't sync data" hid the real cause in the 2026-08-01
     /// field failure — never collapse distinct transport failures again.
-    static func initialSyncFailureMessage(
+    nonisolated static func initialSyncFailureMessage(
         wifiFailure: String?,
         bluetoothError: Error
     ) -> String {

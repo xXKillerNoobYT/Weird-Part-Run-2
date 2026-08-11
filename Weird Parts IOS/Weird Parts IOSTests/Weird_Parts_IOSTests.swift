@@ -1599,3 +1599,172 @@ final class IOSSyncManagerTransportErrorXCTests: XCTestCase {
         XCTAssertFalse(manager.isScanning)
     }
 }
+
+/// Host-side sync summary (#1693).
+///
+/// The host end was undiagnosable from the screen: the failure reason was
+/// computed, stored on `PeerSyncResult.error`, and then discarded when the
+/// summary string was built. Worse, `lastPeerSyncs` is one newest-wins slot
+/// shared by every peer and every kind of sync, so a routine incremental push
+/// that moved nothing overwrote a real failure with a green "Sent 0 records".
+final class IOSSyncManagerHostSummaryXCTests: XCTestCase {
+    @MainActor
+    private func state(_ results: [PeerSyncResult]) -> PeerManagerState {
+        var s = PeerManagerState()
+        s.lastPeerSyncs = Dictionary(
+            uniqueKeysWithValues: results.map { ($0.peerDeviceId, $0) }
+        )
+        return s
+    }
+
+    @MainActor
+    func testHostFailureSummaryCarriesTheReason() {
+        let manager = IOSSyncManager()
+
+        manager.handlePeerStateChange(state([
+            PeerSyncResult(
+                peerDeviceId: "phone-1",
+                peerName: "iPhone",
+                success: false,
+                error: "Snapshot stalled after 412 records (parts)",
+                syncedAt: "2026-08-10T00:13:00.000Z"
+            )
+        ]))
+
+        XCTAssertFalse(manager.lastHostSyncSucceeded)
+        XCTAssertEqual(
+            manager.lastHostSyncSummary,
+            "Sync with iPhone failed — Snapshot stalled after 412 records (parts)"
+        )
+    }
+
+    @MainActor
+    func testHostFailureWithoutAReasonStillReadsAsAFailure() {
+        let manager = IOSSyncManager()
+
+        manager.handlePeerStateChange(state([
+            PeerSyncResult(
+                peerDeviceId: "phone-1",
+                peerName: "iPhone",
+                success: false,
+                error: "   ",
+                syncedAt: "2026-08-10T00:13:00.000Z"
+            )
+        ]))
+
+        XCTAssertFalse(manager.lastHostSyncSucceeded)
+        XCTAssertEqual(manager.lastHostSyncSummary, "Sync with iPhone failed")
+    }
+
+    /// The build-63 false green, reproduced. A snapshot fails, then the
+    /// 60-second incremental push reports success having sent nothing. Before
+    /// the fix the second result won on `syncedAt` and painted a checkmark over
+    /// the failure the owner was actively looking at.
+    @MainActor
+    func testNoOpSuccessDoesNotOverwriteARecordedFailure() {
+        let manager = IOSSyncManager()
+
+        manager.handlePeerStateChange(state([
+            PeerSyncResult(
+                peerDeviceId: "phone-1",
+                peerName: "iPhone",
+                success: false,
+                error: "Snapshot transfer failed",
+                syncedAt: "2026-08-10T00:13:00.000Z"
+            )
+        ]))
+        XCTAssertFalse(manager.lastHostSyncSucceeded)
+
+        // Later in wall-clock time, and it "succeeded" — but moved nothing.
+        manager.handlePeerStateChange(state([
+            PeerSyncResult(
+                peerDeviceId: "phone-1",
+                peerName: "iPhone",
+                pushed: 0,
+                pulled: 0,
+                success: true,
+                syncedAt: "2026-08-10T00:14:00.000Z"
+            )
+        ]))
+
+        XCTAssertFalse(
+            manager.lastHostSyncSucceeded,
+            "A sync that moved nothing must not present as success over a real failure"
+        )
+        XCTAssertEqual(
+            manager.lastHostSyncSummary,
+            "Sync with iPhone failed — Snapshot transfer failed"
+        )
+    }
+
+    /// The guard must not pin a failure forever: real progress clears it.
+    @MainActor
+    func testSuccessThatMovedRecordsClearsAPriorFailure() {
+        let manager = IOSSyncManager()
+
+        manager.handlePeerStateChange(state([
+            PeerSyncResult(
+                peerDeviceId: "phone-1",
+                peerName: "iPhone",
+                success: false,
+                error: "Snapshot transfer failed",
+                syncedAt: "2026-08-10T00:13:00.000Z"
+            )
+        ]))
+        XCTAssertFalse(manager.lastHostSyncSucceeded)
+
+        manager.handlePeerStateChange(state([
+            PeerSyncResult(
+                peerDeviceId: "phone-1",
+                peerName: "iPhone",
+                pushed: 128,
+                success: true,
+                syncedAt: "2026-08-10T00:15:00.000Z"
+            )
+        ]))
+
+        XCTAssertTrue(manager.lastHostSyncSucceeded)
+        XCTAssertEqual(manager.lastHostSyncSummary, "Sent 128 records to iPhone")
+    }
+
+    /// A no-op success is still fine as a first impression — the guard only
+    /// protects an existing failure, it does not suppress ordinary reporting.
+    @MainActor
+    func testNoOpSuccessStillReportsWhenNothingHasFailed() {
+        let manager = IOSSyncManager()
+
+        manager.handlePeerStateChange(state([
+            PeerSyncResult(
+                peerDeviceId: "phone-1",
+                peerName: "iPhone",
+                pushed: 0,
+                success: true,
+                syncedAt: "2026-08-10T00:13:00.000Z"
+            )
+        ]))
+
+        XCTAssertTrue(manager.lastHostSyncSucceeded)
+        XCTAssertEqual(manager.lastHostSyncSummary, "Sent 0 records to iPhone")
+    }
+
+    /// A retry must not inherit the previous attempt's diagnosis. `Try Again`
+    /// clears the view's copy, but the composed reason lives on the manager and
+    /// not every failure path rewrites it.
+    @MainActor
+    func testInitialSyncClearsThePreviousAttemptsErrorBeforeFailingAgain() async {
+        let manager = IOSSyncManager()
+        manager.errorMessage = "Keep both devices close and retry."
+
+        do {
+            try await manager.performInitialSync()
+            XCTFail("performInitialSync should throw without a database")
+        } catch {
+            // Expected: no database is configured on a bare manager.
+        }
+
+        XCTAssertNil(
+            manager.errorMessage,
+            "A new attempt must not redisplay the previous attempt's reason"
+        )
+    }
+}
