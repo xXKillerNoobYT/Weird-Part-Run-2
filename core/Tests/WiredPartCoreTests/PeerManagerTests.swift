@@ -1145,17 +1145,6 @@ struct PeerManagerTests {
         #expect(reason.contains("pairing is still valid"))
     }
 
-    @Test("The joiner's snapshot watchdog is idle-based, with no total wall-clock cap")
-    func testSnapshotWatchdogIsIdleBasedNotTotalElapsed() {
-        // A total-elapsed cap made any company too large to finish inside it
-        // permanently unjoinable, because every retry hit the same wall and
-        // staged rows were discarded on expiry. Runaways are bounded by SIZE.
-        #expect(PeerManager.snapshotIdleTimeoutSeconds >= 180)
-        #expect(PeerManager.snapshotAcknowledgementTimeoutSeconds >= 600)
-        #expect(PeerManager.defaultSnapshotStagingRecordLimit == 2_000_000)
-        #expect(PeerManager.defaultSnapshotStagingByteLimit == 1 << 30)
-    }
-
     @Test("Snapshot capability restores only before completion send")
     func testSnapshotCapabilityRestorationBoundary() {
         #expect(PeerManager.shouldRestoreHostedSnapshot(

@@ -2073,10 +2073,6 @@ public actor PeerManager {
         )
     }
 
-    func testTimeoutSnapshotAcknowledgement(token: String, for peerDeviceId: String) {
-        timeoutSnapshotAcknowledgement(peerDeviceId: peerDeviceId, authorizationToken: token)
-    }
-
     func testHostedSnapshotTokenAvailable(_ token: String, for peerDeviceId: String) -> Bool {
         hostedSnapshotTokens[peerDeviceId] == token
     }
@@ -2267,7 +2263,7 @@ public actor PeerManager {
             try? await Task.sleep(nanoseconds: 10_000_000_000)
         },
         now: @escaping @Sendable () -> Date = Date.init,
-        idleTimeout: TimeInterval = 45
+        idleTimeout: TimeInterval = PeerManager.snapshotIdleTimeoutSeconds
     ) async {
         while true {
             await sleep()
@@ -2383,7 +2379,6 @@ public actor PeerManager {
             snapshotLastActivity[hostDeviceId] = Date()
             Task { [weak self] in
                 await self?.watchFullSync(with: hostDeviceId)
-            }
             }
         }
     }
