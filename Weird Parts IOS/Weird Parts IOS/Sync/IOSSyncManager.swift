@@ -1456,7 +1456,19 @@ final class IOSSyncManager {
             syncProgressMessage = wifiFailure == nil
                 ? "Downloading data over Bluetooth…"
                 : "Wi-Fi didn't work — downloading over Bluetooth instead…"
-            syncProgressPercent = 0.3
+            // Was a hardcoded 0.3 that never moved until 1.0 at the end. The
+            // owner read that frozen bar as "stalls around 25%" and reported it
+            // as a symptom across four builds — it was a constant, and it could
+            // neither support nor refute any theory.
+            //
+            // The joiner does not learn the company's total row count up front,
+            // so an honest percentage is not available here. A live record
+            // count IS (`handlePeerStateChange` publishes one from
+            // `snapshotReceivedRecords`), so show movement instead of inventing
+            // a fraction. `SyncWaitingView` only draws the determinate bar when
+            // this is > 0, so 0 means "no fake bar" — the record count carries
+            // the progress and is truthful about not knowing the total.
+            syncProgressPercent = 0
             do {
                 try await pm.requestFullSyncOverMultipeer(hostDeviceId: hostDeviceId)
             } catch {
@@ -1618,6 +1630,17 @@ final class IOSSyncManager {
             bluetoothReason = "the devices lost their connection — keep both unlocked, close together, with the shop device's Add-a-Device screen open, and retry"
         case MultipeerPairingError.requestAlreadyInProgress:
             bluetoothReason = "a previous attempt is still finishing — wait a few seconds and retry"
+        case MultipeerPairingError.responseTimeout:
+            // This used to fall through to "keep both devices close and retry",
+            // which blames distance for what is actually a clock. Telling
+            // someone to move closer when the transfer simply stopped arriving
+            // is why several builds shipped without anyone identifying the
+            // cause. A timeout must say it ran out of time.
+            bluetoothReason = """
+            no data arrived for \(Int(PeerManager.snapshotIdleTimeoutSeconds / 60)) minutes, so the download was stopped — \
+            a large company can take a long time over Bluetooth, so keep both devices awake, unlocked and close together, \
+            and keep the shop device's Add-a-Device screen open for the whole transfer
+            """
         default:
             bluetoothReason = (bluetoothError as? LocalizedError)?.errorDescription
                 ?? "Bluetooth transfer failed — keep both devices close and retry"
