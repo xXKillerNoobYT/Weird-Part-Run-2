@@ -1899,10 +1899,26 @@ public actor PeerManager {
             return
         }
 
-        // A timed-out reservation may have restored its token for a retry. Only
-        // consume that token when it still belongs to this acknowledgement; a
-        // newer re-pair's capability remains available.
-        if hostedSnapshotTokens[peerDeviceId] == acknowledgement.authorizationToken {
+        // Consume the capability only when the joiner actually APPLIED the
+        // snapshot. A negative acknowledgement means the joiner rolled back and
+        // holds no company data, so there is nothing to replay and the peer is
+        // not untrusted — it is a peer whose apply failed.
+        //
+        // This used to run unconditionally. After the acknowledgement timeout
+        // restored token T for a retry, a joiner rollback carrying T deleted it,
+        // and the user was told "Retry the sync" — but the retry then failed
+        // `BluetoothSnapshotAuthorization.isAuthorized` with expectedToken nil
+        // and was answered with "The Bluetooth peer is not a trusted company
+        // device. Pair it before requesting a snapshot." That is the exact dead
+        // end this path documents itself as eliminating, so the advice we print
+        // has to stay true for a failure as well as for a timeout.
+        //
+        // Replay is still closed: the reservation was removed above, so a second
+        // acknowledgement for the same transfer falls through to the stale
+        // branch, and a re-pair's newer token is never overwritten because only
+        // a token matching THIS acknowledgement is touched.
+        if acknowledgement.succeeded,
+           hostedSnapshotTokens[peerDeviceId] == acknowledgement.authorizationToken {
             hostedSnapshotTokens.removeValue(forKey: peerDeviceId)
         }
 
@@ -1921,7 +1937,7 @@ public actor PeerManager {
                 success: false,
                 error: acknowledgement.error ?? "The joiner did not apply the snapshot. Retry the sync."
             )
-            logger.error("[PeerManager] Joiner rejected full Bluetooth snapshot; capability consumed after completion")
+            logger.error("[PeerManager] Joiner rejected full Bluetooth snapshot; capability retained so the advised retry can proceed")
         }
         notifyStateChanged()
     }
@@ -2275,12 +2291,29 @@ public actor PeerManager {
         }
     }
 
+    /// `idleTimeout` is optional **on purpose**. When it is nil this seam calls
+    /// `watchFullSync` without the argument at all, so the production default
+    /// (`snapshotIdleTimeoutSeconds`) is on the executed path and a test can pin
+    /// it behaviourally.
+    ///
+    /// It used to be a required parameter, which meant every test supplied its
+    /// own window and the constant was on no executed path — changing 180 back
+    /// to 45 left the whole suite green. A seam that re-specifies a default
+    /// erases that default from coverage.
     func testWatchFullSync(
         with peerDeviceId: String,
         sleep: @escaping @Sendable () async -> Void,
         now: @escaping @Sendable () -> Date,
-        idleTimeout: TimeInterval
+        idleTimeout: TimeInterval? = nil
     ) async {
+        guard let idleTimeout else {
+            await watchFullSync(
+                with: peerDeviceId,
+                sleep: sleep,
+                now: now
+            )
+            return
+        }
         await watchFullSync(
             with: peerDeviceId,
             sleep: sleep,

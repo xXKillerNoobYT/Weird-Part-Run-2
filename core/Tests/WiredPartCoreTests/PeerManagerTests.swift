@@ -1145,6 +1145,150 @@ struct PeerManagerTests {
         #expect(reason.contains("pairing is still valid"))
     }
 
+    // MARK: - Deadline constants, pinned behaviourally
+
+    /// Pins the DEFAULT idle window. The watchdog is invoked here with **no**
+    /// `idleTimeout` argument, so `PeerManager.snapshotIdleTimeoutSeconds` is on
+    /// the executed path and this test fails if someone shortens it.
+    ///
+    /// Mutation-verified: setting `snapshotIdleTimeoutSeconds` back to 45 turns
+    /// this test RED (the 100-second gap below then times out). Every other
+    /// watchdog test passes its own window, so before this test the constant was
+    /// pinned by nothing and the 45-second regression could land fully green.
+    ///
+    /// LIMIT, stated honestly: this drives the INJECTED clock. A future
+    /// elapsed-time cap written with a real `Date()` rather than the injected
+    /// `now()` would not be caught here — that remains a code-review concern.
+    /// A source-scanning test would not close it either; it would only look like
+    /// coverage.
+    @Test("The default idle window tolerates a 100s gap and times out a 200s one")
+    func testDefaultSnapshotIdleWindowIsPinned() async throws {
+        let pm = PeerManager(db: try freshDB())
+
+        // Below the 180s default: a transfer this quiet is still healthy.
+        let tolerated = "tolerated-host"
+        let toleratedClock = WatchdogClock(Date(timeIntervalSinceReferenceDate: 0))
+        let toleratedDriver = WatchdogTickDriver()
+        let toleratedWaiter = Task {
+            try await pm.testAwaitFullSyncTransport(peerDeviceId: tolerated)
+        }
+        while await pm.testPendingTransportOperationCount() == 0 {
+            await Task.yield()
+        }
+        await pm.testSetSnapshotActivity(toleratedClock.now, for: tolerated)
+        await pm.testWatchFullSync(
+            with: tolerated,
+            sleep: {
+                if toleratedDriver.next() == 1 {
+                    // 45 < 100 < 180 — green on the real default, red on a 45s one.
+                    toleratedClock.advance(by: 100)
+                } else {
+                    await pm.testCompleteFullSync(from: tolerated)
+                }
+            },
+            now: { toleratedClock.now }
+            // idleTimeout deliberately omitted — that is the point of this test.
+        )
+        try await toleratedWaiter.value
+
+        // Above the 180s default: genuinely stalled, and it must still stop.
+        let stalled = "stalled-host"
+        let stalledClock = WatchdogClock(Date(timeIntervalSinceReferenceDate: 0))
+        let stalledWaiter = Task {
+            try await pm.testAwaitFullSyncTransport(peerDeviceId: stalled)
+        }
+        while await pm.testPendingTransportOperationCount() == 0 {
+            await Task.yield()
+        }
+        await pm.testSetSnapshotActivity(stalledClock.now, for: stalled)
+        await pm.testWatchFullSync(
+            with: stalled,
+            sleep: { stalledClock.advance(by: 200) },
+            now: { stalledClock.now }
+        )
+        await #expect(throws: MultipeerPairingError.responseTimeout) {
+            try await stalledWaiter.value
+        }
+    }
+
+    /// Pins `snapshotAcknowledgementTimeoutSeconds` through the string the user
+    /// actually reads, which is produced by dividing that constant by 60.
+    /// Shortening it back to 60s turns this red.
+    @Test("The acknowledgement timeout tells the user it waited ten minutes")
+    func testAcknowledgementWindowIsPinnedThroughTheUserFacingMessage() async throws {
+        let pm = PeerManager(db: try freshDB())
+        let peer = "joiner"
+        let token = "capability-window"
+
+        await pm.testIssueHostedSnapshotToken(token, for: peer)
+        #expect(await pm.testReserveHostedSnapshot(token: token, for: peer))
+        await pm.testSetHostedSnapshotRowsSent(1, for: peer)
+        await pm.testTimeoutSnapshotAcknowledgement(token: token, for: peer)
+
+        let reason = try #require(await pm.getState().lastPeerSyncs[peer]?.error)
+        #expect(reason.contains("10 minutes"))
+    }
+
+    /// Defect B. A negative acknowledgement used to delete the capability that
+    /// the acknowledgement timeout had just restored, so the "Retry the sync"
+    /// the very same call prints was answered with "Pair it before requesting a
+    /// snapshot." The apply failed; that is not evidence the peer is untrusted.
+    ///
+    /// Mutation-verified: dropping the `acknowledgement.succeeded` condition
+    /// from the token-consumption guard turns this test RED.
+    @Test("A failed apply keeps the capability so the retry it advises can work")
+    func testNegativeAcknowledgementKeepsTheCapability() async throws {
+        let pm = PeerManager(db: try freshDB())
+        let peer = "joiner"
+        let token = "capability-negative-ack"
+
+        await pm.testIssueHostedSnapshotToken(token, for: peer)
+        #expect(await pm.testReserveHostedSnapshot(token: token, for: peer))
+        await pm.testSetHostedSnapshotRowsSent(1, for: peer)
+
+        // The host stops waiting; the capability comes back for a retry.
+        await pm.testTimeoutSnapshotAcknowledgement(token: token, for: peer)
+        #expect(await pm.testHostedSnapshotTokenAvailable(token, for: peer))
+
+        // The joiner then reports it rolled back, carrying that same token.
+        await pm.testAcknowledgeHostedSnapshot(
+            token: token,
+            for: peer,
+            succeeded: false,
+            error: nil
+        )
+
+        let result = try #require(await pm.getState().lastPeerSyncs[peer])
+        #expect(result.success == false)
+        #expect(try #require(result.error).contains("Retry the sync"))
+
+        // ...and that advice is now actually followable.
+        #expect(await pm.testHostedSnapshotTokenAvailable(token, for: peer))
+        #expect(await pm.testReserveHostedSnapshot(token: token, for: peer))
+    }
+
+    /// The mirror of the above: a SUCCESSFUL apply must still consume the
+    /// capability exactly once. Keeping the token alive after real data landed
+    /// would be a replay hole, so the defect-B fix must not reach this path.
+    @Test("A successful apply still consumes the capability exactly once")
+    func testSuccessfulAcknowledgementStillConsumesTheCapability() async throws {
+        let pm = PeerManager(db: try freshDB())
+        let peer = "joiner"
+        let token = "capability-positive-ack"
+
+        await pm.testIssueHostedSnapshotToken(token, for: peer)
+        #expect(await pm.testReserveHostedSnapshot(token: token, for: peer))
+        await pm.testSetHostedSnapshotRowsSent(7, for: peer)
+        await pm.testTimeoutSnapshotAcknowledgement(token: token, for: peer)
+        #expect(await pm.testHostedSnapshotTokenAvailable(token, for: peer))
+
+        await pm.testAcknowledgeHostedSnapshot(token: token, for: peer, succeeded: true)
+
+        #expect(await pm.getState().lastPeerSyncs[peer]?.success == true)
+        #expect(!(await pm.testHostedSnapshotTokenAvailable(token, for: peer)))
+        #expect(!(await pm.testReserveHostedSnapshot(token: token, for: peer)))
+    }
+
     @Test("Snapshot capability restores only before completion send")
     func testSnapshotCapabilityRestorationBoundary() {
         #expect(PeerManager.shouldRestoreHostedSnapshot(
