@@ -37,6 +37,39 @@ private final class SnapshotAcknowledgementCollector: @unchecked Sendable {
     }
 }
 
+private final class WatchdogClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Date
+
+    init(_ value: Date) {
+        self.value = value
+    }
+
+    var now: Date {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    func advance(by seconds: TimeInterval) {
+        lock.lock()
+        value = value.addingTimeInterval(seconds)
+        lock.unlock()
+    }
+}
+
+private final class WatchdogTickDriver: @unchecked Sendable {
+    private let lock = NSLock()
+    private var tick = 0
+
+    func next() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        tick += 1
+        return tick
+    }
+}
+
 private actor PeerManagerStateCollector {
     private var snapshots: [PeerManagerState] = []
     private var transportErrorWaiter: (message: String, continuation: CheckedContinuation<PeerManagerState, Never>)?
@@ -956,6 +989,91 @@ struct PeerManagerTests {
         let state = await pm.getState()
         #expect(state.lastPeerSyncs[peer]?.success == true)
         #expect(state.lastPeerSyncs[peer]?.pushed == 42)
+    }
+
+    @Test("Timed-out snapshot acknowledgement accepts a matching late durable success")
+    func testTimedOutSnapshotAcknowledgementReconcilesLateSuccess() async throws {
+        let pm = PeerManager(db: try freshDB())
+        let peer = "joiner"
+        let token = "late-capability"
+        await pm.testIssueHostedSnapshotToken(token, for: peer)
+        #expect(await pm.testReserveHostedSnapshot(token: token, for: peer))
+        await pm.testSetHostedSnapshotRowsSent(42, for: peer)
+
+        await pm.testTimeoutSnapshotAcknowledgement(token: token, for: peer)
+        #expect(await pm.testHostedSnapshotTokenAvailable(token, for: peer))
+
+        await pm.testAcknowledgeHostedSnapshot(token: token, for: peer, succeeded: true)
+        let state = await pm.getState()
+        #expect(state.lastPeerSyncs[peer]?.success == true)
+        #expect(state.lastPeerSyncs[peer]?.pushed == 42)
+        #expect(!(await pm.testHostedSnapshotTokenAvailable(token, for: peer)))
+    }
+
+    @Test("Old acknowledgement timeout cannot overwrite a re-pair capability")
+    func testStaleAcknowledgementTimeoutCannotRestoreSupersededToken() async throws {
+        let pm = PeerManager(db: try freshDB())
+        let peer = "joiner"
+        let oldToken = "old-capability"
+        let newToken = "new-capability"
+        await pm.testIssueHostedSnapshotToken(oldToken, for: peer)
+        #expect(await pm.testReserveHostedSnapshot(token: oldToken, for: peer))
+        await pm.testSetHostedSnapshotRowsSent(1, for: peer)
+
+        // Re-pair before the old acknowledgement timeout fires.
+        await pm.testIssueHostedSnapshotToken(newToken, for: peer)
+        await pm.testTimeoutSnapshotAcknowledgement(token: oldToken, for: peer)
+        #expect(await pm.testHostedSnapshotTokenAvailable(newToken, for: peer))
+        #expect(!(await pm.testHostedSnapshotTokenAvailable(oldToken, for: peer)))
+
+        // The superseded reservation cannot be revived by a late acknowledgement.
+        await pm.testAcknowledgeHostedSnapshot(token: oldToken, for: peer, succeeded: true)
+        #expect(await pm.testHostedSnapshotTokenAvailable(newToken, for: peer))
+        #expect(await pm.getState().lastPeerSyncs[peer]?.success == false)
+    }
+
+    @Test("Full-sync watchdog permits active transfers beyond 900 seconds and times out idle ones")
+    func testFullSyncWatchdogUsesOnlyIdleTime() async throws {
+        let pm = PeerManager(db: try freshDB())
+        let activePeer = "active-host"
+        let clock = WatchdogClock(Date(timeIntervalSinceReferenceDate: 0))
+        let activeDriver = WatchdogTickDriver()
+        let activeWaiter = Task { try await pm.testAwaitFullSyncTransport(peerDeviceId: activePeer) }
+        while await pm.testPendingTransportOperationCount() == 0 {
+            await Task.yield()
+        }
+        await pm.testSetSnapshotActivity(clock.now, for: activePeer)
+        await pm.testWatchFullSync(
+            with: activePeer,
+            sleep: {
+                clock.advance(by: 901)
+                if activeDriver.next() == 1 {
+                    await pm.testSetSnapshotActivity(clock.now, for: activePeer)
+                } else {
+                    await pm.testCompleteFullSync(from: activePeer)
+                }
+            },
+            now: { clock.now },
+            idleTimeout: 45
+        )
+        try await activeWaiter.value
+
+        let idlePeer = "idle-host"
+        let idleClock = WatchdogClock(Date(timeIntervalSinceReferenceDate: 0))
+        let idleWaiter = Task { try await pm.testAwaitFullSyncTransport(peerDeviceId: idlePeer) }
+        while await pm.testPendingTransportOperationCount() == 0 {
+            await Task.yield()
+        }
+        await pm.testSetSnapshotActivity(idleClock.now, for: idlePeer)
+        await pm.testWatchFullSync(
+            with: idlePeer,
+            sleep: { idleClock.advance(by: 46) },
+            now: { idleClock.now },
+            idleTimeout: 45
+        )
+        await #expect(throws: MultipeerPairingError.responseTimeout) {
+            try await idleWaiter.value
+        }
     }
 
     @Test("Any snapshot request during a reservation is ignored without disrupting the original transfer")

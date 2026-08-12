@@ -274,6 +274,11 @@ public actor PeerManager {
     // Pairing-issued capabilities bind initial snapshots to the successful code exchange.
     private var hostedSnapshotTokens: [String: String] = [:]
     private var hostedSnapshotReservations: [String: HostedSnapshotReservation] = [:]
+    // A completion can arrive shortly after the acknowledgement timeout. Keep its
+    // reservation only while the same pairing capability remains current, so a
+    // late durable success can still settle the host without reviving an older
+    // pairing after the peer has been re-paired.
+    private var timedOutHostedSnapshotReservations: [String: HostedSnapshotReservation] = [:]
     private var receivedSnapshotTokens: [String: String] = [:]
     private var inFlightPairRequests: Set<String> = []
     private var inFlightFullSyncRequests: Set<String> = []
@@ -1859,12 +1864,26 @@ public actor PeerManager {
         _ acknowledgement: FullSyncApplyAcknowledgement,
         from peerDeviceId: String
     ) {
-        guard let reservation = hostedSnapshotReservations[peerDeviceId],
-              reservation.authorizationToken == acknowledgement.authorizationToken else {
+        let reservation: HostedSnapshotReservation
+        if let activeReservation = hostedSnapshotReservations[peerDeviceId],
+           activeReservation.authorizationToken == acknowledgement.authorizationToken {
+            hostedSnapshotReservations.removeValue(forKey: peerDeviceId)
+            reservation = activeReservation
+        } else if let timedOutReservation = timedOutHostedSnapshotReservations[peerDeviceId],
+                  timedOutReservation.authorizationToken == acknowledgement.authorizationToken {
+            timedOutHostedSnapshotReservations.removeValue(forKey: peerDeviceId)
+            reservation = timedOutReservation
+        } else {
             logger.error("[PeerManager] Ignored stale or mismatched snapshot acknowledgement from \(String(peerDeviceId.prefix(8)), privacy: .public)")
             return
         }
-        hostedSnapshotReservations.removeValue(forKey: peerDeviceId)
+
+        // A timed-out reservation may have restored its token for a retry. Only
+        // consume that token when it still belongs to this acknowledgement; a
+        // newer re-pair's capability remains available.
+        if hostedSnapshotTokens[peerDeviceId] == acknowledgement.authorizationToken {
+            hostedSnapshotTokens.removeValue(forKey: peerDeviceId)
+        }
 
         if acknowledgement.succeeded, let rowsSent = reservation.rowsSent {
             state.lastPeerSyncs[peerDeviceId] = PeerSyncResult(
@@ -1922,6 +1941,13 @@ public actor PeerManager {
         hostedSnapshotTokens[peerDeviceId] = authorizationToken
     }
 
+    private func issueHostedSnapshotToken(_ token: String, for peerDeviceId: String) {
+        hostedSnapshotTokens[peerDeviceId] = token
+        // A newly accepted pairing supersedes any late acknowledgement from the
+        // prior pairing for this peer.
+        timedOutHostedSnapshotReservations.removeValue(forKey: peerDeviceId)
+    }
+
     private func scheduleSnapshotAcknowledgementTimeout(
         peerDeviceId: String,
         authorizationToken: String
@@ -1942,6 +1968,13 @@ public actor PeerManager {
         guard let reservation = hostedSnapshotReservations[peerDeviceId],
               reservation.authorizationToken == authorizationToken else { return }
         hostedSnapshotReservations.removeValue(forKey: peerDeviceId)
+        // Restore only when this transfer's capability is still current. A
+        // re-pair may have installed a newer token while this acknowledgement
+        // was pending; restoring the old token would overwrite it.
+        if hostedSnapshotTokens[peerDeviceId] == nil {
+            hostedSnapshotTokens[peerDeviceId] = authorizationToken
+            timedOutHostedSnapshotReservations[peerDeviceId] = reservation
+        }
         state.lastPeerSyncs[peerDeviceId] = PeerSyncResult(
             peerDeviceId: peerDeviceId,
             peerName: reservation.peerName,
@@ -1954,7 +1987,7 @@ public actor PeerManager {
     // State-machine probes keep capability lifecycle regressions deterministic
     // without requiring a physical two-device Multipeer session.
     func testIssueHostedSnapshotToken(_ token: String, for peerDeviceId: String) {
-        hostedSnapshotTokens[peerDeviceId] = token
+        issueHostedSnapshotToken(token, for: peerDeviceId)
     }
 
     func testSetKeyAgreementIdentity(privateKeyB64: String, publicKeyB64: String) {
@@ -1992,6 +2025,10 @@ public actor PeerManager {
             ),
             from: peerDeviceId
         )
+    }
+
+    func testTimeoutSnapshotAcknowledgement(token: String, for peerDeviceId: String) {
+        timeoutSnapshotAcknowledgement(peerDeviceId: peerDeviceId, authorizationToken: token)
     }
 
     func testHostedSnapshotTokenAvailable(_ token: String, for peerDeviceId: String) -> Bool {
@@ -2160,9 +2197,9 @@ public actor PeerManager {
         pendingFullSyncContinuations[peerDeviceId] == nil
     }
 
-    private func snapshotIdleSeconds(_ peerDeviceId: String) -> TimeInterval {
+    private func snapshotIdleSeconds(_ peerDeviceId: String, now: Date = Date()) -> TimeInterval {
         guard let last = snapshotLastActivity[peerDeviceId] else { return .infinity }
-        return Date().timeIntervalSince(last)
+        return now.timeIntervalSince(last)
     }
 
     private func timeoutFullSync(with peerDeviceId: String) {
@@ -2174,6 +2211,48 @@ public actor PeerManager {
         if let cont = pendingFullSyncContinuations.removeValue(forKey: peerDeviceId) {
             cont.resume(throwing: MultipeerPairingError.responseTimeout)
         }
+    }
+
+    /// This watchdog is deliberately driven only by idle time. There is no
+    /// elapsed-time cap: an active company snapshot may take as long as it needs.
+    private func watchFullSync(
+        with peerDeviceId: String,
+        sleep: @escaping @Sendable () async -> Void = {
+            try? await Task.sleep(nanoseconds: 10_000_000_000)
+        },
+        now: @escaping @Sendable () -> Date = Date.init,
+        idleTimeout: TimeInterval = 45
+    ) async {
+        while true {
+            await sleep()
+            if isFullSyncSettled(with: peerDeviceId) { return }
+            if snapshotIdleSeconds(peerDeviceId, now: now()) > idleTimeout {
+                timeoutFullSync(with: peerDeviceId)
+                return
+            }
+        }
+    }
+
+    func testWatchFullSync(
+        with peerDeviceId: String,
+        sleep: @escaping @Sendable () async -> Void,
+        now: @escaping @Sendable () -> Date,
+        idleTimeout: TimeInterval
+    ) async {
+        await watchFullSync(
+            with: peerDeviceId,
+            sleep: sleep,
+            now: now,
+            idleTimeout: idleTimeout
+        )
+    }
+
+    func testSetSnapshotActivity(_ date: Date, for peerDeviceId: String) {
+        snapshotLastActivity[peerDeviceId] = date
+    }
+
+    func testCompleteFullSync(from peerDeviceId: String) {
+        handleFullSyncComplete(from: peerDeviceId)
     }
 
     /// Wait for an MCSession to reach `connected`, re-inviting once if the
@@ -2249,22 +2328,11 @@ public actor PeerManager {
                     .resume(throwing: MultipeerPairingError.sendFailed)
                 return
             }
-            // Idle watchdog (#1417): a transfer that is MOVING never times out;
-            // 45s with no batch = stalled; 15 min hard cap guards runaways.
+            // Idle watchdog (#1417): a transfer that is moving never times out;
+            // only 45 seconds without a batch indicates a stalled transfer.
             snapshotLastActivity[hostDeviceId] = Date()
             Task { [weak self] in
-                let started = Date()
-                while true {
-                    try? await Task.sleep(nanoseconds: 10_000_000_000)
-                    guard let self else { return }
-                    let done = await self.isFullSyncSettled(with: hostDeviceId)
-                    if done { return }
-                    let idle = await self.snapshotIdleSeconds(hostDeviceId)
-                    if idle > 45 || Date().timeIntervalSince(started) > 900 {
-                        await self.timeoutFullSync(with: hostDeviceId)
-                        return
-                    }
-                }
+                await self?.watchFullSync(with: hostDeviceId)
             }
         }
     }
@@ -2412,6 +2480,7 @@ public actor PeerManager {
             return
         }
         let priorSnapshotToken = hostedSnapshotTokens[request.deviceId]
+        let priorTimedOutReservation = timedOutHostedSnapshotReservations[request.deviceId]
 
         func restoreHostStateAfterUndeliveredAcceptance() {
             do {
@@ -2424,6 +2493,11 @@ public actor PeerManager {
                     hostedSnapshotTokens[request.deviceId] = priorSnapshotToken
                 } else {
                     hostedSnapshotTokens.removeValue(forKey: request.deviceId)
+                }
+                if let priorTimedOutReservation {
+                    timedOutHostedSnapshotReservations[request.deviceId] = priorTimedOutReservation
+                } else {
+                    timedOutHostedSnapshotReservations.removeValue(forKey: request.deviceId)
                 }
             } catch {
                 // A failed compensation must remain visible: proceeding would leave
@@ -2441,7 +2515,7 @@ public actor PeerManager {
                 keyAgreementPublicKey: clientPublicKey,
                 injectFailureBeforeCommit: injectActivationFailure
             )
-            hostedSnapshotTokens[request.deviceId] = snapshotToken
+            issueHostedSnapshotToken(snapshotToken, for: request.deviceId)
         } catch {
             restoreHostStateAfterUndeliveredAcceptance()
             try? await sState.setActivePairingCode(pairingCode)
