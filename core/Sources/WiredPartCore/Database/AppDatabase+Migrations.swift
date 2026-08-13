@@ -164,6 +164,7 @@ extension AppDatabase {
         registerContactEmailRepair(&migrator)
         registerMigration121DeviceLogs(&migrator)
         registerMigration122SnapshotStaging(&migrator)
+        registerMigration123SnapshotTransferIdentity(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6386,6 +6387,82 @@ private func registerMigration122SnapshotStaging(_ migrator: inout DatabaseMigra
         try db.create(
             index: "idx_snapshot_staging_peer_seq", on: "_snapshot_staging",
             columns: ["peer_device_id", "seq"], unique: true, ifNotExists: true
+        )
+    }
+}
+
+/// 123 — transfer identity + at-rest integrity for staged snapshots
+/// (#1695, `docs/plans/bluetooth-snapshot-resume.md`,
+/// `docs/plans/localsend-protocol-adoption.md` §1b–1c).
+///
+/// Migration 122 made staging durable but left its rows UNATTRIBUTABLE: `seq`
+/// restarts at 0 for every attempt, so rows surviving a dead process are
+/// indistinguishable from the next transfer's, and the only safe policy was
+/// to wipe everything at startup. That wipe is what makes resume impossible.
+///
+/// Two additions close that gap:
+/// - `transfer_id` stamps every staged row with the host-minted identity of
+///   the transfer that produced it. Rows become attributable, which is the
+///   enabling primitive for resume, contiguity checking, and windowed
+///   acknowledgement (#1695 items 3-5). Rows written by a pre-123 build carry
+///   the DEFAULT `''`, which every reader treats as "unattributable — delete
+///   on sight", so the upgrade path is exactly the old behaviour.
+/// - `payload_sha256` records what the payload hashed to WHEN IT WAS STAGED.
+///   Multipeer's `.reliable` mode protects bytes in flight, but staged rows
+///   now live on disk across process restarts; replay re-verifies each row
+///   against this hash so a snapshot is never assembled from rows that rotted
+///   or were tampered with while parked. `''` (pre-123 rows) skips the check.
+///
+/// `_snapshot_transfer` is the per-transfer ledger: which transfers exist,
+/// how far each got (`last_contiguous_seq`), and what state it is in
+/// (`staging` while frames land, `applying` once the atomic replay begins).
+/// Startup expiry keys off it: only an in-TTL `staging` transfer's rows are
+/// worth keeping — `applying` means the process died mid-apply and the
+/// transaction already rolled back, so its staging is scrap.
+///
+/// Same infrastructure rules as 122, and `SnapshotTransferInfrastructureTests`
+/// asserts them: `_` prefix, absent from `ConflictResolver.allowedSyncTables`,
+/// NO change-tracking triggers.
+private func registerMigration123SnapshotTransferIdentity(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("123_snapshot_transfer_identity") { db in
+        try db.alter(table: "_snapshot_staging") { t in
+            t.add(column: "transfer_id", .text).notNull().defaults(to: "")
+            t.add(column: "payload_sha256", .text).notNull().defaults(to: "")
+        }
+        // The 122 uniqueness argument still holds, but the key now includes
+        // the transfer: two attempts legitimately reuse the same `seq` range,
+        // and once rows are attributable the collision that matters is WITHIN
+        // one transfer, not across them. Replay filters by `transfer_id`, so
+        // cross-transfer interleaving is excluded by the query rather than by
+        // the index.
+        try db.drop(index: "idx_snapshot_staging_peer_seq")
+        try db.create(
+            index: "idx_snapshot_staging_peer_transfer_seq", on: "_snapshot_staging",
+            columns: ["peer_device_id", "transfer_id", "seq"], unique: true, ifNotExists: true
+        )
+
+        try db.create(table: "_snapshot_transfer", ifNotExists: true) { t in
+            t.autoIncrementedPrimaryKey("id")
+            t.column("peer_device_id", .text).notNull()
+            // Host-minted UUID; the LocalSend-style session identity. The
+            // capability token authorizes; THIS identifies (plan §1c).
+            t.column("transfer_id", .text).notNull()
+            t.column("started_at", .text).notNull().defaults(sql: "(datetime('now'))")
+            // Highest seq such that 0...N are all staged. -1 = nothing yet.
+            t.column("last_contiguous_seq", .integer).notNull().defaults(to: -1)
+            // 'staging' | 'applying'. No 'done' — a finished transfer's ledger
+            // row is deleted with its staging rows; only in-flight state
+            // persists. No 'failed' either: failure clears immediately, so a
+            // 'failed' row could only mean the process died before the clear,
+            // and startup expiry deletes non-'staging' rows anyway.
+            t.column("state", .text).notNull().defaults(to: "staging")
+            // Reserved for the whole-snapshot checksum once the manifest step
+            // lands (plan §1a); nullable until then.
+            t.column("snapshot_sha256", .text)
+        }
+        try db.create(
+            index: "idx_snapshot_transfer_peer_transfer", on: "_snapshot_transfer",
+            columns: ["peer_device_id", "transfer_id"], unique: true, ifNotExists: true
         )
     }
 }
