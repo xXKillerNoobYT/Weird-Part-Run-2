@@ -274,6 +274,11 @@ public actor PeerManager {
     // Pairing-issued capabilities bind initial snapshots to the successful code exchange.
     private var hostedSnapshotTokens: [String: String] = [:]
     private var hostedSnapshotReservations: [String: HostedSnapshotReservation] = [:]
+    // A completion can arrive shortly after the acknowledgement timeout. Keep its
+    // reservation only while the same pairing capability remains current, so a
+    // late durable success can still settle the host without reviving an older
+    // pairing after the peer has been re-paired.
+    private var timedOutHostedSnapshotReservations: [String: HostedSnapshotReservation] = [:]
     private var receivedSnapshotTokens: [String: String] = [:]
     private var inFlightPairRequests: Set<String> = []
     private var inFlightFullSyncRequests: Set<String> = []
@@ -1211,6 +1216,21 @@ public actor PeerManager {
     static let defaultSnapshotStagingRecordLimit = 2_000_000
     static let defaultSnapshotStagingByteLimit = 1 << 30 // 1 GiB
 
+    /// Seconds of NO batch arriving before the joiner declares the snapshot
+    /// dead. Idle-based on purpose: it fires when nothing is moving, never
+    /// because a transfer is merely large. There is deliberately no total
+    /// wall-clock cap — see the watchdog in `requestFullSyncOverMultipeer`.
+    /// Public because the iOS layer quotes this number back to the user when a
+    /// download is stopped ("no data arrived for N minutes"). The message and
+    /// the watchdog must never drift apart.
+    public static let snapshotIdleTimeoutSeconds: TimeInterval = 180
+
+    /// Seconds the HOST waits for the joiner to confirm it durably applied the
+    /// snapshot. This covers the joiner's entire single-transaction apply of a
+    /// whole company, which on a large database is minutes, so 60s (the old
+    /// value) failed routinely while the joiner was still working correctly.
+    static let snapshotAcknowledgementTimeoutSeconds: TimeInterval = 600
+
     /// Per-instance so tests can drive the real production path at a small
     /// limit instead of testing a parallel one. Actor-isolated, so each test's
     /// `PeerManager` is independent and parallel tests cannot interfere.
@@ -1691,6 +1711,12 @@ public actor PeerManager {
 
         do {
             let totalSent = try await BluetoothSnapshotTransfer.run(
+                // 50, not the 200 default. `docs/plans/sync-standalone-transports.md:36,:52`
+                // specified 50 precisely "so the idle watchdog sees steady
+                // progress", and the call site never passed it. Idleness is only
+                // observed when a WHOLE batch lands, so a large batch on a slow
+                // radio is indistinguishable from silence.
+                batchSize: 50,
                 listTables: { [db] in
                     try await db.writer.read { dbConn in
                         try String.fetchAll(
@@ -1859,12 +1885,42 @@ public actor PeerManager {
         _ acknowledgement: FullSyncApplyAcknowledgement,
         from peerDeviceId: String
     ) {
-        guard let reservation = hostedSnapshotReservations[peerDeviceId],
-              reservation.authorizationToken == acknowledgement.authorizationToken else {
+        let reservation: HostedSnapshotReservation
+        if let activeReservation = hostedSnapshotReservations[peerDeviceId],
+           activeReservation.authorizationToken == acknowledgement.authorizationToken {
+            hostedSnapshotReservations.removeValue(forKey: peerDeviceId)
+            reservation = activeReservation
+        } else if let timedOutReservation = timedOutHostedSnapshotReservations[peerDeviceId],
+                  timedOutReservation.authorizationToken == acknowledgement.authorizationToken {
+            timedOutHostedSnapshotReservations.removeValue(forKey: peerDeviceId)
+            reservation = timedOutReservation
+        } else {
             logger.error("[PeerManager] Ignored stale or mismatched snapshot acknowledgement from \(String(peerDeviceId.prefix(8)), privacy: .public)")
             return
         }
-        hostedSnapshotReservations.removeValue(forKey: peerDeviceId)
+
+        // Consume the capability only when the joiner actually APPLIED the
+        // snapshot. A negative acknowledgement means the joiner rolled back and
+        // holds no company data, so there is nothing to replay and the peer is
+        // not untrusted — it is a peer whose apply failed.
+        //
+        // This used to run unconditionally. After the acknowledgement timeout
+        // restored token T for a retry, a joiner rollback carrying T deleted it,
+        // and the user was told "Retry the sync" — but the retry then failed
+        // `BluetoothSnapshotAuthorization.isAuthorized` with expectedToken nil
+        // and was answered with "The Bluetooth peer is not a trusted company
+        // device. Pair it before requesting a snapshot." That is the exact dead
+        // end this path documents itself as eliminating, so the advice we print
+        // has to stay true for a failure as well as for a timeout.
+        //
+        // Replay is still closed: the reservation was removed above, so a second
+        // acknowledgement for the same transfer falls through to the stale
+        // branch, and a re-pair's newer token is never overwritten because only
+        // a token matching THIS acknowledgement is touched.
+        if acknowledgement.succeeded,
+           hostedSnapshotTokens[peerDeviceId] == acknowledgement.authorizationToken {
+            hostedSnapshotTokens.removeValue(forKey: peerDeviceId)
+        }
 
         if acknowledgement.succeeded, let rowsSent = reservation.rowsSent {
             state.lastPeerSyncs[peerDeviceId] = PeerSyncResult(
@@ -1881,7 +1937,7 @@ public actor PeerManager {
                 success: false,
                 error: acknowledgement.error ?? "The joiner did not apply the snapshot. Retry the sync."
             )
-            logger.error("[PeerManager] Joiner rejected full Bluetooth snapshot; capability consumed after completion")
+            logger.error("[PeerManager] Joiner rejected full Bluetooth snapshot; capability retained so the advised retry can proceed")
         }
         notifyStateChanged()
     }
@@ -1922,12 +1978,21 @@ public actor PeerManager {
         hostedSnapshotTokens[peerDeviceId] = authorizationToken
     }
 
+    private func issueHostedSnapshotToken(_ token: String, for peerDeviceId: String) {
+        hostedSnapshotTokens[peerDeviceId] = token
+        // A newly accepted pairing supersedes any late acknowledgement from the
+        // prior pairing for this peer.
+        timedOutHostedSnapshotReservations.removeValue(forKey: peerDeviceId)
+    }
+
     private func scheduleSnapshotAcknowledgementTimeout(
         peerDeviceId: String,
         authorizationToken: String
     ) {
         Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 60_000_000_000)
+            try? await Task.sleep(
+                nanoseconds: UInt64(Self.snapshotAcknowledgementTimeoutSeconds) * 1_000_000_000
+            )
             await self?.timeoutSnapshotAcknowledgement(
                 peerDeviceId: peerDeviceId,
                 authorizationToken: authorizationToken
@@ -1941,12 +2006,33 @@ public actor PeerManager {
     ) {
         guard let reservation = hostedSnapshotReservations[peerDeviceId],
               reservation.authorizationToken == authorizationToken else { return }
+        // Give the capability BACK. This path used to drop the reservation
+        // without restoring the token, unlike `restoreHostedSnapshot` directly
+        // above, so the peer silently lost its one-time snapshot permission.
+        // The message then told the user to "Retry the sync" and the retry was
+        // answered with "The Bluetooth peer is not a trusted company device.
+        // Pair it before requesting a snapshot." — the pairing was dead and had
+        // to be redone, with nothing on screen saying so.
+        //
+        // A timeout is not evidence the peer is untrusted. It is evidence we
+        // stopped waiting. Restoring the token makes the advice we print true.
         hostedSnapshotReservations.removeValue(forKey: peerDeviceId)
+        // Restore only when this transfer's capability is still current. A
+        // re-pair may have installed a newer token while this acknowledgement
+        // was pending; restoring the old token would overwrite it.
+        if hostedSnapshotTokens[peerDeviceId] == nil {
+            hostedSnapshotTokens[peerDeviceId] = authorizationToken
+            timedOutHostedSnapshotReservations[peerDeviceId] = reservation
+        }
         state.lastPeerSyncs[peerDeviceId] = PeerSyncResult(
             peerDeviceId: peerDeviceId,
             peerName: reservation.peerName,
             success: false,
-            error: "The joiner did not acknowledge durable snapshot application. Retry the sync."
+            error: """
+            Stopped waiting for \(reservation.peerName) to confirm it saved the data \
+            (no confirmation after \(Int(Self.snapshotAcknowledgementTimeoutSeconds / 60)) minutes). \
+            It may still be finishing — check that device. The pairing is still valid, so you can Sync again.
+            """
         )
         notifyStateChanged()
     }
@@ -1954,7 +2040,7 @@ public actor PeerManager {
     // State-machine probes keep capability lifecycle regressions deterministic
     // without requiring a physical two-device Multipeer session.
     func testIssueHostedSnapshotToken(_ token: String, for peerDeviceId: String) {
-        hostedSnapshotTokens[peerDeviceId] = token
+        issueHostedSnapshotToken(token, for: peerDeviceId)
     }
 
     func testSetKeyAgreementIdentity(privateKeyB64: String, publicKeyB64: String) {
@@ -1976,6 +2062,15 @@ public actor PeerManager {
 
     func testSetHostedSnapshotRowsSent(_ rowsSent: Int, for peerDeviceId: String) {
         hostedSnapshotReservations[peerDeviceId]?.rowsSent = rowsSent
+    }
+
+    /// Fire the acknowledgement watchdog without waiting out its real timer, so
+    /// the capability lifecycle on that path stays covered.
+    func testTimeoutSnapshotAcknowledgement(token: String, for peerDeviceId: String) {
+        timeoutSnapshotAcknowledgement(
+            peerDeviceId: peerDeviceId,
+            authorizationToken: token
+        )
     }
 
     func testAcknowledgeHostedSnapshot(
@@ -2160,9 +2255,9 @@ public actor PeerManager {
         pendingFullSyncContinuations[peerDeviceId] == nil
     }
 
-    private func snapshotIdleSeconds(_ peerDeviceId: String) -> TimeInterval {
+    private func snapshotIdleSeconds(_ peerDeviceId: String, now: Date = Date()) -> TimeInterval {
         guard let last = snapshotLastActivity[peerDeviceId] else { return .infinity }
-        return Date().timeIntervalSince(last)
+        return now.timeIntervalSince(last)
     }
 
     private func timeoutFullSync(with peerDeviceId: String) {
@@ -2174,6 +2269,65 @@ public actor PeerManager {
         if let cont = pendingFullSyncContinuations.removeValue(forKey: peerDeviceId) {
             cont.resume(throwing: MultipeerPairingError.responseTimeout)
         }
+    }
+
+    /// This watchdog is deliberately driven only by idle time. There is no
+    /// elapsed-time cap: an active company snapshot may take as long as it needs.
+    private func watchFullSync(
+        with peerDeviceId: String,
+        sleep: @escaping @Sendable () async -> Void = {
+            try? await Task.sleep(nanoseconds: 10_000_000_000)
+        },
+        now: @escaping @Sendable () -> Date = Date.init,
+        idleTimeout: TimeInterval = PeerManager.snapshotIdleTimeoutSeconds
+    ) async {
+        while true {
+            await sleep()
+            if isFullSyncSettled(with: peerDeviceId) { return }
+            if snapshotIdleSeconds(peerDeviceId, now: now()) > idleTimeout {
+                timeoutFullSync(with: peerDeviceId)
+                return
+            }
+        }
+    }
+
+    /// `idleTimeout` is optional **on purpose**. When it is nil this seam calls
+    /// `watchFullSync` without the argument at all, so the production default
+    /// (`snapshotIdleTimeoutSeconds`) is on the executed path and a test can pin
+    /// it behaviourally.
+    ///
+    /// It used to be a required parameter, which meant every test supplied its
+    /// own window and the constant was on no executed path — changing 180 back
+    /// to 45 left the whole suite green. A seam that re-specifies a default
+    /// erases that default from coverage.
+    func testWatchFullSync(
+        with peerDeviceId: String,
+        sleep: @escaping @Sendable () async -> Void,
+        now: @escaping @Sendable () -> Date,
+        idleTimeout: TimeInterval? = nil
+    ) async {
+        guard let idleTimeout else {
+            await watchFullSync(
+                with: peerDeviceId,
+                sleep: sleep,
+                now: now
+            )
+            return
+        }
+        await watchFullSync(
+            with: peerDeviceId,
+            sleep: sleep,
+            now: now,
+            idleTimeout: idleTimeout
+        )
+    }
+
+    func testSetSnapshotActivity(_ date: Date, for peerDeviceId: String) {
+        snapshotLastActivity[peerDeviceId] = date
+    }
+
+    func testCompleteFullSync(from peerDeviceId: String) {
+        handleFullSyncComplete(from: peerDeviceId)
     }
 
     /// Wait for an MCSession to reach `connected`, re-inviting once if the
@@ -2249,22 +2403,15 @@ public actor PeerManager {
                     .resume(throwing: MultipeerPairingError.sendFailed)
                 return
             }
-            // Idle watchdog (#1417): a transfer that is MOVING never times out;
-            // 45s with no batch = stalled; 15 min hard cap guards runaways.
+            // Idle watchdog (#1417): a transfer that is moving never times out.
+            //
+            // A previous loop also carried a 15-minute total wall-clock cap,
+            // which killed healthy Bluetooth-only transfers at 900 seconds. The
+            // transfer is now bounded by per-peer staging size ceilings; this
+            // watchdog detects only the absence of incoming batches.
             snapshotLastActivity[hostDeviceId] = Date()
             Task { [weak self] in
-                let started = Date()
-                while true {
-                    try? await Task.sleep(nanoseconds: 10_000_000_000)
-                    guard let self else { return }
-                    let done = await self.isFullSyncSettled(with: hostDeviceId)
-                    if done { return }
-                    let idle = await self.snapshotIdleSeconds(hostDeviceId)
-                    if idle > 45 || Date().timeIntervalSince(started) > 900 {
-                        await self.timeoutFullSync(with: hostDeviceId)
-                        return
-                    }
-                }
+                await self?.watchFullSync(with: hostDeviceId)
             }
         }
     }
@@ -2412,6 +2559,7 @@ public actor PeerManager {
             return
         }
         let priorSnapshotToken = hostedSnapshotTokens[request.deviceId]
+        let priorTimedOutReservation = timedOutHostedSnapshotReservations[request.deviceId]
 
         func restoreHostStateAfterUndeliveredAcceptance() {
             do {
@@ -2424,6 +2572,11 @@ public actor PeerManager {
                     hostedSnapshotTokens[request.deviceId] = priorSnapshotToken
                 } else {
                     hostedSnapshotTokens.removeValue(forKey: request.deviceId)
+                }
+                if let priorTimedOutReservation {
+                    timedOutHostedSnapshotReservations[request.deviceId] = priorTimedOutReservation
+                } else {
+                    timedOutHostedSnapshotReservations.removeValue(forKey: request.deviceId)
                 }
             } catch {
                 // A failed compensation must remain visible: proceeding would leave
@@ -2441,7 +2594,7 @@ public actor PeerManager {
                 keyAgreementPublicKey: clientPublicKey,
                 injectFailureBeforeCommit: injectActivationFailure
             )
-            hostedSnapshotTokens[request.deviceId] = snapshotToken
+            issueHostedSnapshotToken(snapshotToken, for: request.deviceId)
         } catch {
             restoreHostStateAfterUndeliveredAcceptance()
             try? await sState.setActivePairingCode(pairingCode)

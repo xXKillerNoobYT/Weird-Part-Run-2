@@ -425,7 +425,12 @@ struct DevicePairingView: View {
     private func bluetoothPairingErrorMessage(_ error: MultipeerPairingError) -> String {
         switch error {
         case .connectionTimeout:
-            return "Couldn't connect. Keep the devices close together with Bluetooth AND Wi-Fi turned on (Wi-Fi carries the connection — it doesn't need to join a network), and make sure the other device's Add-a-Device screen is open. You can also enter the shop device's address manually below."
+            // Bluetooth alone is a SUPPORTED configuration, not a degraded one
+            // (owner, 2026-08-10: "Bluetooth only is acceptable"). This string
+            // used to say Wi-Fi "carries the connection", which tells a
+            // Bluetooth-only user their setup is broken when it is the one we
+            // designed for. Wi-Fi is a speed option, mentioned last.
+            return "Couldn't connect. Keep both devices close together, awake and unlocked, with Bluetooth on and the other device's Add-a-Device screen open. Bluetooth on its own is enough — turning Wi-Fi on as well only makes the transfer faster, and neither device needs to join a network."
         case .responseTimeout:
             return "The other device didn't respond. Make sure its Add-a-Device screen is still open with a valid code, then try again."
         case .rejected:
