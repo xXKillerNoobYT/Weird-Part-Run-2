@@ -299,6 +299,18 @@ public actor PeerManager {
     private var failedSnapshotPeers: Set<String> = []
     // Pairing-issued capabilities bind initial snapshots to the successful code exchange.
     private var hostedSnapshotTokens: [String: String] = [:]
+    // "This peer's initial snapshot has NOT been durably applied yet", keyed by
+    // peer, valued by the pairing generation that owes the apply (#1713).
+    //
+    // This is NOT a capability and must never be read as one: it is never passed
+    // to `BluetoothSnapshotAuthorization`, never used as `expectedToken`, and
+    // never consulted by `reserveHostedSnapshot`. It exists because the token
+    // cannot answer this question — the token is consumed at RESERVATION time,
+    // while the deferral in `syncWithPeer` needs a fact that lives until the
+    // joiner says it wrote the data. The value is a correlator only, so a late
+    // acknowledgement from a superseded pairing cannot clear the apply owed by
+    // the current one.
+    private var peersAwaitingInitialSnapshotApply: [String: String] = [:]
     private var hostedSnapshotReservations: [String: HostedSnapshotReservation] = [:]
     // A completion can arrive shortly after the acknowledgement timeout. Keep its
     // reservation only while the same pairing capability remains current, so a
@@ -622,14 +634,24 @@ public actor PeerManager {
     /// Sync with a specific peer via LAN HTTP.
     public func syncWithPeer(_ peer: DiscoveredPeer) async -> PeerSyncResult {
         // #1417 hardening part 2: a peer that paired but has NOT completed its
-        // initial snapshot (its hosted token is still outstanding — consumed
-        // only on durable apply acknowledgement) must not receive incremental
-        // change-log pushes. Loose records mean nothing on an empty database,
-        // and recording "Sent N records" made the owner's failed field join
-        // look like a success. Skip quietly; pushes resume the moment the
-        // snapshot acknowledges. lastPeerSyncs is deliberately NOT updated —
-        // neither a fake success nor a scary "failed" belongs in the UI.
-        if hostedSnapshotTokens[peer.deviceId] != nil {
+        // initial snapshot must not receive incremental change-log pushes.
+        //
+        // The predicate is the durable-apply FACT, not the capability token
+        // (#1713). The token is consumed the moment the transfer is RESERVED,
+        // so reading it here stopped deferring for the entire download and for
+        // every joiner rollback afterwards — precisely when the peer's database
+        // is emptiest. Worse since the transfer-identity freeze landed (#1717):
+        // an incremental frame carries no `transferId`, so a joiner in staging
+        // rejects it as a second interleaved transfer and fails the snapshot it
+        // was in the middle of receiving. The host's own auto-sync timer was
+        // therefore able to kill the transfer the host itself was sending.
+        //
+        // Loose records mean nothing on an empty database, and recording
+        // "Sent N records" made the owner's failed field join look like a
+        // success. Skip quietly; pushes resume the moment the snapshot
+        // acknowledges. lastPeerSyncs is deliberately NOT updated — neither a
+        // fake success nor a scary "failed" belongs in the UI.
+        if peersAwaitingInitialSnapshotApply[peer.deviceId] != nil {
             logger.info("[PeerManager] Deferring incremental push to \(String(peer.deviceId.prefix(8)), privacy: .public) — initial snapshot not yet acknowledged")
             return PeerSyncResult(
                 peerDeviceId: peer.deviceId,
@@ -2129,6 +2151,21 @@ public actor PeerManager {
             hostedSnapshotTokens.removeValue(forKey: peerDeviceId)
         }
 
+        // The capability block above is a no-op on the ordinary path — the token
+        // was already consumed at reservation time. THIS is the block that ends
+        // the incremental-push deferral (#1713), and only a POSITIVE
+        // acknowledgement ends it: a joiner that rolled back holds no company
+        // data, so it must keep deferring until a fresh snapshot lands.
+        //
+        // Only reachable past the reservation match above, so a stale or
+        // mismatched acknowledgement never gets here. Matching on the value as
+        // well means a late success from a superseded pairing cannot clear the
+        // apply owed by a newer one.
+        if acknowledgement.succeeded,
+           peersAwaitingInitialSnapshotApply[peerDeviceId] == acknowledgement.authorizationToken {
+            peersAwaitingInitialSnapshotApply.removeValue(forKey: peerDeviceId)
+        }
+
         if acknowledgement.succeeded, let rowsSent = reservation.rowsSent {
             state.lastPeerSyncs[peerDeviceId] = PeerSyncResult(
                 peerDeviceId: peerDeviceId,
@@ -2187,6 +2224,13 @@ public actor PeerManager {
 
     private func issueHostedSnapshotToken(_ token: String, for peerDeviceId: String) {
         hostedSnapshotTokens[peerDeviceId] = token
+        // A pairing is exactly the moment a peer starts owing an initial
+        // snapshot, so this is the ONLY place the durable-apply fact is created
+        // (#1713). `restoreHostedSnapshot` and the acknowledgement timeout hand
+        // a capability back so a retry can proceed; they must NOT re-create the
+        // fact, because the peer never stopped owing the apply in the first
+        // place.
+        peersAwaitingInitialSnapshotApply[peerDeviceId] = token
         // A newly accepted pairing supersedes any late acknowledgement from the
         // prior pairing for this peer.
         timedOutHostedSnapshotReservations.removeValue(forKey: peerDeviceId)
@@ -2859,6 +2903,7 @@ public actor PeerManager {
             return
         }
         let priorSnapshotToken = hostedSnapshotTokens[request.deviceId]
+        let priorPendingApply = peersAwaitingInitialSnapshotApply[request.deviceId]
         let priorTimedOutReservation = timedOutHostedSnapshotReservations[request.deviceId]
 
         func restoreHostStateAfterUndeliveredAcceptance() {
@@ -2872,6 +2917,15 @@ public actor PeerManager {
                     hostedSnapshotTokens[request.deviceId] = priorSnapshotToken
                 } else {
                     hostedSnapshotTokens.removeValue(forKey: request.deviceId)
+                }
+                // Roll the durable-apply fact back in lockstep with the
+                // capability (#1713). Without this, a pairing acceptance that
+                // never reached the joiner would roll trust back but leave the
+                // peer deferred forever, silently killing its future syncs.
+                if let priorPendingApply {
+                    peersAwaitingInitialSnapshotApply[request.deviceId] = priorPendingApply
+                } else {
+                    peersAwaitingInitialSnapshotApply.removeValue(forKey: request.deviceId)
                 }
                 if let priorTimedOutReservation {
                     timedOutHostedSnapshotReservations[request.deviceId] = priorTimedOutReservation
