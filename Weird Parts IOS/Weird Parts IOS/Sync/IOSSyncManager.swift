@@ -1018,14 +1018,14 @@ final class IOSSyncManager {
     /// fan-out and the row-level Nearby Devices tap consult, because when they
     /// each made it independently the row-level path forgot the deferral case
     /// and painted a red "Sync Error" over a healthy transfer (#1699).
-    static func peerSyncFailures(in results: [PeerSyncResult]) -> [PeerSyncResult] {
+    nonisolated static func peerSyncFailures(in results: [PeerSyncResult]) -> [PeerSyncResult] {
         results.filter { !$0.success && !$0.deferred }
     }
 
     /// The progress line for peers still downloading their first snapshot, or
     /// nil when nobody is waiting. Shares `peerSyncFailures`' rationale: one
     /// wording, both entry points.
-    static func waitingForFirstDownloadMessage(for results: [PeerSyncResult]) -> String? {
+    nonisolated static func waitingForFirstDownloadMessage(for results: [PeerSyncResult]) -> String? {
         let waiting = results.filter(\.deferred)
         guard !waiting.isEmpty else { return nil }
         return waiting.count == 1
