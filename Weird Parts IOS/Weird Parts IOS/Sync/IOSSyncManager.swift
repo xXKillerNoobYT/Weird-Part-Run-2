@@ -338,15 +338,13 @@ final class IOSSyncManager {
             // A deferred peer is mid-onboarding, not broken (#1625) — counting
             // it as a failure showed the HOST a red "Sync failed" while it was
             // correctly waiting for the joiner's first download.
-            let failed = results.filter { !$0.success && !$0.deferred }
+            let failed = Self.peerSyncFailures(in: results)
             if !failed.isEmpty, errorMessage == nil {
                 errorMessage = "Sync failed with \(failed.count) peer(s)"
             }
-            let waiting = results.filter(\.deferred)
-            if !waiting.isEmpty, errorMessage == nil {
-                syncProgressMessage = waiting.count == 1
-                    ? "Waiting for \(waiting[0].peerName)'s first download to finish…"
-                    : "Waiting for \(waiting.count) devices' first download to finish…"
+            if errorMessage == nil,
+               let waitingMessage = Self.waitingForFirstDownloadMessage(for: results) {
+                syncProgressMessage = waitingMessage
             }
             peerTransportPresentation = Self.peerTransportPresentation(for: results)
             if errorMessage == nil,
@@ -409,7 +407,14 @@ final class IOSSyncManager {
         lastOneWayBluetoothSyncSummary = nil
 
         let result = await pm.syncWithPeer(deviceId: peerDeviceId)
-        if !result.success {
+        // Same decision as the all-peers fan-out: a deferral is a waiting
+        // state, not a failure. Tapping Sync on the host's Nearby Devices row
+        // during the joiner's initial download is a normal thing to do, and it
+        // used to paint a red "Sync Error" over a transfer that was fine
+        // (#1699). #1719 widened that window from sub-second to the whole
+        // multi-minute Bluetooth download, which is exactly when the user is
+        // most likely to tap.
+        if !Self.peerSyncFailures(in: [result]).isEmpty {
             let peerLabel: String
             if result.peerName == peerDeviceId {
                 peerLabel = peerDeviceId
@@ -418,6 +423,10 @@ final class IOSSyncManager {
             }
             let failureReason = result.error ?? "Sync failed"
             errorMessage = "\(failureReason) for \(peerLabel)"
+        }
+        if errorMessage == nil,
+           let waitingMessage = Self.waitingForFirstDownloadMessage(for: [result]) {
+            syncProgressMessage = waitingMessage
         }
 
         let conflictCount = refreshConflictCount()
@@ -999,6 +1008,29 @@ final class IOSSyncManager {
             : "\(uniqueNames.count) nearby devices"
         let nextAction = uniqueNames.count == 1 ? destination : "each device"
         return "Sent \(recordsSent) records to \(destination). To receive their changes, tap Send Changes on \(nextAction)."
+    }
+
+    /// The peers whose outcome is a genuine failure the user must act on.
+    ///
+    /// A deferred peer is mid-onboarding, not broken (#1625): the host is
+    /// correctly withholding incremental pushes until the joiner acknowledges
+    /// its initial snapshot. This is the single decision both the all-peers
+    /// fan-out and the row-level Nearby Devices tap consult, because when they
+    /// each made it independently the row-level path forgot the deferral case
+    /// and painted a red "Sync Error" over a healthy transfer (#1699).
+    static func peerSyncFailures(in results: [PeerSyncResult]) -> [PeerSyncResult] {
+        results.filter { !$0.success && !$0.deferred }
+    }
+
+    /// The progress line for peers still downloading their first snapshot, or
+    /// nil when nobody is waiting. Shares `peerSyncFailures`' rationale: one
+    /// wording, both entry points.
+    static func waitingForFirstDownloadMessage(for results: [PeerSyncResult]) -> String? {
+        let waiting = results.filter(\.deferred)
+        guard !waiting.isEmpty else { return nil }
+        return waiting.count == 1
+            ? "Waiting for \(waiting[0].peerName)'s first download to finish…"
+            : "Waiting for \(waiting.count) devices' first download to finish…"
     }
 
     /// Derives presentation only from the peer manager's executed transport.
