@@ -170,6 +170,20 @@ enum MultipeerSnapshotError: LocalizedError, Sendable {
     /// than a statistic: acknowledging it as success would consume the host's
     /// one-time capability against a company with holes in it.
     case snapshotIncomplete(applied: Int, skipped: Int)
+    /// A snapshot frame's payload did not hash to what the host said it would
+    /// (#1695 / LocalSend adoption §1b). Verified BEFORE staging: a frame that
+    /// cannot prove its integrity must never reach disk.
+    case corruptSnapshotFrame
+    /// A staged row no longer hashes to what it hashed to when it was staged.
+    /// Staged rows live on disk across process restarts (and, once resume
+    /// lands, up to a 24h TTL) — this is the at-rest window that transport
+    /// reliability says nothing about. Fails the whole apply; the transaction
+    /// rolls back and nothing partial survives.
+    case corruptStagedRow(seq: Int)
+    /// Frames from two different transfers arrived in one staging session.
+    /// Each attempt carries a host-minted `transfer_id`; mixing two would
+    /// assemble a company from two different points in time.
+    case transferIdentityMismatch
 
     var errorDescription: String? {
         switch self {
@@ -196,6 +210,12 @@ enum MultipeerSnapshotError: LocalizedError, Sendable {
             return "The Bluetooth snapshot grew past what this device will hold for one transfer (\(records) records, \(megabytes) MB) without finishing. Restart the sending device, then retry the sync."
         case .snapshotIncomplete(let applied, let skipped):
             return "The Bluetooth snapshot was incomplete — \(skipped) of \(applied + skipped) record(s) could not be applied. Nothing was kept. Make sure both devices are on the same app version, then retry the sync."
+        case .corruptSnapshotFrame:
+            return "A Bluetooth snapshot batch arrived damaged and was rejected (SNAP-CORRUPT-FRAME). Nothing was kept. Retry the sync."
+        case .corruptStagedRow(let seq):
+            return "Downloaded snapshot data was damaged on this device before it could be applied (SNAP-CORRUPT-ROW at \(seq)). Nothing was kept. Retry the sync."
+        case .transferIdentityMismatch:
+            return "Two different Bluetooth snapshots overlapped (SNAP-ID-MISMATCH). Nothing was kept. Retry the sync."
         }
     }
 }

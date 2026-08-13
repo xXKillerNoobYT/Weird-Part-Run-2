@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import GRDB
 import os.log
@@ -129,6 +130,24 @@ private enum PeerSyncHTTPError: LocalizedError {
 struct MPEnvelope: Codable {
     let type: String   // pairing, changes, full-sync request/completion/acknowledgement
     let payload: Data
+    /// Host-minted identity of the snapshot transfer a `changes` frame belongs
+    /// to (#1695 / LocalSend adoption §1c). OPTIONAL on purpose, in both
+    /// directions: an old build decoding a new envelope ignores the unknown
+    /// key, and a new build decoding an old envelope reads nil and treats the
+    /// transfer as legacy-unattributable. Never gate the protocol on it —
+    /// see the `==`-version-gate one-way-door lesson.
+    let transferId: String?
+    /// SHA-256 (hex) of `payload`, set by the snapshot host so the joiner can
+    /// verify a frame BEFORE staging it (LocalSend adoption §1b). nil from
+    /// pre-integrity hosts: verification is skipped, exactly the old behaviour.
+    let sha256: String?
+
+    init(type: String, payload: Data, transferId: String? = nil, sha256: String? = nil) {
+        self.type = type
+        self.payload = payload
+        self.transferId = transferId
+        self.sha256 = sha256
+    }
 }
 
 struct FullSyncApplyAcknowledgement: Codable {
@@ -269,6 +288,13 @@ public actor PeerManager {
     // held to the same post-commit discipline, so a rolled-back batch can never
     // leave the cap accounting permanently inflated (#1688).
     private var snapshotStagedBytes: [String: Int] = [:]
+    // The transfer identity of the staging session in flight per peer (#1695,
+    // LocalSend adoption §1c). Set from the FIRST frame that carries a
+    // `transferId`; every later frame in the session must match it. `nil`
+    // means the host is a pre-identity build and the session stages with the
+    // legacy `''` id, exactly the pre-123 behaviour. This is the CORRELATOR;
+    // the capability token only authorizes.
+    private var snapshotTransferIds: [String: String] = [:]
     // Ignore remaining queued pages after a failed snapshot until an explicit retry starts.
     private var failedSnapshotPeers: Set<String> = []
     // Pairing-issued capabilities bind initial snapshots to the successful code exchange.
@@ -372,11 +398,12 @@ public actor PeerManager {
         peerKAPublicKeys.removeAll()
 
         #if canImport(MultipeerConnectivity)
-        // WEI-7022: any snapshot staging rows on disk at startup belong to a
-        // previous process — a crash, a force-quit, or the jetsam kill this
-        // change exists to survive. No transfer is in flight yet, so they are
-        // unreplayable scrap and would otherwise grow the database forever.
-        clearAllSnapshotStaging()
+        // #1695 §2: expire, don't wipe. Staging rows on disk at startup belong
+        // to a previous process; the ones attributable to an in-TTL transfer
+        // that was still mid-download are the resume candidates durable
+        // staging exists for. Everything unattributable, expired, or caught
+        // mid-apply is scrap and is deleted here.
+        expireStaleSnapshotStaging()
         #endif
 
         // 1. Start LAN sync server unless this is discovery-only onboarding.
@@ -1231,6 +1258,20 @@ public actor PeerManager {
     /// value) failed routinely while the joiner was still working correctly.
     static let snapshotAcknowledgementTimeoutSeconds: TimeInterval = 600
 
+    /// How long an interrupted-but-resumable transfer's staging may survive on
+    /// disk before startup deletes it (#1695). A stale half-download must not
+    /// resurface days later against a company that has since moved on. 24h
+    /// covers "the app was jetsam-killed overnight and retried in the
+    /// morning", which is the case resume exists for.
+    static let snapshotResumeTTLSeconds: TimeInterval = 86_400
+
+    /// Hex SHA-256 used for frame and staged-row integrity (LocalSend
+    /// adoption §1b). Static + deterministic so tests hash the same way
+    /// production does.
+    static func sha256Hex(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
     /// Per-instance so tests can drive the real production path at a small
     /// limit instead of testing a parallel one. Actor-isolated, so each test's
     /// `PeerManager` is independent and parallel tests cannot interfere.
@@ -1276,9 +1317,32 @@ public actor PeerManager {
     /// already quarantines the peer and clears its staged rows.
     private func stageSnapshotChanges(
         _ changes: [IncomingChange],
-        from peerDeviceId: String
+        from peerDeviceId: String,
+        transferId incomingTransferId: String?
     ) throws -> Int {
         guard !changes.isEmpty else { return 0 }
+
+        // Resolve this session's transfer identity (#1695, LocalSend adoption
+        // §1c) and FREEZE it on the first frame — including the decision that
+        // the host is a legacy build (`""`). A session may not change its mind:
+        // a frame carrying a different id than the established one, or a
+        // bare frame after identified ones, is two transfers interleaving, and
+        // replaying a mix would assemble a company from two points in time.
+        let sessionTransferId: String
+        var opensLedgerRow = false
+        if let established = snapshotTransferIds[peerDeviceId] {
+            guard (incomingTransferId ?? "") == established else {
+                throw MultipeerSnapshotError.transferIdentityMismatch
+            }
+            sessionTransferId = established
+        } else {
+            sessionTransferId = incomingTransferId ?? ""
+            // Legacy sessions get no ledger row: their rows are deliberately
+            // unattributable (`transfer_id = ''`) and startup expiry deletes
+            // them on sight, which is exactly the pre-identity behaviour.
+            opensLedgerRow = !sessionTransferId.isEmpty
+        }
+
         var seq = snapshotStagedRecords[peerDeviceId] ?? 0
         var bytes = snapshotStagedBytes[peerDeviceId] ?? 0
         let encoder = JSONEncoder()
@@ -1294,6 +1358,15 @@ public actor PeerManager {
         }
 
         try db.writer.write { dbConn in
+            if opensLedgerRow {
+                try dbConn.execute(
+                    sql: """
+                        INSERT INTO _snapshot_transfer (peer_device_id, transfer_id)
+                        VALUES (?, ?)
+                        """,
+                    arguments: [peerDeviceId, sessionTransferId]
+                )
+            }
             for change in changes {
                 guard let payload = String(
                     data: try encoder.encode(change), encoding: .utf8
@@ -1311,23 +1384,43 @@ public actor PeerManager {
                         bytes: bytes
                     )
                 }
+                // `payload_sha256` freezes what this row hashed to AT STAGING
+                // TIME; replay re-verifies it, closing the at-rest window
+                // between now and apply (which, once resume lands, can span a
+                // process death and hours on disk).
                 try dbConn.execute(
                     sql: """
-                        INSERT INTO _snapshot_staging (peer_device_id, seq, payload)
-                        VALUES (?, ?, ?)
+                        INSERT INTO _snapshot_staging
+                            (peer_device_id, seq, payload, transfer_id, payload_sha256)
+                        VALUES (?, ?, ?, ?, ?)
                         """,
-                    arguments: [peerDeviceId, seq, payload]
+                    arguments: [
+                        peerDeviceId, seq, payload, sessionTransferId,
+                        Self.sha256Hex(Data(payload.utf8)),
+                    ]
                 )
                 seq += 1
+            }
+            if !sessionTransferId.isEmpty {
+                // 0...seq-1 are all durably staged once this commits.
+                try dbConn.execute(
+                    sql: """
+                        UPDATE _snapshot_transfer SET last_contiguous_seq = ?
+                        WHERE peer_device_id = ? AND transfer_id = ?
+                        """,
+                    arguments: [seq - 1, peerDeviceId, sessionTransferId]
+                )
             }
         }
 
         // Advanced only after the commit, so the counters never claim
         // durability the database does not have. `bytes` is mutated inside the
-        // closure above, but a throw there skips both of these lines and the
-        // rolled-back batch leaves the accounting exactly where it was.
+        // closure above, but a throw there skips all of these lines and the
+        // rolled-back batch leaves the accounting — and the session identity —
+        // exactly where they were.
         snapshotStagedRecords[peerDeviceId] = seq
         snapshotStagedBytes[peerDeviceId] = bytes
+        snapshotTransferIds[peerDeviceId] = sessionTransferId
         return changes.count
     }
 
@@ -1338,6 +1431,28 @@ public actor PeerManager {
     /// transaction so any failure leaves NO partial company behind.
     private func applyStagedSnapshot(from peerDeviceId: String) throws -> Int {
         let did = serverState?.deviceId ?? "unknown"
+        // Durable 'applying' marker BEFORE the apply transaction begins. If
+        // the process dies mid-apply the transaction rolls back, but this
+        // marker survives — and startup expiry deletes non-'staging'
+        // transfers, so the half-applied attempt's staging can never be
+        // mistaken for a resume candidate (#1695 §2).
+        if let transferId = snapshotTransferIds[peerDeviceId], !transferId.isEmpty {
+            try db.writer.write { dbConn in
+                try dbConn.execute(
+                    sql: """
+                        UPDATE _snapshot_transfer SET state = 'applying'
+                        WHERE peer_device_id = ? AND transfer_id = ?
+                        """,
+                    arguments: [peerDeviceId, transferId]
+                )
+            }
+        }
+        // Replay is bound to THIS session's transfer identity. The pre-staging
+        // clear plus the session-freeze rule already guarantee one transfer
+        // per peer on disk; this filter makes the same guarantee locally
+        // visible — a row from any other transfer is unreachable by
+        // construction of the query, not merely by protocol discipline.
+        let sessionTransferId = snapshotTransferIds[peerDeviceId] ?? ""
         let result = try ConflictResolver.resolveAndApplyStreamedChangesAtomically(
             db: db,
             localDeviceId: did,
@@ -1345,13 +1460,21 @@ public actor PeerManager {
                 let cursor = try Row.fetchCursor(
                     dbConn,
                     sql: """
-                        SELECT payload FROM _snapshot_staging
-                        WHERE peer_device_id = ? ORDER BY seq
+                        SELECT seq, payload, payload_sha256 FROM _snapshot_staging
+                        WHERE peer_device_id = ? AND transfer_id = ? ORDER BY seq
                         """,
-                    arguments: [peerDeviceId]
+                    arguments: [peerDeviceId, sessionTransferId]
                 )
                 while let row = try cursor.next() {
                     let payload: String = row["payload"]
+                    // At-rest integrity (LocalSend adoption §1b): the row must
+                    // still hash to what it hashed to when it was staged.
+                    // Empty = staged by a pre-123 build; nothing to check.
+                    let storedHash: String = row["payload_sha256"]
+                    if !storedHash.isEmpty,
+                       Self.sha256Hex(Data(payload.utf8)) != storedHash {
+                        throw MultipeerSnapshotError.corruptStagedRow(seq: row["seq"])
+                    }
                     guard let data = payload.data(using: .utf8),
                           let change = try? JSONDecoder().decode(
                             IncomingChange.self, from: data
@@ -1422,7 +1545,15 @@ public actor PeerManager {
                 sql: "DELETE FROM _snapshot_staging WHERE peer_device_id = ?",
                 arguments: [peerDeviceId]
             )
+            // The ledger lives and dies with the rows it describes: a ledger
+            // row without staging (or vice versa) is exactly the orphan state
+            // startup expiry exists to sweep, so never create it on purpose.
+            try dbConn.execute(
+                sql: "DELETE FROM _snapshot_transfer WHERE peer_device_id = ?",
+                arguments: [peerDeviceId]
+            )
         }
+        snapshotTransferIds.removeValue(forKey: peerDeviceId)
     }
 
     /// Post-transfer cleanup. Best-effort BY DESIGN, and safe to be so.
@@ -1454,12 +1585,64 @@ public actor PeerManager {
         snapshotStagingPeers.removeAll()
         snapshotStagedRecords.removeAll()
         snapshotStagedBytes.removeAll()
+        snapshotTransferIds.removeAll()
         do {
             try db.writer.write { dbConn in
                 try dbConn.execute(sql: "DELETE FROM _snapshot_staging")
+                try dbConn.execute(sql: "DELETE FROM _snapshot_transfer")
             }
         } catch {
             logger.error("[PeerManager] Could not clear snapshot staging: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Startup replacement for the wholesale wipe (#1695 §2): expire, don't
+    /// destroy. Rows attributable to an in-TTL, still-`staging` transfer are
+    /// RETAINED as resume candidates; everything else is scrap and goes.
+    ///
+    /// Deleted, in order:
+    /// - ledger rows that are not `state = 'staging'` — `applying` means the
+    ///   process died mid-apply and the transaction already rolled back;
+    /// - ledger rows older than `snapshotResumeTTLSeconds` — a stale
+    ///   half-download must not resurface against a company that moved on;
+    /// - every staging row with no surviving ledger row, which sweeps orphans
+    ///   AND all pre-identity rows (`transfer_id = ''`) in one predicate.
+    ///
+    /// Until the resume handshake (#1695 item 4) lands, retained rows are
+    /// still cleared by `beginSnapshotStaging` when the next transfer starts —
+    /// retention is deliberately inert, so this change cannot regress
+    /// anything. Best-effort for the same reason `clearAllSnapshotStaging`
+    /// is: refusing to START peer sync over scratch-space cleanup would take
+    /// out LAN sync and discovery too, and the per-peer pre-staging clear
+    /// still fails closed.
+    private func expireStaleSnapshotStaging() {
+        snapshotStagingPeers.removeAll()
+        snapshotStagedRecords.removeAll()
+        snapshotStagedBytes.removeAll()
+        snapshotTransferIds.removeAll()
+        do {
+            try db.writer.write { dbConn in
+                try dbConn.execute(
+                    sql: """
+                        DELETE FROM _snapshot_transfer
+                        WHERE state <> 'staging'
+                           OR started_at <= datetime('now', ?)
+                        """,
+                    arguments: ["-\(Int(Self.snapshotResumeTTLSeconds)) seconds"]
+                )
+                try dbConn.execute(
+                    sql: """
+                        DELETE FROM _snapshot_staging
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM _snapshot_transfer t
+                            WHERE t.peer_device_id = _snapshot_staging.peer_device_id
+                              AND t.transfer_id = _snapshot_staging.transfer_id
+                        )
+                        """
+                )
+            }
+        } catch {
+            logger.error("[PeerManager] Could not expire snapshot staging: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -1523,8 +1706,20 @@ public actor PeerManager {
                     let changes = try decodeIncomingChanges(env.payload)
                     let count: Int
                     if snapshotStagingPeers.contains(message.fromDeviceId) {
+                        // Integrity gate BEFORE staging (LocalSend adoption
+                        // §1b): a frame that cannot prove itself never reaches
+                        // disk. Skipped when the host sent no hash — a
+                        // pre-integrity build — which is the old behaviour.
+                        if let expected = env.sha256,
+                           Self.sha256Hex(env.payload) != expected {
+                            throw MultipeerSnapshotError.corruptSnapshotFrame
+                        }
                         // WEI-7022: durable staging, not an in-memory buffer.
-                        count = try stageSnapshotChanges(changes, from: message.fromDeviceId)
+                        count = try stageSnapshotChanges(
+                            changes,
+                            from: message.fromDeviceId,
+                            transferId: env.transferId
+                        )
                         // #1417 hardening: every batch feeds the idle watchdog
                         // (a live transfer must never be killed) and the UI.
                         snapshotLastActivity[message.fromDeviceId] = Date()
@@ -1634,7 +1829,8 @@ public actor PeerManager {
         let changes = try decodeIncomingChanges(message.data)
         let count: Int
         if snapshotStagingPeers.contains(message.fromDeviceId) {
-            count = try stageSnapshotChanges(changes, from: message.fromDeviceId)
+            // Legacy bare-array senders predate transfer identity entirely.
+            count = try stageSnapshotChanges(changes, from: message.fromDeviceId, transferId: nil)
         } else {
             count = try applyIncomingChanges(changes)
         }
@@ -1709,6 +1905,12 @@ public actor PeerManager {
             notifyStateChanged()
         }
 
+        // One identity per attempt, minted fresh every time (#1695, LocalSend
+        // adoption §1c). The capability token above AUTHORIZES this transfer;
+        // this value IDENTIFIES it — the joiner stamps it on every staged row,
+        // which is what makes resume, contiguity, and windowed acks possible.
+        let transferId = UUID().uuidString
+
         do {
             let totalSent = try await BluetoothSnapshotTransfer.run(
                 // 50, not the 200 default. `docs/plans/sync-standalone-transports.md:36,:52`
@@ -1733,7 +1935,12 @@ public actor PeerManager {
                 },
                 encode: { changes in
                     let changesData = try JSONEncoder().encode(changes)
-                    return try JSONEncoder().encode(MPEnvelope(type: "changes", payload: changesData))
+                    return try JSONEncoder().encode(MPEnvelope(
+                        type: "changes",
+                        payload: changesData,
+                        transferId: transferId,
+                        sha256: Self.sha256Hex(changesData)
+                    ))
                 },
                 send: { data in mpManager.send(data: data, toPeer: peerDeviceId) }
             )
@@ -2137,6 +2344,99 @@ public actor PeerManager {
         try db.writer.read { dbConn in
             try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM _snapshot_staging") ?? 0
         }
+    }
+
+    /// The DISTINCT transfer ids on one peer's staged rows, read straight from
+    /// disk. A healthy session has exactly one; `''` means legacy rows.
+    func testStagedSnapshotTransferIds(for peerDeviceId: String) throws -> [String] {
+        try db.writer.read { dbConn in
+            try String.fetchAll(
+                dbConn,
+                sql: """
+                    SELECT DISTINCT transfer_id FROM _snapshot_staging
+                    WHERE peer_device_id = ? ORDER BY transfer_id
+                    """,
+                arguments: [peerDeviceId]
+            )
+        }
+    }
+
+    /// One peer's `_snapshot_transfer` ledger rows, durably read.
+    func testSnapshotTransferLedger(
+        for peerDeviceId: String
+    ) throws -> [(transferId: String, state: String, lastContiguousSeq: Int)] {
+        try db.writer.read { dbConn in
+            let rows = try Row.fetchAll(
+                dbConn,
+                sql: """
+                    SELECT transfer_id, state, last_contiguous_seq
+                    FROM _snapshot_transfer WHERE peer_device_id = ?
+                    ORDER BY transfer_id
+                    """,
+                arguments: [peerDeviceId]
+            )
+            return rows.map {
+                ($0["transfer_id"], $0["state"], $0["last_contiguous_seq"])
+            }
+        }
+    }
+
+    /// Corrupt one staged row's payload in place, leaving its stored hash
+    /// untouched — the disk-rot/tamper scenario the replay-time verification
+    /// exists to catch.
+    func testTamperStagedSnapshotRow(for peerDeviceId: String, seq: Int) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    UPDATE _snapshot_staging SET payload = payload || ' '
+                    WHERE peer_device_id = ? AND seq = ?
+                    """,
+                arguments: [peerDeviceId, seq]
+            )
+        }
+    }
+
+    /// Seed a ledger row directly, optionally back-dated, so the startup
+    /// expiry matrix is testable without replaying whole transfers.
+    func testSeedSnapshotTransfer(
+        for peerDeviceId: String,
+        transferId: String,
+        state: String,
+        ageSeconds: Int = 0
+    ) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO _snapshot_transfer
+                        (peer_device_id, transfer_id, state, started_at)
+                    VALUES (?, ?, ?, datetime('now', ?))
+                    """,
+                arguments: [peerDeviceId, transferId, state, "-\(ageSeconds) seconds"]
+            )
+        }
+    }
+
+    /// Seed one staging row directly (same reason as the ledger seeder).
+    func testSeedStagedSnapshotRow(
+        for peerDeviceId: String,
+        transferId: String,
+        seq: Int
+    ) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO _snapshot_staging
+                        (peer_device_id, seq, payload, transfer_id, payload_sha256)
+                    VALUES (?, ?, '{}', ?, '')
+                    """,
+                arguments: [peerDeviceId, seq, transferId]
+            )
+        }
+    }
+
+    /// Drive the production startup expiry (`startPeerSync` path) directly.
+    func testExpireStaleSnapshotStaging() {
+        expireStaleSnapshotStaging()
     }
 
     func testIsStagingSnapshot(from peerDeviceId: String) -> Bool {
