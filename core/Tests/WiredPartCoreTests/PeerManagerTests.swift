@@ -2617,15 +2617,26 @@ struct PeerManagerTests {
         }
         #expect(tableExists, "migration 122 is not registered in the migrator")
 
+        // Migration 123 replaced the 122 index with the transfer-scoped one;
+        // the guarantee (ordered replay, per-peer clear) is unchanged.
         let indexExists = try db.writer.read { dbConn in
             try Bool.fetchOne(dbConn, sql: """
                 SELECT EXISTS(
+                    SELECT 1 FROM sqlite_master
+                    WHERE type = 'index' AND name = 'idx_snapshot_staging_peer_transfer_seq'
+                )
+                """) ?? false
+        }
+        #expect(indexExists, "ordered replay and per-peer clear both need this index")
+        let oldIndexGone = try db.writer.read { dbConn in
+            try Bool.fetchOne(dbConn, sql: """
+                SELECT NOT EXISTS(
                     SELECT 1 FROM sqlite_master
                     WHERE type = 'index' AND name = 'idx_snapshot_staging_peer_seq'
                 )
                 """) ?? false
         }
-        #expect(indexExists, "ordered replay and per-peer clear both need this index")
+        #expect(oldIndexGone, "migration 123 must drop the 122 index it supersedes")
 
         #expect(!ConflictResolver.isAllowedTable("_snapshot_staging"))
         #expect(!ConflictResolver.allowedSyncTables.contains("_snapshot_staging"))
@@ -2734,34 +2745,47 @@ struct PeerManagerTests {
     func testSnapshotStagingSeqIsUniquePerPeer() throws {
         let db = try AppDatabase.openInMemoryDatabase()
 
+        // Migration 123 widened the key to (peer, transfer, seq): two ATTEMPTS
+        // legitimately reuse the same seq range, so the collision that matters
+        // is within one transfer. Cross-transfer interleaving is excluded by
+        // the session-freeze rule in `stageSnapshotChanges` plus the pre-
+        // staging clear, not by the index.
         let isUnique = try db.writer.read { dbConn in
             try Bool.fetchOne(dbConn, sql: """
                 SELECT "unique" FROM pragma_index_list('_snapshot_staging')
-                WHERE name = 'idx_snapshot_staging_peer_seq'
+                WHERE name = 'idx_snapshot_staging_peer_transfer_seq'
                 """) ?? false
         }
-        #expect(isUnique, "a plain index lets two transfers collide on seq and both apply")
+        #expect(isUnique, "a plain index lets one transfer collide on seq and apply both rows")
 
         try db.writer.write { dbConn in
             try dbConn.execute(
-                sql: "INSERT INTO _snapshot_staging (peer_device_id, seq, payload) VALUES (?, ?, ?)",
-                arguments: ["host", 0, "{}"]
+                sql: "INSERT INTO _snapshot_staging (peer_device_id, seq, payload, transfer_id) VALUES (?, ?, ?, ?)",
+                arguments: ["host", 0, "{}", "T-1"]
             )
         }
-        // Same peer, same seq — a leftover row meeting a restarted transfer.
+        // Same peer, same transfer, same seq — a duplicate frame's row.
         #expect(throws: (any Error).self) {
             try db.writer.write { dbConn in
                 try dbConn.execute(
-                    sql: "INSERT INTO _snapshot_staging (peer_device_id, seq, payload) VALUES (?, ?, ?)",
-                    arguments: ["host", 0, "{}"]
+                    sql: "INSERT INTO _snapshot_staging (peer_device_id, seq, payload, transfer_id) VALUES (?, ?, ?, ?)",
+                    arguments: ["host", 0, "{}", "T-1"]
                 )
             }
         }
         // A DIFFERENT peer at the same seq is legitimate and must still work.
         try db.writer.write { dbConn in
             try dbConn.execute(
-                sql: "INSERT INTO _snapshot_staging (peer_device_id, seq, payload) VALUES (?, ?, ?)",
-                arguments: ["other-host", 0, "{}"]
+                sql: "INSERT INTO _snapshot_staging (peer_device_id, seq, payload, transfer_id) VALUES (?, ?, ?, ?)",
+                arguments: ["other-host", 0, "{}", "T-1"]
+            )
+        }
+        // And so is a different TRANSFER at the same (peer, seq): that is the
+        // resume/restart case the widened key exists for.
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "INSERT INTO _snapshot_staging (peer_device_id, seq, payload, transfer_id) VALUES (?, ?, ?, ?)",
+                arguments: ["host", 0, "{}", "T-2"]
             )
         }
     }
@@ -3053,6 +3077,331 @@ struct PeerManagerTests {
             recordData: "{\"id\":\(recordId),\"display_name\":\"Snapshot User\",\"pin_hash\":\"hash\",\"is_active\":1}",
             timestamp: "2026-07-15T00:00:00Z"
         )
+    }
+
+    // MARK: - Transfer identity + integrity (#1695, LocalSend adoption §1b-1c)
+
+    private func snapshotEnvelope(
+        recordIds: Range<Int>,
+        transferId: String? = nil,
+        sha256: String? = nil,
+        corruptHash: Bool = false
+    ) throws -> Data {
+        let changes = recordIds.map { snapshotUserChange(recordId: String($0)) }
+        let payload = try JSONEncoder().encode(changes)
+        let hash: String?
+        if corruptHash {
+            hash = String(repeating: "0", count: 64)
+        } else {
+            hash = sha256
+        }
+        return try JSONEncoder().encode(MPEnvelope(
+            type: "changes",
+            payload: payload,
+            transferId: transferId,
+            sha256: hash
+        ))
+    }
+
+    /// Frame with a valid hash, computed the way the production host computes
+    /// it — over the encoded `[IncomingChange]` payload.
+    private func verifiedSnapshotEnvelope(
+        recordIds: Range<Int>,
+        transferId: String
+    ) throws -> Data {
+        let changes = recordIds.map { snapshotUserChange(recordId: String($0)) }
+        let payload = try JSONEncoder().encode(changes)
+        return try JSONEncoder().encode(MPEnvelope(
+            type: "changes",
+            payload: payload,
+            transferId: transferId,
+            sha256: PeerManager.sha256Hex(payload)
+        ))
+    }
+
+    @Test("Identified frames stamp every staged row and ledger the transfer; the full flow still applies (#1695)")
+    func testSnapshotFramesCarryTransferIdentityEndToEnd() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+        let host = "identity-host"
+        let transferId = "TRANSFER-A"
+
+        try await pm.testBeginSnapshotBuffer(from: host)
+        _ = try await pm.testProcessMultipeerMessage(ReceivedMultipeerMessage(
+            fromDeviceId: host,
+            data: try verifiedSnapshotEnvelope(recordIds: 70_000..<70_050, transferId: transferId)
+        ))
+        _ = try await pm.testProcessMultipeerMessage(ReceivedMultipeerMessage(
+            fromDeviceId: host,
+            data: try verifiedSnapshotEnvelope(recordIds: 70_050..<70_100, transferId: transferId)
+        ))
+
+        // Every staged row is attributed to THE transfer, durably.
+        #expect(try await pm.testStagedSnapshotTransferIds(for: host) == [transferId])
+        let ledger = try await pm.testSnapshotTransferLedger(for: host)
+        #expect(ledger.count == 1)
+        #expect(ledger.first?.transferId == transferId)
+        #expect(ledger.first?.state == "staging")
+        // 100 rows staged => 0...99 are contiguous on disk.
+        #expect(ledger.first?.lastContiguousSeq == 99)
+
+        // The identity layer must not disturb the apply path.
+        let completion = try JSONEncoder().encode(MPEnvelope(
+            type: "fullSyncComplete",
+            payload: try JSONEncoder().encode(FullSyncCompletion.success)
+        ))
+        let outcome = try await pm.testProcessMultipeerMessage(
+            ReceivedMultipeerMessage(fromDeviceId: host, data: completion)
+        )
+        #expect(outcome == .fullSyncCompleted)
+        let applied = try await db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM users WHERE id >= 70000") ?? 0
+        }
+        #expect(applied == 100)
+        // Ledger and staging die together once the transfer is over.
+        #expect(try await pm.testStagedSnapshotRowCount(for: host) == 0)
+        #expect(try await pm.testSnapshotTransferLedger(for: host).isEmpty)
+    }
+
+    @Test("A frame whose payload does not match its hash is rejected before it reaches disk (SNAP-CORRUPT-FRAME)")
+    func testCorruptSnapshotFrameIsRejectedBeforeStaging() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+        let host = "corrupt-frame-host"
+
+        await pm.testAuthorizeReceivedSnapshot("staging-token", from: host)
+        try await pm.testBeginSnapshotBuffer(from: host)
+        let waiter = Task { try await pm.testAwaitFullSyncTransport(peerDeviceId: host) }
+        while await pm.testPendingTransportOperationCount() == 0 {
+            await Task.yield()
+        }
+
+        let acknowledgements = SnapshotAcknowledgementCollector()
+        var thrown: (any Error)?
+        do {
+            _ = try await pm.testProcessMultipeerMessagesInFIFO(
+                [ReceivedMultipeerMessage(
+                    fromDeviceId: host,
+                    data: try snapshotEnvelope(
+                        recordIds: 71_000..<71_010,
+                        transferId: "TRANSFER-C",
+                        corruptHash: true
+                    )
+                )],
+                sendApplyAcknowledgement: { acknowledgement, destination in
+                    #expect(destination == host)
+                    acknowledgements.append(acknowledgement)
+                    return true
+                }
+            )
+        } catch {
+            thrown = error
+        }
+
+        let snapshotError = try #require(thrown as? MultipeerSnapshotError)
+        guard case .corruptSnapshotFrame = snapshotError else {
+            Issue.record("expected .corruptSnapshotFrame, got \(snapshotError)")
+            return
+        }
+        // The failure code reaches the screen (#1669/#1693 rule).
+        #expect(snapshotError.errorDescription?.contains("SNAP-CORRUPT-FRAME") == true)
+        await #expect(throws: (any Error).self) { try await waiter.value }
+
+        // NOTHING was staged — the gate is before disk, not after.
+        #expect(try await pm.testStagedSnapshotRowCount(for: host) == 0)
+        #expect(acknowledgements.values.first?.succeeded == false)
+        #expect(!(await pm.testIsStagingSnapshot(from: host)))
+    }
+
+    @Test("Frames from two different transfers cannot interleave into one session (SNAP-ID-MISMATCH)")
+    func testTransferIdentityMismatchFailsTheSession() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+        let host = "two-transfer-host"
+
+        try await pm.testBeginSnapshotBuffer(from: host)
+        _ = try await pm.testProcessMultipeerMessage(ReceivedMultipeerMessage(
+            fromDeviceId: host,
+            data: try verifiedSnapshotEnvelope(recordIds: 72_000..<72_010, transferId: "TRANSFER-A")
+        ))
+
+        await #expect(throws: (any Error).self) {
+            _ = try await pm.testProcessMultipeerMessage(ReceivedMultipeerMessage(
+                fromDeviceId: host,
+                data: try self.verifiedSnapshotEnvelope(recordIds: 72_010..<72_020, transferId: "TRANSFER-B")
+            ))
+        }
+
+        // A bare legacy frame after identified ones is the same defect: the
+        // session's identity decision is frozen at the first frame.
+        await #expect(throws: (any Error).self) {
+            _ = try await pm.testProcessMultipeerMessage(ReceivedMultipeerMessage(
+                fromDeviceId: host,
+                data: try self.snapshotEnvelope(recordIds: 72_020..<72_030)
+            ))
+        }
+    }
+
+    @Test("Frames from a pre-identity host stage exactly as before — no ledger, empty transfer id")
+    func testLegacyFramesStageWithoutIdentity() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+        let host = "legacy-host"
+
+        try await pm.testBeginSnapshotBuffer(from: host)
+        _ = try await pm.testProcessMultipeerMessage(ReceivedMultipeerMessage(
+            fromDeviceId: host,
+            data: try snapshotEnvelope(recordIds: 73_000..<73_020)
+        ))
+
+        #expect(try await pm.testStagedSnapshotRowCount(for: host) == 20)
+        #expect(try await pm.testStagedSnapshotTransferIds(for: host) == [""])
+        #expect(try await pm.testSnapshotTransferLedger(for: host).isEmpty)
+
+        // And the legacy flow still applies end to end.
+        let completion = try JSONEncoder().encode(MPEnvelope(
+            type: "fullSyncComplete",
+            payload: try JSONEncoder().encode(FullSyncCompletion.success)
+        ))
+        let outcome = try await pm.testProcessMultipeerMessage(
+            ReceivedMultipeerMessage(fromDeviceId: host, data: completion)
+        )
+        #expect(outcome == .fullSyncCompleted)
+    }
+
+    /// The at-rest window: rows staged cleanly, then damaged on disk before
+    /// apply. Transport reliability cannot see this; only the stored per-row
+    /// hash can. Mutation check for the fix: removing the hash re-verification
+    /// in `applyStagedSnapshot` turns this test RED.
+    @Test("A staged row that no longer matches its stored hash fails the apply atomically (SNAP-CORRUPT-ROW)")
+    func testTamperedStagedRowFailsApplyAtomically() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+        let host = "tamper-host"
+
+        await pm.testAuthorizeReceivedSnapshot("staging-token", from: host)
+        try await pm.testBeginSnapshotBuffer(from: host)
+        let waiter = Task { try await pm.testAwaitFullSyncTransport(peerDeviceId: host) }
+        while await pm.testPendingTransportOperationCount() == 0 {
+            await Task.yield()
+        }
+
+        _ = try await pm.testProcessMultipeerMessage(ReceivedMultipeerMessage(
+            fromDeviceId: host,
+            data: try verifiedSnapshotEnvelope(recordIds: 74_000..<74_100, transferId: "TRANSFER-T")
+        ))
+        #expect(try await pm.testStagedSnapshotRowCount(for: host) == 100)
+
+        // Disk rot / tampering, after staging, before apply.
+        try await pm.testTamperStagedSnapshotRow(for: host, seq: 42)
+
+        let acknowledgements = SnapshotAcknowledgementCollector()
+        var thrown: (any Error)?
+        do {
+            _ = try await pm.testProcessMultipeerMessagesInFIFO(
+                [ReceivedMultipeerMessage(
+                    fromDeviceId: host,
+                    data: try JSONEncoder().encode(MPEnvelope(
+                        type: "fullSyncComplete",
+                        payload: try JSONEncoder().encode(FullSyncCompletion.success)
+                    ))
+                )],
+                sendApplyAcknowledgement: { acknowledgement, _ in
+                    acknowledgements.append(acknowledgement)
+                    return true
+                }
+            )
+        } catch {
+            thrown = error
+        }
+
+        let snapshotError = try #require(thrown as? MultipeerSnapshotError)
+        guard case .corruptStagedRow(let seq) = snapshotError else {
+            Issue.record("expected .corruptStagedRow, got \(snapshotError)")
+            return
+        }
+        #expect(seq == 42, "the error must name the damaged row")
+        #expect(snapshotError.errorDescription?.contains("SNAP-CORRUPT-ROW") == true)
+        await #expect(throws: (any Error).self) { try await waiter.value }
+
+        // Atomicity: the 99 good rows rolled back with the bad one.
+        let visible = try await db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM users WHERE id >= 74000") ?? 0
+        }
+        #expect(visible == 0, "no partial company may survive a corrupt staged row")
+        #expect(acknowledgements.values.first?.succeeded == false)
+        #expect(try await pm.testStagedSnapshotRowCount(for: host) == 0)
+    }
+
+    @Test("Startup expiry retains only in-TTL 'staging' transfers and sweeps everything else (#1695 §2)")
+    func testStartupExpiryRetainsOnlyResumableStaging() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+
+        // The resume candidate: staging, fresh.
+        try await pm.testSeedSnapshotTransfer(for: "peer-keep", transferId: "T-KEEP", state: "staging")
+        try await pm.testSeedStagedSnapshotRow(for: "peer-keep", transferId: "T-KEEP", seq: 0)
+        // Died mid-apply: the transaction rolled back, its staging is scrap.
+        try await pm.testSeedSnapshotTransfer(for: "peer-applying", transferId: "T-APPLY", state: "applying")
+        try await pm.testSeedStagedSnapshotRow(for: "peer-applying", transferId: "T-APPLY", seq: 0)
+        // Too old: the company has moved on.
+        try await pm.testSeedSnapshotTransfer(
+            for: "peer-stale", transferId: "T-STALE", state: "staging",
+            ageSeconds: Int(PeerManager.snapshotResumeTTLSeconds) * 2
+        )
+        try await pm.testSeedStagedSnapshotRow(for: "peer-stale", transferId: "T-STALE", seq: 0)
+        // Pre-identity rows: unattributable, delete on sight.
+        try await pm.testSeedStagedSnapshotRow(for: "peer-legacy", transferId: "", seq: 0)
+        // Orphan: staging with no ledger row at all.
+        try await pm.testSeedStagedSnapshotRow(for: "peer-orphan", transferId: "T-GHOST", seq: 0)
+
+        await pm.testExpireStaleSnapshotStaging()
+
+        #expect(try await pm.testStagedSnapshotRowCount(for: "peer-keep") == 1)
+        #expect(try await pm.testSnapshotTransferLedger(for: "peer-keep").count == 1)
+        for peer in ["peer-applying", "peer-stale", "peer-legacy", "peer-orphan"] {
+            #expect(try await pm.testStagedSnapshotRowCount(for: peer) == 0, "\(peer) must be swept")
+            #expect(try await pm.testSnapshotTransferLedger(for: peer).isEmpty, "\(peer) ledger must be swept")
+        }
+    }
+
+    @Test("The transfer ledger is registered infrastructure and never syncs (#1695)")
+    func testSnapshotTransferLedgerIsRegisteredInfrastructureAndNeverSyncs() throws {
+        let db = try freshDB()
+
+        // Registered: the table exists after migration.
+        let exists = try db.writer.read { dbConn in
+            try Bool.fetchOne(
+                dbConn,
+                sql: "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_snapshot_transfer')"
+            ) ?? false
+        }
+        #expect(exists, "migration 123 must actually be registered, not merely defined")
+
+        // Never a sync target: an incoming change may not address it.
+        #expect(!ConflictResolver.isAllowedTable("_snapshot_transfer"))
+
+        // No change-tracking triggers: ledger writes must never replicate.
+        let triggerCount = try db.writer.read { dbConn in
+            try Int.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT COUNT(*) FROM sqlite_master
+                    WHERE type = 'trigger' AND tbl_name = '_snapshot_transfer'
+                    """
+            ) ?? 0
+        }
+        #expect(triggerCount == 0)
+
+        // Staging gained its new columns.
+        let columns = try db.writer.read { dbConn in
+            try String.fetchAll(
+                dbConn,
+                sql: "SELECT name FROM pragma_table_info('_snapshot_staging')"
+            )
+        }
+        #expect(columns.contains("transfer_id"))
+        #expect(columns.contains("payload_sha256"))
     }
 }
 
