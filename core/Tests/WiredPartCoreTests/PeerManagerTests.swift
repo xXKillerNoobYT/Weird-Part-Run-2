@@ -368,8 +368,11 @@ struct PeerManagerTests {
             startMultipeer: false,
             startSyncServer: false
         )
-        // Simulate a freshly paired joiner: its snapshot token is outstanding
-        // (it is only consumed on durable apply acknowledgement).
+        // Simulate a freshly paired joiner: pairing is the moment it starts
+        // owing an initial snapshot apply. (Before #1713 this comment claimed
+        // the deferral was driven by the token being "consumed only on durable
+        // apply acknowledgement" — the token is actually consumed at
+        // reservation time, which is the bug the tests below cover.)
         await pm.testIssueHostedSnapshotToken("token-123", for: "joiner-9")
 
         let result = await pm.syncWithPeer(DiscoveredPeer(
@@ -388,6 +391,149 @@ struct PeerManagerTests {
         #expect(result.error == "Waiting for the new device's initial download to finish.")
         let state = await pm.getState()
         #expect(state.lastPeerSyncs["joiner-9"] == nil)
+
+        await pm.stopPeerSync()
+    }
+
+    /// A joiner peer literal shared by the #1713 deferral tests.
+    private func joinerPeer() -> DiscoveredPeer {
+        DiscoveredPeer(
+            deviceId: "joiner-9",
+            deviceName: "New iPad",
+            companyId: "company-abc",
+            host: "127.0.0.1",
+            port: 12345
+        )
+    }
+
+    /// Host with no sync server, so a call that is NOT deferred returns the
+    /// deterministic "Sync server not running" — the control signal that
+    /// distinguishes "deferral fired" from "deferral is stuck on".
+    private func deferralHost() async throws -> PeerManager {
+        let pm = PeerManager(db: try freshDB())
+        try await pm.startPeerSync(
+            deviceId: "host-001",
+            deviceName: "Host Device",
+            companyId: "company-abc",
+            allowAnyCompanyPeerDiscovery: true,
+            startMultipeer: false,
+            startSyncServer: false
+        )
+        return pm
+    }
+
+    @Test("Incremental push stays deferred while the hosted snapshot is IN FLIGHT (#1713)")
+    func testIncrementalPushStaysDeferredDuringHostedSnapshotTransfer() async throws {
+        let pm = try await deferralHost()
+        await pm.testIssueHostedSnapshotToken("token-123", for: "joiner-9")
+        // Reserving is what consumes the capability token. Before #1713 the
+        // deferral read that token, so this single call silently switched the
+        // guard off for the entire download — and an incremental frame carries
+        // no transferId, so the joiner's staging session (#1717) rejects it as
+        // a second interleaved transfer and fails the snapshot outright.
+        #expect(await pm.testReserveHostedSnapshot(token: "token-123", for: "joiner-9"))
+
+        let result = await pm.syncWithPeer(joinerPeer())
+
+        #expect(result.deferred == true)
+        #expect(result.success == false)
+        #expect(result.error == "Waiting for the new device's initial download to finish.")
+        let state = await pm.getState()
+        #expect(state.lastPeerSyncs["joiner-9"] == nil)
+
+        await pm.stopPeerSync()
+    }
+
+    @Test("Incremental push stays deferred after the joiner rolls back (#1713)")
+    func testDeferralSurvivesJoinerNegativeAcknowledgement() async throws {
+        let pm = try await deferralHost()
+        await pm.testIssueHostedSnapshotToken("token-123", for: "joiner-9")
+        #expect(await pm.testReserveHostedSnapshot(token: "token-123", for: "joiner-9"))
+        await pm.testSetHostedSnapshotRowsSent(42, for: "joiner-9")
+        // The joiner rolled back: it holds no company data at all, so pushing
+        // deltas at it is strictly worse than pushing at a mid-transfer peer.
+        await pm.testAcknowledgeHostedSnapshot(
+            token: "token-123",
+            for: "joiner-9",
+            succeeded: false,
+            error: "joiner apply failed"
+        )
+
+        let result = await pm.syncWithPeer(joinerPeer())
+
+        #expect(result.deferred == true)
+        #expect(result.success == false)
+        // The rollback's own row stays the visible one — a deferral must not
+        // overwrite the honest failure the user needs to see.
+        let state = await pm.getState()
+        #expect(state.lastPeerSyncs["joiner-9"]?.success == false)
+
+        await pm.stopPeerSync()
+    }
+
+    @Test("A durable apply acknowledgement resumes incremental pushes (#1713)")
+    func testPositiveAcknowledgementResumesIncrementalPushes() async throws {
+        let pm = try await deferralHost()
+        await pm.testIssueHostedSnapshotToken("token-123", for: "joiner-9")
+        #expect(await pm.testReserveHostedSnapshot(token: "token-123", for: "joiner-9"))
+        await pm.testSetHostedSnapshotRowsSent(42, for: "joiner-9")
+        await pm.testAcknowledgeHostedSnapshot(
+            token: "token-123",
+            for: "joiner-9",
+            succeeded: true
+        )
+
+        let result = await pm.syncWithPeer(joinerPeer())
+
+        // The anti-over-fix control: a deferral that never lifts would strand
+        // the peer forever, which is worse than the bug being fixed. This test
+        // passes both before and after the fix — that is what makes it a valid
+        // control for the mutation test above.
+        #expect(result.deferred == false)
+        #expect(result.error == "Sync server not running")
+
+        await pm.stopPeerSync()
+    }
+
+    @Test("A superseded pairing's late success cannot clear the deferral (#1713)")
+    func testSupersededPairingLateSuccessCannotClearDeferral() async throws {
+        let pm = try await deferralHost()
+        await pm.testIssueHostedSnapshotToken("token-old", for: "joiner-9")
+        #expect(await pm.testReserveHostedSnapshot(token: "token-old", for: "joiner-9"))
+        await pm.testSetHostedSnapshotRowsSent(42, for: "joiner-9")
+        // Re-pair: the peer now owes an apply under a NEW generation.
+        await pm.testIssueHostedSnapshotToken("token-new", for: "joiner-9")
+        // The old generation's success arrives late. It must not satisfy the
+        // apply owed by the new one — matching on the value, not just the key,
+        // is what prevents that.
+        await pm.testAcknowledgeHostedSnapshot(
+            token: "token-old",
+            for: "joiner-9",
+            succeeded: true
+        )
+
+        #expect(await pm.syncWithPeer(joinerPeer()).deferred == true)
+
+        await pm.stopPeerSync()
+    }
+
+    @Test("Deferring a push grants the peer no snapshot authorization (#1713)")
+    func testDeferralGrantsNoSnapshotAuthorization() async throws {
+        let pm = try await deferralHost()
+        await pm.testIssueHostedSnapshotToken("token-123", for: "joiner-9")
+        #expect(await pm.testReserveHostedSnapshot(token: "token-123", for: "joiner-9"))
+        await pm.testAcknowledgeHostedSnapshot(
+            token: "token-123",
+            for: "joiner-9",
+            succeeded: false
+        )
+
+        // Tripwire for the #1657/#1608 failure mode: hardening a data path must
+        // not quietly hand back a consumed capability. The peer keeps deferring
+        // AND stays unauthorized.
+        #expect(await pm.syncWithPeer(joinerPeer()).deferred == true)
+        #expect(!(await pm.testHostedSnapshotTokenAvailable("token-123", for: "joiner-9")))
+        #expect(!(await pm.testReserveHostedSnapshot(token: "token-123", for: "joiner-9")))
 
         await pm.stopPeerSync()
     }
