@@ -232,6 +232,72 @@ final class SyncManagerFailureSurfacingRegressionTests: XCTestCase {
         )
     }
 
+    // MARK: - #1699 — a deferred peer is waiting, not failing
+
+    /// Behavioural. A deferred result carries `success == false`, so any caller
+    /// that tests `!success` alone reports a healthy onboarding transfer as a
+    /// failure. This pins the shared decision both sync entry points consult.
+    func testDeferredPeerIsNotCountedAsASyncFailure() {
+        let deferred = PeerSyncResult(
+            peerDeviceId: "joiner-1",
+            peerName: "Shop iPad",
+            success: false,
+            deferred: true
+        )
+        let broken = PeerSyncResult(
+            peerDeviceId: "joiner-2",
+            peerName: "Van iPhone",
+            success: false,
+            error: "Bluetooth transfer aborted",
+            deferred: false
+        )
+
+        XCTAssertTrue(
+            IOSSyncManager.peerSyncFailures(in: [deferred]).isEmpty,
+            "a peer waiting for its first download is not a failure the user must act on"
+        )
+        XCTAssertEqual(
+            IOSSyncManager.peerSyncFailures(in: [deferred, broken]).map(\.peerDeviceId),
+            ["joiner-2"],
+            "a real failure alongside a deferral must still surface, and only it"
+        )
+        XCTAssertEqual(
+            IOSSyncManager.waitingForFirstDownloadMessage(for: [deferred]),
+            "Waiting for Shop iPad's first download to finish…"
+        )
+        XCTAssertNil(
+            IOSSyncManager.waitingForFirstDownloadMessage(for: [broken]),
+            "nobody is downloading, so there is nothing to wait for"
+        )
+    }
+
+    /// Structural, and deliberately so: the helper test above still passes if a
+    /// call site stops calling the helper. This one fails on exactly that
+    /// mutation. The row-level Nearby Devices tap regressed this way once —
+    /// #1625 fixed the all-peers fan-out and left the single-peer path testing
+    /// `!result.success` on its own, which #1719 then widened from a sub-second
+    /// window to the entire multi-minute Bluetooth download.
+    func testRowLevelSyncRoutesFailureDecisionThroughTheSharedPredicate() throws {
+        let source = try Self.readSyncManagerSource()
+        let body = try TestSourceSlicer.braceBalancedBody(
+            after: "func syncWithPeer(peerDeviceId: String) async",
+            in: source
+        )
+
+        XCTAssertTrue(
+            body.contains("Self.peerSyncFailures(in: [result])"),
+            "the row-level path must reuse the shared failure decision, not re-derive one"
+        )
+        XCTAssertFalse(
+            body.contains("if !result.success {"),
+            "treating every unsuccessful result as an error reports a healthy deferral as Sync Error"
+        )
+        XCTAssertTrue(
+            body.contains("Self.waitingForFirstDownloadMessage(for: [result])"),
+            "a deferred single-peer sync must explain what it is waiting for"
+        )
+    }
+
     /// The fallback still has to work for errors nobody has explained, and an
     /// empty or whitespace-only message must not count as "composed".
     func testGenericFallbackStillUsedWhenNothingWasComposed() {
