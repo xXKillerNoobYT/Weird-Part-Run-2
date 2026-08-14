@@ -1099,4 +1099,129 @@ struct ConflictResolverTests {
         #expect(user?.email == nil)
         #expect(user?.displayName == "Original", "untouched fields must survive")
     }
+
+    // MARK: - #1728 — a child row arriving before its parent must not kill the join
+
+    /// `notebooks.template_id` → `notebook_templates` is one of nine inverted
+    /// edges: the host streams tables in `sqlite_master` creation order, and
+    /// `notebook_templates` is DROPped and re-created by a later migration, so
+    /// it is sent long AFTER the `notebooks` rows that point at it.
+    ///
+    /// This is the real pair from the schema rather than a synthetic one, so
+    /// the test keeps testing the thing that actually broke.
+    private func notebookBeforeItsTemplate(
+        templateId: Int,
+        createdBy: Int64
+    ) -> [IncomingChange] {
+        [
+            IncomingChange(
+                deviceId: "remote-device",
+                tableName: "notebooks",
+                recordId: "1",
+                operation: "INSERT",
+                recordData: """
+                {"id":"1","title":"Job Notebook","template_id":"\(templateId)","created_by":"\(createdBy)"}
+                """,
+                timestamp: "2026-08-14T10:00:00Z"
+            ),
+            // `template_data` is NOT NULL with no default (migration 039
+            // re-creates this table, which is also what pushes its
+            // `sqlite_master` rowid after `notebooks`). Supplying it is not
+            // incidental: `INSERT OR IGNORE` SILENTLY swallows a NOT NULL
+            // violation, so a sparse record here would drop the parent row and
+            // the test would fail at COMMIT for the wrong reason — looking
+            // exactly like the deferral not working.
+            IncomingChange(
+                deviceId: "remote-device",
+                tableName: "notebook_templates",
+                recordId: "\(templateId)",
+                operation: "INSERT",
+                recordData: """
+                {"id":"\(templateId)","name":"Residential Job","template_data":"{}"}
+                """,
+                timestamp: "2026-08-14T10:00:01Z"
+            ),
+        ]
+    }
+
+    /// The #1728 regression.
+    ///
+    /// Before the fix this threw `SQLite error 19: FOREIGN KEY constraint
+    /// failed` out of `db.writer.write` and rolled back the ENTIRE company
+    /// snapshot — one out-of-order row killing the whole join, deterministically,
+    /// on every retry. The successor to #1723 and the same shape.
+    ///
+    /// MUTATION CHECK: delete the `deferForeignKeysForThisTransaction` call in
+    /// `resolveAndApplyChangesAtomically` and this test must go red. A test
+    /// that cannot fail is not coverage.
+    @Test("#1728 atomic apply survives a child row arriving before its parent")
+    func testAtomicApplyToleratesChildBeforeParent() throws {
+        let db = try freshDB()
+        let userId = try insertUser(db: db, displayName: "Owner")
+
+        let result = try ConflictResolver.resolveAndApplyChangesAtomically(
+            db: db,
+            changes: notebookBeforeItsTemplate(templateId: 99, createdBy: userId)
+        )
+
+        #expect(result.applied == 2, "both rows must land; arrival order is not corruption")
+
+        let (notebookTemplate, templateExists) = try db.writer.read { dbConn in
+            (
+                try Int.fetchOne(dbConn, sql: "SELECT template_id FROM notebooks WHERE id = 1"),
+                try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM notebook_templates WHERE id = 99") ?? 0
+            )
+        }
+        #expect(notebookTemplate == 99, "the child kept its reference")
+        #expect(templateExists == 1, "the parent landed too")
+    }
+
+    /// The other half, and the reason this is a deferral rather than a
+    /// weakening: a snapshot whose parent row genuinely does not exist
+    /// anywhere is real referential corruption and must STILL be rejected —
+    /// at COMMIT — rather than committing a dangling reference.
+    ///
+    /// If this ever starts passing, the fix has turned into
+    /// `PRAGMA foreign_keys = OFF` by accident.
+    @Test("#1728 a genuinely orphaned row still fails and rolls the batch back")
+    func testAtomicApplyStillRejectsATrulyOrphanedRow() throws {
+        let db = try freshDB()
+        let userId = try insertUser(db: db, displayName: "Owner")
+
+        // Only the child — no parent anywhere in the batch or the database.
+        let orphan = Array(notebookBeforeItsTemplate(templateId: 12345, createdBy: userId).prefix(1))
+
+        #expect(throws: (any Error).self) {
+            try ConflictResolver.resolveAndApplyChangesAtomically(db: db, changes: orphan)
+        }
+
+        let notebooks = try db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM notebooks") ?? -1
+        }
+        #expect(notebooks == 0, "the batch must roll back rather than commit a dangling reference")
+    }
+
+    /// The streaming twin is the path the real Bluetooth join actually takes,
+    /// so fixing only the array-based entry point would have left the field
+    /// failure exactly as it was.
+    @Test("#1728 the streaming apply defers foreign keys too")
+    func testStreamedAtomicApplyToleratesChildBeforeParent() throws {
+        let db = try freshDB()
+        let userId = try insertUser(db: db, displayName: "Owner")
+        let changes = notebookBeforeItsTemplate(templateId: 77, createdBy: userId)
+
+        let result = try ConflictResolver.resolveAndApplyStreamedChangesAtomically(
+            db: db,
+            produceChanges: { _, emit in
+                for change in changes { try emit(change) }
+            }
+        )
+
+        #expect(result.applied == 2)
+
+        let templateId = try db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: "SELECT template_id FROM notebooks WHERE id = 1")
+        }
+        #expect(templateId == 77)
+    }
 }

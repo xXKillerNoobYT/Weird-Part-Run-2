@@ -366,6 +366,7 @@ public enum ConflictResolver {
 
         return try db.writer.write { dbConn in
             var result = MergeResult()
+            try deferForeignKeysForThisTransaction(dbConn)
             try dbConn.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
             defer { try? dbConn.execute(sql: "DELETE FROM _sync_apply_guard") }
 
@@ -375,6 +376,46 @@ public enum ConflictResolver {
 
             return result
         }
+    }
+
+    /// Hold foreign-key checking until COMMIT for the duration of this
+    /// transaction (#1728).
+    ///
+    /// The host streams snapshot tables in **creation** order —
+    /// `SELECT name FROM sqlite_master … ORDER BY rowid` (`PeerManager.swift`)
+    /// — which is the order 124 migrations happened to create them, not a
+    /// topological order of the foreign-key graph. Nine child→parent edges are
+    /// inverted, so a child row routinely arrives before its parent: a job
+    /// notebook before `notebook_templates`, a notebook section before its
+    /// group, a labor entry before the to-do it links to.
+    ///
+    /// That is fatal rather than merely untidy, because of three facts that
+    /// only bite together:
+    ///
+    /// 1. Foreign keys are ENFORCED — `config.foreignKeysEnabled = true` on
+    ///    every connection this app opens.
+    /// 2. `INSERT OR IGNORE` does NOT suppress a FOREIGN KEY violation.
+    ///    SQLite's ON CONFLICT algorithms cover UNIQUE / NOT NULL / CHECK / PK
+    ///    only, so the insert branch cannot absorb it.
+    /// 3. `applyOneAtomically` deliberately catches only
+    ///    `ApplyError.missingLocalRecord`, so the error escapes
+    ///    `db.writer.write` and rolls the ENTIRE company snapshot back.
+    ///
+    /// One out-of-order row therefore killed the whole join, deterministically,
+    /// on every retry — the same shape as #1723 and the next blocker behind it.
+    ///
+    /// Deferring is preferred over topologically sorting the send: sorting is a
+    /// far larger change, has to reason about cycles across 459 FK edges, and
+    /// protects only the send path, whereas this protects the apply no matter
+    /// who is sending. The pragma is transaction-scoped and resets itself at
+    /// COMMIT, so it cannot leak into ordinary writes.
+    ///
+    /// This does NOT weaken the constraint. Every FK is still checked, just at
+    /// COMMIT instead of per-statement: a snapshot with a genuinely orphaned
+    /// row (parent hard-deleted on the host) still fails and still rolls back.
+    /// It only stops *arrival order* from being mistaken for corruption.
+    private static func deferForeignKeysForThisTransaction(_ dbConn: Database) throws {
+        try dbConn.execute(sql: "PRAGMA defer_foreign_keys = ON")
     }
 
     /// Streaming twin of `resolveAndApplyChangesAtomically` for a change source
@@ -407,6 +448,9 @@ public enum ConflictResolver {
 
         return try db.writer.write { dbConn in
             var result = MergeResult()
+            // See `deferForeignKeysForThisTransaction`. This is the path the
+            // real Bluetooth join takes, so it is the one that was dying.
+            try deferForeignKeysForThisTransaction(dbConn)
             try dbConn.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
             defer { try? dbConn.execute(sql: "DELETE FROM _sync_apply_guard") }
 
