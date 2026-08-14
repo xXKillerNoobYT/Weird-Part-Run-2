@@ -314,4 +314,191 @@ final class SyncManagerFailureSurfacingRegressionTests: XCTestCase {
             )
         }
     }
+
+    // MARK: - #1725 — the phone must never blame distance for an error it can name
+
+    /// Mirrors GRDB's `DatabaseError` conformance EXACTLY: `CustomNSError`,
+    /// deliberately NOT `LocalizedError`, with the real message living in
+    /// `errorUserInfo[NSLocalizedDescriptionKey]`
+    /// (GRDB/Core/DatabaseError.swift:593-608).
+    ///
+    /// The precise conformance is the whole point. The bug was that
+    /// `(error as? LocalizedError)?.errorDescription` returns nil for this
+    /// shape while `localizedDescription` carries the full SQL, so a stand-in
+    /// that conformed to `LocalizedError` would pass every assertion below
+    /// while the shipped app still showed the canned distance message.
+    private struct DatabaseErrorLike: Error, CustomNSError {
+        static let message = """
+            SQLite error 21: wrong number of statement arguments: 8 - while executing \
+            `UPDATE "clock_out_questions" SET "answer_type" = ?, "updated_at" = ? WHERE id = ?`
+            """
+
+        static var errorDomain: String { "GRDB.DatabaseError" }
+        var errorCode: Int { 21 }
+        var errorUserInfo: [String: Any] { [NSLocalizedDescriptionKey: Self.message] }
+    }
+
+    /// The build-66 field failure, pinned.
+    ///
+    /// The owner's phone showed "Bluetooth transfer failed — keep both devices
+    /// close and retry" for what was actually `SQLite error 21` (#1723).
+    /// Distance was never going to fix a database bug, and the one message that
+    /// could have diagnosed it was discarded by a failed protocol cast. Only
+    /// the Mac, which surfaced the raw text, made the cause findable at all.
+    func testDatabaseErrorIsNamedOnScreenInsteadOfBlamingDistance() {
+        let report = IOSSyncManager.initialSyncFailureReport(
+            wifiFailure: nil,
+            bluetoothError: DatabaseErrorLike()
+        )
+
+        XCTAssertFalse(
+            report.headline.contains("keep both devices close"),
+            "the canned distance advice came back for an error we can name — this is exactly the build-66 bug (#1725)"
+        )
+        XCTAssertTrue(
+            report.headline.contains("SQLite error 21"),
+            "the cause must be legible on the screen itself: device logs replicate over the very sync that is broken, so a photograph of this screen is the only diagnostic channel that survives"
+        )
+        XCTAssertEqual(
+            report.detail?.contains(#"UPDATE "clock_out_questions""#), true,
+            "the untruncated failing statement must survive into the copyable detail"
+        )
+        XCTAssertTrue(
+            report.code.hasPrefix("BT-"),
+            "\(report.code) breaks the shipped BT-* convention"
+        )
+        XCTAssertNotEqual(
+            report.code, "BT-SYNC-FAILED",
+            "a code that names nothing is no better than no code at all"
+        )
+    }
+
+    /// The owner asked for the full error on the clipboard, so one tap has to
+    /// produce something a bug report can be built from without paraphrase.
+    func testCopyableTextCarriesCodeHeadlineAndUntruncatedDetail() {
+        let report = IOSSyncManager.initialSyncFailureReport(
+            wifiFailure: nil,
+            bluetoothError: DatabaseErrorLike()
+        )
+        let copied = report.copyableText
+
+        XCTAssertTrue(copied.contains(report.code), "the code is what makes a report greppable")
+        XCTAssertTrue(copied.contains(report.headline), "the plain-English headline gives the detail context")
+        XCTAssertTrue(
+            copied.contains("clock_out_questions"),
+            "the failing table must be copyable — naming it is what identified #1723"
+        )
+        XCTAssertTrue(
+            copied.contains("wrong number of statement arguments"),
+            "the copied text must be the whole cause, not the headline's truncated summary"
+        )
+    }
+
+    /// The other half of the rule: when nobody ever wrote a message, generic
+    /// advice really is the most useful headline. It must not be replaced by
+    /// Foundation's "The operation couldn't be completed." boilerplate — but
+    /// the concrete type is still the only lead available, so it has to reach
+    /// the bug report through the detail.
+    func testOpaqueErrorKeepsActionableAdviceButStillNamesItsTypeInTheDetail() {
+        struct Unexplained: Error {}
+
+        let report = IOSSyncManager.initialSyncFailureReport(
+            wifiFailure: nil,
+            bluetoothError: Unexplained()
+        )
+
+        XCTAssertTrue(
+            report.headline.contains("keep both devices close"),
+            "with no message written anywhere, generic advice is genuinely the best headline available"
+        )
+        XCTAssertFalse(
+            report.headline.contains("couldn't be completed"),
+            "Foundation boilerplate is not a diagnosis and must not displace actionable advice"
+        )
+        XCTAssertEqual(
+            report.detail?.contains("Unexplained"), true,
+            "the concrete type is all an unexplained error offers — it must still reach the bug report"
+        )
+    }
+
+    /// Every pairing cause must arrive on screen with its own code. Driven off
+    /// `CaseIterable` so a newly added case fails here instead of shipping
+    /// code-less, matching the core-side rule from #1693.
+    func testEveryPairingFailureReachesTheScreenWithItsOwnCode() {
+        for pairing in MultipeerPairingError.allCases {
+            let report = IOSSyncManager.initialSyncFailureReport(
+                wifiFailure: nil,
+                bluetoothError: pairing
+            )
+
+            XCTAssertEqual(
+                report.code, pairing.code,
+                "the screen must show the pairing error's own stable code, not a re-derived one"
+            )
+            XCTAssertFalse(
+                report.headline.contains(pairing.code),
+                "the code is rendered as its own field now — repeating it inside the sentence shows it to the user twice"
+            )
+            XCTAssertFalse(
+                report.headline.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                "\(pairing.code) reached the screen with no explanation"
+            )
+        }
+    }
+
+    /// The #1580 rule, restated for the structured form: a reason the app
+    /// already worked out always beats the substring-matching generic.
+    func testComposedReportIsPreferredOverTheGenericFallback() {
+        let composed = IOSSyncManager.initialSyncFailureReport(
+            wifiFailure: nil,
+            bluetoothError: MultipeerPairingError.rejected
+        )
+
+        let shown = IOSSyncManager.displayableSyncFailureReport(
+            composed: composed,
+            thrown: IOSSyncManager.SyncError.syncFailed(composed.headline)
+        )
+
+        XCTAssertEqual(shown, composed, "the composed report must reach the screen intact")
+        XCTAssertTrue(shown.headline.contains("NEW code"), "the actionable part must survive")
+    }
+
+    /// The path that most needs the detail is the one nobody composed a
+    /// sentence for: an error with no written explanation is precisely the
+    /// error whose raw text is the only evidence there is.
+    func testFallbackReportStillCarriesACodeAndTheCauseWhenNothingWasComposed() {
+        let report = IOSSyncManager.displayableSyncFailureReport(
+            composed: nil,
+            thrown: DatabaseErrorLike()
+        )
+
+        XCTAssertTrue(
+            report.headline.contains("Pull down to retry"),
+            "with nothing composed the generic headline is still the right one"
+        )
+        XCTAssertEqual(
+            report.detail?.contains("SQLite error 21"), true,
+            "the cause must no longer be dropped on the floor on the fallback path"
+        )
+        XCTAssertTrue(report.code.hasPrefix("BT-"), "even the fallback carries a code")
+    }
+
+    /// Structural, and deliberately so. `errorMessage` is already cleared here
+    /// because a retry inheriting the previous attempt's advice reads as a
+    /// confirmed diagnosis rather than a leftover (#1693). The structured
+    /// report is the richer copy of that same diagnosis and goes stale
+    /// identically, so omitting it reintroduces exactly the bug that comment
+    /// was written to prevent.
+    func testRetryDoesNotInheritThePreviousAttemptsReport() throws {
+        let source = try Self.readSyncManagerSource()
+        let body = try TestSourceSlicer.braceBalancedBody(
+            after: "func performInitialSync() async throws",
+            in: source
+        )
+
+        XCTAssertTrue(
+            body.contains("lastFailureReport = nil"),
+            "a second attempt failing for a new reason must not redisplay the first attempt's technical detail"
+        )
+    }
 }
