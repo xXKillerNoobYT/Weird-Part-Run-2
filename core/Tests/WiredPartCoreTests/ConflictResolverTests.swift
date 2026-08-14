@@ -1224,4 +1224,167 @@ struct ConflictResolverTests {
         }
         #expect(templateId == 77)
     }
+
+    // MARK: - A newer sender's column must not kill the join
+
+    /// The sender decides the payload's column set (`SELECT *` + a key per
+    /// non-blob column), so a device on a newer build hands the receiver a
+    /// column name it has never heard of. `is_flex_pool` stands in for the 96
+    /// columns migration history has already added: it does not exist in any
+    /// migration, which is exactly the point.
+    ///
+    /// MUTATION CHECK: remove the `filteredToLocalColumns` call from the
+    /// statement builder each test names and that test must go red.
+    private func rowWithAColumnThisDeviceLacks(
+        table: String,
+        recordId: String,
+        knownFieldsJSON: String,
+        operation: String = "INSERT"
+    ) -> IncomingChange {
+        IncomingChange(
+            deviceId: "newer-device",
+            tableName: table,
+            recordId: recordId,
+            operation: operation,
+            recordData: "{\(knownFieldsJSON),\"is_flex_pool\":\"1\"}",
+            timestamp: "2026-08-14T10:00:00Z"
+        )
+    }
+
+    /// INSERT branch. `INSERT OR IGNORE` gives NO protection here: ON CONFLICT
+    /// resolution only runs for a statement that PREPARES, and an unknown column
+    /// fails at prepare. Before the fix this threw
+    /// `table notebook_templates has no column named is_flex_pool` straight out
+    /// of `db.writer.write` and rolled the entire company snapshot back.
+    @Test("A newer sender's unknown column does not abort the atomic INSERT branch")
+    func testAtomicApplyDropsUnknownColumnOnInsert() throws {
+        let db = try freshDB()
+
+        let result = try ConflictResolver.resolveAndApplyChangesAtomically(
+            db: db,
+            changes: [rowWithAColumnThisDeviceLacks(
+                table: "notebook_templates",
+                recordId: "42",
+                knownFieldsJSON: #""id":"42","name":"Residential Job","template_data":"{}""#
+            )]
+        )
+
+        #expect(result.applied == 1)
+
+        let name = try db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: "SELECT name FROM notebook_templates WHERE id = 42")
+        }
+        #expect(name == "Residential Job", "the row lands, minus only the column this device cannot store")
+    }
+
+    /// Merge/UPDATE branch — the one with NO conflict clause at all, and the
+    /// branch every migration-seeded row takes because its id matches on both
+    /// devices. Before the fix the bare `UPDATE … SET "is_flex_pool" = ?` threw
+    /// at prepare time and rolled the batch back.
+    @Test("A newer sender's unknown column does not abort the atomic merge branch")
+    func testAtomicApplyDropsUnknownColumnOnMerge() throws {
+        let db = try freshDB()
+        let userId = try insertUser(db: db, displayName: "Before", email: "before@example.com")
+
+        let result = try ConflictResolver.resolveAndApplyChangesAtomically(
+            db: db,
+            changes: [rowWithAColumnThisDeviceLacks(
+                table: "users",
+                recordId: "\(userId)",
+                knownFieldsJSON: #""id":"\#(userId)","display_name":"After""#,
+                operation: "UPDATE"
+            )]
+        )
+
+        #expect(result.applied == 1)
+
+        let displayName = try db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: "SELECT display_name FROM users WHERE id = \(userId)")
+        }
+        #expect(displayName == "After", "the known field still merged; only the unknown one was dropped")
+    }
+
+    /// The THIRD statement builder: `applyUpdate`'s own missing-record INSERT.
+    /// It is reached only when `changed_fields` is present AND the record is
+    /// absent locally, so neither test above touches it — and it is the exact
+    /// sibling that kept the #196 NULL bug alive after its twin was fixed.
+    @Test("Unknown columns are dropped by applyUpdate's missing-record INSERT too")
+    func testAtomicApplyDropsUnknownColumnOnUpdateInsertTwin() throws {
+        let db = try freshDB()
+
+        let result = try ConflictResolver.resolveAndApplyChangesAtomically(
+            db: db,
+            changes: [IncomingChange(
+                deviceId: "newer-device",
+                tableName: "notebook_templates",
+                recordId: "44",
+                operation: "UPDATE",
+                changedFields: #"{"name":"Service Call"}"#,
+                recordData: #"{"id":"44","name":"Service Call","template_data":"{}","is_flex_pool":"1"}"#,
+                timestamp: "2026-08-14T10:00:00Z"
+            )]
+        )
+
+        #expect(result.applied == 1)
+
+        let name = try db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: "SELECT name FROM notebook_templates WHERE id = 44")
+        }
+        #expect(name == "Service Call", "the twin builder must filter too, or it stays broken alone")
+    }
+
+    /// The streaming entry point is the path a real Bluetooth join takes, so a
+    /// fix that landed only on the array entry point would have changed nothing
+    /// in the field — the mistake #1728 explicitly avoided.
+    @Test("The streaming apply drops unknown columns too")
+    func testStreamedAtomicApplyDropsUnknownColumn() throws {
+        let db = try freshDB()
+        let change = rowWithAColumnThisDeviceLacks(
+            table: "notebook_templates",
+            recordId: "43",
+            knownFieldsJSON: #""id":"43","name":"Commercial Job","template_data":"{}""#
+        )
+
+        let result = try ConflictResolver.resolveAndApplyStreamedChangesAtomically(
+            db: db,
+            produceChanges: { _, emit in try emit(change) }
+        )
+
+        #expect(result.applied == 1)
+
+        let name = try db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: "SELECT name FROM notebook_templates WHERE id = 43")
+        }
+        #expect(name == "Commercial Job")
+    }
+
+    /// The filter must be narrow. A test proving unknown columns are dropped
+    /// would also pass if the filter dropped EVERYTHING, so this pins the other
+    /// side: a payload of entirely real columns must survive intact.
+    @Test("The unknown-column filter does not drop columns this device has")
+    func testKnownColumnsSurviveTheFilter() throws {
+        let db = try freshDB()
+        let userId = try insertUser(db: db, displayName: "Before", email: "before@example.com")
+
+        let result = try ConflictResolver.resolveAndApplyChangesAtomically(
+            db: db,
+            changes: [IncomingChange(
+                deviceId: "peer-device",
+                tableName: "users",
+                recordId: "\(userId)",
+                operation: "UPDATE",
+                recordData: #"{"id":"\#(userId)","display_name":"After","email":"after@example.com","phone":"555-0100"}"#,
+                timestamp: "2026-08-14T10:00:00Z"
+            )]
+        )
+
+        #expect(result.applied == 1)
+
+        let row = try db.writer.read { dbConn in
+            try Row.fetchOne(dbConn, sql: "SELECT display_name, email, phone FROM users WHERE id = \(userId)")
+        }
+        #expect(row?["display_name"] == "After")
+        #expect(row?["email"] == "after@example.com")
+        #expect(row?["phone"] == "555-0100", "every real column still applied")
+    }
 }
