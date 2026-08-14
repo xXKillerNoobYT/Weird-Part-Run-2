@@ -2167,14 +2167,7 @@ struct PeerManagerTests {
         let db = try freshDB()
         let pm = PeerManager(db: db)
         let valid = snapshotUserChange(recordId: "7002")
-        let databaseFailure = IncomingChange(
-            deviceId: "host",
-            tableName: "users",
-            recordId: "7003",
-            operation: "INSERT",
-            recordData: #"{"id":7003,"display_name":"Invalid","pin_hash":"hash","is_active":1,"not_a_real_column":"boom"}"#,
-            timestamp: "2026-07-15T00:00:00Z"
-        )
+        let databaseFailure = changeThatFailsOnlyWhenApplied(from: "host")
         let validEnvelope = try JSONEncoder().encode(
             MPEnvelope(type: "changes", payload: try JSONEncoder().encode([valid]))
         )
@@ -2211,13 +2204,22 @@ struct PeerManagerTests {
         )
         #expect(lateOutcome == .ignored)
 
+        // 7002 is the earlier valid page, 7004 the late one. (The failing change
+        // is no longer a `users` row, so no third id belongs in this list.)
         let committedPrefix = try await db.writer.read { dbConn in
-            try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM users WHERE id IN (7002, 7003, 7004)") ?? 0
+            try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM users WHERE id IN (7002, 7004)") ?? 0
         }
         #expect(
             committedPrefix == 0,
             "a failed later snapshot page must roll back earlier pages and quarantine queued remainder"
         )
+
+        // The failing row's own table must be intact too — the rollback covers
+        // the change that threw, not just the ones around it.
+        let seededStageName = try await db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: "SELECT name FROM job_stages WHERE id = 1")
+        }
+        #expect(seededStageName == "Rough-in", "the poisoned row must not have half-applied")
     }
 
     @Test("Atomic apply failure negatively acknowledges, releases reservation, and requires fresh authorization")
@@ -2246,14 +2248,7 @@ struct PeerManagerTests {
             type: "changes",
             payload: try JSONEncoder().encode([snapshotUserChange(recordId: "7101")])
         ))
-        let invalidChange = IncomingChange(
-            deviceId: hostDeviceId,
-            tableName: "users",
-            recordId: "7102",
-            operation: "INSERT",
-            recordData: #"{"id":7102,"display_name":"Invalid","pin_hash":"hash","is_active":1,"not_a_real_column":"boom"}"#,
-            timestamp: "2026-07-15T00:00:00Z"
-        )
+        let invalidChange = changeThatFailsOnlyWhenApplied(from: hostDeviceId)
         let invalidEnvelope = try JSONEncoder().encode(MPEnvelope(
             type: "changes",
             payload: try JSONEncoder().encode([invalidChange])
@@ -2431,14 +2426,7 @@ struct PeerManagerTests {
             MPEnvelope(type: "changes", payload: try JSONEncoder().encode(goodChanges))
         )
         // ...then one that only fails when it is actually applied.
-        let poisoned = IncomingChange(
-            deviceId: hostDeviceId,
-            tableName: "users",
-            recordId: "30999",
-            operation: "INSERT",
-            recordData: #"{"id":30999,"display_name":"Invalid","pin_hash":"hash","is_active":1,"not_a_real_column":"boom"}"#,
-            timestamp: "2026-07-15T00:00:00Z"
-        )
+        let poisoned = changeThatFailsOnlyWhenApplied(from: hostDeviceId)
         let poisonedEnvelope = try JSONEncoder().encode(
             MPEnvelope(type: "changes", payload: try JSONEncoder().encode([poisoned]))
         )
@@ -3281,6 +3269,37 @@ struct PeerManagerTests {
             recordId: recordId,
             operation: "INSERT",
             recordData: "{\"id\":\(recordId),\"display_name\":\"Snapshot User\",\"pin_hash\":\"hash\",\"is_active\":1}",
+            timestamp: "2026-07-15T00:00:00Z"
+        )
+    }
+
+    /// A change that is guaranteed to throw when it is APPLIED — never when it
+    /// is received or staged. The atomicity tests below need exactly that: a row
+    /// whose badness is invisible until the transaction runs.
+    ///
+    /// These tests used to poison the batch with an unknown column
+    /// (`"not_a_real_column":"boom"`). That stopped failing once the apply began
+    /// dropping columns the local schema does not have — a device on an older
+    /// build must not have the whole join killed by a newer sender's new column.
+    /// The poison was obsolete; the contract it guards is not, so it is re-armed
+    /// here rather than removed.
+    ///
+    /// The replacement sets a NOT NULL column to NULL on a migration-seeded row.
+    /// That takes the merge branch, whose `UPDATE` has no conflict clause, so it
+    /// genuinely throws. It is deliberately immune to the two robustness fixes
+    /// around it: `name` is a real column, so the unknown-column filter does not
+    /// touch it, and it is not a foreign key, so `PRAGMA defer_foreign_keys`
+    /// (#1728) does not defer it.
+    ///
+    /// `job_stages` id 1 is seeded by migration 034 on every device, so the row
+    /// is always present locally and the merge branch is always the one taken.
+    private func changeThatFailsOnlyWhenApplied(from deviceId: String) -> IncomingChange {
+        IncomingChange(
+            deviceId: deviceId,
+            tableName: "job_stages",
+            recordId: "1",
+            operation: "UPDATE",
+            changedFields: #"{"name":null}"#,
             timestamp: "2026-07-15T00:00:00Z"
         )
     }
