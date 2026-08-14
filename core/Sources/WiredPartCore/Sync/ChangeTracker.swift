@@ -160,6 +160,18 @@ public enum ChangeTracker {
     }
 
     /// Clean up old synced entries (keep last 30 days). Returns number deleted.
+    ///
+    /// The two extra predicates exist because a per-peer watermark makes naive
+    /// pruning lossy in two distinct ways:
+    ///
+    /// 1. `synced = 1` means "pushed at least once", NOT "pushed to everyone".
+    ///    Deleting on it alone would discard rows a peer still has coming, which
+    ///    is the #1645 defect wearing a different hat. Stop at the slowest peer.
+    /// 2. The sequence trigger derives the next value from `MAX(sequence)` over
+    ///    the SURVIVING rows, so pruning the row that holds the maximum makes the
+    ///    counter fall back and REUSE sequence values. Any watermark parked above
+    ///    the reused range would then skip every new row, silently and forever.
+    ///    Keeping the high-water row is what makes the counter monotonic.
     @discardableResult
     public static func pruneOldChanges(db: AppDatabase) throws -> Int {
         try db.writer.write { dbConnection in
@@ -167,9 +179,115 @@ public enum ChangeTracker {
                 sql: """
                     DELETE FROM _change_log
                     WHERE synced = 1 AND timestamp < datetime('now', '-30 days')
+                      AND sequence < COALESCE(
+                            (SELECT MIN(last_sent_sequence) FROM _peer_send_watermark), 0
+                          )
+                      AND sequence < (SELECT COALESCE(MAX(sequence), 0) FROM _change_log)
                     """
             )
             return dbConnection.changesCount
+        }
+    }
+
+    // MARK: - Per-Peer Send Watermark (#1645 P1 finding 9)
+
+    /// One below the oldest change that has never been pushed anywhere.
+    ///
+    /// `synced = 1` is set by every successful push — shop, Bluetooth, or LAN —
+    /// so `synced = 0` identifies work no peer can possibly have. A watermark
+    /// seeded here therefore strands nothing pending, while treating everything
+    /// older as already delivered so it is never replayed. When nothing is
+    /// pending this collapses to `MAX(sequence)`, i.e. "start from now".
+    static let deliveredFloorSQL = """
+        COALESCE(
+            (SELECT MIN(sequence) - 1 FROM _change_log WHERE synced = 0 AND sequence IS NOT NULL),
+            (SELECT COALESCE(MAX(sequence), 0) FROM _change_log)
+        )
+        """
+
+    /// Create this peer's cursor if it has none, at the delivered floor.
+    ///
+    /// Runs on the CALLER's connection so it commits or rolls back with the
+    /// pairing transaction that registers the peer. `INSERT OR IGNORE`, never an
+    /// upsert: peer registration is idempotent and re-runs on every re-pair, and
+    /// overwriting a healthy peer's cursor would burn its unsent backlog.
+    static func seedSendWatermark(dbConnection: Database, peerId: String) throws {
+        try dbConnection.execute(
+            sql: """
+                INSERT OR IGNORE INTO _peer_send_watermark (peer_id, last_sent_sequence, updated_at)
+                VALUES (?, \(deliveredFloorSQL), datetime('now'))
+                """,
+            arguments: [peerId]
+        )
+    }
+
+    /// This peer's cursor, or nil when it has none.
+    public static func getSendWatermark(db: AppDatabase, peerId: String) throws -> Int64? {
+        try db.writer.read { dbConnection in
+            try Int64.fetchOne(
+                dbConnection,
+                sql: "SELECT last_sent_sequence FROM _peer_send_watermark WHERE peer_id = ?",
+                arguments: [peerId]
+            )
+        }
+    }
+
+    /// Changes this specific peer has not received, oldest first.
+    ///
+    /// Replaces `getPendingChanges` on the peer paths. Ordering by `sequence`
+    /// rather than `timestamp` is required, not cosmetic: a cursor advanced to
+    /// the highest sequence sent would skip any row that sorted earlier by
+    /// timestamp but later by sequence.
+    ///
+    /// A peer with no cursor is seeded here rather than defaulting to 0. The two
+    /// error directions are not symmetric — defaulting low replays historical
+    /// deletes against a converged peer, while defaulting to the floor can only
+    /// omit history that peer already holds from its snapshot.
+    public static func getChangesForPeer(
+        db: AppDatabase,
+        peerId: String,
+        limit: Int = 500
+    ) throws -> [ChangeLogEntry] {
+        let entries = try db.writer.write { dbConnection -> [ChangeLogEntry] in
+            try seedSendWatermark(dbConnection: dbConnection, peerId: peerId)
+            let since = try Int64.fetchOne(
+                dbConnection,
+                sql: "SELECT last_sent_sequence FROM _peer_send_watermark WHERE peer_id = ?",
+                arguments: [peerId]
+            ) ?? 0
+            return try ChangeLogEntry.fetchAll(
+                dbConnection,
+                sql: """
+                    SELECT * FROM _change_log
+                    WHERE sequence IS NOT NULL AND sequence > ?
+                    ORDER BY sequence ASC LIMIT ?
+                    """,
+                arguments: [since, limit]
+            )
+        }
+        return Self.fillingLocalDeviceId(entries)
+    }
+
+    /// Record that this peer has received everything through `lastSequence`.
+    ///
+    /// `MAX()` so the cursor only ever moves forward — mirrors `updateVectorClock`
+    /// on the receive side.
+    public static func advanceSendWatermark(
+        db: AppDatabase,
+        peerId: String,
+        lastSequence: Int64
+    ) throws {
+        try db.writer.write { dbConnection in
+            try dbConnection.execute(
+                sql: """
+                    INSERT INTO _peer_send_watermark (peer_id, last_sent_sequence, updated_at)
+                    VALUES (?, ?, datetime('now'))
+                    ON CONFLICT(peer_id)
+                    DO UPDATE SET last_sent_sequence = MAX(last_sent_sequence, ?),
+                                  updated_at = datetime('now')
+                    """,
+                arguments: [peerId, lastSequence, lastSequence]
+            )
         }
     }
 
@@ -314,6 +432,12 @@ public enum ChangeTracker {
                 encodedKey, peerName, platform, encodedKey, encodedKey, encodedKey,
             ]
         )
+        // Give the peer a delivery cursor in the same transaction that registers
+        // it, so trust and delivery state can never disagree. This writes only
+        // `_peer_send_watermark` — it must not touch `is_trusted` or
+        // `is_deactivated` above, and `INSERT OR IGNORE` cannot throw on a
+        // re-pair, because a throw here would roll back the pairing itself.
+        try seedSendWatermark(dbConnection: dbConnection, peerId: peerId)
     }
 
     static func capturePeerDeviceTrust(
@@ -353,6 +477,14 @@ public enum ChangeTracker {
             guard let snapshot else {
                 try dbConnection.execute(
                     sql: "DELETE FROM _device_registry WHERE device_id = ?",
+                    arguments: [peerId]
+                )
+                // The peer never existed before this pairing, so its delivery
+                // cursor must not outlive it either. Leaving one behind is not
+                // lossy (a stale floor only over-sends), but it would let a
+                // rolled-back pairing leave state that a later re-pair inherits.
+                try dbConnection.execute(
+                    sql: "DELETE FROM _peer_send_watermark WHERE peer_id = ?",
                     arguments: [peerId]
                 )
                 return

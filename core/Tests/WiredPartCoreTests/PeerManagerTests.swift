@@ -3214,6 +3214,66 @@ struct PeerManagerTests {
         )
     }
 
+    /// End-to-end #1645 P1-9: one edit on A must reach BOTH B and C.
+    ///
+    /// This is the scenario the owner's any-device-to-any-device ruling requires
+    /// and the one the global `synced` flag made impossible — `syncWithAllPeers`
+    /// iterates peers sequentially, so the push to B burnt the row before the
+    /// loop ever reached C, while A's screen still read "Sent N records".
+    @Test("an edit on A reaches BOTH peers, not just the first one synced")
+    func testChangeReachesEverySequentiallySyncedPeer() async throws {
+        let deviceA = try freshDB()
+        let deviceB = try freshDB()
+        let deviceC = try freshDB()
+
+        try ChangeTracker.registerPeerDevice(db: deviceA, peerId: "device-b", peerName: "B")
+        try ChangeTracker.registerPeerDevice(db: deviceA, peerId: "device-c", peerName: "C")
+
+        try await deviceA.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO jobs (job_number, job_name, status, created_at, updated_at)
+                VALUES ('FLEET-001', 'Three Device Job', 'active', datetime('now'), datetime('now'))
+                """)
+        }
+
+        let pmA = PeerManager(db: deviceA)
+
+        // Peer B syncs first — exactly what syncWithAllPeers does per peer.
+        let forB = try ChangeTracker.getChangesForPeer(db: deviceA, peerId: "device-b")
+        #expect(forB.contains { $0.tableName == "jobs" })
+        let appliedB = try ConflictResolver.resolveAndApplyChanges(
+            db: deviceB, changes: try await pmA.testEnrichChanges(forB), localDeviceId: "device-b"
+        )
+        #expect(appliedB.applied > 0)
+        try await pmA.recordDelivery(of: forB, toPeer: "device-b", batchId: "batch-b")
+
+        // Then peer C. Under the old global flag this selection was empty.
+        let forC = try ChangeTracker.getChangesForPeer(db: deviceA, peerId: "device-c")
+        #expect(
+            forC.contains { $0.tableName == "jobs" },
+            "a push to B must not consume the change owed to C (#1645 P1-9)"
+        )
+        let appliedC = try ConflictResolver.resolveAndApplyChanges(
+            db: deviceC, changes: try await pmA.testEnrichChanges(forC), localDeviceId: "device-c"
+        )
+        #expect(appliedC.applied > 0)
+        try await pmA.recordDelivery(of: forC, toPeer: "device-c", batchId: "batch-c")
+
+        // The job must exist on BOTH peers.
+        for (label, peerDB) in [("B", deviceB), ("C", deviceC)] {
+            let job = try await peerDB.writer.read { dbConn in
+                try Row.fetchOne(
+                    dbConn, sql: "SELECT job_name FROM jobs WHERE job_number = 'FLEET-001'"
+                )
+            }
+            #expect(job != nil, "device \(label) never received the job")
+        }
+
+        // And neither peer is offered it again.
+        #expect(try ChangeTracker.getChangesForPeer(db: deviceA, peerId: "device-b").isEmpty)
+        #expect(try ChangeTracker.getChangesForPeer(db: deviceA, peerId: "device-c").isEmpty)
+    }
+
     private func snapshotUserChange(recordId: String) -> IncomingChange {
         IncomingChange(
             deviceId: "host-device",

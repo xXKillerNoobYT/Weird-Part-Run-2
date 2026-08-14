@@ -165,6 +165,7 @@ extension AppDatabase {
         registerMigration121DeviceLogs(&migrator)
         registerMigration122SnapshotStaging(&migrator)
         registerMigration123SnapshotTransferIdentity(&migrator)
+        registerMigration124PeerSendWatermark(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6463,6 +6464,100 @@ private func registerMigration123SnapshotTransferIdentity(_ migrator: inout Data
         try db.create(
             index: "idx_snapshot_transfer_peer_transfer", on: "_snapshot_transfer",
             columns: ["peer_device_id", "transfer_id"], unique: true, ifNotExists: true
+        )
+    }
+}
+
+// MARK: - 124: Per-Peer Send Watermark (#1645 P1 finding 9)
+
+/// Delivery state was global: `markSynced` set `_change_log.synced = 1` with no
+/// peer predicate, and the sole outbound selection was `WHERE synced = 0`. So a
+/// push to peer B burnt the row for peer C, permanently and silently — the third
+/// device in a fleet never receives an edit, while the sender renders "Sent N
+/// records". This gives each peer its own cursor so a row is offered to every
+/// peer independently.
+///
+/// The global `synced` flag is deliberately KEPT and still written. It has three
+/// surviving readers that want exactly its current meaning ("pushed at least
+/// once / still locally dirty"): the shop client-server path (`SyncEngine`), the
+/// pending-count badge, and `ConflictResolver.getLocalChangedFields`. Only the
+/// *peer* selection moves off it.
+private func registerMigration124PeerSendWatermark(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("124_peer_send_watermark") { db in
+        // Insurance, not a change. Migration 008 creates this trigger and every
+        // INSERT into _change_log omits `sequence`, so it should already exist
+        // and every row should be numbered. But a watermark reads `sequence`,
+        // and a NULL there is invisible to `sequence > ?` — a row that silently
+        // never syncs to anyone. `IF NOT EXISTS` is a no-op on a healthy device
+        // and a repair on one whose history says otherwise.
+        try db.execute(
+            sql: """
+                CREATE TRIGGER IF NOT EXISTS trg_change_log_sequence
+                    AFTER INSERT ON _change_log
+                    WHEN NEW.sequence IS NULL
+                BEGIN
+                    UPDATE _change_log
+                    SET sequence = (SELECT COALESCE(MAX(sequence), 0) + 1 FROM _change_log)
+                    WHERE id = NEW.id;
+                END
+                """
+        )
+
+        // Number any row the trigger missed. Offsetting by the current maximum
+        // keeps backfilled values clear of existing ones, and `id` order is
+        // insert order so relative ordering survives. The offset is read once:
+        // as a subquery inside the UPDATE, SQLite would re-evaluate it per row
+        // as the maximum climbed.
+        let maxSequence = try Int64.fetchOne(
+            db, sql: "SELECT COALESCE(MAX(sequence), 0) FROM _change_log"
+        ) ?? 0
+        try db.execute(
+            sql: "UPDATE _change_log SET sequence = id + ? WHERE sequence IS NULL",
+            arguments: [maxSequence]
+        )
+
+        // The peer selection becomes `WHERE sequence > ? ORDER BY sequence ASC`,
+        // which neither 000 index — (synced, timestamp) or (table_name,
+        // record_id) — can serve.
+        try db.create(
+            index: "idx_change_log_sequence", on: "_change_log",
+            columns: ["sequence"], ifNotExists: true
+        )
+
+        // Keyed by peer alone. One database serves exactly one local device
+        // identity, so a `device_id` column (as `_vector_clock` carries) would
+        // be a constant, and reading `DeviceIdentity.current` during a migration
+        // would add a dependency on identity being resolved before the schema is.
+        try db.create(table: "_peer_send_watermark", ifNotExists: true) { t in
+            t.primaryKey("peer_id", .text)
+            // Highest `_change_log.sequence` handed to this peer. Advanced only
+            // forward, by MAX(), so a duplicated or out-of-order call cannot
+            // rewind it and re-send.
+            t.column("last_sent_sequence", .integer).notNull().defaults(to: 0)
+            t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
+        }
+
+        // Seed every already-known peer at the DELIVERED FLOOR: one below the
+        // oldest change nothing has ever pushed.
+        //
+        // Not MAX(sequence). `synced = 0` means the row was never pushed to the
+        // shop OR to any peer, so seeding above it would strand genuinely
+        // pending work — the very bug this migration exists to fix, reintroduced
+        // by its own upgrade path.
+        //
+        // Not 0 either. Replaying the whole log would re-send historical
+        // DELETEs, and an inbound delete is applied unconditionally (deletes
+        // always win, no timestamp comparison) — that would resurrect the
+        // deletion of records a peer has since restored. Everything below the
+        // floor was already delivered under the old global flag; peers that
+        // missed it are recovered by re-pairing, which re-streams a full
+        // snapshot, not by a lifetime replay.
+        try db.execute(
+            sql: """
+                INSERT OR IGNORE INTO _peer_send_watermark (peer_id, last_sent_sequence, updated_at)
+                SELECT device_id, \(ChangeTracker.deliveredFloorSQL), datetime('now')
+                FROM _device_registry
+                """
         )
     }
 }
