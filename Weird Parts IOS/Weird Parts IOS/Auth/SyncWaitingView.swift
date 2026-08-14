@@ -12,7 +12,9 @@ struct SyncWaitingView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var syncComplete = false
-    @State private var syncError: String?
+    @State private var syncError: SyncFailureReport?
+    @State private var showTechnicalDetail = false
+    @State private var didCopyDetails = false
 
     private var syncManager: IOSSyncManager { appCore.syncManager }
 
@@ -107,7 +109,7 @@ struct SyncWaitingView: View {
 
     // MARK: - Error View
 
-    private func errorView(_ error: String) -> some View {
+    private func errorView(_ report: SyncFailureReport) -> some View {
         VStack(spacing: 20) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .decorativeIconFont(48)
@@ -117,15 +119,67 @@ struct SyncWaitingView: View {
                 .font(.title3)
                 .fontWeight(.semibold)
 
-            Text(error)
+            // The code is shown even while the details stay collapsed. Device
+            // logs replicate over the very sync that is broken, so when sync
+            // fails a photograph of this screen is the only diagnostic channel
+            // left — which is exactly how #1723 was finally identified, from a
+            // picture of the Mac's screen after weeks of reading code (#1725).
+            Text(report.code)
+                .font(.caption.monospaced())
+                .fontWeight(.semibold)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Color.orange.opacity(0.15), in: Capsule())
+                .foregroundStyle(.orange)
+                .textSelection(.enabled)
+                .accessibilityLabel("Error code \(report.code)")
+
+            Text(report.headline)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
+                .textSelection(.enabled)
+
+            if let detail = report.detail {
+                DisclosureGroup("Technical details", isExpanded: $showTechnicalDetail) {
+                    ScrollView {
+                        Text(detail)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                    }
+                    .frame(maxHeight: 180)
+                    .padding(.top, 8)
+                }
+                .font(.subheadline)
+                .padding(.horizontal, 32)
+            }
+
+            // Owner request, 2026-08-14: "I do like the user friendly one if i
+            // can have the full error copied to the clipboard or something like
+            // that". Copies code + headline + full detail in one go, so a bug
+            // report carries the cause verbatim instead of a paraphrase.
+            Button {
+                UIPasteboard.general.string = report.copyableText
+                didCopyDetails = true
+            } label: {
+                Label(
+                    didCopyDetails ? "Copied" : "Copy details",
+                    systemImage: didCopyDetails ? "checkmark" : "doc.on.doc"
+                )
+                .frame(minWidth: 44, minHeight: 44)
+            }
+            .buttonStyle(.bordered)
+            .accessibilityLabel(didCopyDetails ? "Details copied" : "Copy error details")
 
             HStack(spacing: 16) {
                 Button("Try Again") {
                     syncError = nil
+                    showTechnicalDetail = false
+                    didCopyDetails = false
                     Task { await performInitialSync() }
                 }
                 .buttonStyle(.borderedProminent)
@@ -157,8 +211,8 @@ struct SyncWaitingView: View {
             // failure the app had already diagnosed, displayed as a shrug
             // (#1580). The composed message is the whole point of that
             // helper; the fallback is only for errors nobody has explained.
-            syncError = IOSSyncManager.displayableSyncFailure(
-                composed: syncManager.errorMessage,
+            syncError = IOSSyncManager.displayableSyncFailureReport(
+                composed: syncManager.lastFailureReport,
                 thrown: error
             )
         }
