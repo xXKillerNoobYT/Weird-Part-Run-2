@@ -1125,23 +1125,41 @@ public enum ConflictResolver {
 
         // Apply merged fields — handles NULL values correctly (fixes #196)
         if !mergedData.isEmpty {
-            let sortedKeys = mergedData.keys.sorted()
-            // Explicit String return type avoids GRDB SQL interpolation inference ambiguity
-            let setClauses: String = sortedKeys.map { (key: String) -> String in
-                if case .none = mergedData[key] as String?? {
-                    return "\"\(key)\" = NULL"
+            // Build the SET clause and its bound arguments in ONE pass. They were
+            // previously derived independently, and they disagreed about what a
+            // NULL means — which aborted every sync carrying a null field with
+            // "SQLite error 21: wrong number of statement arguments".
+            //
+            // `mergedData` is `[String: String?]`, so a subscript yields `String??`:
+            // the OUTER level is "is the key present", the INNER level is "is the
+            // value SQL NULL". The old clause test matched the outer level, which
+            // is always `.some` here because the keys come from `mergedData.keys` —
+            // so the `= NULL` branch was unreachable and every field got a `?`.
+            // The old argument list unwrapped only the outer level and returned the
+            // inner optional, so `compactMap` silently dropped the NULL fields.
+            // Result: N placeholders, fewer than N arguments.
+            //
+            // A NULL is written as a SQL literal rather than a bound parameter, so
+            // a field with no value contributes a clause but no argument — which is
+            // exactly why the two must be built together.
+            var setClauses: [String] = []
+            var args: [any DatabaseValueConvertible] = []
+            for key in mergedData.keys.sorted() {
+                // `?? nil` flattens String?? to String?: key-absent and value-NULL
+                // both collapse to nil, and both must produce a NULL literal.
+                guard let value = mergedData[key] ?? nil else {
+                    setClauses.append("\"\(key)\" = NULL")
+                    continue
                 }
-                return "\"\(key)\" = ?"
-            }.joined(separator: ", ")
-            // Only include non-nil values as bound parameters
-            var args: [any DatabaseValueConvertible] = sortedKeys.compactMap { key -> String? in
-                if let val = mergedData[key] { return val }
-                return nil
+                setClauses.append("\"\(key)\" = ?")
+                args.append(value)
             }
             args.append(recordId)
 
             try db.execute(
-                sql: "UPDATE \(quotedTable(table)) SET \(setClauses) WHERE id = ?",
+                sql: """
+                    UPDATE \(quotedTable(table)) SET \(setClauses.joined(separator: ", ")) WHERE id = ?
+                    """,
                 arguments: StatementArguments(args)
             )
         }

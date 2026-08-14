@@ -1034,4 +1034,69 @@ struct ConflictResolverTests {
         }
         #expect(try ConflictResolver.getUnreviewedConflicts(db: fixture.db).count == 1)
     }
+
+    // MARK: - NULL fields in a merged UPDATE (field reported from build 66/46)
+
+    /// Field-level merge builds the SET clause and its bound arguments separately.
+    /// They disagreed about NULL: every field got a `?` placeholder, but fields
+    /// whose merged value was NULL contributed no argument. One null field was
+    /// therefore enough to abort the whole apply with
+    /// `SQLite error 21: wrong number of statement arguments`, which is what the
+    /// owner's Mac reported while syncing `clock_out_questions` with an iPhone.
+    @Test("a merged UPDATE carrying a NULL field applies instead of throwing error 21")
+    func testMergedUpdateWithNullFieldApplies() throws {
+        let db = try freshDB()
+        let userId = try insertUser(db: db, displayName: "Original", email: "orig@test.com")
+
+        // `email` arrives as an explicit SQL NULL alongside a non-null field, so
+        // the statement needs a NULL literal for one column and a bound argument
+        // for the other. Getting that split wrong is the bug.
+        let changes = [
+            IncomingChange(
+                deviceId: "remote-device",
+                tableName: "users",
+                recordId: "\(userId)",
+                operation: "UPDATE",
+                recordData: """
+                {"id":"\(userId)","display_name":"Renamed Remotely","email":null}
+                """,
+                timestamp: "2026-08-14T05:00:00Z"
+            )
+        ]
+
+        let result = try ConflictResolver.resolveAndApplyChanges(db: db, changes: changes)
+        #expect(result.applied == 1, "a null field must not abort the apply")
+
+        let user = try db.writer.read { dbConn in try User.fetchOne(dbConn, key: userId) }
+        #expect(user?.displayName == "Renamed Remotely")
+        #expect(user?.email == nil, "the null must be written as SQL NULL, not skipped")
+    }
+
+    /// The all-NULL case: every clause is a literal, so `args` holds only the
+    /// record id. An off-by-one in the other direction would surface here.
+    @Test("a merged UPDATE where every field is NULL still applies")
+    func testMergedUpdateWithOnlyNullFieldsApplies() throws {
+        let db = try freshDB()
+        let userId = try insertUser(db: db, displayName: "Original", email: "orig@test.com")
+
+        let changes = [
+            IncomingChange(
+                deviceId: "remote-device",
+                tableName: "users",
+                recordId: "\(userId)",
+                operation: "UPDATE",
+                recordData: """
+                {"id":"\(userId)","email":null}
+                """,
+                timestamp: "2026-08-14T05:00:00Z"
+            )
+        ]
+
+        let result = try ConflictResolver.resolveAndApplyChanges(db: db, changes: changes)
+        #expect(result.applied == 1)
+
+        let user = try db.writer.read { dbConn in try User.fetchOne(dbConn, key: userId) }
+        #expect(user?.email == nil)
+        #expect(user?.displayName == "Original", "untouched fields must survive")
+    }
 }
