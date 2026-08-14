@@ -3,6 +3,48 @@ import Observation
 import os
 import WiredPartCore
 
+/// A sync failure as a human should see it: a plain-English headline, a short
+/// stable code, and the raw technical cause kept verbatim underneath.
+///
+/// These are three different jobs, and collapsing them into one string cost
+/// weeks. On build 66 the phone told the owner *"Bluetooth transfer failed —
+/// keep both devices close and retry"* for what was actually
+/// `SQLite error 21: wrong number of statement arguments` (#1723). It blamed
+/// distance for a database bug, and with only the phone in hand the failure
+/// was undiagnosable. The Mac, which happened to surface the raw text, solved
+/// it in minutes (#1725).
+///
+/// So each part keeps its own job:
+/// - `headline` stays plain English, written for an electrician on a job site.
+/// - `code` stays short, stable and greppable. Device logs replicate over the
+///   very sync that is broken, so a photograph of the screen is the only
+///   diagnostic channel that survives a sync failure — the same reasoning that
+///   put codes on the pairing errors in #1693.
+/// - `detail` keeps the exact cause, so it can be read, photographed or copied
+///   into a bug report rather than paraphrased.
+///
+/// Declared at file scope rather than nested in `IOSSyncManager` so it carries
+/// no `@MainActor` isolation: it is a plain value built by `nonisolated`
+/// helpers and read from views and tests alike.
+struct SyncFailureReport: Equatable {
+
+    /// Short, stable identifier following the shipped `BT-*` convention.
+    /// Never localise or reword these — they are matched in bug reports.
+    let code: String
+
+    /// Plain-English cause and, where one exists, what to do about it.
+    let headline: String
+
+    /// Full technical cause, or `nil` when there is genuinely nothing to add.
+    let detail: String?
+
+    /// What the "Copy details" button puts on the clipboard.
+    var copyableText: String {
+        guard let detail, !detail.isEmpty else { return "[\(code)] \(headline)" }
+        return "[\(code)] \(headline)\n\n\(detail)"
+    }
+}
+
 /// Manages the overall sync lifecycle for the iOS app.
 ///
 /// Wraps `SyncEngine` (LAN HTTP) and `MultipeerManager` (BT/WiFi P2P) into
@@ -18,6 +60,10 @@ final class IOSSyncManager {
     var discoveredPeers: [PeerInfo] = []
     var isScanning = false
     var errorMessage: String?
+    /// The most recent initial-sync failure, with its code and full technical
+    /// cause preserved for the Sync Error screen (#1725). `errorMessage` holds
+    /// the same failure's headline; this keeps the parts the sentence drops.
+    var lastFailureReport: SyncFailureReport?
     var unreviewedConflictCount: Int = 0
     var syncHistory: [SyncHistoryEntry] = []
     var syncProgressMessage: String?
@@ -1446,6 +1492,9 @@ final class IOSSyncManager {
         // close and retry") for an unrelated error, which reads as a confirmed
         // diagnosis rather than a leftover (#1693).
         errorMessage = nil
+        // Same reasoning, same bug if omitted: the structured report is the
+        // richer copy of that diagnosis, so it goes stale the same way (#1725).
+        lastFailureReport = nil
 
         guard db != nil else {
             syncProgressMessage = nil
@@ -1506,11 +1555,13 @@ final class IOSSyncManager {
             } catch {
                 syncProgressMessage = nil
                 syncStatus = .error
-                errorMessage = Self.initialSyncFailureMessage(
+                let report = Self.initialSyncFailureReport(
                     wifiFailure: wifiFailure,
                     bluetoothError: error
                 )
-                throw SyncError.syncFailed(errorMessage ?? "Initial sync failed.")
+                lastFailureReport = report
+                errorMessage = report.headline
+                throw SyncError.syncFailed(report.headline)
             }
             syncProgressMessage = "Initial sync complete."
             syncProgressPercent = 1.0
@@ -1647,40 +1698,196 @@ final class IOSSyncManager {
         return userFriendlyError(thrown, context: "sync data")
     }
 
+    /// Structured twin of `displayableSyncFailure` (#1725).
+    ///
+    /// Same rule — a reason the app already composed always wins over the
+    /// substring-matching generic (#1580) — but it also keeps a code and the
+    /// technical cause for the paths that never composed one. Those are the
+    /// paths that most need it: an error nobody wrote a sentence for is
+    /// precisely the error whose raw text is the only evidence available.
+    nonisolated static func displayableSyncFailureReport(
+        composed: SyncFailureReport?,
+        thrown: Error
+    ) -> SyncFailureReport {
+        if let composed,
+           !composed.headline.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return composed
+        }
+        return SyncFailureReport(
+            code: failureCode(for: thrown),
+            headline: userFriendlyError(thrown, context: "sync data"),
+            detail: technicalDescription(of: thrown)
+        )
+    }
+
     /// Compose an honest initial-sync failure covering every transport tried.
     /// The generic "Couldn't sync data" hid the real cause in the 2026-08-01
     /// field failure — never collapse distinct transport failures again.
+    ///
+    /// Returns the three parts separately (#1725) so the screen can stay
+    /// readable while still carrying the exact cause. See `SyncFailureReport`.
+    nonisolated static func initialSyncFailureReport(
+        wifiFailure: String?,
+        bluetoothError: Error
+    ) -> SyncFailureReport {
+        let code: String
+        let bluetoothReason: String
+        var detail: String?
+
+        switch bluetoothError {
+        case let pairing as MultipeerPairingError:
+            // #1693 gave every pairing failure a stable BT-PAIR-* code. Take it
+            // from the error rather than restating it, and use `failureReason`
+            // rather than `errorDescription` because the code is rendered as
+            // its own field now — embedding it in the sentence would show it
+            // twice.
+            code = pairing.code
+            switch pairing {
+            case .rejected:
+                bluetoothReason = "the shop device didn't recognize this pairing — generate a NEW code on the shop device and pair again"
+            case .connectionTimeout:
+                bluetoothReason = "the devices lost their connection — keep both unlocked, close together, with the shop device's Add-a-Device screen open, and retry"
+            case .requestAlreadyInProgress:
+                bluetoothReason = "a previous attempt is still finishing — wait a few seconds and retry"
+            case .responseTimeout:
+                // This used to fall through to "keep both devices close and
+                // retry", which blames distance for what is actually a clock.
+                // Telling someone to move closer when the transfer simply
+                // stopped arriving is why several builds shipped without anyone
+                // identifying the cause. A timeout must say it ran out of time.
+                bluetoothReason = """
+                no data arrived for \(Int(PeerManager.snapshotIdleTimeoutSeconds / 60)) minutes, so the download was stopped — \
+                a large company can take a long time over Bluetooth, so keep both devices awake, unlocked and close together, \
+                and keep the shop device's Add-a-Device screen open for the whole transfer
+                """
+            default:
+                bluetoothReason = pairing.failureReason
+            }
+
+        default:
+            // THE BUILD-66 BUG (#1725). This branch used to read
+            // `(bluetoothError as? LocalizedError)?.errorDescription ?? "keep
+            // both devices close and retry"`. A GRDB `DatabaseError` is not a
+            // `LocalizedError`, so the cast returned nil and the canned
+            // distance line won — the phone advised moving the devices closer
+            // to fix `SQLite error 21: wrong number of statement arguments`
+            // (#1723). Distance was never going to help, and the real text,
+            // which named the error number, the statement and the table, was
+            // thrown away. Only fall back to generic advice when the error
+            // genuinely tells us nothing.
+            code = failureCode(for: bluetoothError)
+            // The detail keeps whatever text exists, always. Even Foundation's
+            // boilerplate names the concrete type, and when nobody wrote a
+            // message down the type is the only lead there is.
+            detail = technicalDescription(of: bluetoothError)
+            if let named = selfDescribingText(of: bluetoothError) {
+                bluetoothReason = "the transfer failed — \(summarised(named))"
+            } else {
+                // Nothing was ever written down for this error, so generic
+                // advice really is the most useful thing to show. The type name
+                // still reaches the bug report via `detail`.
+                bluetoothReason = "Bluetooth transfer failed — keep both devices close and retry"
+            }
+        }
+
+        let headline: String
+        if let wifiFailure {
+            headline = "Wi-Fi download failed (\(wifiFailure)), then Bluetooth also failed: \(bluetoothReason)."
+        } else {
+            headline = "Bluetooth sync failed: \(bluetoothReason)."
+        }
+        return SyncFailureReport(code: code, headline: headline, detail: detail)
+    }
+
+    /// Headline-only form, kept for callers and tests that only need the
+    /// sentence. New code should prefer `initialSyncFailureReport`.
     nonisolated static func initialSyncFailureMessage(
         wifiFailure: String?,
         bluetoothError: Error
     ) -> String {
-        let bluetoothReason: String
-        switch bluetoothError {
-        case MultipeerPairingError.rejected:
-            bluetoothReason = "the shop device didn't recognize this pairing — generate a NEW code on the shop device and pair again"
-        case MultipeerPairingError.connectionTimeout:
-            bluetoothReason = "the devices lost their connection — keep both unlocked, close together, with the shop device's Add-a-Device screen open, and retry"
-        case MultipeerPairingError.requestAlreadyInProgress:
-            bluetoothReason = "a previous attempt is still finishing — wait a few seconds and retry"
-        case MultipeerPairingError.responseTimeout:
-            // This used to fall through to "keep both devices close and retry",
-            // which blames distance for what is actually a clock. Telling
-            // someone to move closer when the transfer simply stopped arriving
-            // is why several builds shipped without anyone identifying the
-            // cause. A timeout must say it ran out of time.
-            bluetoothReason = """
-            no data arrived for \(Int(PeerManager.snapshotIdleTimeoutSeconds / 60)) minutes, so the download was stopped — \
-            a large company can take a long time over Bluetooth, so keep both devices awake, unlocked and close together, \
-            and keep the shop device's Add-a-Device screen open for the whole transfer
-            """
-        default:
-            bluetoothReason = (bluetoothError as? LocalizedError)?.errorDescription
-                ?? "Bluetooth transfer failed — keep both devices close and retry"
+        initialSyncFailureReport(
+            wifiFailure: wifiFailure,
+            bluetoothError: bluetoothError
+        ).headline
+    }
+
+    /// The error's own message, or `nil` when nobody ever wrote one.
+    ///
+    /// Foundation has TWO error-text protocols and this whole bug lived in the
+    /// gap between them. `LocalizedError` is the Swift-native one.
+    /// `CustomNSError` instead populates the BRIDGED `NSError`'s userInfo, and
+    /// `localizedDescription` reads through that bridge — so a `CustomNSError`
+    /// has perfectly good text while `as? LocalizedError` returns nil.
+    ///
+    /// GRDB's `DatabaseError` is exactly that case: `CustomNSError` only, with
+    /// `errorUserInfo[NSLocalizedDescriptionKey]` set to "SQLite error 21: …
+    /// - while executing `UPDATE …`". The old code tested only for
+    /// `LocalizedError`, so it threw that away and told the owner to move the
+    /// devices closer (#1725).
+    ///
+    /// Checking the two protocols is deliberate, rather than string-matching
+    /// Foundation's "The operation couldn't be completed." boilerplate: the
+    /// conformance is the actual question — did an author write text for this
+    /// error? — and it does not break when Foundation rewords itself.
+    nonisolated static func selfDescribingText(of error: Error) -> String? {
+        if let localized = (error as? LocalizedError)?.errorDescription,
+           !localized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return localized
         }
-        if let wifiFailure {
-            return "Wi-Fi download failed (\(wifiFailure)), then Bluetooth also failed: \(bluetoothReason)."
+        if error is CustomNSError {
+            let text = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+            return text.isEmpty ? nil : text
         }
-        return "Bluetooth sync failed: \(bluetoothReason)."
+        return nil
+    }
+
+    /// The best technical text obtainable from an arbitrary error.
+    ///
+    /// `errorDescription` exists only on `LocalizedError` conformers, and the
+    /// errors that matter most here are not among them — a GRDB
+    /// `DatabaseError` carries the SQLite error number, the failing statement
+    /// and the table in `localizedDescription`, which every Swift error has.
+    /// Reading only the former is what discarded the one message that could
+    /// have diagnosed build 66.
+    ///
+    /// The concrete type is prefixed when the text does not already name it:
+    /// for a non-`LocalizedError`, `localizedDescription` degrades to "The
+    /// operation couldn't be completed. (Module.Thing error 1.)", where the
+    /// type is the only diagnostic content there is.
+    nonisolated static func technicalDescription(of error: Error) -> String? {
+        let text = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let typeName = String(describing: type(of: error))
+        return trimmed.contains(typeName) ? trimmed : "\(typeName): \(trimmed)"
+    }
+
+    /// A stable, greppable code for any error that reaches the sync error
+    /// screen. Pairing errors already define their own (#1693); everything
+    /// else is named after its concrete type, which is honest and stable
+    /// without inventing a taxonomy nobody maintains.
+    nonisolated static func failureCode(for error: Error) -> String {
+        if let pairing = error as? MultipeerPairingError { return pairing.code }
+        let typeName = String(describing: type(of: error))
+            .uppercased()
+            .filter { $0.isLetter || $0.isNumber }
+        return typeName.isEmpty ? "BT-SYNC-FAILED" : "BT-SYNC-\(typeName)"
+    }
+
+    /// First line of a technical message, trimmed to fit in a headline.
+    ///
+    /// The headline carries a summary rather than nothing because a photograph
+    /// of the screen is the diagnostic channel that survives a sync failure —
+    /// the owner read the cause off the Mac's screen and that is what solved
+    /// #1723. The untruncated text always remains in `SyncFailureReport.detail`.
+    nonisolated static func summarised(_ text: String, limit: Int = 180) -> String {
+        let firstLine = text
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .first
+            .map(String.init) ?? text
+        let condensed = firstLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard condensed.count > limit else { return condensed }
+        return String(condensed.prefix(limit)).trimmingCharacters(in: .whitespaces) + "…"
     }
 
     // MARK: - Sync Errors
