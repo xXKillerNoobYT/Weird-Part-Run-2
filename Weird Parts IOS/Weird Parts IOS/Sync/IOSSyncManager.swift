@@ -23,10 +23,15 @@ import WiredPartCore
 /// - `detail` keeps the exact cause, so it can be read, photographed or copied
 ///   into a bug report rather than paraphrased.
 ///
-/// Declared at file scope rather than nested in `IOSSyncManager` so it carries
-/// no `@MainActor` isolation: it is a plain value built by `nonisolated`
-/// helpers and read from views and tests alike.
-struct SyncFailureReport: Equatable {
+/// Explicitly `nonisolated`, which is load-bearing rather than decorative.
+/// This target builds with `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, so
+/// EVERY type in the module is implicitly `@MainActor` — moving a type to file
+/// scope does not opt it out, only this keyword does (same reasoning as the
+/// validation helpers at `IOSReceiveShipmentPage.swift:1414`). The test target
+/// builds with the setting empty, so without this its nonisolated autoclosures
+/// cannot read `headline` or `detail` at all: "main actor-isolated property
+/// 'headline' can not be referenced from a nonisolated autoclosure".
+nonisolated struct SyncFailureReport: Equatable {
 
     /// Short, stable identifier following the shipped `BT-*` convention.
     /// Never localise or reword these — they are matched in bug reports.
