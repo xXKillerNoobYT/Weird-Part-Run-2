@@ -24,6 +24,26 @@ Phase 11 adds **Bluetooth mesh sync** — devices sync with each other directly 
 
 ---
 
+## Deviation: per-peer watermark instead of `_sync_delivery_log` (2026-08-13)
+
+**Status of this plan:** written 2026-03-07 as a full Phase-11 vision (mesh, PGP, shop-as-truth-anchor). The implementation has since diverged — the `devices` table below became `_device_registry`, and `_vector_clock` exists but is not described here. Treat the schema blocks as design intent, not as the shipped schema. The two architecture docs cited in the header (`Device Sync management.md`, `Device security protocols.md`) are **not present in the repo**; the Prime Directive quoted above is the surviving statement of that intent.
+
+**What shipped, and why it differs.** The Prime Directive was being violated outright: `_change_log.synced` was a single global flag, and the only outbound selection was `WHERE synced = 0`. A push to peer B marked the row delivered for *every* peer, so the third device in a fleet never received an edit — permanently, with no self-heal path, while the sender's screen read "Sent N records". (GitHub #1645, P1 finding 9.)
+
+The fix (migration `124_peer_send_watermark`) gives each peer its own cursor — `_peer_send_watermark(peer_id, last_sent_sequence)` — and selects `WHERE sequence > ?` per peer, rather than the per-row `_sync_delivery_log` ledger specified above.
+
+**Why the watermark, not the ledger:**
+
+- **It activates machinery that already existed unused.** `_change_log.sequence` is populated by a trigger from migration 008, and `getChangesSince(sinceSequence:)` was already written with zero callers. The ledger would have been a parallel system alongside them. Standing principle: remove > merge > simplify > add.
+- **Storage is O(peers), not O(changes × peers).** The ledger writes a row per change per peer; on a Bluetooth-only device that never prunes (`pruneOldChanges` still has no production caller) that grows without bound.
+- **The upgrade path is one row per peer.** Seeding the ledger for existing devices would mean a cross-join insert over the whole change log during a migration.
+
+**What the watermark gives up:** per-row granularity. It cannot express "rows 1–200 delivered, 201–500 not" — only a contiguous cursor. That is acceptable today because delivery is advanced on transport-accept for a whole batch, so no finer state is actually known. **If ack-confirmed per-row delivery is implemented later, revisit this** — that is the point at which the ledger's precision starts to earn its cost.
+
+**Also still open from the Prime Directive:** delivery is advanced when the transport accepts the batch, not when the peer confirms it applied. Carrying data "until delivery is confirmed" needs an ack verb for incremental changes, which is a wire-protocol change and is tracked separately.
+
+---
+
 ## System Principles
 
 1. **Shop is truth anchor** — resolves conflicts, confirms delivery, holds full history
@@ -45,6 +65,7 @@ Phase 11 adds **Bluetooth mesh sync** — devices sync with each other directly 
 -- ═══════════════════════════════════════════════════
 
 -- Delivery tracking per device
+-- ⚠️ SUPERSEDED 2026-08-13 — see "Deviation: per-peer watermark" below.
 CREATE TABLE IF NOT EXISTS _sync_delivery_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     change_log_id INTEGER NOT NULL,                -- references _change_log.id
