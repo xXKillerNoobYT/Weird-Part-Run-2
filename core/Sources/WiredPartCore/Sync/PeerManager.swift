@@ -685,8 +685,11 @@ public actor PeerManager {
         var executedTransport: PeerSyncTransport?
 
         do {
-            // Get pending changes
-            let pendingChanges = try ChangeTracker.getPendingChanges(db: db)
+            // Changes THIS peer has not received. Selecting on the global
+            // `synced` flag here meant a push to one peer burnt the row for
+            // every other peer (#1645 P1-9): the third device in a fleet never
+            // received an edit, and the sender still reported "Sent N records".
+            let pendingChanges = try ChangeTracker.getChangesForPeer(db: db, peerId: peer.deviceId)
             let enrichedChanges = try enrichChangesWithData(pendingChanges)
 
             var pushed = 0
@@ -725,10 +728,9 @@ public actor PeerManager {
                     }
                     do {
                         pushed = enrichedChanges.count
-                        let syncedIds = pendingChanges.compactMap { $0.id }
-                        try ChangeTracker.markSynced(
-                            db: db,
-                            ids: syncedIds,
+                        try recordDelivery(
+                            of: pendingChanges,
+                            toPeer: peer.deviceId,
                             batchId: "mp-\(Int(Date().timeIntervalSince1970))"
                         )
                     }
@@ -941,8 +943,7 @@ public actor PeerManager {
             )
             let result = try JSONDecoder().decode(SyncPushResponse.self, from: plainPushData)
             pushed = result.accepted
-            let syncedIds = pendingChanges.compactMap { $0.id }
-            try ChangeTracker.markSynced(db: db, ids: syncedIds, batchId: result.syncBatchId)
+            try recordDelivery(of: pendingChanges, toPeer: peer.deviceId, batchId: result.syncBatchId)
         }
 
         // 2. Pull peer's changes
@@ -3225,6 +3226,34 @@ public actor PeerManager {
             }
         }
         return dict
+    }
+
+    /// Record a successful push of `changes` to one peer.
+    ///
+    /// Two pieces of state, deliberately kept together in one function so the
+    /// Bluetooth and LAN branches cannot drift apart — the row-level Sync tap
+    /// drifted in exactly that way and had to be re-merged in #1699/#1720:
+    ///
+    /// - the global `synced` flag, whose meaning is unchanged ("pushed at least
+    ///   once, no longer locally dirty") and whose readers are the shop sync
+    ///   path, the pending badge and `ConflictResolver.getLocalChangedFields`;
+    /// - this peer's delivery cursor, which is what actually decides whether the
+    ///   next peer still gets the row (#1645 P1-9).
+    ///
+    /// The cursor advances on transport-accept, not on an applied ack — the same
+    /// reliability the global flag already had at this point. Ack-confirmed
+    /// delivery is a protocol change and is tracked separately.
+    internal func recordDelivery(
+        of changes: [ChangeLogEntry],
+        toPeer peerId: String,
+        batchId: String
+    ) throws {
+        try ChangeTracker.markSynced(db: db, ids: changes.compactMap { $0.id }, batchId: batchId)
+        if let maxSequence = changes.compactMap({ $0.sequence }).max() {
+            try ChangeTracker.advanceSendWatermark(
+                db: db, peerId: peerId, lastSequence: Int64(maxSequence)
+            )
+        }
     }
 
     /// Add full record data to INSERT/UPDATE changes so the receiving peer
