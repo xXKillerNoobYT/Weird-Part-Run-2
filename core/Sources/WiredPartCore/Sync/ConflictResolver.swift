@@ -984,11 +984,17 @@ public enum ConflictResolver {
             // (see PeerManager.jsonRecordDict) — the two bugs masked each other
             // until the Bluetooth full-snapshot sync delivered real NULL rows
             // ("No User Found", 2026-07-06).
-            let columns = recordDataFields.keys.sorted()
+            // A newer sender names columns this device does not have; keeping them
+            // would fail at PREPARE time, which `OR IGNORE` cannot absorb, and
+            // abort the whole transaction. See `filteredToLocalColumns`.
+            let localFields = try filteredToLocalColumns(db: db, table: table, fields: recordDataFields)
+            guard !localFields.isEmpty else { return 0 }
+
+            let columns = localFields.keys.sorted()
             var placeholders: [String] = []
             var values: [String] = []
             for key in columns {
-                if let present = recordDataFields[key], let value = present {
+                if let present = localFields[key], let value = present {
                     placeholders.append("?")
                     values.append(value)
                 } else {
@@ -1052,11 +1058,18 @@ public enum ConflictResolver {
                 // produced a "?" placeholder with no bound argument and the
                 // statement threw (Copilot review on PR #1422 — this was the
                 // second, unfixed copy of the applyInsert bug).
-                let columns = recordDataFields.keys.sorted()
+                // Same unknown-column filter as applyInsert's plain-INSERT path.
+                // This is the sibling builder: the #196 NULL fix was applied here
+                // only after it had been fixed once next door, so a fix that lands
+                // in one of these two and not the other is a fix that is still broken.
+                let localFields = try filteredToLocalColumns(db: db, table: table, fields: recordDataFields)
+                guard !localFields.isEmpty else { return 0 }
+
+                let columns = localFields.keys.sorted()
                 var placeholders: [String] = []
                 var values: [String] = []
                 for key in columns {
-                    if let present = recordDataFields[key], let value = present {
+                    if let present = localFields[key], let value = present {
                         placeholders.append("?")
                         values.append(value)
                     } else {
@@ -1113,6 +1126,13 @@ public enum ConflictResolver {
         change: IncomingChange,
         localDeviceId: String
     ) throws -> Int {
+        // Filter BEFORE anything reads these keys. The merge `UPDATE` has no
+        // conflict clause, so a column this device lacks is a prepare-time throw
+        // that rolls the whole transaction back; and the conflict-logging loop
+        // below subscripts `localRow[field]`, which is meaningless for a column
+        // that does not exist here. See `filteredToLocalColumns`.
+        let incomingFields = try filteredToLocalColumns(db: db, table: table, fields: incomingFields)
+
         // Get fields that have been locally modified but not yet synced
         let localChangedFields = try getLocalChangedFields(db: db, tableName: table, recordId: recordId)
 
@@ -1378,5 +1398,65 @@ public enum ConflictResolver {
         // Double-quote the table name — standard SQL quoting
         let escaped = name.replacingOccurrences(of: "\"", with: "\"\"")
         return "\"\(escaped)\""
+    }
+
+    /// Drop payload fields naming a column this device's schema does not have.
+    ///
+    /// The sender decides the column set, not the receiver: the host streams a
+    /// snapshot with `SELECT * FROM [table]` and emits a key for every non-blob
+    /// column (`PeerManager.hostedSnapshotPage` / `jsonRecordDict`). Every
+    /// statement builder below then names those keys verbatim. So when the
+    /// SENDER is on a newer build, the receiver is handed a column it has never
+    /// heard of, and SQLite rejects the statement at PREPARE time with
+    /// `table X has no column named Y`.
+    ///
+    /// That is fatal on BOTH branches, which is what makes it worse than the
+    /// constraint classes around it:
+    ///
+    /// - On the merge branch the `UPDATE` has no conflict clause, so it simply
+    ///   throws.
+    /// - On the insert branch `INSERT OR IGNORE` gives NO protection either.
+    ///   ON CONFLICT resolution only applies to a statement that successfully
+    ///   PREPARES; an unknown column name fails before any conflict handling
+    ///   can run. This is a different failure mode from the NOT NULL / UNIQUE /
+    ///   CHECK class, which `OR IGNORE` does absorb.
+    ///
+    /// Either way the throw escapes `applyOneAtomically`'s `missingLocalRecord`-
+    /// only catch and rolls back the ENTIRE transaction — the whole company
+    /// snapshot on a join, or the whole delta batch on ongoing sync. It is
+    /// deterministic and identical on every retry, the same shape as #1723 and
+    /// #1728, and the kill surface is already populated: migration history has
+    /// added 90 columns via `add(column:)` plus 6 by raw `ALTER TABLE`, so one
+    /// schema-adding migration of separation between two devices is enough.
+    ///
+    /// Mid-TestFlight-rollout is exactly this state — the shop Mac takes a build
+    /// before a phone does, and iOS and macOS build numbers are cut separately.
+    ///
+    /// Dropping the unknown fields is the only available semantics: a receiver
+    /// that lacks the column cannot store the value under any strategy, and it
+    /// never had that data to begin with. Applying the rest of the row is
+    /// strictly better than losing every row in the transaction. The dropped
+    /// names are logged rather than swallowed so the divergence is diagnosable
+    /// — and once that device takes the migration, an ordinary resync of the row
+    /// carries the column normally.
+    ///
+    /// Returns the payload filtered to columns that exist locally.
+    private static func filteredToLocalColumns(
+        db: Database,
+        table: String,
+        fields: [String: String?]
+    ) throws -> [String: String?] {
+        let localColumns = Set(try db.columns(in: table).map(\.name))
+        let unknown = fields.keys.filter { !localColumns.contains($0) }
+        guard !unknown.isEmpty else { return fields }
+
+        logger.warning(
+            """
+            Dropping \(unknown.count, privacy: .public) unknown column(s) from incoming \
+            \(table, privacy: .public) row — this device's schema is older than the sender's: \
+            \(unknown.sorted().joined(separator: ", "), privacy: .public)
+            """
+        )
+        return fields.filter { localColumns.contains($0.key) }
     }
 }
