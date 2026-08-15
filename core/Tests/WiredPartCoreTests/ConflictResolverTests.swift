@@ -1387,4 +1387,212 @@ struct ConflictResolverTests {
         #expect(row?["email"] == "after@example.com")
         #expect(row?["phone"] == "555-0100", "every real column still applied")
     }
+
+    // MARK: - #1729 — a reordered stage list must not kill the join
+
+    /// The host's stage list after a drag-reorder: slots 1,2,3 become 3,1,2.
+    ///
+    /// Emitted as INSERT because a full snapshot ships every row as an INSERT.
+    /// The rows already exist on this device — migration-seeded with the SAME
+    /// ids — so each one lands on the clause-free merge `UPDATE` instead of the
+    /// `INSERT OR IGNORE` branch. That routing is the whole cause: identical ids
+    /// are what make this the merge path.
+    private func reorderedJobStages() -> [IncomingChange] {
+        [(1, 3), (2, 1), (3, 2)].map { id, sortOrder in
+            IncomingChange(
+                deviceId: "remote-device",
+                tableName: "job_stages",
+                recordId: "\(id)",
+                operation: "INSERT",
+                recordData: #"{"id":"\#(id)","sort_order":"\#(sortOrder)"}"#,
+                timestamp: "2026-08-14T10:00:0\(id)Z"
+            )
+        }
+    }
+
+    private func liveStageOrder(_ db: AppDatabase) throws -> [Int: Int] {
+        try db.writer.read { dbConn in
+            var order: [Int: Int] = [:]
+            for row in try Row.fetchAll(
+                dbConn,
+                sql: "SELECT id, sort_order FROM job_stages WHERE deleted_at IS NULL"
+            ) {
+                order[row["id"]] = row["sort_order"]
+            }
+            return order
+        }
+    }
+
+    /// The #1729 regression.
+    ///
+    /// Before the fix the FIRST row of the permutation threw
+    /// `UNIQUE constraint failed: job_stages.template_id, job_stages.sort_order`
+    /// out of `db.writer.write` and rolled the ENTIRE company snapshot back —
+    /// the same "one row kills the whole join" shape as #1723 and #1728, reached
+    /// by simply having reordered the stage list once.
+    ///
+    /// MUTATION CHECK: remove the `suspendJobStageSortIndex` call from
+    /// `resolveAndApplyChangesAtomically` and this test must go red.
+    @Test("#1729 atomic apply survives a reordered job-stage list")
+    func testAtomicApplySurvivesAReorderedStageList() throws {
+        let db = try freshDB()
+
+        let result = try ConflictResolver.resolveAndApplyChangesAtomically(
+            db: db,
+            changes: reorderedJobStages()
+        )
+
+        #expect(result.applied == 3, "a permutation is a legal state, not corruption")
+        #expect(try liveStageOrder(db) == [1: 3, 2: 1, 3: 2],
+                "the host's ordering must land exactly")
+    }
+
+    /// The streaming twin is the path the real Bluetooth join actually takes, so
+    /// fixing only the array entry point would leave the field failure in place.
+    ///
+    /// The producer here holds a cursor open across every `emit`, mirroring the
+    /// real one, so it also pins the placement rule: `DROP INDEX` fails with
+    /// "database table is locked" while ANY statement is in flight on the
+    /// connection — even a cursor over an unrelated table — which is why the lift
+    /// happens before the producer runs and the recreate may safely happen after.
+    /// (`CREATE INDEX` has no such restriction; the issue's design comment had
+    /// this asymmetry backwards.)
+    ///
+    /// MUTATION CHECK: move the `suspendJobStageSortIndex` call below
+    /// `produceChanges` and this test must go red. Note the failure arrives as
+    /// the UNIQUE violation rather than the lock: the permutation collides while
+    /// the index is still live, before the misplaced drop is ever reached.
+    @Test("#1729 the streaming apply lifts the ordering index too")
+    func testStreamedAtomicApplySurvivesAReorderedStageList() throws {
+        let db = try freshDB()
+        let changes = reorderedJobStages()
+
+        let result = try ConflictResolver.resolveAndApplyStreamedChangesAtomically(
+            db: db,
+            produceChanges: { dbConn, emit in
+                // Mirrors the real producer: a live cursor held open across every
+                // `emit`, on the same connection the transaction owns.
+                let cursor = try Row.fetchCursor(
+                    dbConn,
+                    sql: "SELECT id FROM job_stages WHERE deleted_at IS NULL ORDER BY id"
+                )
+                var index = 0
+                while try cursor.next() != nil, index < changes.count {
+                    try emit(changes[index])
+                    index += 1
+                }
+            }
+        )
+
+        #expect(result.applied == 3)
+        #expect(try liveStageOrder(db) == [1: 3, 2: 1, 3: 2])
+    }
+
+    /// The reconciliation pass is load-bearing, not defensive.
+    ///
+    /// A batch carrying only PART of a permutation — the host moved stage 1 into
+    /// slot 3, but this device's stage 3 still holds slot 3 — leaves a genuine
+    /// duplicate once the index is lifted. Without reconciliation the recreate
+    /// throws and the bug simply relocates from the `UPDATE` to the `CREATE`.
+    ///
+    /// MUTATION CHECK: remove the `reconcileJobStageSortOrders` call from
+    /// `restoreJobStageSortIndex` and this test must go red.
+    @Test("#1729 a partially delivered reorder still commits")
+    func testAtomicApplySurvivesAPartiallyDeliveredReorder() throws {
+        let db = try freshDB()
+
+        let result = try ConflictResolver.resolveAndApplyChangesAtomically(
+            db: db,
+            changes: [IncomingChange(
+                deviceId: "remote-device",
+                tableName: "job_stages",
+                recordId: "1",
+                operation: "INSERT",
+                recordData: #"{"id":"1","sort_order":"3"}"#,
+                timestamp: "2026-08-14T10:00:00Z"
+            )]
+        )
+
+        #expect(result.applied == 1)
+
+        // Deterministic renumber, ordered by (sort_order, id): stage 2 held slot
+        // 2 so it sorts first, then the two rows contesting slot 3 break the tie
+        // on id. Nothing is deleted — every stage is still live.
+        #expect(try liveStageOrder(db) == [2: 1, 1: 2, 3: 3],
+                "the contested slot is resolved by renumbering, not by dropping a stage")
+    }
+
+    /// The other half, and the reason this is a lift rather than a weakening: the
+    /// index must come back EXACTLY, partial predicate included. A hand-retyped
+    /// `CREATE` that lost `WHERE deleted_at IS NULL` would silently turn a
+    /// partial unique index into a total one and start rejecting soft-deleted
+    /// duplicates that were always legal.
+    ///
+    /// If this ever starts passing with the index absent, the fix has become a
+    /// permanent silent loss of the invariant.
+    ///
+    /// MUTATION CHECK: replace the captured-DDL replay in
+    /// `restoreJobStageSortIndex` with a hardcoded `CREATE UNIQUE INDEX` that
+    /// omits the `WHERE` clause, and the soft-deleted-duplicate assertion below
+    /// must go red.
+    @Test("#1729 the ordering index is restored exactly, predicate and all")
+    func testJobStageSortIndexIsRestoredWithItsPartialPredicate() throws {
+        let db = try freshDB()
+
+        let before = try db.writer.read { dbConn in
+            try String.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT sql FROM sqlite_master
+                    WHERE type = 'index' AND name = 'idx_job_stages_template_sort_active'
+                    """
+            )
+        }
+        #expect(before != nil, "the fixture must actually have the index under test")
+
+        _ = try ConflictResolver.resolveAndApplyChangesAtomically(
+            db: db,
+            changes: reorderedJobStages()
+        )
+
+        let after = try db.writer.read { dbConn in
+            try String.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT sql FROM sqlite_master
+                    WHERE type = 'index' AND name = 'idx_job_stages_template_sort_active'
+                    """
+            )
+        }
+        #expect(after == before, "the index DDL must be byte-identical after the apply")
+
+        let templateId = try db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: "SELECT template_id FROM job_stages WHERE id = 1")
+        }
+
+        // Enforcement is live again: a duplicate ACTIVE slot is still rejected.
+        #expect(throws: (any Error).self) {
+            try db.writer.write { dbConn in
+                try dbConn.execute(
+                    sql: """
+                        INSERT INTO job_stages (name, sort_order, template_id)
+                        VALUES ('Duplicate', 3, ?)
+                        """,
+                    arguments: [templateId]
+                )
+            }
+        }
+
+        // …but the PARTIAL predicate survived: a soft-deleted row sharing that
+        // slot is exempt and must still be accepted.
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO job_stages (name, sort_order, template_id, deleted_at)
+                    VALUES ('Archived', 3, ?, '2026-08-14T10:00:00Z')
+                    """,
+                arguments: [templateId]
+            )
+        }
+    }
 }
