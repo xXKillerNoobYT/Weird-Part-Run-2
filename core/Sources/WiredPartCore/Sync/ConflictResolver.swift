@@ -370,9 +370,16 @@ public enum ConflictResolver {
             try dbConn.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
             defer { try? dbConn.execute(sql: "DELETE FROM _sync_apply_guard") }
 
+            // Lift BEFORE any row is applied: a reordered stage list is a
+            // permutation of a unique key and has no valid row-at-a-time
+            // ordering. See `suspendJobStageSortIndex`.
+            let sortIndexDDL = try suspendJobStageSortIndex(dbConn)
+
             for change in changes {
                 result.add(try applyOneAtomically(dbConn, change, localDevice))
             }
+
+            try restoreJobStageSortIndex(dbConn, capturedDDL: sortIndexDDL)
 
             return result
         }
@@ -418,6 +425,163 @@ public enum ConflictResolver {
         try dbConn.execute(sql: "PRAGMA defer_foreign_keys = ON")
     }
 
+    /// The one unique index in the schema whose key a user can *permute* (#1729).
+    private static let jobStageSortIndexName = "idx_job_stages_template_sort_active"
+
+    /// Lift the job-stage ordering index for the duration of an apply, returning
+    /// the DDL needed to put it back (#1729).
+    ///
+    /// `job_stages` carries
+    /// `UNIQUE(template_id, sort_order) WHERE deleted_at IS NULL`, and its rows
+    /// 1–3 are migration-seeded with the SAME ids on every device
+    /// (`AppDatabase+Migrations.swift`: seeded, then backfilled onto a `Default`
+    /// template). Identical ids are precisely the property that routes a row
+    /// AWAY from the `INSERT OR IGNORE` branch and onto the merge branch — whose
+    /// `UPDATE … WHERE id = ?` carries no conflict clause. So a host that merely
+    /// *reordered* its stage list ships a permutation of a UNIQUE key, and a
+    /// permutation cannot be written one row at a time: the first row to move
+    /// into an occupied slot throws, and the whole company snapshot rolls back.
+    ///
+    /// The product code already knows this is impossible —
+    /// `JobsService.reorderJobStages` writes every stage to a NEGATIVE
+    /// `sort_order` scratch value first, purely to avoid transiently colliding on
+    /// this index. Sync did the naive thing. That asymmetry was the bug.
+    ///
+    /// `PRAGMA defer_foreign_keys` (the #1728 fix) cannot help: SQLite has no
+    /// deferrable UNIQUE, and `UNIQUE(a,b) DEFERRABLE INITIALLY DEFERRED` is a
+    /// parse error. Drop-and-recreate is the only mechanism the engine offers.
+    ///
+    /// **This must be called with nothing in flight on `dbConn`.** `DROP INDEX`
+    /// emits `OP_Destroy`, whose guard is connection-wide (`db->nVdbeRead`), so
+    /// ANY partially-consumed statement — even a cursor over an unrelated table —
+    /// makes it fail with "database table is locked". `CREATE INDEX` emits no
+    /// `OP_Destroy` and is immune, which is why `restoreJobStageSortIndex` may
+    /// safely run while the streaming producer's cursor is still open but this
+    /// may not. Callers therefore drop at the TOP of the transaction, before any
+    /// producer runs.
+    ///
+    /// Returns `nil` when the index is absent — a database that predates the
+    /// migration creating it is legitimate, and failing there would newly break
+    /// the exact join path this exists to unbreak. `sql IS NOT NULL` also
+    /// mechanically excludes constraint-backed `sqlite_autoindex_*` entries,
+    /// which cannot be dropped and have no DDL text to replay.
+    private static func suspendJobStageSortIndex(_ dbConn: Database) throws -> String? {
+        // Captured VERBATIM and before the drop: `sqlite_master` loses the row
+        // the moment we drop, and SQLite stores the submitted text
+        // uncanonicalized. Re-typing the statement is how the partial
+        // `WHERE deleted_at IS NULL` predicate silently becomes a TOTAL unique
+        // index that starts rejecting soft-deleted duplicates.
+        guard let ddl = try String.fetchOne(
+            dbConn,
+            sql: """
+                SELECT sql FROM sqlite_master
+                WHERE type = 'index' AND name = ? AND sql IS NOT NULL
+                """,
+            arguments: [jobStageSortIndexName]
+        ) else {
+            // No DDL to put back, so nothing may be taken away.
+            return nil
+        }
+
+        try dbConn.execute(sql: "DROP INDEX IF EXISTS \(jobStageSortIndexName)")
+        return ddl
+    }
+
+    /// Put the job-stage ordering index back, reconciling first so it can (#1729).
+    ///
+    /// Must run only once every change in the batch has landed — the intermediate
+    /// states are exactly what the index cannot represent.
+    private static func restoreJobStageSortIndex(
+        _ dbConn: Database,
+        capturedDDL: String?
+    ) throws {
+        guard let ddl = capturedDDL else { return }
+
+        try reconcileJobStageSortOrders(dbConn)
+
+        // Replay the captured text, never a literal. If the reconciliation ever
+        // misses a case this throws, the transaction rolls back, and the index
+        // returns with full enforcement — which is the correct outcome: a
+        // snapshot that cannot satisfy the constraint must not land. Never
+        // soften this to `try?`; committing without the index would silently and
+        // permanently lose the invariant on this device, with no migration that
+        // would ever restore it.
+        try dbConn.execute(sql: ddl)
+    }
+
+    /// Make `job_stages` satisfiable by its ordering index again (#1729).
+    ///
+    /// With the index lifted, a PARTIALLY delivered reorder can leave two live
+    /// rows in one `(template_id, sort_order)` slot — the host ships id 1 into
+    /// slot 3 while this device's id 3 still holds slot 3. Recreating over that
+    /// state throws, which would merely relocate the total rollback from the
+    /// `UPDATE` to the `CREATE`. This pass is what makes the recreate safe, so it
+    /// is load-bearing rather than defensive.
+    ///
+    /// Renumbering is deliberate; soft-deleting the loser is NOT an option here.
+    /// `JobsService.archiveJobStage` refuses to soft-delete a stage referenced by
+    /// an active job, a JPO line item, or a category mapping, and this would
+    /// bypass that guard from underneath. Worse, a soft-deleted stage that a job
+    /// still points at makes `OrdersService.markStageComplete` throw
+    /// `stageNotFound`, so the job could never advance — strictly worse than the
+    /// bug being fixed. Renumbering deletes nothing and keeps every foreign-key
+    /// referent live.
+    ///
+    /// Deliberately a pure function of the FINAL row set, ordered only by
+    /// `(sort_order, id)`. These writes happen under `_sync_apply_guard`, so the
+    /// change-tracking triggers do not fire and the renumber NEVER reaches the
+    /// peer. Two devices can only agree if each computes the same answer from the
+    /// same rows, which rules out any "which rows came from the peer" input and
+    /// any dependence on physical row order. `id` is the sync record key, so it
+    /// is the one column guaranteed to mean the same thing on both sides. This is
+    /// the same tie-break the migration that created the index already chose, so
+    /// the repair sync performs and the repair the migration performed cannot
+    /// disagree.
+    private static func reconcileJobStageSortOrders(_ dbConn: Database) throws {
+        // `template_id IS NOT NULL` is correctness, not tuning: SQLite treats
+        // NULLs as DISTINCT in a unique index, so NULL-template rows can never
+        // violate it — but `GROUP BY` *does* fold NULLs together and would
+        // report them as duplicates and renumber rows that were fine.
+        //
+        // Self-gating: with no collision, `colliding` is empty, so `ordered` is
+        // empty and the UPDATE touches zero rows. Templates that are already
+        // consistent are left byte-identical.
+        //
+        // `ROW_NUMBER() … PARTITION BY template_id` is injective over a
+        // template, so the result cannot collide no matter what order SQLite
+        // evaluates the rows in — correct by construction rather than by
+        // observed engine behaviour.
+        //
+        // `updated_at` is intentionally NOT bumped: this is a local repair, not
+        // a user edit, and `updated_at` is the row's LWW comparison timestamp.
+        // Bumping it would let an unrelated genuinely-unsynced local field start
+        // winning against the peer.
+        try dbConn.execute(sql: """
+            WITH colliding AS (
+                SELECT template_id
+                FROM job_stages
+                WHERE deleted_at IS NULL AND template_id IS NOT NULL
+                GROUP BY template_id, sort_order
+                HAVING COUNT(*) > 1
+            ),
+            ordered AS (
+                SELECT id,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY template_id ORDER BY sort_order ASC, id ASC
+                       ) AS normalized_sort_order
+                FROM job_stages
+                WHERE deleted_at IS NULL
+                  AND template_id IS NOT NULL
+                  AND template_id IN (SELECT template_id FROM colliding)
+            )
+            UPDATE job_stages
+            SET sort_order = (
+                    SELECT normalized_sort_order FROM ordered WHERE ordered.id = job_stages.id
+                )
+            WHERE id IN (SELECT id FROM ordered)
+            """)
+    }
+
     /// Streaming twin of `resolveAndApplyChangesAtomically` for a change source
     /// too large to hold in memory (WEI-7022).
     ///
@@ -454,9 +618,20 @@ public enum ConflictResolver {
             try dbConn.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
             defer { try? dbConn.execute(sql: "DELETE FROM _sync_apply_guard") }
 
+            // Must precede `produceChanges`: that closure holds a cursor open on
+            // THIS connection for the whole apply, and `DROP INDEX` fails while
+            // any statement is in flight. See `suspendJobStageSortIndex`.
+            let sortIndexDDL = try suspendJobStageSortIndex(dbConn)
+
             try produceChanges(dbConn) { change in
                 result.add(try applyOneAtomically(dbConn, change, localDevice))
             }
+
+            // Safe here even though the producer's cursor may still be open:
+            // `CREATE INDEX` is not subject to the in-flight-statement rule that
+            // constrains the drop above.
+            try restoreJobStageSortIndex(dbConn, capturedDDL: sortIndexDDL)
+
             try validate?(result)
 
             return result
