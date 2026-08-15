@@ -113,6 +113,13 @@ struct UserMenuSheet: View {
                 MenuItem(id: "settings-device-management", label: "Device Management", icon: "desktopcomputer.and.arrow.down",
                          tabId: "settings-device-management", permission: "manage_devices",
                          keywords: ["device", "management", "register", "deregister", "fleet"]),
+                // No permission gate: when sync is down this is the only way to
+                // see why, and the person holding the failing device is often
+                // not an admin (#1745, tracker trap 9).
+                MenuItem(id: "settings-device-logs", label: "Device Logs", icon: "doc.text.magnifyingglass",
+                         tabId: "settings-device-logs", permission: nil,
+                         keywords: ["logs", "log", "diagnostics", "errors", "warnings", "debug",
+                                    "troubleshoot", "sync failure", "fleet"]),
                 MenuItem(id: "settings-bootstrap", label: "Bootstrap", icon: "desktopcomputer",
                          tabId: "settings-bootstrap", permission: "manage_devices",
                          keywords: ["bootstrap", "initial setup", "onboarding", "first sync"]),

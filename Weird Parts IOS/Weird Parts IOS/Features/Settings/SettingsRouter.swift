@@ -60,6 +60,8 @@ struct SettingsRouter: View {
             SecurityAdminPage()
         case "settings-audit":
             AuditLogPage()
+        case "settings-device-logs", "settings-logs":
+            IOSDeviceLogsPage()
         case "settings-backups":
             IOSBackupsPage()
         case "settings-keys":

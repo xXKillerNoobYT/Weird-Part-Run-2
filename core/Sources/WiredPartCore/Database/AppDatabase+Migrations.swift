@@ -167,6 +167,7 @@ extension AppDatabase {
         registerMigration123SnapshotTransferIdentity(&migrator)
         registerMigration124PeerSendWatermark(&migrator)
         registerMigration125ClockOutQuestionsSoftDelete(&migrator)
+        registerMigration126DeviceLogDiagnostics(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6596,5 +6597,92 @@ private func registerMigration125ClockOutQuestionsSoftDelete(_ migrator: inout D
             column: "deleted_at",
             type: .text
         )
+    }
+}
+
+/// 126 — make `device_logs` a usable diagnostic channel (#1745).
+///
+/// Migration 121 created the table and `DeviceLogService` was written against
+/// it, but **nothing ever called the service** — no writer, no pruner, no
+/// viewer. Wiring it up surfaced four defects that had to be fixed in the
+/// schema before the log could do its job.
+///
+/// 1. **`created_at` was whole-second.** `datetime('now')` yields
+///    `YYYY-MM-DD HH:MM:SS`, and `recent()` breaks ties on `id` — which is a
+///    *per-device* autoincrement. Two entries from different devices inside
+///    the same second were therefore unorderable, which defeats the entire
+///    purpose: reading a Bluetooth failure means interleaving the host's and
+///    joiner's lines, and those land milliseconds apart. New rows carry
+///    millisecond precision (written explicitly by the service, since SQLite
+///    cannot alter an existing column default without a table rebuild — and a
+///    rebuild here would repoint child FKs, the migration-096 trap).
+/// 2. **Severity had no ordering.** `level` is a string, so "warn and worse"
+///    was inexpressible (`error` < `info` < `warn` alphabetically). A numeric
+///    `severity` makes `severity >= ?` work.
+/// 3. **The log could not be attributed to a company device.** `device_id` is
+///    the *sync* identity (`DeviceIdentity.current`); the office-visible record
+///    is `devices`, keyed by `device_fingerprint`. Stored as a plain column
+///    with **no foreign key on purpose**: a log row can legitimately arrive
+///    before the `devices` row it names, and an FK would abort the whole batch
+///    at COMMIT under deferred foreign keys (#1737, #1730).
+/// 4. **Verbose logging would have flooded the sync payload.** The triggers
+///    replicated every row. Owner-approved design (2026-08-15): full verbose
+///    logging stays local, and only `warn` and above replicates — otherwise N
+///    devices' debug logs cross-replicate over the very Bluetooth transport
+///    #1684 is trying to stabilise, and the diagnostic degrades what it
+///    diagnoses.
+private func registerMigration126DeviceLogDiagnostics(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("126_device_log_diagnostics") { db in
+        // Severity default 30 == .info, matching the pre-existing rows that
+        // were written before levels below info existed.
+        try addColumnIfMissing(db, table: "device_logs", column: "severity", type: .integer, defaultValue: 30)
+        // Identity of the originating device, beyond the sync id.
+        try addColumnIfMissing(db, table: "device_logs", column: "device_fingerprint", type: .text)
+        try addColumnIfMissing(db, table: "device_logs", column: "build_number", type: .text)
+        try addColumnIfMissing(db, table: "device_logs", column: "os_version", type: .text)
+        try addColumnIfMissing(db, table: "device_logs", column: "platform", type: .text)
+        try addColumnIfMissing(db, table: "device_logs", column: "device_model", type: .text)
+        // Per-device monotonic counter: ordering survives a clock adjustment,
+        // which a timestamp alone does not.
+        try addColumnIfMissing(db, table: "device_logs", column: "seq", type: .integer)
+        // So the merged fleet view can render one consistent timeline instead
+        // of comparing wall clocks from different zones (cf. #1638).
+        try addColumnIfMissing(db, table: "device_logs", column: "utc_offset_minutes", type: .integer)
+
+        // Backfill severity for rows written under migration 121's three levels.
+        try db.execute(sql: """
+            UPDATE device_logs SET severity = CASE level
+                WHEN 'error' THEN 50
+                WHEN 'warn'  THEN 40
+                ELSE 30
+            END
+            """)
+
+        try db.create(
+            index: "idx_device_logs_severity_created", on: "device_logs",
+            columns: ["severity", "created_at"], ifNotExists: true
+        )
+        try db.create(
+            index: "idx_device_logs_device_seq", on: "device_logs",
+            columns: ["device_id", "seq"], ifNotExists: true
+        )
+
+        // Replace 121's unconditional replication triggers with severity-gated
+        // ones. `CREATE TRIGGER IF NOT EXISTS` cannot amend an existing
+        // trigger, so these must be dropped first. Dropping a TRIGGER is safe
+        // mid-transaction; only DROP INDEX is blocked by a live cursor.
+        for (op, rowRef) in [("INSERT", "NEW"), ("UPDATE", "NEW"), ("DELETE", "OLD")] {
+            try db.execute(sql: "DROP TRIGGER IF EXISTS trg_sync_device_logs_\(op.lowercased())")
+            try db.execute(sql: """
+                CREATE TRIGGER trg_sync_device_logs_\(op.lowercased())
+                AFTER \(op) ON [device_logs]
+                WHEN (SELECT COUNT(*) FROM _sync_apply_guard) = 0
+                     AND COALESCE(\(rowRef).severity, 30) >= \(DeviceLogService.replicationMinSeverity)
+                BEGIN
+                    INSERT INTO _change_log (device_id, table_name, record_id, operation)
+                    VALUES ('', 'device_logs', \(rowRef).id, '\(op)');
+                END
+                """)
+        }
     }
 }
