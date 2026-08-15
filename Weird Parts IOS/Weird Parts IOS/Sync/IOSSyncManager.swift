@@ -1555,6 +1555,11 @@ final class IOSSyncManager {
             // this is > 0, so 0 means "no fake bar" — the record count carries
             // the progress and is truthful about not knowing the total.
             syncProgressPercent = 0
+            DiagnosticLog.info(
+                DiagnosticLog.Category.sync,
+                "Initial snapshot requested from host",
+                detail: #"{"host":"\#(hostDeviceId)"}"#
+            )
             do {
                 try await pm.requestFullSyncOverMultipeer(hostDeviceId: hostDeviceId)
             } catch {
@@ -1566,12 +1571,22 @@ final class IOSSyncManager {
                 )
                 lastFailureReport = report
                 errorMessage = report.headline
+                // The verbatim error, not the user-facing headline: the
+                // headline is deliberately reassuring and has hidden the real
+                // cause before (#1725 — the phone blamed distance for a
+                // database error). This is the copy a diagnosis is made from.
+                DiagnosticLog.error(
+                    DiagnosticLog.Category.sync,
+                    "Initial snapshot FAILED: \(report.headline)",
+                    detail: #"{"host":"\#(hostDeviceId)","error":"\#(error)","wifiFailure":"\#(wifiFailure.map(String.init(describing:)) ?? "none")"}"#
+                )
                 throw SyncError.syncFailed(report.headline)
             }
             syncProgressMessage = "Initial sync complete."
             syncProgressPercent = 1.0
             syncStatus = .synced
             lastSyncDate = Formatters.iso8601Basic.string(from: Date())
+            DiagnosticLog.info(DiagnosticLog.Category.sync, "Initial snapshot applied")
         } else if syncStatus != .synced {
             syncProgressMessage = nil
             syncStatus = .error
