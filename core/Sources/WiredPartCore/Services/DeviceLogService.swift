@@ -118,7 +118,10 @@ public final class DeviceLogService: Sendable {
         }
     }
 
-    public struct Entry: Sendable, Equatable {
+    /// `Identifiable` is declared here rather than retroactively in the app
+    /// layer: conforming an imported type to a protocol you do not own is the
+    /// defect #1658 tracks, and Swift 6 warns on it.
+    public struct Entry: Sendable, Equatable, Identifiable {
         public let id: Int64
         public let deviceId: String
         public let deviceName: String?

@@ -311,6 +311,9 @@ final class AppCore: ObservableObject {
             aiDispatchService = result.aiDispatch
             badgeCountService = result.badgeCount
             deviceLogService = Self.makeDeviceLogService(db: result.database)
+            // Make it reachable from the sync/pairing paths, which are built
+            // before this point and hold no reference to AppCore.
+            DiagnosticLog.install(deviceLogService)
 
             if let theme = result.theme {
                 self.theme = theme
