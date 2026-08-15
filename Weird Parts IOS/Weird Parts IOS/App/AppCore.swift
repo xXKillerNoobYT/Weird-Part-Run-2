@@ -125,6 +125,52 @@ final class AppCore: ObservableObject {
         return DeviceLogService(db: db, device: info, verboseEnabled: verbose)
     }
 
+    /// What the app should show at launch.
+    ///
+    /// Extracted as a pure function so the decision is testable without
+    /// standing up the whole async bootstrap — it is the part that was wrong,
+    /// and it is one line of logic buried in fifty lines of plumbing.
+    enum StartupState: Equatable {
+        /// Never joined, never set up — offer the two-path onboarding.
+        case newDevice
+        /// A business profile exists but no admin yet.
+        case needsFirstAdmin
+        /// Paired with a company, but the user roster has not arrived.
+        case joinedAwaitingRoster
+        /// Normal launch.
+        case ready
+    }
+
+    /// #1739. The old decision rested ENTIRELY on synced data (`users`, the
+    /// business profile), and that data is exactly what fails to arrive when
+    /// sync is partial. The owner's build-67 report was *"it's showing the
+    /// company set up when this device is joining a company"* alongside *"only
+    /// some of the info is sycing … the user them selves did not sync"* — the
+    /// same event. A device that had genuinely joined was told on its next
+    /// launch that it was brand new.
+    ///
+    /// `hasPairedPeer` is a **local** fact (a trusted row in `_device_registry`
+    /// written at pairing time and untouched by a failed sync), which is why it
+    /// belongs in this decision: "am I a new device?" must not be answered with
+    /// data that arrives over the network.
+    ///
+    /// Offering "Create New Business" to a joined device is not merely
+    /// confusing — it would seed a second admin and a second set of built-in
+    /// hats, putting divergent ids for the same natural keys onto the mesh,
+    /// which is the collision class #1737 exists to contain.
+    static func startupState(
+        hasUsers: Bool,
+        hasProfile: Bool,
+        hasPairedPeer: Bool
+    ) -> StartupState {
+        if hasUsers { return .ready }
+        // Paired outranks everything below: this device has joined, whatever
+        // else did or did not replicate.
+        if hasPairedPeer { return .joinedAwaitingRoster }
+        if hasProfile { return .needsFirstAdmin }
+        return .newDevice
+    }
+
     /// Shared sync manager — all views observe this single instance.
     let syncManager = IOSSyncManager()
 
@@ -252,6 +298,27 @@ final class AppCore: ObservableObject {
                 let theme = try? settings.getTheme()
                 let users = try auth.getActiveUsers()
                 let hasProfile = try settings.hasBusinessProfile()
+                // #1739. Durable, device-local evidence that this device has
+                // already joined a company: pairing writes a trusted peer here
+                // and nothing in a failed or partial sync removes it.
+                //
+                // The onboarding decision below used to rest ENTIRELY on synced
+                // data (`users` / business profile). That data is exactly what
+                // fails to arrive when sync is partial — the owner's build-67
+                // report was "only some of the info is sycing … the user them
+                // selves did not sync" — so a device that had genuinely joined
+                // was told, on its next launch, that it was brand new and
+                // offered "Create New Business". Deciding "am I a new device?"
+                // from data that arrives over the network is the bug; this is a
+                // local fact.
+                let hasPairedPeer = (try? database.writer.read { dbc in
+                    try Bool.fetchOne(dbc, sql: """
+                        SELECT EXISTS(
+                            SELECT 1 FROM _device_registry
+                            WHERE is_trusted = 1 AND is_deactivated = 0
+                        )
+                        """) ?? false
+                }) ?? false
 
                 return (
                     database: database,
@@ -278,7 +345,8 @@ final class AppCore: ObservableObject {
                     badgeCount: BadgeCountService(db: database),
                     theme: theme,
                     users: users,
-                    hasProfile: hasProfile
+                    hasProfile: hasProfile,
+                    hasPairedPeer: hasPairedPeer
                 )
             }.value
 
@@ -319,8 +387,12 @@ final class AppCore: ObservableObject {
                 self.theme = theme
             }
 
-            if result.users.isEmpty && !result.hasProfile {
-                // Brand-new device — show two-path onboarding.
+            switch Self.startupState(
+                hasUsers: !result.users.isEmpty,
+                hasProfile: result.hasProfile,
+                hasPairedPeer: result.hasPairedPeer
+            ) {
+            case .newDevice:
                 // Clear stale UserDefaults flags so a fresh-build DB doesn't
                 // inherit "already completed" flags from a previous install.
                 UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
@@ -328,11 +400,10 @@ final class AppCore: ObservableObject {
                 UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
                 needsOnboarding = true
                 needsBootstrap = false
-            } else if result.users.isEmpty && result.hasProfile {
-                // Business profile exists but no admin yet (edge case)
+            case .needsFirstAdmin:
                 needsBootstrap = true
                 needsOnboarding = false
-            } else {
+            case .joinedAwaitingRoster, .ready:
                 needsBootstrap = false
                 needsOnboarding = false
             }
