@@ -166,6 +166,7 @@ extension AppDatabase {
         registerMigration122SnapshotStaging(&migrator)
         registerMigration123SnapshotTransferIdentity(&migrator)
         registerMigration124PeerSendWatermark(&migrator)
+        registerMigration125ClockOutQuestionsSoftDelete(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6558,6 +6559,42 @@ private func registerMigration124PeerSendWatermark(_ migrator: inout DatabaseMig
                 SELECT device_id, \(ChangeTracker.deliveredFloorSQL), datetime('now')
                 FROM _device_registry
                 """
+        )
+    }
+}
+
+// MARK: - Migration 125: clock_out_questions soft delete
+
+/// Give `clock_out_questions` the `deleted_at` column every other business table has.
+///
+/// `ConflictResolver.applyDelete` soft-deletes a row when its table has `deleted_at`
+/// and hard-deletes it when it does not. `clock_out_questions` had no such column
+/// (migration 003), while `clock_out_responses.question_id` is
+/// `INTEGER NOT NULL REFERENCES clock_out_questions` with **no ON DELETE clause** —
+/// i.e. NO ACTION, which blocks on any surviving child row.
+///
+/// So an inbound synced delete of a clock-out question hard-deleted the parent and
+/// orphaned the receiver's local responses. With foreign keys deferred for the apply
+/// that does not fail at the statement; it fails at COMMIT, as a bare
+/// `FOREIGN KEY constraint failed` naming no table and no row, and it rolls back the
+/// ENTIRE atomic apply — the whole company snapshot on a join, or the whole delta
+/// batch on ongoing sync.
+///
+/// It needs no exotic state to fire. The office device can only delete a question
+/// that has no responses *locally*, which is precisely the offline case: a field
+/// phone answered it and the office has not received that answer yet.
+///
+/// With the column present the soft-delete branch is taken, the child is never
+/// orphaned, and a retired question stops being asked without destroying the answers
+/// already given for it. Nullable with no default — NULL means live, which is the
+/// existing state of every row, so no backfill is required.
+private func registerMigration125ClockOutQuestionsSoftDelete(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("125_clock_out_questions_soft_delete") { db in
+        try addColumnIfMissing(
+            db,
+            table: "clock_out_questions",
+            column: "deleted_at",
+            type: .text
         )
     }
 }

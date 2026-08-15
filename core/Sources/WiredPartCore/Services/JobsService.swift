@@ -2033,7 +2033,7 @@ public final class JobsService: Sendable {
                     sql: """
                         SELECT id, question_text, answer_type, is_required
                         FROM clock_out_questions
-                        WHERE is_active = 1
+                        WHERE is_active = 1 AND deleted_at IS NULL
                         ORDER BY sort_order ASC
                         """
                 )
@@ -2063,7 +2063,7 @@ public final class JobsService: Sendable {
         try db.writer.write { dbConn in
             let requiredIds = try Row.fetchAll(
                 dbConn,
-                sql: "SELECT id FROM clock_out_questions WHERE is_required = 1 AND is_active = 1"
+                sql: "SELECT id FROM clock_out_questions WHERE is_required = 1 AND is_active = 1 AND deleted_at IS NULL"
             ).map { (row: Row) -> Int64 in row["id"] as Int64 }
             let answeredSet = Set(
                 responses
@@ -2094,6 +2094,13 @@ public final class JobsService: Sendable {
             return try db.writer.read { dbConn -> [QuestionnaireItem] in
                 let rows = try Row.fetchAll(
                     dbConn,
+                    // Deliberately does NOT filter `coq.deleted_at`. This is the
+                    // historical read — what this labor entry was actually asked and
+                    // what the electrician actually answered. Retiring a question must
+                    // not erase answers already given for it, so only the response's
+                    // own `deleted_at` is honoured here. The forward-creating queries
+                    // (`getActiveQuestions`, the required-question check) DO filter it,
+                    // which is what stops a retired question being asked again.
                     sql: """
                         SELECT coq.id AS question_id, coq.question_text, coq.answer_type, coq.is_required,
                                cor.answer_text

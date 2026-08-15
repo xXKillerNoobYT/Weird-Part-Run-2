@@ -403,6 +403,193 @@ struct ConflictResolverTests {
         #expect(result.applied == 1)
     }
 
+    /// The soft-delete branch used to be chosen by TRYING the UPDATE and treating
+    /// ANY thrown error as proof the table had no `deleted_at` column. SQLite reports
+    /// a missing column as the generic result code 1, indistinguishable from a locked
+    /// database or a trigger abort — so a transient failure on a table that DOES
+    /// soft-delete was answered by permanently destroying the row.
+    ///
+    /// Here the table plainly has `deleted_at` and the UPDATE fails for an unrelated
+    /// reason. The record must survive and the failure must be reported.
+    @Test("a failing soft-delete UPDATE must not fall through to a hard delete")
+    func testSoftDeleteFailureDoesNotHardDelete() throws {
+        let db = try freshDB()
+        let userId = try insertUser(db: db, displayName: "Must Survive")
+
+        // Make the soft-delete UPDATE fail for a reason that is NOT a missing column.
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                CREATE TRIGGER users_block_soft_delete
+                BEFORE UPDATE OF deleted_at ON users
+                BEGIN
+                    SELECT RAISE(ABORT, 'simulated transient failure');
+                END
+                """)
+        }
+
+        let changes = [
+            IncomingChange(
+                deviceId: "remote-device",
+                tableName: "users",
+                recordId: "\(userId)",
+                operation: "DELETE",
+                timestamp: "2026-03-14T10:00:00Z"
+            )
+        ]
+        let result = try ConflictResolver.resolveAndApplyChanges(db: db, changes: changes)
+
+        #expect(result.applied == 0, "a delete that could not be applied must not count as applied")
+        #expect(result.errors == 1, "the failure must be reported, not swallowed")
+
+        let user = try db.writer.read { dbConn in try User.fetchOne(dbConn, key: userId) }
+        #expect(user != nil, "the row must NOT have been hard-deleted by the fallback")
+        #expect(user?.deletedAt == nil, "and it must not appear soft-deleted either")
+    }
+
+    /// #1733. `clock_out_questions` had no `deleted_at`, so an inbound synced delete
+    /// hard-deleted it — orphaning the receiver's `clock_out_responses`, whose
+    /// `question_id` is NOT NULL REFERENCES with no ON DELETE clause.
+    ///
+    /// Reachable with no exotic state: the office device can only delete a question
+    /// that has no answers *locally*, which is exactly the offline case where a field
+    /// phone has answered it and the office has not received that answer yet.
+    @Test("deleting a clock-out question a peer has answered soft-deletes and keeps the answer")
+    func testClockOutQuestionDeleteDoesNotOrphanResponses() throws {
+        let db = try freshDB()
+        let userId = try insertUser(db: db, displayName: "Electrician")
+
+        let (questionId, responseId) = try db.writer.write { dbConn -> (Int64, Int64) in
+            try dbConn.execute(
+                sql: "INSERT INTO jobs (job_number, job_name) VALUES ('J-1', 'Test Job')"
+            )
+            let jobId = dbConn.lastInsertedRowID
+            try dbConn.execute(
+                sql: "INSERT INTO labor_entries (user_id, job_id, clock_in) VALUES (?, ?, '2026-08-15T08:00:00Z')",
+                arguments: [userId, jobId]
+            )
+            let entryId = dbConn.lastInsertedRowID
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO clock_out_questions (question_text, answer_type, is_required, sort_order)
+                    VALUES ('What did you finish today?', 'text', 1, 1)
+                    """
+            )
+            let qId = dbConn.lastInsertedRowID
+            // The answer this device holds and the deleting device has never seen.
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO clock_out_responses (labor_entry_id, question_id, answer_text)
+                    VALUES (?, ?, 'Pulled wire on the third floor')
+                    """,
+                arguments: [entryId, qId]
+            )
+            return (qId, dbConn.lastInsertedRowID)
+        }
+
+        // A co-travelling edit in the same batch. Before the fix the delete failed,
+        // and on the atomic snapshot path that failure takes the whole batch with it.
+        let changes = [
+            IncomingChange(
+                deviceId: "office-mac",
+                tableName: "clock_out_questions",
+                recordId: "\(questionId)",
+                operation: "DELETE",
+                timestamp: "2026-08-15T09:00:00Z"
+            ),
+            IncomingChange(
+                deviceId: "office-mac",
+                tableName: "users",
+                recordId: "\(userId)",
+                operation: "UPDATE",
+                recordData: #"{"id":"\#(userId)","display_name":"Renamed By Office"}"#,
+                timestamp: "2026-08-15T09:00:01Z"
+            )
+        ]
+
+        let result = try ConflictResolver.resolveAndApplyChanges(db: db, changes: changes)
+        #expect(result.applied == 2, "both changes must apply")
+        #expect(result.errors == 0, "the delete must no longer fail against a live child row")
+
+        try db.writer.read { dbConn in
+            let deletedAt = try String.fetchOne(
+                dbConn,
+                sql: "SELECT deleted_at FROM clock_out_questions WHERE id = ?",
+                arguments: [questionId]
+            )
+            #expect(deletedAt != nil, "the question must be soft-deleted, not destroyed")
+
+            let answer = try String.fetchOne(
+                dbConn,
+                sql: "SELECT answer_text FROM clock_out_responses WHERE id = ?",
+                arguments: [responseId]
+            )
+            #expect(answer == "Pulled wire on the third floor", "the electrician's answer must survive")
+
+            let renamed = try String.fetchOne(
+                dbConn,
+                sql: "SELECT display_name FROM users WHERE id = ?",
+                arguments: [userId]
+            )
+            #expect(renamed == "Renamed By Office", "the co-travelling change must not be lost")
+        }
+    }
+
+    /// A retired question stops being asked, but the answers already given for it
+    /// remain readable against the labor entries that carry them.
+    @Test("a soft-deleted clock-out question is hidden from new clock-outs but kept in history")
+    func testSoftDeletedQuestionHiddenGoingForwardOnly() throws {
+        let db = try freshDB()
+        let jobs = JobsService(db: db)
+        let settings = SettingsService(db: db)
+        let userId = try insertUser(db: db, displayName: "Electrician")
+
+        let (questionId, entryId) = try db.writer.write { dbConn -> (Int64, Int64) in
+            try dbConn.execute(
+                sql: "INSERT INTO jobs (job_number, job_name) VALUES ('J-2', 'Test Job')"
+            )
+            let jobId = dbConn.lastInsertedRowID
+            try dbConn.execute(
+                sql: "INSERT INTO labor_entries (user_id, job_id, clock_in) VALUES (?, ?, '2026-08-15T08:00:00Z')",
+                arguments: [userId, jobId]
+            )
+            let eId = dbConn.lastInsertedRowID
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO clock_out_questions (question_text, answer_type, is_required, sort_order)
+                    VALUES ('Retired question', 'text', 1, 99)
+                    """
+            )
+            let qId = dbConn.lastInsertedRowID
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO clock_out_responses (labor_entry_id, question_id, answer_text)
+                    VALUES (?, ?, 'Answered before it was retired')
+                    """,
+                arguments: [eId, qId]
+            )
+            return (qId, eId)
+        }
+
+        #expect(try jobs.getActiveQuestions().contains { $0.questionId == questionId })
+
+        try settings.deleteClockOutQuestion(id: "\(questionId)")
+
+        #expect(
+            try jobs.getActiveQuestions().allSatisfy { $0.questionId != questionId },
+            "a retired question must not be asked again"
+        )
+        #expect(
+            try settings.listClockOutQuestions().allSatisfy { $0.id != "\(questionId)" },
+            "and must not appear in the admin list"
+        )
+        #expect(
+            try jobs.getResponsesForEntry(laborEntryId: entryId).contains {
+                $0.questionId == questionId
+            },
+            "but the answer already given for it must remain in history"
+        )
+    }
+
     // MARK: - Conflict Logging
 
     @Test("Conflict log entries have correct fields")

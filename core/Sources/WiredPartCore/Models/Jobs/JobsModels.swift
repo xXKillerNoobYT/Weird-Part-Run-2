@@ -247,6 +247,7 @@ public struct ClockOutQuestion: Codable, FetchableRecord, MutablePersistableReco
     public var sortOrder: Int
     public var isActive: Int
     public var createdBy: Int64?
+    public var deletedAt: String?
     public var createdAt: String?
     public var updatedAt: String?
 
@@ -258,6 +259,7 @@ public struct ClockOutQuestion: Codable, FetchableRecord, MutablePersistableReco
         case sortOrder = "sort_order"
         case isActive = "is_active"
         case createdBy = "created_by"
+        case deletedAt = "deleted_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
