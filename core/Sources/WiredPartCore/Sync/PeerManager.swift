@@ -141,12 +141,39 @@ struct MPEnvelope: Codable {
     /// verify a frame BEFORE staging it (LocalSend adoption §1b). nil from
     /// pre-integrity hosts: verification is skipped, exactly the old behaviour.
     let sha256: String?
+    /// True when this `changes` frame is the automatic reply to a peer's push
+    /// (#1684), rather than a push of our own.
+    ///
+    /// Bluetooth sync used to be one-directional per tap: the multipeer branch
+    /// sent our pending changes and never asked for the peer's, so `pulled`
+    /// was structurally always 0 and each side needed its own Sync tap. The
+    /// owner's directive is that ANY device syncs with ANY device, so a push
+    /// now provokes a reply.
+    ///
+    /// This flag bounds the exchange to exactly one round trip. The send
+    /// watermark alone would terminate it — the second reply finds nothing new
+    /// — but relying on that would make an unbounded ping-pong one watermark
+    /// bug away.
+    ///
+    /// OPTIONAL for the same reason as `transferId` above: an old build
+    /// ignores the unknown key and simply does not reply (today's behaviour),
+    /// and a new build reads nil from an old peer's frame and treats it as a
+    /// normal push. A mixed fleet degrades to one-way sync rather than
+    /// breaking — never gate the protocol on it.
+    let reciprocal: Bool?
 
-    init(type: String, payload: Data, transferId: String? = nil, sha256: String? = nil) {
+    init(
+        type: String,
+        payload: Data,
+        transferId: String? = nil,
+        sha256: String? = nil,
+        reciprocal: Bool? = nil
+    ) {
         self.type = type
         self.payload = payload
         self.transferId = transferId
         self.sha256 = sha256
+        self.reciprocal = reciprocal
     }
 }
 
@@ -1327,6 +1354,53 @@ public actor PeerManager {
         snapshotStagedBytes[peerDeviceId] = 0
     }
 
+    /// Send this device's pending changes back to a peer that just pushed to us
+    /// (#1684).
+    ///
+    /// Deliberately best-effort and non-throwing: this runs inside the receive
+    /// path, and a failure to reply must never fail the peer's push, which has
+    /// already been applied and acknowledged. The peer's own next sync retries.
+    ///
+    /// Nothing is sent when there is nothing pending, so a fleet at rest stays
+    /// silent rather than trading empty frames.
+    private func reciprocatePendingChanges(to peerDeviceId: String) {
+        #if canImport(MultipeerConnectivity)
+        guard let mpManager = multipeerManager,
+              mpManager.isConnected(toPeer: peerDeviceId) else { return }
+        // Same trust gate as the inbound `changes` branch: replying ships
+        // company data, so it may only go to a paired, still-trusted peer.
+        guard isTrustedWritePeer(peerDeviceId) else { return }
+
+        do {
+            let pending = try ChangeTracker.getChangesForPeer(db: db, peerId: peerDeviceId)
+            guard !pending.isEmpty else { return }
+            let enriched = try enrichChangesWithData(pending)
+            guard !enriched.isEmpty else { return }
+
+            let encoder = JSONEncoder()
+            let changesData = try encoder.encode(enriched)
+            let payload = try encoder.encode(
+                MPEnvelope(type: "changes", payload: changesData, reciprocal: true)
+            )
+            guard mpManager.send(data: payload, toPeer: peerDeviceId) else {
+                logger.error("[PeerManager] Reciprocal send failed to \(String(peerDeviceId.prefix(8)), privacy: .public)")
+                return
+            }
+            // Only after the transport accepts. This shares the known
+            // transport-accept-is-not-applied-ack limitation of the push path
+            // (#1733 fix direction 4) — it does not add a new one.
+            try recordDelivery(
+                of: pending,
+                toPeer: peerDeviceId,
+                batchId: "mp-recip-\(Int(Date().timeIntervalSince1970))"
+            )
+            logger.info("[PeerManager] Reciprocated \(enriched.count, privacy: .public) changes to \(String(peerDeviceId.prefix(8)), privacy: .public)")
+        } catch {
+            logger.error("[PeerManager] Reciprocal sync failed: \(error.localizedDescription, privacy: .public)")
+        }
+        #endif
+    }
+
     /// Write one received batch to disk. Returns the number of records staged.
     ///
     /// One row per change, committed as a single transaction per batch: the
@@ -1751,6 +1825,20 @@ public actor PeerManager {
                         notifyStateChanged()
                     } else {
                         count = try applyIncomingChanges(changes)
+                        // #1684: reply with OUR pending changes for this peer.
+                        //
+                        // The multipeer branch of `syncWithPeer` only ever
+                        // pushed, so `pulled` was structurally 0 and a two-way
+                        // exchange needed a Sync tap on BOTH devices — which is
+                        // why the owner saw a user created on the phone never
+                        // reach the Mac. Owner directive: any device syncs with
+                        // any device.
+                        //
+                        // Skipped when this frame is itself a reply, which
+                        // bounds the exchange to one round trip.
+                        if env.reciprocal != true {
+                            reciprocatePendingChanges(to: message.fromDeviceId)
+                        }
                     }
                     return .changesApplied(count)
                 } catch {
