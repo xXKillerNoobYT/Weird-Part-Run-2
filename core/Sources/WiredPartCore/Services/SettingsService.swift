@@ -1061,6 +1061,7 @@ public final class SettingsService: Sendable {
                 let rows = try Row.fetchAll(dbConnection, sql: """
                     SELECT id, question_text, answer_type, is_required, sort_order
                     FROM clock_out_questions
+                    WHERE deleted_at IS NULL
                     ORDER BY sort_order ASC, id ASC
                 """)
                 return rows.map { row in
@@ -1114,10 +1115,23 @@ public final class SettingsService: Sendable {
         }
     }
 
-    /// Delete a clock-out question by ID.
+    /// Soft-delete a clock-out question by ID.
+    ///
+    /// This is deliberately NOT a hard `DELETE`. `clock_out_responses.question_id`
+    /// is `NOT NULL REFERENCES clock_out_questions` with no ON DELETE clause, so a
+    /// hard delete succeeds only on a device that holds none of that question's
+    /// answers — and then ships a DELETE change to peers that DO hold them, where it
+    /// orphans their rows and aborts the entire atomic sync apply at COMMIT.
+    ///
+    /// Soft-deleting also preserves the answers electricians already gave: a retired
+    /// question stops being asked (`getActiveQuestions` filters `deleted_at`) without
+    /// destroying the historical record attached to past labor entries.
     public func deleteClockOutQuestion(id: String) throws {
         try db.writer.write { dbConnection in
-            try dbConnection.execute(sql: "DELETE FROM clock_out_questions WHERE id = ?", arguments: [id])
+            try dbConnection.execute(
+                sql: "UPDATE clock_out_questions SET deleted_at = datetime('now') WHERE id = ? AND deleted_at IS NULL",
+                arguments: [id]
+            )
         }
     }
 

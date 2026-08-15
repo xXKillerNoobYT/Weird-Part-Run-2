@@ -1063,7 +1063,9 @@ public enum ConflictResolver {
 
     // MARK: - Private: Apply Operations
 
-    /// Apply a DELETE change — soft delete (set deleted_at), fallback to hard delete.
+    /// Apply a DELETE change — soft delete when the table has `deleted_at`, hard
+    /// delete when it does not. The branch is decided by reading the schema, never
+    /// by catching an error (see the comment at the statement itself for why).
     /// Fix #174: if the record has unsynced local UPDATEs, log an entry to `_conflict_log`
     /// so admins can see that local edits were trumped by a remote delete (delete-always-wins
     /// policy preserved for safety, but no longer silent).
@@ -1108,22 +1110,42 @@ public enum ConflictResolver {
             }
         }
 
-        // Try soft delete first
-        do {
+        // Soft delete when the table has a `deleted_at`, hard delete when it does not.
+        //
+        // Asking the schema is the only honest form of this question. This used to
+        // be a soft-delete UPDATE wrapped in an UNTYPED catch whose comment asserted
+        // the only possible cause was a missing `deleted_at` column. SQLite reports a
+        // missing column as the GENERIC result code 1 (SQLITE_ERROR), indistinguishable
+        // from a locked database, a trigger abort, a constraint failure or a disk I/O
+        // error — so no catch here can tell "this table has no deleted_at" from "this
+        // write genuinely failed", and the old one answered BOTH by hard-deleting the
+        // row. On a table that DOES soft-delete, a transient SQLITE_BUSY was therefore
+        // silently converted into permanent destruction of a record, inside a
+        // transaction the rest of the sync layer treats as all-or-nothing.
+        //
+        // `pragma_table_info` is deliberately preferred over GRDB's `db.columns(in:)`:
+        // the latter THROWS `noSuchTable` for a table this device does not have, while
+        // the pragma returns zero rows and so preserves the previous behaviour for that
+        // case (falls through to the DELETE, which raises "no such table" as before).
+        let columns = try String.fetchAll(
+            db,
+            sql: "SELECT name FROM pragma_table_info(?)",
+            arguments: [table]
+        )
+
+        if columns.contains("deleted_at") {
             try db.execute(
                 sql: "UPDATE \(quotedTable(table)) SET deleted_at = ? WHERE id = ?",
                 arguments: [change.timestamp, recordId]
             )
-            if db.changesCount == 0 {
-                // Record doesn't exist — nothing to delete, which is fine
-            }
-        } catch {
-            // No deleted_at column — fall back to hard delete
+        } else {
             try db.execute(
                 sql: "DELETE FROM \(quotedTable(table)) WHERE id = ?",
                 arguments: [recordId]
             )
         }
+        // `db.changesCount == 0` means the record was already gone locally, which is
+        // fine — a delete we cannot apply because there is nothing to apply succeeded.
     }
 
     /// Apply an INSERT change — if record exists, field-level LWW merge.
