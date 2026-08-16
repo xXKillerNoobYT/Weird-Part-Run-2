@@ -60,19 +60,91 @@ public struct MergeResult: Sendable {
     public var skipped: Int = 0
     public var errors: Int = 0
 
-    public init(applied: Int = 0, conflicts: Int = 0, skipped: Int = 0, errors: Int = 0) {
+    /// A UNIQUE / PRIMARY KEY / rowid index refused this row's key columns
+    /// because a DIFFERENT local row already owns that key (#1737).
+    ///
+    /// This is its OWN counter, not a reuse of `skipped`, and that is the
+    /// structural point rather than a naming preference. `skipped` and `errors`
+    /// are the two inputs the snapshot completeness gate THROWS on
+    /// (`PeerManager.applyStagedSnapshot`'s `validate:` closure), and it runs
+    /// INSIDE the write transaction — so routing a constraint outcome into
+    /// either of them rolls the entire company snapshot back. #1749 did exactly
+    /// that and had to be reverted: the residue is a deterministic function of
+    /// (payload, local schema, local rows), so every retry re-derives it and the
+    /// joiner never onboards. Counters here are named by CAUSE, never by policy,
+    /// so the disposition can change later without a rename.
+    public var keyCollisions: Int = 0
+
+    /// A NOT NULL / CHECK constraint refused the row: this device's schema
+    /// cannot represent what the sender sent. Distinct from `keyCollisions`
+    /// because a retry can never fix it — only a schema migration can.
+    public var schemaDrops: Int = 0
+
+    public init(
+        applied: Int = 0,
+        conflicts: Int = 0,
+        skipped: Int = 0,
+        errors: Int = 0,
+        keyCollisions: Int = 0,
+        schemaDrops: Int = 0
+    ) {
         self.applied = applied
         self.conflicts = conflicts
         self.skipped = skipped
         self.errors = errors
+        self.keyCollisions = keyCollisions
+        self.schemaDrops = schemaDrops
     }
 
     /// Accumulate one change's outcome. Keeps the batched and streamed atomic
     /// apply paths tallying identically instead of by copy-paste.
-    mutating func add(_ outcome: (applied: Int, conflicts: Int, skipped: Int)) {
+    ///
+    /// `errors` is deliberately absent: on the atomic paths nothing may set it,
+    /// because it is a gate input that throws inside the write transaction.
+    mutating func add(_ outcome: ApplyOutcome) {
         applied += outcome.applied
         conflicts += outcome.conflicts
         skipped += outcome.skipped
+        keyCollisions += outcome.keyCollisions
+        schemaDrops += outcome.schemaDrops
+    }
+}
+
+/// One change's outcome, as a struct rather than a tuple.
+///
+/// The type is the guard rail: a NEW outcome cannot be smuggled into an
+/// EXISTING slot the way #1749 smuggled a constraint refusal into `skipped`.
+/// Adding a cause means adding a field, which is visible in review.
+struct ApplyOutcome: Sendable {
+    var applied = 0
+    var conflicts = 0
+    var skipped = 0
+    var keyCollisions = 0
+    var schemaDrops = 0
+
+    init(
+        applied: Int = 0,
+        conflicts: Int = 0,
+        skipped: Int = 0,
+        keyCollisions: Int = 0,
+        schemaDrops: Int = 0
+    ) {
+        self.applied = applied
+        self.conflicts = conflicts
+        self.skipped = skipped
+        self.keyCollisions = keyCollisions
+        self.schemaDrops = schemaDrops
+    }
+
+    /// Bridge from the legacy dispatch tuple.
+    ///
+    /// `applyOneAtomically` still returns `(applied:conflicts:skipped:)` with
+    /// its three literal `applied: 1` sites intact — making `applied` honest is
+    /// a separate, gate-visible change and is deliberately NOT in this commit.
+    /// This initializer is the seam where the two representations meet, and it
+    /// disappears when that change lands.
+    init(_ legacy: (applied: Int, conflicts: Int, skipped: Int)) {
+        self.init(applied: legacy.applied, conflicts: legacy.conflicts, skipped: legacy.skipped)
     }
 }
 
@@ -291,7 +363,14 @@ public enum ConflictResolver {
             }
 
             do {
-                let outcome = try db.writer.write { dbConn -> (applied: Int, conflicts: Int, skipped: Int) in
+                let outcome = try db.writer.write { dbConn -> ApplyOutcome in
+                    // One context per row, because one TRANSACTION per row: this
+                    // path has no batch to replay a collision against, so a
+                    // collision is resolved (or given up on) immediately. See
+                    // `ApplyContext.Disposition.perRow` — the asymmetry with the
+                    // batched paths is deliberate.
+                    let context = ApplyContext(disposition: .perRow)
+
                     // Echo guard: while this transaction applies a PEER's change,
                     // the change-tracking triggers (migration 112) must not log
                     // the write — otherwise every applied change would be re-
@@ -299,7 +378,7 @@ public enum ConflictResolver {
                     // inside this transaction (rolled back with it on failure).
                     try dbConn.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
 
-                    let outcome: (applied: Int, conflicts: Int, skipped: Int)
+                    let outcome: ApplyOutcome
 
                     // `_device_registry` is keyed by device_id (TEXT), not `id`,
                     // so the generic id-keyed apply below could NEVER apply it —
@@ -311,34 +390,46 @@ public enum ConflictResolver {
                     if change.tableName == "_device_registry" {
                         let applied = try applyDeviceRegistryChange(db: dbConn, change: change)
                         try dbConn.execute(sql: "DELETE FROM _sync_apply_guard")
-                        return (applied, 0, applied == 1 ? 0 : 1)
+                        return ApplyOutcome(applied: applied, skipped: applied == 1 ? 0 : 1)
                     }
 
                     switch change.operation.uppercased() {
                     case "DELETE":
                         try applyDelete(db: dbConn, change: change, localDeviceId: localDevice)
-                        outcome = (1, 0, 0)
+                        outcome = ApplyOutcome(applied: 1)
 
                     case "INSERT":
-                        let conflictCount = try applyInsert(db: dbConn, change: change, localDeviceId: localDevice)
-                        outcome = (1, conflictCount, 0)
+                        let conflictCount = try applyInsert(
+                            db: dbConn, change: change, localDeviceId: localDevice, context: context
+                        )
+                        outcome = ApplyOutcome(applied: 1, conflicts: conflictCount)
 
                     case "UPDATE":
-                        let conflictCount = try applyUpdate(db: dbConn, change: change, localDeviceId: localDevice)
-                        outcome = (1, conflictCount, 0)
+                        let conflictCount = try applyUpdate(
+                            db: dbConn, change: change, localDeviceId: localDevice, context: context
+                        )
+                        outcome = ApplyOutcome(applied: 1, conflicts: conflictCount)
 
                     default:
-                        outcome = (0, 0, 1)
+                        outcome = ApplyOutcome(skipped: 1)
                     }
 
                     // Cleanup participates in the transaction: failure rolls back
                     // the peer write instead of silently disabling local tracking.
                     try dbConn.execute(sql: "DELETE FROM _sync_apply_guard")
-                    return outcome
+
+                    // Residue rides back inside the transaction's own return
+                    // value: if this row's write rolls back, its residue is
+                    // discarded with it rather than being counted for a change
+                    // that left no trace.
+                    var combined = outcome
+                    let residue = context.residue()
+                    combined.conflicts += residue.conflicts
+                    combined.keyCollisions += residue.keyCollisions
+                    combined.schemaDrops += residue.schemaDrops
+                    return combined
                 }
-                result.applied += outcome.applied
-                result.conflicts += outcome.conflicts
-                result.skipped += outcome.skipped
+                result.add(outcome)
             } catch ApplyError.missingLocalRecord {
                 // Fix #220: UPDATE for a record we don't have yet — count as skipped,
                 // not errored. A follow-up full-record resync should re-deliver it.
@@ -373,11 +464,24 @@ public enum ConflictResolver {
             // Lift BEFORE any row is applied: a reordered stage list is a
             // permutation of a unique key and has no valid row-at-a-time
             // ordering. See `suspendJobStageSortIndex`.
+            //
+            // This also fixes the moment at which `ApplyContext`'s unique-column
+            // cache may first be read: it is populated LAZILY, from the live
+            // database, so every answer it gives is taken with this index
+            // genuinely absent. Reading it before the drop would make the ladder
+            // withhold `job_stages.sort_order` and silently break the #1729
+            // permutation path.
             let sortIndexDDL = try suspendJobStageSortIndex(dbConn)
+            let context = ApplyContext(disposition: .batched)
 
             for change in changes {
-                result.add(try applyOneAtomically(dbConn, change, localDevice))
+                result.add(ApplyOutcome(try applyOneAtomically(dbConn, change, localDevice, context)))
             }
+
+            // Between the last row and the restore: the replay needs the same
+            // suspended-index conditions the first pass had.
+            try drainDeferredMerges(dbConn, context)
+            result.add(context.residue())
 
             try restoreJobStageSortIndex(dbConn, capturedDDL: sortIndexDDL)
 
@@ -621,11 +725,24 @@ public enum ConflictResolver {
             // Must precede `produceChanges`: that closure holds a cursor open on
             // THIS connection for the whole apply, and `DROP INDEX` fails while
             // any statement is in flight. See `suspendJobStageSortIndex`.
+            //
+            // It also fixes the earliest moment `ApplyContext`'s unique-column
+            // cache can be populated. That cache is LAZY precisely so every
+            // answer is read with this index already dropped; building it any
+            // earlier would let the ladder withhold `job_stages.sort_order` and
+            // silently break the #1729 permutation path.
             let sortIndexDDL = try suspendJobStageSortIndex(dbConn)
+            let context = ApplyContext(disposition: .batched)
 
             try produceChanges(dbConn) { change in
-                result.add(try applyOneAtomically(dbConn, change, localDevice))
+                result.add(ApplyOutcome(try applyOneAtomically(dbConn, change, localDevice, context)))
             }
+
+            // Between the producer finishing and the restore. The replay must
+            // see the index still suspended, and it runs no DDL of its own —
+            // the producer's cursor may still be open on this connection.
+            try drainDeferredMerges(dbConn, context)
+            result.add(context.residue())
 
             // Safe here even though the producer's cursor may still be open:
             // `CREATE INDEX` is not subject to the in-flight-statement rule that
@@ -645,7 +762,8 @@ public enum ConflictResolver {
     private static func applyOneAtomically(
         _ dbConn: Database,
         _ change: IncomingChange,
-        _ localDeviceId: String
+        _ localDeviceId: String,
+        _ context: ApplyContext
     ) throws -> (applied: Int, conflicts: Int, skipped: Int) {
         guard isAllowedTable(change.tableName) else { return (0, 0, 1) }
 
@@ -658,14 +776,16 @@ public enum ConflictResolver {
                 let conflictCount = try applyInsert(
                     db: dbConn,
                     change: change,
-                    localDeviceId: localDeviceId
+                    localDeviceId: localDeviceId,
+                    context: context
                 )
                 return (1, conflictCount, 0)
             case "UPDATE":
                 let conflictCount = try applyUpdate(
                     db: dbConn,
                     change: change,
-                    localDeviceId: localDeviceId
+                    localDeviceId: localDeviceId,
+                    context: context
                 )
                 return (1, conflictCount, 0)
             default:
@@ -675,6 +795,304 @@ public enum ConflictResolver {
             // Fix #220: an UPDATE for a record we do not have yet is a skip,
             // not an error — a later full-record resync re-delivers it.
             return (0, 0, 1)
+        }
+    }
+
+    // MARK: - Private: Row-Level Constraint Refusals (#1737)
+
+    /// How SQLite refused ONE row's write. Classified from the extended result
+    /// code, never guessed from `changesCount` — both classes report zero rows
+    /// changed, so a count cannot separate them.
+    enum WriteRefusal: Sendable {
+        /// UNIQUE / PRIMARY KEY / rowid: a DIFFERENT local row already owns this
+        /// key. Possibly recoverable — the row holding the slot may itself move
+        /// later in the same batch (see the fixed-point replay).
+        case keyCollision
+        /// NOT NULL / CHECK: this device's schema cannot represent the row.
+        /// Never recoverable by retrying — only a migration changes the answer.
+        case schemaDrop
+    }
+
+    /// Execute `body`; CLASSIFY a row-level constraint refusal and return it
+    /// instead of throwing. Everything else propagates completely unchanged.
+    ///
+    /// The `default: throw` arm is the load-bearing half. Foreign-key ordering,
+    /// `noSuchTable`, SQLITE_MISUSE, I/O errors and trigger aborts must still
+    /// roll the caller's transaction back exactly as they do at HEAD — this
+    /// helper narrows the blast radius of two specific classes, it does not turn
+    /// the apply into a swallow-everything loop.
+    ///
+    /// The five codes are listed individually and the PRIMARY code
+    /// `.SQLITE_CONSTRAINT` is deliberately NOT matched: GRDB gives `ResultCode`
+    /// a custom `~=` under which a primary pattern matches every one of its
+    /// extended codes, so `case .SQLITE_CONSTRAINT` would silently absorb
+    /// FOREIGNKEY and TRIGGER too.
+    ///
+    /// **No savepoint.** A statement-level constraint ABORT undoes only that
+    /// statement; it does not set `sqlite3_get_autocommit`, which is the only
+    /// condition under which GRDB declares a transaction dead
+    /// (`Database.checkForAbortedTransaction`). The transaction stays usable,
+    /// an open cursor on the same connection keeps delivering rows, and later
+    /// writes still commit. `ConflictResolverNaturalKeyTests`' T-12 proves that
+    /// through GRDB on the real streamed path rather than by assertion.
+    ///
+    /// One caveat worth recording: GRDB's failure path calls
+    /// `observationBroker?.statementDidFail` before throwing, which would tell a
+    /// registered `TransactionObserver` the transaction rolled back. This module
+    /// registers none today; if one is ever added, revisit this.
+    private static func classifyingRowRefusal(_ body: () throws -> Void) rethrows -> WriteRefusal? {
+        do {
+            try body()
+            return nil
+        } catch let error as DatabaseError {
+            switch error.extendedResultCode {
+            case .SQLITE_CONSTRAINT_UNIQUE,
+                 .SQLITE_CONSTRAINT_PRIMARYKEY,
+                 .SQLITE_CONSTRAINT_ROWID:
+                return .keyCollision
+            case .SQLITE_CONSTRAINT_NOTNULL,
+                 .SQLITE_CONSTRAINT_CHECK:
+                return .schemaDrop
+            default:
+                throw error
+            }
+        }
+    }
+
+    /// Columns of `table` that participate in ANY unique index, read from the
+    /// LIVE database rather than from migration source.
+    ///
+    /// Source is not an option: the migrated schema holds 82 non-PK unique
+    /// indexes, 67 of which are inline-DSL column/table constraints that
+    /// materialise as `sqlite_autoindex_*` and are invisible to a
+    /// `CREATE UNIQUE INDEX` grep.
+    ///
+    /// Two deliberate limits, both of which the give-up rung of the merge ladder
+    /// exists to cover:
+    ///
+    /// 1. **A partial index's PREDICATE columns are invisible here.**
+    ///    `pragma_index_info` reports only the KEY columns, so for
+    ///    `ON job_stage_templates(is_default) WHERE is_default = 1 AND
+    ///    archived_at IS NULL` it returns `is_default` alone. Writing
+    ///    `archived_at = NULL` moves a row INTO that index, and nothing in this
+    ///    enumeration can see it. No predicate is parsed — a parser would be
+    ///    false comfort, since it would still have to reimplement SQLite's index
+    ///    semantics to be trusted.
+    /// 2. **Expression indexes report a NULL column name** (`cid = -2`). Those
+    ///    rows are skipped; coercing a NULL into a column name would crash on
+    ///    the next `localRow[field]` subscript.
+    ///
+    /// A `TEXT PRIMARY KEY` table's `sqlite_autoindex_*` (origin `pk`) is
+    /// included, on purpose: it is a real unique key. It is harmless on the
+    /// merge path, which never merges `id` at all.
+    ///
+    /// `pragma_index_list` is used rather than GRDB's `db.indexes(in:)` for the
+    /// same reason `applyDelete` prefers `pragma_table_info`: the pragma returns
+    /// zero rows for a table this device does not have, while the GRDB API
+    /// THROWS `noSuchTable` — and a throw here would roll back the whole company
+    /// snapshot, which is the exact failure class this change removes.
+    static func uniqueParticipatingColumns(_ db: Database, _ table: String) throws -> Set<String> {
+        // `unique` is a reserved word and MUST stay double-quoted.
+        let uniqueIndexNames = try String.fetchAll(
+            db,
+            sql: """
+                SELECT name FROM pragma_index_list(?) WHERE "unique" = 1
+                """,
+            arguments: [table]
+        )
+
+        var columns = Set<String>()
+        for indexName in uniqueIndexNames {
+            let rows = try Row.fetchAll(
+                db,
+                sql: "SELECT name FROM pragma_index_info(?)",
+                arguments: [indexName]
+            )
+            // `compactMap`, never a forced `as String`: an expression index's
+            // column name comes back NULL.
+            columns.formUnion(rows.compactMap { $0["name"] as String? })
+        }
+        return columns
+    }
+
+    /// A merge UPDATE that a unique index refused and that may be worth retrying
+    /// once the rest of the batch has landed.
+    struct DeferredMerge {
+        let table: String
+        let recordId: String
+        let incomingFields: [String: String?]
+        let change: IncomingChange
+        let localDeviceId: String
+        /// Rough retained size, used only to bound the buffer.
+        let approximateBytes: Int
+    }
+
+    /// State that lives exactly as long as ONE apply, and no longer.
+    ///
+    /// Deliberately an instance threaded through the call chain rather than a
+    /// `static var`. `suspendJobStageSortIndex` DROPS a unique index for the
+    /// duration of an apply, so the answer to "which columns are unique here"
+    /// is only valid inside that window; a process-global cache would serve a
+    /// later apply a schema snapshot taken while an index was missing (or be
+    /// poisoned by one taken while it was present). It would also be shared
+    /// mutable state under Swift 6 concurrency checking.
+    final class ApplyContext {
+        /// Whether a key collision may be parked and retried later.
+        enum Disposition {
+            /// One transaction for the whole batch: a row that collides now may
+            /// stop colliding once a later row vacates the slot, so park it and
+            /// replay after the batch (§6 fixed point).
+            case batched
+            /// One transaction PER ROW (`resolveAndApplyChanges`): there is no
+            /// later row inside this transaction and no batch to replay, so a
+            /// collision is resolved or recorded immediately. This asymmetry is
+            /// deliberate, not an oversight.
+            case perRow
+        }
+
+        let disposition: Disposition
+
+        /// Set while the deferral buffer is being drained: collisions must then
+        /// resolve in place instead of re-parking forever.
+        var isDraining = false
+
+        private var uniqueColumnCache: [String: Set<String>] = [:]
+        private var deferred: [DeferredMerge] = []
+        private var deferredBytes = 0
+
+        /// Residue that never reaches `skipped` or `errors`.
+        var keyCollisions = 0
+        var schemaDrops = 0
+        /// Conflict-log entries written during the drain, which happens after
+        /// the per-change outcome has already been tallied.
+        var replayConflicts = 0
+
+        /// Hard caps. This is the only component that holds decoded rows in
+        /// memory during a whole-company snapshot on a phone, and an iOS jetsam
+        /// kill looks exactly like the failure this change exists to fix.
+        static let maxDeferredEntries = 5_000
+        static let maxDeferredBytes = 8 * 1024 * 1024
+        static let maxReplayPasses = 4
+
+        init(disposition: Disposition) {
+            self.disposition = disposition
+        }
+
+        var canDefer: Bool { disposition == .batched && !isDraining }
+        var hasDeferredWork: Bool { !deferred.isEmpty }
+        var deferredCount: Int { deferred.count }
+
+        /// Park a collided merge. Returns `false` when a cap is hit — the caller
+        /// then resolves it in place. Overflow NEVER throws.
+        func enqueueDeferredMerge(_ entry: DeferredMerge) -> Bool {
+            guard deferred.count < Self.maxDeferredEntries,
+                  deferredBytes + entry.approximateBytes <= Self.maxDeferredBytes else {
+                return false
+            }
+            deferred.append(entry)
+            deferredBytes += entry.approximateBytes
+            return true
+        }
+
+        /// Remove and return the whole buffer for one replay pass.
+        func takeDeferred() -> [DeferredMerge] {
+            let entries = deferred
+            deferred.removeAll(keepingCapacity: true)
+            deferredBytes = 0
+            return entries
+        }
+
+        func uniqueParticipatingColumns(_ db: Database, _ table: String) throws -> Set<String> {
+            if let cached = uniqueColumnCache[table] { return cached }
+            let columns = try ConflictResolver.uniqueParticipatingColumns(db, table)
+            uniqueColumnCache[table] = columns
+            return columns
+        }
+
+        /// The residue, shaped so it goes through `MergeResult.add` like any
+        /// other outcome — and so it can only ever land in its own counters.
+        func residue() -> ApplyOutcome {
+            ApplyOutcome(
+                conflicts: replayConflicts,
+                keyCollisions: keyCollisions,
+                schemaDrops: schemaDrops
+            )
+        }
+    }
+
+    /// Replay every merge a unique index refused, until it stops helping (#1737).
+    ///
+    /// Ordering-induced collisions are the dominant RECOVERABLE class: the row
+    /// that vacates a slot routinely arrives after the row that wants it, because
+    /// the host streams tables in creation order and rows in rowid order. Each
+    /// pass re-applies the whole buffer; a row whose slot has since been vacated
+    /// lands, which may in turn vacate a slot for another. When a pass frees
+    /// nothing, no later pass can either, so it stops — and a hard pass cap
+    /// bounds it regardless.
+    ///
+    /// MUST run before `restoreJobStageSortIndex`: the replay needs the same
+    /// suspended-index conditions the first pass had. MUST NOT run any DDL —
+    /// the streamed producer's cursor may still be open on this connection, and
+    /// `DROP INDEX`'s `OP_Destroy` guard is connection-wide.
+    ///
+    /// Never throws for a constraint outcome. Anything it does throw is the same
+    /// class that already rolls the transaction back at HEAD.
+    private static func drainDeferredMerges(_ db: Database, _ context: ApplyContext) throws {
+        var passes = 0
+        while context.hasDeferredWork, passes < ApplyContext.maxReplayPasses {
+            passes += 1
+            let before = context.deferredCount
+            try replayDeferredMerges(db, context)
+            if context.deferredCount >= before { break }
+        }
+
+        // Whatever survived the fixed point gets the full ladder: the reduced
+        // SET clause, then the give-up rung. Nothing is left parked.
+        context.isDraining = true
+        try replayDeferredMerges(db, context)
+        context.isDraining = false
+    }
+
+    /// One replay pass over the deferral buffer.
+    private static func replayDeferredMerges(_ db: Database, _ context: ApplyContext) throws {
+        for entry in context.takeDeferred() {
+            guard let localRow = try getLocalRecord(
+                db: db,
+                tableName: entry.table,
+                recordId: entry.recordId
+            ) else {
+                // The row we meant to merge into is gone — a DELETE later in the
+                // batch removed it. Re-inserting it belongs to the insert
+                // builders, not here, so record the cause and move on.
+                //
+                // This is caught DELIBERATELY rather than allowed to reach
+                // `applyUpdate`'s `missingLocalRecord` throw: that would land in
+                // `skipped`, which the snapshot gate throws on inside the write
+                // transaction. A replayed row must never be able to create a new
+                // producer of a gate input.
+                context.keyCollisions += 1
+                logger.warning(
+                    """
+                    Deferred merge dropped: local record vanished during the batch — \
+                    table=\(entry.table, privacy: .public) id=\(entry.recordId, privacy: .public)
+                    """
+                )
+                continue
+            }
+
+            let conflicts = try fieldLevelMerge(
+                db: db,
+                table: entry.table,
+                recordId: entry.recordId,
+                localRow: localRow,
+                incomingFields: entry.incomingFields,
+                change: entry.change,
+                localDeviceId: entry.localDeviceId,
+                context: context
+            )
+            // The change was already tallied when it first arrived, so only the
+            // conflict rows written by THIS pass are new.
+            context.replayConflicts += conflicts
         }
     }
 
@@ -1154,7 +1572,8 @@ public enum ConflictResolver {
     private static func applyInsert(
         db: Database,
         change: IncomingChange,
-        localDeviceId: String
+        localDeviceId: String,
+        context: ApplyContext
     ) throws -> Int {
         let table = change.tableName
         let recordId = change.recordId
@@ -1215,7 +1634,8 @@ public enum ConflictResolver {
             localRow: existingRow,
             incomingFields: recordDataFields,
             change: change,
-            localDeviceId: localDeviceId
+            localDeviceId: localDeviceId,
+            context: context
         )
     }
 
@@ -1225,7 +1645,8 @@ public enum ConflictResolver {
     private static func applyUpdate(
         db: Database,
         change: IncomingChange,
-        localDeviceId: String
+        localDeviceId: String,
+        context: ApplyContext
     ) throws -> Int {
         let table = change.tableName
         let recordId = change.recordId
@@ -1235,7 +1656,9 @@ public enum ConflictResolver {
 
         if changedFields == nil && change.recordData != nil {
             // No changed_fields but has record_data — delegate to INSERT logic (full-record merge)
-            return try applyInsert(db: db, change: change, localDeviceId: localDeviceId)
+            return try applyInsert(
+                db: db, change: change, localDeviceId: localDeviceId, context: context
+            )
         }
 
         guard let incomingFields = changedFields else {
@@ -1296,7 +1719,8 @@ public enum ConflictResolver {
             localRow: existingRow,
             incomingFields: incomingFields,
             change: change,
-            localDeviceId: localDeviceId
+            localDeviceId: localDeviceId,
+            context: context
         )
     }
 
@@ -1321,7 +1745,8 @@ public enum ConflictResolver {
         localRow: Row,
         incomingFields: [String: String?],
         change: IncomingChange,
-        localDeviceId: String
+        localDeviceId: String,
+        context: ApplyContext
     ) throws -> Int {
         // Filter BEFORE anything reads these keys. The merge `UPDATE` has no
         // conflict clause, so a column this device lacks is a prepare-time throw
@@ -1386,43 +1811,75 @@ public enum ConflictResolver {
 
         // Apply merged fields — handles NULL values correctly (fixes #196)
         if !mergedData.isEmpty {
-            // Build the SET clause and its bound arguments in ONE pass. They were
-            // previously derived independently, and they disagreed about what a
-            // NULL means — which aborted every sync carrying a null field with
-            // "SQLite error 21: wrong number of statement arguments".
-            //
-            // `mergedData` is `[String: String?]`, so a subscript yields `String??`:
-            // the OUTER level is "is the key present", the INNER level is "is the
-            // value SQL NULL". The old clause test matched the outer level, which
-            // is always `.some` here because the keys come from `mergedData.keys` —
-            // so the `= NULL` branch was unreachable and every field got a `?`.
-            // The old argument list unwrapped only the outer level and returned the
-            // inner optional, so `compactMap` silently dropped the NULL fields.
-            // Result: N placeholders, fewer than N arguments.
-            //
-            // A NULL is written as a SQL literal rather than a bound parameter, so
-            // a field with no value contributes a clause but no argument — which is
-            // exactly why the two must be built together.
-            var setClauses: [String] = []
-            var args: [any DatabaseValueConvertible] = []
-            for key in mergedData.keys.sorted() {
-                // `?? nil` flattens String?? to String?: key-absent and value-NULL
-                // both collapse to nil, and both must produce a NULL literal.
-                guard let value = mergedData[key] ?? nil else {
-                    setClauses.append("\"\(key)\" = NULL")
-                    continue
-                }
-                setClauses.append("\"\(key)\" = ?")
-                args.append(value)
-            }
-            args.append(recordId)
-
-            try db.execute(
-                sql: """
-                    UPDATE \(quotedTable(table)) SET \(setClauses.joined(separator: ", ")) WHERE id = ?
-                    """,
-                arguments: StatementArguments(args)
+            // ATTEMPT 1 — exactly the statement HEAD built, run through the
+            // classifier. At HEAD this `try` was bare, so a UNIQUE violation on
+            // one row escaped `applyOneAtomically`'s `missingLocalRecord`-only
+            // catch and rolled back the whole company snapshot (#1737).
+            let statement = mergeUpdateStatement(
+                table: table, mergedData: mergedData, recordId: recordId
             )
+            let refusal = try classifyingRowRefusal {
+                try db.execute(sql: statement.sql, arguments: statement.arguments)
+            }
+
+            switch refusal {
+            case .none:
+                break   // fall through to conflict logging and the normal return
+
+            case .schemaDrop:
+                // NOT NULL / CHECK. A retry cannot change this device's schema
+                // and neither can withholding a key column, so there is no
+                // ladder to climb: leave the row exactly as it was, name the
+                // cause, and NEVER rethrow.
+                context.schemaDrops += 1
+                logger.warning(
+                    """
+                    Merge UPDATE refused by a NOT NULL/CHECK constraint — row left unchanged: \
+                    table=\(table, privacy: .public) id=\(recordId, privacy: .public) \
+                    from device=\(change.deviceId, privacy: .public)
+                    """
+                )
+                // Deliberately BEFORE `logConflicts`: nothing was written, so
+                // there is no resolution to record. It is also what makes a
+                // replay safe — no conflict row exists to be written twice.
+                return 0
+
+            case .keyCollision:
+                // A DIFFERENT local row owns this key. On a batched path the row
+                // holding the slot may itself move later in the same batch, so
+                // park this merge and replay it after the batch. Nothing has
+                // been written and nothing has been logged, so parking is free
+                // and re-running is idempotent.
+                if context.canDefer {
+                    let parked = context.enqueueDeferredMerge(DeferredMerge(
+                        table: table,
+                        recordId: recordId,
+                        incomingFields: incomingFields,
+                        change: change,
+                        localDeviceId: localDeviceId,
+                        approximateBytes: approximatePayloadBytes(incomingFields, change)
+                    ))
+                    if parked { return 0 }
+                    // Buffer cap hit. Falling through to the in-place ladder
+                    // costs no additional memory and can still land the non-key
+                    // columns, which is strictly better than recording the row
+                    // as lost. Overflow degrades to "resolve now", never to
+                    // "throw" — a throw here rolls back the whole snapshot.
+                }
+
+                return try resolveKeyCollisionInPlace(
+                    db: db,
+                    table: table,
+                    recordId: recordId,
+                    localRow: localRow,
+                    mergedData: mergedData,
+                    conflictEntries: conflictEntries,
+                    localTimestamp: localTimestamp,
+                    change: change,
+                    localDeviceId: localDeviceId,
+                    context: context
+                )
+            }
         }
 
         // Log all conflicts
@@ -1431,6 +1888,211 @@ public enum ConflictResolver {
         }
 
         return conflictEntries.count
+    }
+
+    /// Build the merge `UPDATE`'s SET clause and its bound arguments in ONE pass.
+    ///
+    /// Extracted verbatim so the reduced retry in `resolveKeyCollisionInPlace`
+    /// re-runs this exact loop instead of re-deriving it. That is the whole
+    /// point: they were previously derived independently, and they disagreed
+    /// about what a NULL means — which aborted every sync carrying a null field
+    /// with "SQLite error 21: wrong number of statement arguments" (#196).
+    ///
+    /// `mergedData` is `[String: String?]`, so a subscript yields `String??`:
+    /// the OUTER level is "is the key present", the INNER level is "is the
+    /// value SQL NULL". The old clause test matched the outer level, which
+    /// is always `.some` here because the keys come from `mergedData.keys` —
+    /// so the `= NULL` branch was unreachable and every field got a `?`.
+    /// The old argument list unwrapped only the outer level and returned the
+    /// inner optional, so `compactMap` silently dropped the NULL fields.
+    /// Result: N placeholders, fewer than N arguments.
+    ///
+    /// A NULL is written as a SQL literal rather than a bound parameter, so
+    /// a field with no value contributes a clause but no argument — which is
+    /// exactly why the two must be built together. Never filter the returned
+    /// clause and argument arrays by index: they have different lengths the
+    /// moment any merged value is NULL.
+    private static func mergeUpdateStatement(
+        table: String,
+        mergedData: [String: String?],
+        recordId: String
+    ) -> (sql: String, arguments: StatementArguments) {
+        var setClauses: [String] = []
+        var args: [any DatabaseValueConvertible] = []
+        for key in mergedData.keys.sorted() {
+            // `?? nil` flattens String?? to String?: key-absent and value-NULL
+            // both collapse to nil, and both must produce a NULL literal.
+            guard let value = mergedData[key] ?? nil else {
+                setClauses.append("\"\(key)\" = NULL")
+                continue
+            }
+            setClauses.append("\"\(key)\" = ?")
+            args.append(value)
+        }
+        args.append(recordId)
+
+        return (
+            sql: """
+                UPDATE \(quotedTable(table)) SET \(setClauses.joined(separator: ", ")) WHERE id = ?
+                """,
+            arguments: StatementArguments(args)
+        )
+    }
+
+    /// Rough retained size of a parked entry, for bounding the buffer only.
+    ///
+    /// Counts BOTH halves of what `DeferredMerge` retains: the decoded field
+    /// dictionary and the original change's JSON payloads. Counting only the
+    /// dictionary would under-report by roughly half and let the 8 MB cap sail
+    /// past the memory it exists to bound.
+    private static func approximatePayloadBytes(
+        _ fields: [String: String?],
+        _ change: IncomingChange
+    ) -> Int {
+        let fieldBytes = fields.reduce(0) { total, entry in
+            total + entry.key.utf8.count + (entry.value?.utf8.count ?? 0) + 16
+        }
+        return fieldBytes
+            + (change.recordData?.utf8.count ?? 0)
+            + (change.changedFields?.utf8.count ?? 0)
+            + (change.oldValues?.utf8.count ?? 0)
+            + 128
+    }
+
+    /// Attempts 2 and 3 of the merge ladder (#1737). NEVER rethrows a
+    /// constraint refusal.
+    ///
+    /// **Attempt 2 — reduce the SET clause.** Withhold every column that
+    /// participates in a unique index and re-run the statement, so the row's
+    /// NON-key fields still land. Each withheld column is recorded in
+    /// `_conflict_log` as a genuine `winner: "local"` resolution — with the REAL
+    /// local value and the REAL local timestamp. (#1749 wrote `localTs: ""`
+    /// here, which corrupts the admin review surface; `localTs` is a
+    /// non-optional `String`, so an empty one compiles and fails only in the UI.)
+    ///
+    /// **Attempt 3 — give up, and never rethrow.** This rung is mandatory, not
+    /// belt-and-braces. Two shapes in the live schema defeat attempt 2:
+    ///
+    /// - `job_stage_templates`, whose partial index is
+    ///   `ON (is_default) WHERE is_default = 1 AND archived_at IS NULL`.
+    ///   Withholding `is_default` still collides, because writing
+    ///   `archived_at = NULL` alone moves the row INTO the index — and
+    ///   `pragma_index_info` never reports `archived_at`.
+    /// - `warehouse_walking_path_stops`, `UNIQUE(path_id, area_id) WHERE
+    ///   deleted_at IS NULL`. An un-delete carries no index column in the SET
+    ///   clause at all, so the reduced statement is byte-identical to the one
+    ///   that just failed.
+    ///
+    /// Termination is therefore by the bounded ladder, not by a property of SQL
+    /// that does not hold.
+    private static func resolveKeyCollisionInPlace(
+        db: Database,
+        table: String,
+        recordId: String,
+        localRow: Row,
+        mergedData: [String: String?],
+        conflictEntries: [ConflictLogEntry],
+        localTimestamp: String,
+        change: IncomingChange,
+        localDeviceId: String,
+        context: ApplyContext
+    ) throws -> Int {
+        var entries = conflictEntries
+
+        let uniqueColumns = try context.uniqueParticipatingColumns(db, table)
+        // Intersect with what is actually in the SET clause. Withholding a
+        // column that was never being written would produce a byte-identical
+        // statement AND a bogus conflict row for a field nobody changed.
+        let withheld = mergedData.keys.filter { uniqueColumns.contains($0) }.sorted()
+
+        if !withheld.isEmpty {
+            var reduced = mergedData
+            for column in withheld {
+                reduced.removeValue(forKey: column)
+                entries.append(ConflictLogEntry(
+                    tableName: table,
+                    recordId: recordId,
+                    fieldName: column,
+                    localValue: stringifyValue(localRow[column] as DatabaseValue),
+                    remoteValue: (mergedData[column] ?? nil) ?? "(NULL)",
+                    winner: "local",
+                    localDevice: localDeviceId,
+                    remoteDevice: change.deviceId,
+                    localTs: localTimestamp,
+                    remoteTs: change.timestamp,
+                    resolvedAt: currentTimestamp()
+                ))
+            }
+
+            if reduced.isEmpty {
+                // Everything the change carried was a key column. `SET` with no
+                // assignments is a syntax error, and a prepare-time throw on the
+                // snapshot path is a whole-company rollback — so skip the
+                // statement entirely rather than building one.
+                context.keyCollisions += 1
+                logKeyCollision(table: table, recordId: recordId, change: change, withheld: withheld)
+                if !entries.isEmpty { try logConflicts(db: db, conflicts: entries) }
+                return entries.count
+            }
+
+            let statement = mergeUpdateStatement(
+                table: table, mergedData: reduced, recordId: recordId
+            )
+            let refusal = try classifyingRowRefusal {
+                try db.execute(sql: statement.sql, arguments: statement.arguments)
+            }
+
+            switch refusal {
+            case .none:
+                // Non-key fields landed; the key columns did not. The row is
+                // partially applied, and the cause is a key collision.
+                context.keyCollisions += 1
+                logKeyCollision(table: table, recordId: recordId, change: change, withheld: withheld)
+                if !entries.isEmpty { try logConflicts(db: db, conflicts: entries) }
+                return entries.count
+
+            case .schemaDrop:
+                context.schemaDrops += 1
+                logger.warning(
+                    """
+                    Reduced merge UPDATE refused by a NOT NULL/CHECK constraint — row left \
+                    unchanged: table=\(table, privacy: .public) id=\(recordId, privacy: .public)
+                    """
+                )
+                return 0
+
+            case .keyCollision:
+                break   // fall through to attempt 3
+            }
+        }
+
+        // ATTEMPT 3 — give up. The row is left exactly as it was.
+        context.keyCollisions += 1
+        logger.warning(
+            """
+            Merge UPDATE abandoned after the reduced retry also collided — row left unchanged: \
+            table=\(table, privacy: .public) id=\(recordId, privacy: .public) \
+            from device=\(change.deviceId, privacy: .public). A unique index this device holds \
+            refuses the incoming values; a partial index's predicate column is the usual cause.
+            """
+        )
+        return 0
+    }
+
+    private static func logKeyCollision(
+        table: String,
+        recordId: String,
+        change: IncomingChange,
+        withheld: [String]
+    ) {
+        logger.warning(
+            """
+            Merge UPDATE withheld \(withheld.count, privacy: .public) unique-key column(s) after a \
+            UNIQUE refusal: table=\(table, privacy: .public) id=\(recordId, privacy: .public) \
+            from device=\(change.deviceId, privacy: .public) — \
+            \(withheld.joined(separator: ", "), privacy: .public)
+            """
+        )
     }
 
     // MARK: - Private: Helpers
