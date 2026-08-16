@@ -569,6 +569,228 @@ struct ConflictResolverNaturalKeyTests {
         #expect(try categoryName(db, 4) == "N3", "freed only by pass 3 — this is the loop")
     }
 
+    // MARK: - T-18 — a change that WRITES NOTHING supersedes nothing
+
+    /// Apply through the in-memory batched path — one transaction for the whole
+    /// batch, and NO completeness gate.
+    ///
+    /// Used for exactly one sub-case below: an unrecognised operation verb is a
+    /// pre-existing producer of `skipped` (`applyOneAtomically`'s `default:`
+    /// arm, unchanged by this commit), and the SNAPSHOT gate throws on `skipped`
+    /// by design. Running that shape through `applyStreamed` would test the
+    /// gate, not the supersession rule.
+    private func applyAtomicBatch(
+        _ db: AppDatabase,
+        _ changes: [IncomingChange]
+    ) throws -> MergeResult {
+        try ConflictResolver.resolveAndApplyChangesAtomically(db: db, changes: changes)
+    }
+
+    /// The first two changes of T-18's batch: a merge that collides on `name`
+    /// and parks at position 1, then the change that vacates the slot — so the
+    /// parked merge is guaranteed to land on replay unless something discards it.
+    private var parkedThenVacated: [IncomingChange] {
+        [
+            update("part_categories", "5",
+                   #"{"name":"THHN","description":"parked payload"}"#,
+                   timestamp: "2026-08-16T10:00:00Z"),
+            update("part_categories", "9", #"{"name":"Zebra"}"#,
+                   timestamp: "2026-08-16T10:00:01Z"),
+        ]
+    }
+
+    /// Run `parkedThenVacated` + `trailer`, and require the trailer to have
+    /// changed NOTHING about the parked merge's fate.
+    ///
+    /// The matched control is the identical batch with the trailer REMOVED.
+    /// That equality is the entire discrimination: the trailer is a change that
+    /// writes nothing, so a batch with it and a batch without it must reach the
+    /// same rows. If they differ, something that wrote nothing was counted as a
+    /// write — which is the regression this pins.
+    private func expectWriteNothingTrailerChangesNothing(
+        _ trailer: IncomingChange,
+        applying apply: (AppDatabase, [IncomingChange]) throws -> MergeResult,
+        andAlso extraChecks: (MergeResult) throws -> Void = { _ in }
+    ) throws {
+        let db = try freshDB()
+        try seedTwoCategories(db)
+        let result = try apply(db, parkedThenVacated + [trailer])
+
+        #expect(try categoryName(db, 5) == "THHN",
+                "the parked merge must still land on replay")
+        #expect(try categoryDescription(db, 5) == "parked payload",
+                "…with its payload — the write the parent commit applied successfully")
+        #expect(result.supersededMerges == 0,
+                "nothing superseded it: the trailing change wrote nothing at all")
+        #expect(result.errors == 0)
+        try extraChecks(result)
+
+        // MATCHED CONTROL — same batch, trailer removed.
+        let control = try freshDB()
+        try seedTwoCategories(control)
+        let controlResult = try apply(control, parkedThenVacated)
+        #expect(try categoryName(control, 5) == "THHN")
+        #expect(try categoryDescription(control, 5) == "parked payload")
+        #expect(controlResult.supersededMerges == 0)
+    }
+
+    /// T-18. The supersession rule (#1737, second commit) counted ARRIVAL, not
+    /// writing: `noteChangeArriving` ran before the allowed-table guard and
+    /// before dispatch, and refreshed the record's ordinal for ANY change
+    /// naming an already-parked record. A trailing change that wrote nothing
+    /// therefore discarded the parked merge, and BOTH changes were lost —
+    /// permanently, because the discard runs under `_sync_apply_guard` so
+    /// nothing is re-broadcast and the peer's watermark advances anyway.
+    ///
+    /// Three shapes reach the dispatcher and write nothing. Each gets its own
+    /// test because each takes a different route to "nothing happened", and a
+    /// single fix that only covered one of them would still ship the bug.
+    ///
+    /// MUTATION CHECK for all three: call
+    /// `context.noteRecordMutated(table:recordId:)` unconditionally from
+    /// `applyOneAtomically`, right after `noteChangeArriving()` — that is
+    /// literally the reverted behaviour — and all three go red with
+    /// `supersededMerges == 1` and the record left at `Romex` / `local five`.
+    @Test("T-18a a NOT NULL refusal writes nothing, so it supersedes nothing")
+    func testSchemaDropTrailerDoesNotSupersedeAParkedMerge() throws {
+        // `part_categories.name` is NOT NULL, so this merge is refused outright
+        // and the row is left exactly as it was (`schemaDrop`, no ladder).
+        try expectWriteNothingTrailerChangesNothing(
+            update("part_categories", "5", #"{"name":null}"#,
+                   timestamp: "2026-08-16T10:00:02Z"),
+            applying: applyStreamed
+        ) { result in
+            #expect(result.schemaDrops == 1,
+                    "the trailer really was refused — the shape is what it claims to be")
+            #expect(result.skipped == 0, "a refusal may NEVER produce a gate input (#1749)")
+        }
+    }
+
+    @Test("T-18b an unrecognised operation verb writes nothing, so it supersedes nothing")
+    func testUnknownOperationTrailerDoesNotSupersedeAParkedMerge() throws {
+        try expectWriteNothingTrailerChangesNothing(
+            IncomingChange(
+                deviceId: "remote-device",
+                tableName: "part_categories",
+                recordId: "5",
+                operation: "PURGE",
+                timestamp: "2026-08-16T10:00:02Z"
+            ),
+            applying: applyAtomicBatch
+        ) { result in
+            // Pre-existing behaviour, asserted so the test cannot silently stop
+            // exercising the shape: an unknown verb is `skipped` and always was.
+            // This commit adds no producer of `skipped` or `errors`.
+            #expect(result.skipped == 1, "the unknown verb is the pre-existing skip")
+        }
+    }
+
+    @Test("T-18c an UPDATE carrying no fields at all writes nothing, so it supersedes nothing")
+    func testFieldlessUpdateTrailerDoesNotSupersedeAParkedMerge() throws {
+        // The sharpest shape: `applyUpdate` returns before touching the database
+        // (no `changed_fields` AND no `record_data`), the change is counted
+        // `applied: 1`, it produces no gate input — and at HEAD it still killed
+        // the parked merge.
+        try expectWriteNothingTrailerChangesNothing(
+            IncomingChange(
+                deviceId: "remote-device",
+                tableName: "part_categories",
+                recordId: "5",
+                operation: "UPDATE",
+                timestamp: "2026-08-16T10:00:02Z"
+            ),
+            applying: applyStreamed
+        ) { result in
+            #expect(result.applied == 3, "it is counted applied — that is what made it invisible")
+            #expect(result.skipped == 0, "and it passes the snapshot gate, so nothing warns")
+        }
+    }
+
+    // MARK: - T-19 — supersession keys on the ROW, not on the peer's spelling
+
+    /// T-19. `IncomingChange` is peer-controlled wire input, and two spellings
+    /// of one row reach the SAME row: `isAllowedTable` lowercases before
+    /// checking the whitelist (and SQLite identifiers are case-insensitive), and
+    /// `WHERE id = ?` bound with `'05'` matches row 5 by INTEGER affinity.
+    ///
+    /// If the supersession key does not normalise both, the later change writes
+    /// the record, the lookup misses, and the parked merge replays over it —
+    /// the original #1737 BLOCKING defect, verbatim.
+    ///
+    /// Both cases are T-16's batch with ONLY the trailing change respelled, so
+    /// the canonical run (T-16 itself, plus the control here) is the matched
+    /// comparison.
+    ///
+    /// MUTATION CHECK: revert `ApplyContext.recordKey` to
+    /// `"\(table)\u{1}\(recordId)"` and both go red — `description` becomes
+    /// "from C1 (older)" and `supersededMerges` becomes 0.
+    @Test("T-19a a case-variant table name still supersedes — the ROW decides, not the spelling")
+    func testSupersessionSurvivesACaseVariantTableName() throws {
+        try expectNewerChangeWins(
+            trailer: update("Part_Categories", "5", #"{"description":"from C3 (newer)"}"#,
+                            timestamp: "2026-08-16T10:00:02Z")
+        )
+    }
+
+    @Test("T-19b a zero-padded record id still supersedes — INTEGER affinity decides")
+    func testSupersessionSurvivesAZeroPaddedRecordId() throws {
+        try expectNewerChangeWins(
+            trailer: update("part_categories", "05", #"{"description":"from C3 (newer)"}"#,
+                            timestamp: "2026-08-16T10:00:02Z")
+        )
+    }
+
+    /// The third spelling `recordKey` normalises, and the reason it is here
+    /// rather than assumed: `WHERE id = ?` was MEASURED to match row 5 for
+    /// `' 5'`, `'5 '`, `'\n5'` and `'\t5'` as well as `'05'`. Untested
+    /// normalisation is just an untested guess.
+    @Test("T-19c a whitespace-padded record id still supersedes")
+    func testSupersessionSurvivesAWhitespacePaddedRecordId() throws {
+        try expectNewerChangeWins(
+            trailer: update("part_categories", " 5", #"{"description":"from C3 (newer)"}"#,
+                            timestamp: "2026-08-16T10:00:02Z")
+        )
+    }
+
+    /// T-16's batch with a substituted trailing change: the NEWER change must
+    /// win, i.e. supersession must still fire.
+    private func expectNewerChangeWins(trailer: IncomingChange) throws {
+        let db = try freshDB()
+        try seedTwoCategories(db)
+
+        let result = try applyStreamed(db, [
+            // Collides on 'THHN' → parked at position 1, carrying the OLD description.
+            update("part_categories", "5", #"{"name":"THHN","description":"from C1 (older)"}"#,
+                   timestamp: "2026-08-16T10:00:00Z"),
+            // Vacates the slot, so the parked merge WOULD land on replay.
+            update("part_categories", "9", #"{"name":"Zebra"}"#,
+                   timestamp: "2026-08-16T10:00:01Z"),
+            trailer,
+        ])
+
+        #expect(try categoryDescription(db, 5) == "from C3 (newer)",
+                "the newest write to the record must win, however the peer spelled it")
+        #expect(try categoryName(db, 5) == "Romex", "the superseded payload is dropped whole")
+        #expect(result.supersededMerges == 1, "the discard must be counted")
+        #expect(result.keyCollisions == 0)
+        #expect(result.skipped == 0, "a discard may NEVER produce a gate input (#1749)")
+        #expect(result.errors == 0)
+
+        // MATCHED CONTROL — the canonical spelling, same batch, same assertions.
+        let control = try freshDB()
+        try seedTwoCategories(control)
+        let controlResult = try applyStreamed(control, [
+            update("part_categories", "5", #"{"name":"THHN","description":"from C1 (older)"}"#,
+                   timestamp: "2026-08-16T10:00:00Z"),
+            update("part_categories", "9", #"{"name":"Zebra"}"#,
+                   timestamp: "2026-08-16T10:00:01Z"),
+            update("part_categories", "5", #"{"description":"from C3 (newer)"}"#,
+                   timestamp: "2026-08-16T10:00:02Z"),
+        ])
+        #expect(try categoryDescription(control, 5) == "from C3 (newer)")
+        #expect(controlResult.supersededMerges == 1)
+    }
+
     // MARK: - T-9 — an un-delete into an occupied partial-index slot
 
     /// Seed the FK chain `warehouse_walking_path_stops` needs, then two stops
