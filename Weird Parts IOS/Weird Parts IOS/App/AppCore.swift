@@ -77,6 +77,54 @@ final class AppCore: ObservableObject {
     public private(set) var aiDispatchService: AIDispatchService?
     public private(set) var badgeCountService: BadgeCountService?
 
+    /// Fleet diagnostics (#1745). Built in migration 121 and left with zero
+    /// callers until 2026-08-15 — nothing wrote a log, nothing pruned, nothing
+    /// displayed one. This property is the wiring.
+    public private(set) var deviceLogService: DeviceLogService?
+
+    /// Builds the fleet-diagnostics logger with this device's full identity.
+    ///
+    /// Owner 2026-08-15: *"the log is suposed to be per a device with all the
+    /// relvint info on the device and all that takes including the incompy
+    /// device id"* — so every entry carries model, OS, build and the
+    /// office-visible device record, not just a sync UUID.
+    ///
+    /// Verbose (`debug`/`trace`) logging is **off by default**: it is a
+    /// reproduction tool, and leaving it on in the field costs writes on every
+    /// sync batch. Flip it from Settings when chasing something.
+    private static func makeDeviceLogService(db: AppDatabase) -> DeviceLogService {
+        let deviceId = DeviceIdentity.current
+        // The office-visible record is `devices`, keyed by fingerprint. It is
+        // only resolvable once this device has been registered with the
+        // company, so this is nil on a device that has not joined yet — which
+        // is exactly when we still want logs, hence no failure path here.
+        let fingerprint = try? db.writer.read { dbc in
+            try String.fetchOne(
+                dbc,
+                sql: "SELECT device_fingerprint FROM devices WHERE device_fingerprint = ? AND deleted_at IS NULL",
+                arguments: [deviceId]
+            )
+        }
+        let platform: String
+        #if targetEnvironment(macCatalyst)
+        platform = "macCatalyst"
+        #else
+        platform = UIDevice.current.userInterfaceIdiom == .pad ? "iPadOS" : "iOS"
+        #endif
+        let info = DeviceLogService.DeviceInfo(
+            deviceId: deviceId,
+            fingerprint: fingerprint ?? nil,
+            name: UIDevice.current.name,
+            appVersion: BugReportContextBuilder.appVersion(),
+            buildNumber: BugReportContextBuilder.appBuild(),
+            osVersion: "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)",
+            platform: platform,
+            model: BugReportContextBuilder.deviceModelName()
+        )
+        let verbose = UserDefaults.standard.bool(forKey: "wp_verbose_device_logging")
+        return DeviceLogService(db: db, device: info, verboseEnabled: verbose)
+    }
+
     /// Shared sync manager — all views observe this single instance.
     let syncManager = IOSSyncManager()
 
@@ -262,6 +310,10 @@ final class AppCore: ObservableObject {
             backgroundTaskService = result.backgroundTask
             aiDispatchService = result.aiDispatch
             badgeCountService = result.badgeCount
+            deviceLogService = Self.makeDeviceLogService(db: result.database)
+            // Make it reachable from the sync/pairing paths, which are built
+            // before this point and hold no reference to AppCore.
+            DiagnosticLog.install(deviceLogService)
 
             if let theme = result.theme {
                 self.theme = theme
@@ -331,6 +383,31 @@ final class AppCore: ObservableObject {
             Task.detached { [backgroundTaskService] in
                 _ = try? backgroundTaskService?.cleanupStaleTasks()
                 _ = try? backgroundTaskService?.cleanupOldEntries()
+            }
+
+            // Prune the diagnostic log (#1745). `DeviceLogService.prune()`'s own
+            // doc has said "call on launch" since migration 121 and nothing ever
+            // did, so the retention window and row caps existed on paper only.
+            //
+            // Deliberately NOT `try?` like the two calls above: `device_logs`
+            // replicates, so a prune that silently never succeeds grows both the
+            // database and the Bluetooth sync payload without bound. A failure
+            // here has to be visible.
+            Task.detached { [deviceLogService, logger] in
+                guard let deviceLogService else { return }
+                do {
+                    let removed = try deviceLogService.prune()
+                    if removed > 0 {
+                        logger.info("Device log prune removed \(removed) entries")
+                    }
+                    deviceLogService.info(
+                        "startup",
+                        "App launched",
+                        detail: #"{"pruned":\#(removed)}"#
+                    )
+                } catch {
+                    logger.error("Device log prune FAILED: \(error.localizedDescription)")
+                }
             }
 
             // Run scheduled Tools maintenance on launch so expired trades and
