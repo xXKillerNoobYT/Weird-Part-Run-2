@@ -106,18 +106,6 @@ public enum ConflictResolver {
         /// change had no full-record payload. Caller should count as skipped
         /// and request a full resync for this record. (Fixes #220)
         case missingLocalRecord(table: String, recordId: String)
-
-        /// An INSERT was silently discarded by `INSERT OR IGNORE` because the
-        /// row's natural (non-primary) UNIQUE key is already held locally under
-        /// a DIFFERENT id.
-        ///
-        /// Before #1737 this was invisible: `OR IGNORE` swallows the constraint
-        /// violation, `applyInsert` returned 0, and `applyOneAtomically`
-        /// credited `applied: 1` from a literal — so the row vanished while the
-        /// batch reported `applied=1 errors=0`, and the snapshot completeness
-        /// gate (which only inspects `errors` and `skipped`) could not see it.
-        /// Surfacing it as a *skip* is what makes the gate able to notice.
-        case naturalKeyCollision(table: String, recordId: String)
     }
 
 
@@ -355,16 +343,6 @@ public enum ConflictResolver {
                 // Fix #220: UPDATE for a record we don't have yet — count as skipped,
                 // not errored. A follow-up full-record resync should re-deliver it.
                 result.skipped += 1
-            } catch ApplyError.naturalKeyCollision(let table, let recordId) {
-                // #1737. Same accounting as the atomic path: a row `INSERT OR
-                // IGNORE` discarded is a SKIP. It must be counted somewhere the
-                // caller inspects — previously `applied` was credited from a
-                // literal, so the row vanished while the batch reported
-                // `applied=1 errors=0`.
-                result.skipped += 1
-                logger.error(
-                    "Natural-key collision dropped a row: table=\(table, privacy: .public) id=\(recordId) — the local database already holds this record's unique key under a different id"
-                )
             } catch {
                 result.errors += 1
                 logger.error("Failed to apply incoming change: \(error.localizedDescription, privacy: .public)")
@@ -697,90 +675,7 @@ public enum ConflictResolver {
             // Fix #220: an UPDATE for a record we do not have yet is a skip,
             // not an error — a later full-record resync re-delivers it.
             return (0, 0, 1)
-        } catch ApplyError.naturalKeyCollision(let table, let recordId) {
-            // #1737. Counted as a SKIP rather than applied, which is the whole
-            // point: `applied` used to be a literal `1`, so a dropped row was
-            // indistinguishable from a written one and the snapshot
-            // completeness gate — which inspects only `errors` and `skipped` —
-            // was structurally blind to it.
-            //
-            // Deliberately swallowed rather than rethrown: letting it escape
-            // would roll the entire batch back over one collided row, which is
-            // the failure this issue exists to remove. The row is reported and
-            // logged instead, and converges on a later exchange.
-            Self.logger.error(
-                "Natural-key collision dropped a row: table=\(table, privacy: .public) id=\(recordId) — the local database already holds this record's unique key under a different id"
-            )
-            return (0, 0, 1)
         }
-    }
-
-    /// Columns whose incoming value would violate a natural (non-primary)
-    /// UNIQUE constraint held by a DIFFERENT local row (#1737).
-    ///
-    /// Answers the question by asking the **database**, not by hardcoding a
-    /// table list: 23 replicated tables carry a natural key, and any migration
-    /// can add another. `pragma_index_list` reports every UNIQUE index —
-    /// including the `sqlite_autoindex_*` that an inline `.unique()` produces,
-    /// which no `CREATE INDEX` statement in the migrations file would reveal to
-    /// a grep.
-    ///
-    /// Partial indexes (`WHERE ...`) are skipped: whether the constraint
-    /// applies depends on the predicate, and assuming it always applies would
-    /// block writes that are actually legal.
-    private static func naturalKeyCollisions(
-        db: Database,
-        table: String,
-        recordId: String,
-        incoming: [String: String?]
-    ) throws -> Set<String> {
-        var blocked: Set<String> = []
-
-        let indexes = try Row.fetchAll(
-            db, sql: "SELECT name, \"unique\", partial FROM pragma_index_list(?)",
-            arguments: [table]
-        )
-
-        for index in indexes {
-            guard (index["unique"] as Int?) == 1 else { continue }
-            // A partial UNIQUE only binds rows matching its predicate; treating
-            // it as unconditional would reject legal writes.
-            if (index["partial"] as Int?) == 1 { continue }
-            guard let indexName = index["name"] as String? else { continue }
-
-            let indexColumns = try String.fetchAll(
-                db, sql: "SELECT name FROM pragma_index_info(?) ORDER BY seqno",
-                arguments: [indexName]
-            )
-            guard !indexColumns.isEmpty else { continue }
-            // The primary key is not a natural key — an id collision is the
-            // merge branch's normal case and is handled by matching on id.
-            if indexColumns == ["id"] { continue }
-            // Only meaningful when the incoming change actually sets every
-            // column of the key; a partial overlap cannot be evaluated here.
-            guard indexColumns.allSatisfy({ incoming.keys.contains($0) }) else { continue }
-
-            let predicate = indexColumns.map { "\"\($0)\" IS ?" }.joined(separator: " AND ")
-            var args: [any DatabaseValueConvertible] = indexColumns.map { column in
-                (incoming[column] ?? nil) as (any DatabaseValueConvertible)? ?? DatabaseValue.null
-            }
-            args.append(recordId)
-
-            let collides = try Bool.fetchOne(
-                db,
-                sql: """
-                    SELECT EXISTS(
-                        SELECT 1 FROM \(quotedTable(table))
-                        WHERE \(predicate) AND id IS NOT ?
-                    )
-                    """,
-                arguments: StatementArguments(args)
-            ) ?? false
-
-            if collides { blocked.formUnion(indexColumns) }
-        }
-
-        return blocked
     }
 
     /// Get unreviewed conflicts for admin review.
@@ -1309,20 +1204,6 @@ public enum ConflictResolver {
                 sql: "INSERT OR IGNORE INTO \(quotedTable(table)) (\(columnList)) VALUES (\(placeholders.joined(separator: ", ")))",
                 arguments: StatementArguments(values)
             )
-            // `OR IGNORE` is load-bearing here — it absorbs the NOT NULL and
-            // CHECK violations a sparse peer record can carry — but it also
-            // absorbs a UNIQUE violation, and that case is data loss, not
-            // tolerance. `changesCount == 0` is the ONLY in-band evidence the
-            // row did not land; discard it and the information is gone.
-            //
-            // This matters most when the dropped row is an FK parent: children
-            // arriving in the same batch then reference a row that does not
-            // exist, and under deferred foreign keys (#1730) the whole batch
-            // aborts at COMMIT with an unattributed `FOREIGN KEY constraint
-            // failed`, taking every innocent row with it.
-            if db.changesCount == 0 {
-                throw ApplyError.naturalKeyCollision(table: table, recordId: recordId)
-            }
             return 0
         }
 
@@ -1398,14 +1279,6 @@ public enum ConflictResolver {
                     sql: "INSERT OR IGNORE INTO \(quotedTable(table)) (\(columnList)) VALUES (\(placeholders.joined(separator: ", ")))",
                     arguments: StatementArguments(values)
                 )
-                // Same silent-drop detection as `applyInsert`'s plain-INSERT
-                // path. This is the sibling builder: the #196 NULL fix landed
-                // next door first and left this copy broken, so a fix applied
-                // to one of these two and not the other is a fix that is still
-                // broken.
-                if db.changesCount == 0 {
-                    throw ApplyError.naturalKeyCollision(table: table, recordId: recordId)
-                }
                 return 0
             }
             // Fix #220: No local record AND no full recordData — cannot apply safely.
@@ -1530,49 +1403,9 @@ public enum ConflictResolver {
             // A NULL is written as a SQL literal rather than a bound parameter, so
             // a field with no value contributes a clause but no argument — which is
             // exactly why the two must be built together.
-            //
-            // #1737: drop any field whose incoming value would collide with a
-            // DIFFERENT local row's natural (non-primary) UNIQUE key. This
-            // `UPDATE` carries no conflict clause, so without the filter SQLite
-            // raises `UNIQUE constraint failed`, the throw escapes
-            // `applyOneAtomically` (which catches only `missingLocalRecord`),
-            // and the ENTIRE batch rolls back — including rows that had nothing
-            // to do with the collision.
-            //
-            // Reachable on ordinary two-device use, not a corner case: both
-            // devices create a `part_categories` named "Switchgear" while
-            // offline, or one renames a shared row to a name the other just
-            // used. Keeping the local value and logging the conflict lets the
-            // rest of the merge land and converge, instead of destroying the
-            // batch over one field.
-            let blockedColumns = try naturalKeyCollisions(
-                db: db, table: table, recordId: recordId, incoming: mergedData
-            )
-
             var setClauses: [String] = []
             var args: [any DatabaseValueConvertible] = []
             for key in mergedData.keys.sorted() {
-                if blockedColumns.contains(key) {
-                    conflictEntries.append(ConflictLogEntry(
-                        tableName: table,
-                        recordId: recordId,
-                        fieldName: key,
-                        localValue: (localRow[key] as String?) ?? "(NULL)",
-                        remoteValue: (mergedData[key] ?? nil) ?? "(NULL)",
-                        // Local wins because it already owns the unique key;
-                        // the incoming value has nowhere to go without
-                        // displacing another row.
-                        winner: "local",
-                        localDevice: localDeviceId,
-                        remoteDevice: change.deviceId,
-                        // No local edit timestamp is involved: this is not a
-                        // last-writer race, it is a structural refusal.
-                        localTs: "",
-                        remoteTs: change.timestamp,
-                        resolvedAt: currentTimestamp()
-                    ))
-                    continue
-                }
                 // `?? nil` flattens String?? to String?: key-absent and value-NULL
                 // both collapse to nil, and both must produce a NULL literal.
                 guard let value = mergedData[key] ?? nil else {
@@ -1584,16 +1417,12 @@ public enum ConflictResolver {
             }
             args.append(recordId)
 
-            // Every field may have been filtered out above, which would leave
-            // `SET  WHERE id = ?` — a syntax error.
-            if !setClauses.isEmpty {
-                try db.execute(
-                    sql: """
-                        UPDATE \(quotedTable(table)) SET \(setClauses.joined(separator: ", ")) WHERE id = ?
-                        """,
-                    arguments: StatementArguments(args)
-                )
-            }
+            try db.execute(
+                sql: """
+                    UPDATE \(quotedTable(table)) SET \(setClauses.joined(separator: ", ")) WHERE id = ?
+                    """,
+                arguments: StatementArguments(args)
+            )
         }
 
         // Log all conflicts
