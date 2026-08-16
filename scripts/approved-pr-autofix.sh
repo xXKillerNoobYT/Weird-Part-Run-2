@@ -87,12 +87,41 @@ has_skip_label() {
   return 1
 }
 
+# Marks a comment as recording a repair ATTEMPT. The stop notice deliberately
+# does NOT carry it (#1664): counting the stop notice made the bound increment
+# itself — see `attempt_count_for_head`.
+ATTEMPT_MARKER="Attempt "
+STOP_MARKER="Autofix stopped for head"
+
 attempt_count_for_head() {
   local number="$1" head_sha="$2" comments_json
   comments_json="$(gh api "repos/$REPO/issues/$number/comments?per_page=100" 2>/dev/null || echo '[]')"
-  jq -r --arg marker "$MARKER" --arg sha "$head_sha" \
-    '[.[] | select((.body // "") | contains($marker)) | select((.body // "") | contains($sha))] | length' \
+  # #1664: this used to count EVERY comment carrying the marker and the head
+  # SHA — including the "Autofix stopped" notice, which carries both. So the
+  # stop notice counted itself as an attempt, and because it was re-posted on
+  # every subsequent run, each run inflated the count further: 3/3, then 4/3,
+  # then 5/3, for ever. The cap was not off by one; it was incrementing itself.
+  #
+  # Only genuine attempt comments are counted now.
+  jq -r --arg marker "$MARKER" --arg sha "$head_sha" --arg attempt "$ATTEMPT_MARKER" \
+    '[.[] | select((.body // "") | contains($marker))
+          | select((.body // "") | contains($sha))
+          | select((.body // "") | contains($attempt))] | length' \
     <<<"$comments_json"
+}
+
+# True when this head has already been given up on, so the stop notice is
+# posted exactly once instead of on every 15-minute tick (#1664).
+stop_already_announced() {
+  local number="$1" head_sha="$2" comments_json
+  comments_json="$(gh api "repos/$REPO/issues/$number/comments?per_page=100" 2>/dev/null || echo '[]')"
+  local count
+  count="$(jq -r --arg marker "$MARKER" --arg sha "$head_sha" --arg stop "$STOP_MARKER" \
+    '[.[] | select((.body // "") | contains($marker))
+          | select((.body // "") | contains($sha))
+          | select((.body // "") | contains($stop))] | length' \
+    <<<"$comments_json")"
+  [[ "${count:-0}" -gt 0 ]]
 }
 
 failure_fingerprint() {
@@ -258,8 +287,15 @@ while IFS= read -r pr; do
 
   attempts="$(attempt_count_for_head "$number" "$head_sha")"
   if [[ "$attempts" -ge "$MAX_ATTEMPTS" ]]; then
-    echo "    stop: max attempts reached for head $head_sha"
-    comment_pr "$number" "🟡 **$MARKER**\n\nAutofix stopped for head \`$head_sha\` after $attempts/$MAX_ATTEMPTS attempts. This PR needs a human/agent handoff instead of another automated repair loop."
+    echo "    stop: max attempts reached for head $head_sha ($attempts/$MAX_ATTEMPTS)"
+    # Announce once per head. Re-posting every tick was half of #1664: it
+    # spammed the PR and, while the stop notice was still being counted as an
+    # attempt, drove the reported total up without bound.
+    if stop_already_announced "$number" "$head_sha"; then
+      echo "    stop: already announced for head $head_sha, staying quiet"
+    else
+      comment_pr "$number" "🟡 **$MARKER**\n\nAutofix stopped for head \`$head_sha\` after $attempts/$MAX_ATTEMPTS attempts. This PR needs a human/agent handoff instead of another automated repair loop."
+    fi
     exit 0
   fi
 
