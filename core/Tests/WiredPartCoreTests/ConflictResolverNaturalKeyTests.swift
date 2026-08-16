@@ -99,6 +99,44 @@ struct ConflictResolverNaturalKeyTests {
         )
     }
 
+    private func insert(
+        _ table: String,
+        _ recordId: String,
+        _ recordDataJSON: String,
+        timestamp: String = "2026-08-16T10:00:00Z"
+    ) -> IncomingChange {
+        IncomingChange(
+            deviceId: "remote-device",
+            tableName: table,
+            recordId: recordId,
+            operation: "INSERT",
+            recordData: recordDataJSON,
+            timestamp: timestamp
+        )
+    }
+
+    private func delete(
+        _ table: String,
+        _ recordId: String,
+        timestamp: String = "2026-08-16T10:00:00Z"
+    ) -> IncomingChange {
+        IncomingChange(
+            deviceId: "remote-device",
+            tableName: table,
+            recordId: recordId,
+            operation: "DELETE",
+            timestamp: timestamp
+        )
+    }
+
+    private func categoryDeletedAt(_ db: AppDatabase, _ id: Int) throws -> String? {
+        try db.writer.read { dbConn in
+            try String.fetchOne(
+                dbConn, sql: "SELECT deleted_at FROM part_categories WHERE id = ?", arguments: [id]
+            )
+        }
+    }
+
     private func seedTwoCategories(_ db: AppDatabase) throws {
         try seed(db) { dbConn in
             try dbConn.execute(sql: """
@@ -337,6 +375,200 @@ struct ConflictResolverNaturalKeyTests {
         #expect(defaultFlag == 0, "and the row that vacated the slot landed too")
     }
 
+    // MARK: - T-15/T-16/T-17 — deferral must not RE-ORDER a record's history
+
+    /// T-15. A parked merge replayed at the END of the batch is applied after a
+    /// DELETE that arrived AFTER it — and the record comes back from the dead.
+    ///
+    /// A delta batch is the raw `_change_log` ordered by timestamp/sequence with
+    /// no per-record dedup (`ChangeTracker.getPendingChanges`), so several
+    /// changes to one record in one batch is the ORDINARY shape. Within a batch
+    /// nothing consults timestamps for a field the peer alone changed —
+    /// `fieldLevelMerge` accepts the remote value outright when the field is not
+    /// in `getLocalChangedFields` — so arrival order IS the merge semantics, and
+    /// deferral inverts it.
+    ///
+    /// The bug this pins was invisible to every existing signal: the replay
+    /// SUCCEEDS, so `applied`, `keyCollisions`, `errors` and `skipped` all read
+    /// exactly as they do on a clean batch, and the replay runs under
+    /// `_sync_apply_guard`, so the corrupted row is never tracked or pushed
+    /// back. Two devices diverge permanently with nothing in any ledger.
+    ///
+    /// MUTATION CHECK: delete the `context.isSuperseded(entry)` arm from
+    /// `replayDeferredMerges` and this goes red — `deleted_at` becomes NULL,
+    /// `supersededMerges` becomes 0, and the record is back.
+    @Test("T-15 a later DELETE is not undone by a replayed merge — the record stays deleted")
+    func testDeferredMergeDoesNotResurrectARecordDeletedLaterInTheBatch() throws {
+        let db = try freshDB()
+        try seedTwoCategories(db)
+
+        let result = try applyStreamed(db, [
+            // Wants 'THHN', which id 9 still holds → parked at position 1.
+            insert(
+                "part_categories", "5",
+                #"{"id":"5","name":"THHN","deleted_at":null}"#,
+                timestamp: "2026-08-16T10:00:00Z"
+            ),
+            // Vacates the slot, so the parked merge WOULD succeed on replay.
+            update("part_categories", "9", #"{"name":"Zebra"}"#,
+                   timestamp: "2026-08-16T10:00:01Z"),
+            // …but the peer deleted the record after that.
+            delete("part_categories", "5", timestamp: "2026-08-16T10:00:02Z"),
+        ])
+
+        #expect(try categoryDeletedAt(db, 5) != nil,
+                "the DELETE must stick — a replayed merge may not resurrect the record")
+        #expect(try categoryName(db, 5) == "Romex",
+                "the superseded payload must not be written at all")
+        #expect(try categoryName(db, 9) == "Zebra", "the change that vacated the slot still applied")
+
+        // Visible, not silent: its own cause, and never a gate input.
+        #expect(result.supersededMerges == 1, "the discard must be counted")
+        #expect(result.keyCollisions == 0,
+                "no index refused anything here — this is not a collision outcome")
+        #expect(result.skipped == 0, "a discard may NEVER produce a gate input (#1749)")
+        #expect(result.errors == 0)
+
+        // The matched control: the same batch, with the parked change aimed at a
+        // FREE name so nothing defers. The DELETE sticks there too — which is
+        // what makes the assertion above about DEFERRAL and not about DELETE.
+        let control = try freshDB()
+        try seedTwoCategories(control)
+        _ = try applyStreamed(control, [
+            insert(
+                "part_categories", "5",
+                #"{"id":"5","name":"Unclaimed","deleted_at":null}"#,
+                timestamp: "2026-08-16T10:00:00Z"
+            ),
+            update("part_categories", "9", #"{"name":"Zebra"}"#,
+                   timestamp: "2026-08-16T10:00:01Z"),
+            delete("part_categories", "5", timestamp: "2026-08-16T10:00:02Z"),
+        ])
+        #expect(try categoryDeletedAt(control, 5) != nil)
+        #expect(try categoryName(control, 5) == "Unclaimed", "nothing was deferred in the control")
+    }
+
+    /// T-16. The same re-ordering, one step less dramatic and one step more
+    /// corrosive: a parked merge replayed after a NEWER update to the same
+    /// record overwrites the newer values with older ones.
+    ///
+    /// It also rewrites `updated_at`, which is the LWW authority for every
+    /// FUTURE merge of that row — so one silent replay keeps deciding later
+    /// conflicts wrongly long after the batch is forgotten.
+    ///
+    /// The discarded payload's `name` is NOT applied either, and that is the
+    /// deliberate choice: the change is dropped whole. Applying a subset would
+    /// be inventing a third version of the record that neither device ever had.
+    ///
+    /// MUTATION CHECK: delete the `context.isSuperseded(entry)` arm and the
+    /// description assertion goes red with "from C1 (older)".
+    @Test("T-16 a replayed merge does not overwrite a newer change to the same record")
+    func testDeferredMergeDoesNotOverwriteANewerChangeInTheSameBatch() throws {
+        let db = try freshDB()
+        try seedTwoCategories(db)
+
+        let result = try applyStreamed(db, [
+            // Collides on 'THHN' → parked at position 1, carrying the OLD description.
+            update("part_categories", "5", #"{"name":"THHN","description":"from C1 (older)"}"#,
+                   timestamp: "2026-08-16T10:00:00Z"),
+            // Vacates the slot.
+            update("part_categories", "9", #"{"name":"Zebra"}"#,
+                   timestamp: "2026-08-16T10:00:01Z"),
+            // The NEWER description for the same record.
+            update("part_categories", "5", #"{"description":"from C3 (newer)"}"#,
+                   timestamp: "2026-08-16T10:00:02Z"),
+        ])
+
+        #expect(try categoryDescription(db, 5) == "from C3 (newer)",
+                "the newest change to the record must win")
+        #expect(try categoryName(db, 5) == "Romex", "the superseded payload is dropped whole")
+
+        #expect(result.supersededMerges == 1)
+        #expect(result.keyCollisions == 0)
+        #expect(result.skipped == 0)
+        #expect(result.errors == 0)
+
+        // Matched control: nothing collides, so nothing is parked, and the same
+        // final description is reached by plain in-order application.
+        let control = try freshDB()
+        try seedTwoCategories(control)
+        _ = try applyStreamed(control, [
+            update("part_categories", "5", #"{"name":"Unclaimed","description":"from C1 (older)"}"#,
+                   timestamp: "2026-08-16T10:00:00Z"),
+            update("part_categories", "9", #"{"name":"Zebra"}"#,
+                   timestamp: "2026-08-16T10:00:01Z"),
+            update("part_categories", "5", #"{"description":"from C3 (newer)"}"#,
+                   timestamp: "2026-08-16T10:00:02Z"),
+        ])
+        #expect(try categoryDescription(control, 5) == "from C3 (newer)")
+        #expect(try categoryName(control, 5) == "Unclaimed")
+    }
+
+    /// T-17. The convergence LOOP, not just the fixed point.
+    ///
+    /// T-8b converges in a single pass, so until this test existed the `while`
+    /// loop in `drainDeferredMerges` was dead weight as far as the suite knew:
+    /// deleting it and keeping one drain left everything green. A mutation pass
+    /// found that, and this is the answer.
+    ///
+    /// The chain is FOUR deep: id 4 wants the name id 3 holds, id 3 wants id 2's,
+    /// id 2 wants id 1's, and only id 1's rename is free to land immediately.
+    /// A pass replays the buffer in arrival order, so each pass can free exactly
+    /// one more link — the entry ahead of it in the buffer is always retried
+    /// BEFORE the row it is waiting on has moved. Three replay passes are
+    /// required, and the head change makes four changes in the batch.
+    ///
+    /// FOUR deep, not three, and the reason is worth recording: the drain is
+    /// `while`-loop passes PLUS one final draining pass, and that final pass is
+    /// itself a fully effective retry (it merely may not re-park). A three-deep
+    /// chain therefore still converges with the cap set to 1, and the first
+    /// draft of this test passed that mutation. Depth four is the shallowest
+    /// chain that needs more passes than "one loop iteration plus the drain".
+    ///
+    /// MUTATION CHECKS, both must go red here:
+    /// - delete the `while` loop and keep the single draining pass →
+    ///   `keyCollisions == 2`, ids 3 and 4 keep their old names;
+    /// - set `ApplyContext.maxReplayPasses = 1` → `keyCollisions == 1` and id 4
+    ///   keeps its old name.
+    @Test("T-17 a four-deep vacancy chain needs more than one replay pass")
+    func testDeepChainRequiresMultipleReplayPasses() throws {
+        let db = try freshDB()
+        try seed(db) { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO part_categories (id, name, updated_at)
+                VALUES (1, 'N1', '2020-01-01T00:00:00Z'),
+                       (2, 'N2', '2020-01-01T00:00:00Z'),
+                       (3, 'N3', '2020-01-01T00:00:00Z'),
+                       (4, 'N4', '2020-01-01T00:00:00Z')
+                """)
+        }
+
+        let result = try applyStreamed(db, [
+            // Blocked by id 3, and still blocked in passes 1 and 2.
+            update("part_categories", "4", #"{"name":"N3"}"#,
+                   timestamp: "2026-08-16T10:00:00Z"),
+            // Blocked by id 2; lands in pass 2.
+            update("part_categories", "3", #"{"name":"N2"}"#,
+                   timestamp: "2026-08-16T10:00:01Z"),
+            // Blocked by id 1; lands in pass 1.
+            update("part_categories", "2", #"{"name":"N1"}"#,
+                   timestamp: "2026-08-16T10:00:02Z"),
+            // Free immediately — the head of the chain.
+            update("part_categories", "1", #"{"name":"Vacated"}"#,
+                   timestamp: "2026-08-16T10:00:03Z"),
+        ])
+
+        #expect(result.keyCollisions == 0, "every link in the chain must resolve")
+        #expect(result.supersededMerges == 0, "each record is touched exactly once")
+        #expect(result.skipped == 0)
+        #expect(result.errors == 0)
+
+        #expect(try categoryName(db, 1) == "Vacated")
+        #expect(try categoryName(db, 2) == "N1", "freed by pass 1")
+        #expect(try categoryName(db, 3) == "N2", "freed by pass 2")
+        #expect(try categoryName(db, 4) == "N3", "freed only by pass 3 — this is the loop")
+    }
+
     // MARK: - T-9 — an un-delete into an occupied partial-index slot
 
     /// Seed the FK chain `warehouse_walking_path_stops` needs, then two stops
@@ -445,11 +677,19 @@ struct ConflictResolverNaturalKeyTests {
     /// property of the implementation rather than a gap in the tests. The cache
     /// is read from exactly one place — `resolveKeyCollisionInPlace`, i.e. only
     /// after a refusal — and while the index is suspended `job_stages` cannot
-    /// produce one, so the poisoned entry is never consulted. The ordering rule
-    /// is therefore structurally satisfied, not merely observed. What this test
+    /// produce one, so the poisoned entry is never consulted. What this test
     /// pins is the two facts that make the rule real: the enumeration genuinely
     /// differs inside and outside the window, and the cache is STICKY, so a
     /// future refactor that hoists the read has a named hazard to fail against.
+    ///
+    /// CORRECTION (this commit): the sentence that used to follow — "the
+    /// ordering rule is therefore structurally satisfied" — overclaimed. It
+    /// holds on the two BATCHED paths only. `resolveAndApplyChanges`, the
+    /// per-row delta path, never calls `suspendJobStageSortIndex` at all, so
+    /// there the enumeration DOES report `sort_order`, the ladder withholds it,
+    /// and a `job_stages` merge can land half-applied with a `_conflict_log` row
+    /// claiming a local edit won when in fact an index refused the write. See
+    /// the caveat on `ConflictResolver.ApplyContext`; unfixed here on purpose.
     @Test("T-11 the unique-column enumeration is taken with the ordering index suspended")
     func testUniqueColumnEnumerationRunsInsideTheSuspensionWindow() throws {
         let db = try freshDB()

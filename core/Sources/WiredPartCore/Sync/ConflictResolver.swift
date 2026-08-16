@@ -80,13 +80,37 @@ public struct MergeResult: Sendable {
     /// because a retry can never fix it — only a schema migration can.
     public var schemaDrops: Int = 0
 
+    /// A merge that was PARKED for the fixed-point replay was then DISCARDED
+    /// unapplied, because the batch moved past it: a LATER change in the same
+    /// batch touched the same `(table, record_id)`, or the record it was going
+    /// to merge into was removed outright.
+    ///
+    /// This has its own counter because it is its own CAUSE, and the two causes
+    /// it is NOT are both wrong in a way that hides a bug:
+    ///
+    /// - It is not a `keyCollision`. A key collision is "a UNIQUE / PRIMARY KEY
+    ///   / rowid index refused these values" (see above). A parked merge that is
+    ///   dropped because a newer change won is a POLICY outcome about ordering,
+    ///   and the index may well have accepted it. Reusing `keyCollisions` here
+    ///   is exactly the "named by policy, not by cause" mistake this file argues
+    ///   against everywhere else — and it made the resurrection bug below
+    ///   indistinguishable from an ordinary collision in the field.
+    /// - It is not `skipped` or `errors`. Those are the two gate inputs that
+    ///   throw INSIDE the write transaction (#1749). This counter must never
+    ///   feed either of them, no matter how bad the number looks.
+    ///
+    /// Non-zero here is normal and healthy: it is the count of times deferral
+    /// declined to re-order a record's history.
+    public var supersededMerges: Int = 0
+
     public init(
         applied: Int = 0,
         conflicts: Int = 0,
         skipped: Int = 0,
         errors: Int = 0,
         keyCollisions: Int = 0,
-        schemaDrops: Int = 0
+        schemaDrops: Int = 0,
+        supersededMerges: Int = 0
     ) {
         self.applied = applied
         self.conflicts = conflicts
@@ -94,6 +118,7 @@ public struct MergeResult: Sendable {
         self.errors = errors
         self.keyCollisions = keyCollisions
         self.schemaDrops = schemaDrops
+        self.supersededMerges = supersededMerges
     }
 
     /// Accumulate one change's outcome. Keeps the batched and streamed atomic
@@ -107,6 +132,7 @@ public struct MergeResult: Sendable {
         skipped += outcome.skipped
         keyCollisions += outcome.keyCollisions
         schemaDrops += outcome.schemaDrops
+        supersededMerges += outcome.supersededMerges
     }
 }
 
@@ -121,19 +147,22 @@ struct ApplyOutcome: Sendable {
     var skipped = 0
     var keyCollisions = 0
     var schemaDrops = 0
+    var supersededMerges = 0
 
     init(
         applied: Int = 0,
         conflicts: Int = 0,
         skipped: Int = 0,
         keyCollisions: Int = 0,
-        schemaDrops: Int = 0
+        schemaDrops: Int = 0,
+        supersededMerges: Int = 0
     ) {
         self.applied = applied
         self.conflicts = conflicts
         self.skipped = skipped
         self.keyCollisions = keyCollisions
         self.schemaDrops = schemaDrops
+        self.supersededMerges = supersededMerges
     }
 
     /// Bridge from the legacy dispatch tuple.
@@ -427,6 +456,10 @@ public enum ConflictResolver {
                     combined.conflicts += residue.conflicts
                     combined.keyCollisions += residue.keyCollisions
                     combined.schemaDrops += residue.schemaDrops
+                    // Always zero on this path — nothing may be parked here, so
+                    // nothing can be superseded — but summed rather than assumed,
+                    // so the two paths stay structurally identical.
+                    combined.supersededMerges += residue.supersededMerges
                     return combined
                 }
                 result.add(outcome)
@@ -765,6 +798,12 @@ public enum ConflictResolver {
         _ localDeviceId: String,
         _ context: ApplyContext
     ) throws -> (applied: Int, conflicts: Int, skipped: Int) {
+        // BEFORE the table guard and before any dispatch: what is being counted
+        // is this change's POSITION in the batch, and a rejected row still
+        // occupies one. A hole in the count would make an entry parked after it
+        // look older than it is. See `ApplyContext.noteChangeArriving`.
+        context.noteChangeArriving(table: change.tableName, recordId: change.recordId)
+
         guard isAllowedTable(change.tableName) else { return (0, 0, 1) }
 
         do {
@@ -923,6 +962,14 @@ public enum ConflictResolver {
         let incomingFields: [String: String?]
         let change: IncomingChange
         let localDeviceId: String
+        /// This change's POSITION in the batch, assigned on arrival.
+        ///
+        /// Load-bearing, not diagnostic. Deferral moves a change to the END of
+        /// the batch, so without a record of where it came from there is no way
+        /// to tell "replaying this is the ordering fix the fixed point exists
+        /// for" from "replaying this undoes every later change to the same
+        /// record". See `ApplyContext.isSuperseded`.
+        let arrivalOrdinal: Int
         /// Rough retained size, used only to bound the buffer.
         let approximateBytes: Int
     }
@@ -930,12 +977,25 @@ public enum ConflictResolver {
     /// State that lives exactly as long as ONE apply, and no longer.
     ///
     /// Deliberately an instance threaded through the call chain rather than a
-    /// `static var`. `suspendJobStageSortIndex` DROPS a unique index for the
-    /// duration of an apply, so the answer to "which columns are unique here"
-    /// is only valid inside that window; a process-global cache would serve a
-    /// later apply a schema snapshot taken while an index was missing (or be
-    /// poisoned by one taken while it was present). It would also be shared
-    /// mutable state under Swift 6 concurrency checking.
+    /// `static var`. On the BATCHED paths `suspendJobStageSortIndex` DROPS a
+    /// unique index for the duration of the apply, so the answer to "which
+    /// columns are unique here" is only valid inside that window; a
+    /// process-global cache would serve a later apply a schema snapshot taken
+    /// while an index was missing (or be poisoned by one taken while it was
+    /// present). It would also be shared mutable state under Swift 6
+    /// concurrency checking.
+    ///
+    /// **The suspension is NOT a global invariant, and nothing here should be
+    /// read as if it were.** `resolveAndApplyChanges` — the per-row delta path —
+    /// never suspends anything, so on that path the enumeration DOES report
+    /// `job_stages.sort_order` and the ladder's attempt 2 will withhold it. The
+    /// consequence is a half-merged `job_stages` row plus a `_conflict_log` row
+    /// recording `winner: "local"` for a field no user edited locally — it was a
+    /// constraint refusal, not an edit. That is a real (if narrow) defect and is
+    /// deliberately NOT fixed in this commit: the candidate fixes are running
+    /// DDL inside every delta transaction, or teaching the enumeration which
+    /// index is currently suspended, and both are behaviour changes to the delta
+    /// path with their own test surface.
     final class ApplyContext {
         /// Whether a key collision may be parked and retried later.
         enum Disposition {
@@ -960,9 +1020,39 @@ public enum ConflictResolver {
         private var deferred: [DeferredMerge] = []
         private var deferredBytes = 0
 
+        /// Position of the change currently being applied, counting from 1.
+        ///
+        /// A batch is the raw `_change_log` ordered by timestamp/sequence —
+        /// `ChangeTracker.getPendingChanges` / `changesSince` do NO per-record
+        /// dedup — so SEVERAL changes to one record in one batch is the normal
+        /// shape, and their order is the entire correctness mechanism:
+        /// `fieldLevelMerge` accepts a remote value unconditionally whenever the
+        /// field is not in `getLocalChangedFields`, so within a batch arrival
+        /// order, not the timestamp, is the arbiter.
+        private(set) var arrivalOrdinal = 0
+
+        /// Set while ONE parked entry is being replayed, so that a re-park keeps
+        /// the entry's ORIGINAL position instead of picking up the counter's
+        /// current (end-of-batch) value. Without this, surviving one replay pass
+        /// would silently promote an entry to "newest change to this record".
+        private var replayingArrivalOrdinal: Int?
+
+        /// Highest arrival ordinal seen for a record, kept ONLY for records that
+        /// have been parked at least once.
+        ///
+        /// Deliberately not a journal of the whole batch: a company snapshot is
+        /// hundreds of thousands of rows and this is the one component that
+        /// holds per-row state on a phone. Keying it on parks bounds it by
+        /// `maxDeferredEntries`, and a record that never parked can never have a
+        /// parked entry to supersede.
+        private var latestArrivalOrdinal: [String: Int] = [:]
+
         /// Residue that never reaches `skipped` or `errors`.
         var keyCollisions = 0
         var schemaDrops = 0
+        /// Parked merges DISCARDED because a later change in the same batch
+        /// superseded them. See `MergeResult.supersededMerges`.
+        var supersededMerges = 0
         /// Conflict-log entries written during the drain, which happens after
         /// the per-change outcome has already been tallied.
         var replayConflicts = 0
@@ -982,6 +1072,56 @@ public enum ConflictResolver {
         var hasDeferredWork: Bool { !deferred.isEmpty }
         var deferredCount: Int { deferred.count }
 
+        /// The position a merge parked RIGHT NOW should carry.
+        var ordinalForParking: Int { replayingArrivalOrdinal ?? arrivalOrdinal }
+
+        private static func recordKey(_ table: String, _ recordId: String) -> String {
+            // U+0001 cannot occur in a table name (they come from
+            // `allowedSyncTables`) and so cannot forge a key boundary.
+            "\(table)\u{1}\(recordId)"
+        }
+
+        /// Announce that the NEXT change in the batch is about to be applied.
+        ///
+        /// Must be called for EVERY change on a batched path — including
+        /// DELETEs, unknown operations and disallowed tables — because the thing
+        /// being counted is position in the batch, and a hole in the count is a
+        /// silent mis-ordering.
+        func noteChangeArriving(table: String, recordId: String) {
+            arrivalOrdinal += 1
+            let key = Self.recordKey(table, recordId)
+            // Only records that have already parked are tracked; see
+            // `latestArrivalOrdinal`.
+            if latestArrivalOrdinal[key] != nil {
+                latestArrivalOrdinal[key] = arrivalOrdinal
+            }
+        }
+
+        /// Has a LATER change in this batch made replaying `entry` a rewrite of
+        /// history rather than a repair of ordering?
+        ///
+        /// The whole point of the fixed point is that a merge which collided at
+        /// position k may succeed once the row holding the slot moves. What it
+        /// must NOT do is apply position k's payload after position k+n has
+        /// already been applied to the same record — that resurrects a record a
+        /// later DELETE removed, and lets an older field value overwrite a newer
+        /// one (which also clobbers `updated_at`, the LWW authority for every
+        /// FUTURE merge of that row). Neither is visible in any counter, because
+        /// the replay SUCCEEDS, and neither is re-broadcast, because the replay
+        /// runs under `_sync_apply_guard` — the two devices simply diverge
+        /// forever.
+        ///
+        /// A DELETE arriving LATER supersedes through exactly this rule, since a
+        /// DELETE is a change like any other and bumps the record's ordinal. A
+        /// DELETE arriving EARLIER than the parked merge deliberately does not:
+        /// the merge is genuinely the newer change there, and replaying it is
+        /// what an in-order apply would have done anyway.
+        func isSuperseded(_ entry: DeferredMerge) -> Bool {
+            let key = Self.recordKey(entry.table, entry.recordId)
+            guard let latest = latestArrivalOrdinal[key] else { return false }
+            return latest > entry.arrivalOrdinal
+        }
+
         /// Park a collided merge. Returns `false` when a cap is hit — the caller
         /// then resolves it in place. Overflow NEVER throws.
         func enqueueDeferredMerge(_ entry: DeferredMerge) -> Bool {
@@ -991,6 +1131,12 @@ public enum ConflictResolver {
             }
             deferred.append(entry)
             deferredBytes += entry.approximateBytes
+            // Start (or refresh) tracking for this record. Refreshing matters:
+            // when a SECOND change to an already-parked record parks too, the
+            // key's latest ordinal becomes the second entry's, which supersedes
+            // the first and keeps the second — per-entry granularity, not
+            // per-record.
+            latestArrivalOrdinal[Self.recordKey(entry.table, entry.recordId)] = entry.arrivalOrdinal
             return true
         }
 
@@ -1000,6 +1146,14 @@ public enum ConflictResolver {
             deferred.removeAll(keepingCapacity: true)
             deferredBytes = 0
             return entries
+        }
+
+        /// Run `body` as the replay of `entry`, so anything it re-parks inherits
+        /// `entry`'s original batch position.
+        func replaying<T>(_ entry: DeferredMerge, _ body: () throws -> T) rethrows -> T {
+            replayingArrivalOrdinal = entry.arrivalOrdinal
+            defer { replayingArrivalOrdinal = nil }
+            return try body()
         }
 
         func uniqueParticipatingColumns(_ db: Database, _ table: String) throws -> Set<String> {
@@ -1015,7 +1169,8 @@ public enum ConflictResolver {
             ApplyOutcome(
                 conflicts: replayConflicts,
                 keyCollisions: keyCollisions,
-                schemaDrops: schemaDrops
+                schemaDrops: schemaDrops,
+                supersededMerges: supersededMerges
             )
         }
     }
@@ -1029,6 +1184,14 @@ public enum ConflictResolver {
     /// lands, which may in turn vacate a slot for another. When a pass frees
     /// nothing, no later pass can either, so it stops — and a hard pass cap
     /// bounds it regardless.
+    ///
+    /// Replaying is also a RE-ORDERING, and that half is not optional: an entry
+    /// whose record was touched again later in the same batch is DISCARDED
+    /// rather than applied, counted in `supersededMerges` and logged. Without
+    /// that, a parked merge replayed after a later DELETE resurrects the record,
+    /// and one replayed after a later UPDATE overwrites the newer values —
+    /// silently, because the replay succeeds, and permanently, because
+    /// `_sync_apply_guard` stops the corrected row being broadcast back.
     ///
     /// MUST run before `restoreJobStageSortIndex`: the replay needs the same
     /// suspended-index conditions the first pass had. MUST NOT run any DDL —
@@ -1056,40 +1219,71 @@ public enum ConflictResolver {
     /// One replay pass over the deferral buffer.
     private static func replayDeferredMerges(_ db: Database, _ context: ApplyContext) throws {
         for entry in context.takeDeferred() {
+            // Deferral RE-ORDERS a change: this payload was change number
+            // `entry.arrivalOrdinal`, and it is being applied after change
+            // number N. That is a repair only while nothing else in the batch
+            // touched the record in between; otherwise it is a rewrite of the
+            // record's history that no counter would notice, because the replay
+            // SUCCEEDS. Discard it instead — and say so.
+            if context.isSuperseded(entry) {
+                context.supersededMerges += 1
+                logger.warning(
+                    """
+                    Deferred merge discarded: a later change in the same batch superseded it — \
+                    table=\(entry.table, privacy: .public) id=\(entry.recordId, privacy: .public) \
+                    parkedAt=\(entry.arrivalOrdinal, privacy: .public) \
+                    from device=\(entry.change.deviceId, privacy: .public)
+                    """
+                )
+                continue
+            }
+
             guard let localRow = try getLocalRecord(
                 db: db,
                 tableName: entry.table,
                 recordId: entry.recordId
             ) else {
-                // The row we meant to merge into is gone — a DELETE later in the
-                // batch removed it. Re-inserting it belongs to the insert
-                // builders, not here, so record the cause and move on.
+                // The row we meant to merge into is gone — a hard DELETE removed
+                // it (a soft delete leaves the row, and is caught by the
+                // supersession check above). Re-inserting it belongs to the
+                // insert builders, not here, so record the cause and move on.
                 //
                 // This is caught DELIBERATELY rather than allowed to reach
                 // `applyUpdate`'s `missingLocalRecord` throw: that would land in
                 // `skipped`, which the snapshot gate throws on inside the write
                 // transaction. A replayed row must never be able to create a new
                 // producer of a gate input.
-                context.keyCollisions += 1
+                //
+                // The cause is `supersededMerges`, NOT `keyCollisions`: no index
+                // refused anything here. Counting a vanished record as a
+                // constraint refusal is the same category error as counting one
+                // as `skipped`, one counter further down.
+                context.supersededMerges += 1
                 logger.warning(
                     """
-                    Deferred merge dropped: local record vanished during the batch — \
-                    table=\(entry.table, privacy: .public) id=\(entry.recordId, privacy: .public)
+                    Deferred merge discarded: local record vanished during the batch — \
+                    table=\(entry.table, privacy: .public) id=\(entry.recordId, privacy: .public) \
+                    parkedAt=\(entry.arrivalOrdinal, privacy: .public)
                     """
                 )
                 continue
             }
 
-            let conflicts = try fieldLevelMerge(
-                db: db,
-                table: entry.table,
-                recordId: entry.recordId,
-                localRow: localRow,
-                incomingFields: entry.incomingFields,
-                change: entry.change,
-                localDeviceId: entry.localDeviceId,
-                context: context
-            )
+            // `replaying` keeps the entry's ORIGINAL batch position on anything
+            // this merge re-parks, so surviving a pass never promotes a change
+            // to "newest for this record".
+            let conflicts = try context.replaying(entry) {
+                try fieldLevelMerge(
+                    db: db,
+                    table: entry.table,
+                    recordId: entry.recordId,
+                    localRow: localRow,
+                    incomingFields: entry.incomingFields,
+                    change: entry.change,
+                    localDeviceId: entry.localDeviceId,
+                    context: context
+                )
+            }
             // The change was already tallied when it first arrived, so only the
             // conflict rows written by THIS pass are new.
             context.replayConflicts += conflicts
@@ -1850,6 +2044,11 @@ public enum ConflictResolver {
                 // park this merge and replay it after the batch. Nothing has
                 // been written and nothing has been logged, so parking is free
                 // and re-running is idempotent.
+                //
+                // Parking is also a RE-ORDERING, which is why the entry carries
+                // its arrival position: the replay discards it if any later
+                // change in the batch touched the same record. See
+                // `ApplyContext.isSuperseded`.
                 if context.canDefer {
                     let parked = context.enqueueDeferredMerge(DeferredMerge(
                         table: table,
@@ -1857,6 +2056,7 @@ public enum ConflictResolver {
                         incomingFields: incomingFields,
                         change: change,
                         localDeviceId: localDeviceId,
+                        arrivalOrdinal: context.ordinalForParking,
                         approximateBytes: approximatePayloadBytes(incomingFields, change)
                     ))
                     if parked { return 0 }
