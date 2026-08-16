@@ -1,5 +1,5 @@
 import XCTest
-@testable import Weird_Parts_IOS
+@testable import Weird_Parts
 
 /// #1739 — a device that had already joined a company was offered
 /// "Create New Business" again on its next launch.
@@ -18,6 +18,11 @@ import XCTest
 /// Business" on a joined device seeds a second admin and a second set of
 /// built-in hats, putting divergent ids for the same natural keys onto the
 /// mesh — the collision class #1737 exists to contain.
+/// `AppCore` is `@MainActor`, and `startupState` is not `nonisolated` (unlike the
+/// 14 sibling pure statics in that file), so every call below is a MainActor
+/// call. Annotating the class is correct whether or not the test target
+/// defaults to MainActor isolation, and matches `AIFilterCommandAuthorizationTests`.
+@MainActor
 final class StartupStateRegressionTests: XCTestCase {
 
     /// The regression. Paired, but nothing replicated yet.
