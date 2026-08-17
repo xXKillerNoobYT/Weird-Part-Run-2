@@ -1223,18 +1223,41 @@ public enum ConflictResolver {
             }
             deferred.append(entry)
             deferredBytes += entry.approximateBytes
-            // Start (or refresh) tracking for this record. Refreshing matters:
-            // when a SECOND change to an already-parked record parks too, the
-            // key's latest ordinal becomes the second entry's, which supersedes
-            // the first and keeps the second — per-entry granularity, not
-            // per-record.
+            // START tracking this record — and ONLY start. A park must never
+            // REFRESH an ordinal that is already there, because a park is not a
+            // write, and this rule admits no exception for it either.
             //
-            // A park is the one non-write that legitimately refreshes this,
-            // because a parked change is not a change that did nothing: it is
-            // one still queued to be applied (or discarded and counted). Every
-            // OTHER non-write is exactly what `noteRecordMutated` exists to
-            // exclude.
-            latestArrivalOrdinal[Self.recordKey(entry.table, entry.recordId)] = entry.arrivalOrdinal
+            // Insert-if-absent, for three reasons:
+            //
+            // 1. Two parked entries need NO supersession between them.
+            //    `takeDeferred()` hands them back in APPEND order, which is
+            //    arrival order, so replaying both in sequence IS the in-order
+            //    result. Refreshing prevented no re-ordering whatsoever; all it
+            //    did was discard the earlier entry, and the record then held
+            //    NEITHER payload whenever the later one resolved to a rung that
+            //    writes nothing — `reduced.isEmpty` and the attempt-3 give-up in
+            //    `resolveKeyCollisionInPlace` both return without a statement.
+            //    That loss is permanent and silent: the discard runs under
+            //    `_sync_apply_guard`, so nothing is re-broadcast, and the peer's
+            //    watermark advances regardless.
+            // 2. A genuine later WRITE still supersedes, through the one door
+            //    that is allowed to say so: `noteRecordMutated` raises the
+            //    tracked ordinal to `max(known, ordinalForParking)`.
+            // 3. The assignment could also LOWER the tracked ordinal.
+            //    `replaying` makes a RE-parked entry inherit its ORIGINAL
+            //    position, so an unconditional write here can undo a
+            //    supersession a later write had already recorded. Insert-if-
+            //    absent cannot regress a tracked ordinal at all.
+            //
+            // Deleting the assignment outright would NOT be the fix: tracking
+            // only ever starts here, and `noteRecordMutated` returns early for
+            // an untracked key — so `isSuperseded` would become permanently
+            // false and a parked merge replayed after a later DELETE would
+            // resurrect the record (#1749's guard, gone).
+            let key = Self.recordKey(entry.table, entry.recordId)
+            if latestArrivalOrdinal[key] == nil {
+                latestArrivalOrdinal[key] = entry.arrivalOrdinal
+            }
             return true
         }
 
@@ -1328,8 +1351,10 @@ public enum ConflictResolver {
                 // The message names the mechanism exactly, because it is the
                 // only signal a discard produces. "Wrote" is literal: a later
                 // change that wrote NOTHING — refused by NOT NULL/CHECK, an
-                // unrecognised operation verb, an UPDATE carrying no fields —
-                // no longer reaches here at all. See `noteRecordMutated`.
+                // unrecognised operation verb, an UPDATE carrying no fields, or
+                // one that merely PARKED and then resolved to a rung of the
+                // ladder that runs no statement — no longer reaches here at
+                // all. See `noteRecordMutated` and `enqueueDeferredMerge`.
                 let supersededAt = context.supersedingWriteOrdinal(entry) ?? entry.arrivalOrdinal
                 logger.warning(
                     """

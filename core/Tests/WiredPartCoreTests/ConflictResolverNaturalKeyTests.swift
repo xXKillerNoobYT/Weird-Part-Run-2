@@ -1066,4 +1066,267 @@ struct ConflictResolverNaturalKeyTests {
         #expect(result.errors == 0, "a collision must not land in `errors` either")
         #expect(result.skipped == 0)
     }
+
+    // MARK: - T-20 — a PARK is not a WRITE either
+
+    private func categorySortOrder(_ db: AppDatabase, _ id: Int) throws -> Int? {
+        try db.writer.read { dbConn in
+            try Int.fetchOne(
+                dbConn, sql: "SELECT sort_order FROM part_categories WHERE id = ?", arguments: [id]
+            )
+        }
+    }
+
+    private func templateName(_ db: AppDatabase, _ id: Int) throws -> String? {
+        try db.writer.read { dbConn in
+            try String.fetchOne(
+                dbConn, sql: "SELECT name FROM job_stage_templates WHERE id = ?", arguments: [id]
+            )
+        }
+    }
+
+    /// T-20a. The park was carved OUT of T-18's "only a WRITE counts" rule, and
+    /// the carve-out is false.
+    ///
+    /// `enqueueDeferredMerge` refreshed `latestArrivalOrdinal` unconditionally,
+    /// justified by "a parked change is not a change that did nothing: it is one
+    /// still queued to be applied (or discarded and counted)". Two rungs of the
+    /// merge ladder refute that — the parked entry is eventually resolved IN
+    /// PLACE and writes nothing at all. This is the `reduced.isEmpty` rung:
+    /// every column the change carried was a unique-key column, so there is no
+    /// statement left to run.
+    ///
+    /// The batch below parks TWICE on record 5. The second park's refresh made
+    /// the FIRST entry look superseded, and the drain discarded it — logging
+    /// that a later change "wrote this record" when nothing ever did. Both
+    /// payloads were then lost: the discard runs under `_sync_apply_guard`, so
+    /// nothing is re-broadcast, and the peer's watermark advances anyway.
+    ///
+    /// The matched control is the SAME batch with the second change removed.
+    /// Adding a change that writes nothing must not subtract data — if the two
+    /// runs disagree, a non-write was counted as a write.
+    ///
+    /// MUTATION CHECK: restore the unconditional
+    /// `latestArrivalOrdinal[key] = entry.arrivalOrdinal` in
+    /// `enqueueDeferredMerge` and this goes red — `description` falls back to
+    /// `local five`, `supersededMerges` becomes 1 and `keyCollisions` becomes 1.
+    @Test("T-20a a second park that writes nothing must not discard the first park's payload")
+    func testSecondParkOnTheEmptyReducedRungDoesNotDiscardTheFirst() throws {
+        let db = try freshDB()
+        try seedTwoCategories(db)
+
+        let result = try applyStreamed(db, [
+            // Collides on 'THHN' (held by id 9) → parked at position 1.
+            update("part_categories", "5",
+                   #"{"name":"THHN","description":"peer desc"}"#,
+                   timestamp: "2026-08-16T10:00:00Z"),
+            // Collides identically → parked at position 2. It carries NOTHING
+            // but the key column, so when the drain resolves it in place the
+            // reduced SET clause is empty and no statement is ever run.
+            update("part_categories", "5",
+                   #"{"name":"THHN"}"#,
+                   timestamp: "2026-08-16T10:00:01Z"),
+        ])
+
+        #expect(try categoryDescription(db, 5) == "peer desc",
+                "the first park's non-key payload must survive — nothing wrote over it")
+        #expect(try categoryName(db, 5) == "Romex", "the contested key column is still withheld")
+        #expect(try categoryName(db, 9) == "THHN", "exactly one row holds the key")
+
+        #expect(result.supersededMerges == 0,
+                "a park is not a write: neither parked entry superseded the other")
+        #expect(result.keyCollisions == 2,
+                "both entries reached the ladder and were counted there")
+        #expect(result.skipped == 0, "a constraint outcome may NEVER produce a gate input (#1749)")
+        #expect(result.errors == 0)
+
+        // MATCHED CONTROL — the identical batch with the write-nothing second
+        // change removed. Same rows, one fewer collision counted.
+        let control = try freshDB()
+        try seedTwoCategories(control)
+        let controlResult = try applyStreamed(control, [
+            update("part_categories", "5",
+                   #"{"name":"THHN","description":"peer desc"}"#,
+                   timestamp: "2026-08-16T10:00:00Z"),
+        ])
+        #expect(try categoryDescription(control, 5) == "peer desc")
+        #expect(try categoryName(control, 5) == "Romex")
+        #expect(controlResult.supersededMerges == 0)
+        #expect(controlResult.keyCollisions == 1)
+    }
+
+    /// T-20b. The same carve-out, on the OTHER write-nothing rung: attempt 3,
+    /// where the ladder gives up and leaves the row exactly as it was.
+    ///
+    /// `job_stage_templates`' index is `ON (is_default) WHERE is_default = 1 AND
+    /// archived_at IS NULL`, and `pragma_index_info` never reports
+    /// `archived_at` — so a change that only un-archives has NO unique column to
+    /// withhold, attempt 2 is skipped entirely, and attempt 3 returns 0.
+    ///
+    /// On this rung nothing is written on EITHER side of the fix, because every
+    /// change that can collide here must un-archive, and un-archiving survives
+    /// reduction — so both parked entries reach attempt 3. What the fix restores
+    /// is the LEDGER: at HEAD the first entry was discarded as "superseded" and
+    /// its collision never counted, so the residue under-reported by one and the
+    /// warning log named a write that never happened.
+    ///
+    /// MUTATION CHECK: restore the unconditional
+    /// `latestArrivalOrdinal[key] = entry.arrivalOrdinal` and this goes red —
+    /// `supersededMerges` becomes 1 and `keyCollisions` becomes 1.
+    @Test("T-20b a second park that reaches the give-up rung must not discard the first park")
+    func testSecondParkOnTheGiveUpRungDoesNotDiscardTheFirst() throws {
+        let db = try freshDB()
+        try seedArchivedTemplate(db)
+
+        let result = try applyStreamed(db, [
+            // Un-archives id 2 into the one default slot id 1 holds → parked at 1.
+            update("job_stage_templates", "2",
+                   #"{"archived_at":null,"name":"C1 name"}"#,
+                   timestamp: "2026-08-16T10:00:00Z"),
+            // Identical collision → parked at 2, and it too writes nothing.
+            update("job_stage_templates", "2",
+                   #"{"archived_at":null}"#,
+                   timestamp: "2026-08-16T10:00:01Z"),
+        ])
+
+        #expect(result.supersededMerges == 0,
+                "a park is not a write: neither parked entry superseded the other")
+        #expect(result.keyCollisions == 2,
+                "both entries reached the give-up rung, and both must be counted")
+        #expect(result.skipped == 0)
+        #expect(result.errors == 0)
+        #expect(try templateName(db, 2) == "Old", "the give-up rung leaves the row byte-unchanged")
+
+        // MATCHED CONTROL — the write-nothing second change removed.
+        let control = try freshDB()
+        try seedArchivedTemplate(control)
+        let controlResult = try applyStreamed(control, [
+            update("job_stage_templates", "2",
+                   #"{"archived_at":null,"name":"C1 name"}"#,
+                   timestamp: "2026-08-16T10:00:00Z"),
+        ])
+        #expect(controlResult.supersededMerges == 0)
+        #expect(controlResult.keyCollisions == 1)
+        #expect(try templateName(control, 2) == "Old")
+    }
+
+    /// T-20c. Rationale 1, made observable: two parked entries need NO
+    /// supersession between them, because `takeDeferred()` iterates in APPEND
+    /// (arrival) order — replaying both in sequence IS the in-order result.
+    ///
+    /// The first park carries a field the second does not. In arrival order the
+    /// batch ends with the newer description AND the older change's
+    /// `sort_order`; at HEAD the first entry was discarded whole, so
+    /// `sort_order` never landed.
+    ///
+    /// MUTATION CHECK: restore the unconditional refresh and this goes red —
+    /// `sort_order` stays 0 and `supersededMerges` becomes 1.
+    @Test("T-20c two parked entries replay in arrival order — that IS the in-order result")
+    func testTwoParkedEntriesReplayInArrivalOrder() throws {
+        let db = try freshDB()
+        try seedTwoCategories(db)
+
+        let result = try applyStreamed(db, [
+            update("part_categories", "5",
+                   #"{"name":"THHN","description":"from C1","sort_order":"3"}"#,
+                   timestamp: "2026-08-16T10:00:00Z"),
+            update("part_categories", "5",
+                   #"{"name":"THHN","description":"from C2"}"#,
+                   timestamp: "2026-08-16T10:00:01Z"),
+            // Vacates the slot, so BOTH parked entries land on replay.
+            update("part_categories", "9", #"{"name":"Zebra"}"#,
+                   timestamp: "2026-08-16T10:00:02Z"),
+        ])
+
+        #expect(try categoryName(db, 5) == "THHN", "the slot was vacated, so the rename lands")
+        #expect(try categoryDescription(db, 5) == "from C2",
+                "the LATER of the two parked entries still wins the field they share")
+        #expect(try categorySortOrder(db, 5) == 3,
+                "…and the EARLIER entry's own field must not be thrown away with it")
+        #expect(result.supersededMerges == 0)
+        #expect(result.keyCollisions == 0, "every collision was ordering-induced and recovered")
+        #expect(result.skipped == 0)
+        #expect(result.errors == 0)
+    }
+
+    /// T-20d. The safety property the fix must NOT delete (#1749's resurrection
+    /// guard), in the two-park shape the changed line governs.
+    ///
+    /// The review that found T-20a proposed deleting the park's assignment
+    /// outright. That would be wrong: `noteRecordMutated` begins
+    /// `guard let known = latestArrivalOrdinal[key] else { return }`, so a
+    /// record that never parked is never tracked, and the park is what STARTS
+    /// tracking. With no assignment at all, `latestArrivalOrdinal` stays empty,
+    /// `isSuperseded` is always false, and a parked merge replayed after a later
+    /// DELETE resurrects the record.
+    ///
+    /// MUTATION CHECK: delete the assignment in `enqueueDeferredMerge`
+    /// entirely — the review's suggested fix — and this goes red: `deleted_at`
+    /// becomes NULL, `supersededMerges` becomes 0 and the record is back with
+    /// the second parked payload.
+    @Test("T-20d a later DELETE still supersedes BOTH parked entries")
+    func testALaterDeleteStillSupersedesEveryParkedEntry() throws {
+        let db = try freshDB()
+        try seedTwoCategories(db)
+
+        let result = try applyStreamed(db, [
+            update("part_categories", "5",
+                   #"{"name":"THHN","description":"from C1","deleted_at":null}"#,
+                   timestamp: "2026-08-16T10:00:00Z"),
+            update("part_categories", "5",
+                   #"{"name":"THHN","description":"from C2","deleted_at":null}"#,
+                   timestamp: "2026-08-16T10:00:01Z"),
+            // Vacates the slot, so both parked entries WOULD land on replay.
+            update("part_categories", "9", #"{"name":"Zebra"}"#,
+                   timestamp: "2026-08-16T10:00:02Z"),
+            // …but the peer deleted the record after all of it.
+            delete("part_categories", "5", timestamp: "2026-08-16T10:00:03Z"),
+        ])
+
+        #expect(try categoryDeletedAt(db, 5) != nil,
+                "a real later WRITE — the DELETE — must still supersede every parked entry")
+        #expect(try categoryName(db, 5) == "Romex", "neither superseded payload may be written")
+        #expect(try categoryDescription(db, 5) == "local five")
+        #expect(result.supersededMerges == 2, "BOTH parked entries must be discarded")
+        #expect(result.keyCollisions == 0)
+        #expect(result.skipped == 0)
+        #expect(result.errors == 0)
+    }
+
+    /// T-20e. The same safety property against a later UPDATE rather than a
+    /// DELETE: an older parked payload must never overwrite a newer value, and
+    /// must never clobber `updated_at`, the LWW authority for every FUTURE merge
+    /// of the row.
+    ///
+    /// MUTATION CHECK: delete the assignment in `enqueueDeferredMerge` entirely
+    /// and this goes red — `description` becomes "from C2" and
+    /// `supersededMerges` becomes 0.
+    @Test("T-20e a later UPDATE write still supersedes BOTH parked entries")
+    func testALaterWriteStillSupersedesEveryParkedEntry() throws {
+        let db = try freshDB()
+        try seedTwoCategories(db)
+
+        let result = try applyStreamed(db, [
+            update("part_categories", "5",
+                   #"{"name":"THHN","description":"from C1"}"#,
+                   timestamp: "2026-08-16T10:00:00Z"),
+            update("part_categories", "5",
+                   #"{"name":"THHN","description":"from C2"}"#,
+                   timestamp: "2026-08-16T10:00:01Z"),
+            // Vacates the slot, so both parked entries WOULD land on replay.
+            update("part_categories", "9", #"{"name":"Zebra"}"#,
+                   timestamp: "2026-08-16T10:00:02Z"),
+            // The genuinely newest change to the record — and it really writes.
+            update("part_categories", "5", #"{"description":"from C4 (newest)"}"#,
+                   timestamp: "2026-08-16T10:00:03Z"),
+        ])
+
+        #expect(try categoryDescription(db, 5) == "from C4 (newest)",
+                "the newest write to the record must win over both parked entries")
+        #expect(try categoryName(db, 5) == "Romex", "both superseded payloads are dropped whole")
+        #expect(result.supersededMerges == 2, "BOTH parked entries must be discarded")
+        #expect(result.keyCollisions == 0)
+        #expect(result.skipped == 0)
+        #expect(result.errors == 0)
+    }
 }
