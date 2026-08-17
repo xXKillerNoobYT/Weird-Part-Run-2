@@ -1236,7 +1236,14 @@ public enum ConflictResolver {
             //    did was discard the earlier entry, and the record then held
             //    NEITHER payload whenever the later one resolved to a rung that
             //    writes nothing — `reduced.isEmpty` and the attempt-3 give-up in
-            //    `resolveKeyCollisionInPlace` both return without a statement.
+            //    `resolveKeyCollisionInPlace` both return without running a
+            //    statement against the merged record. (`reduced.isEmpty` does
+            //    still run `logConflicts`, which INSERTs into `_conflict_log`;
+            //    that is a record OF the collision, never a write to the row.)
+            //    Nor is a write-nothing rung the only shape that loses data: when
+            //    the reduction leaves a NON-empty SET clause each entry writes a
+            //    different subset of columns, so discarding the earlier entry
+            //    drops exactly the columns only it carried.
             //    That loss is permanent and silent: the discard runs under
             //    `_sync_apply_guard`, so nothing is re-broadcast, and the peer's
             //    watermark advances regardless.
@@ -1247,13 +1254,21 @@ public enum ConflictResolver {
             //    `replaying` makes a RE-parked entry inherit its ORIGINAL
             //    position, so an unconditional write here can undo a
             //    supersession a later write had already recorded. Insert-if-
-            //    absent cannot regress a tracked ordinal at all.
+            //    absent cannot regress a tracked ordinal at all. (Not reachable
+            //    today — an entry below `latest` is discarded before it can
+            //    re-park — so this is defence, not a second observed bug.)
             //
-            // Deleting the assignment outright would NOT be the fix: tracking
-            // only ever starts here, and `noteRecordMutated` returns early for
-            // an untracked key — so `isSuperseded` would become permanently
+            // Deleting the assignment outright would not be the fix AS THE CODE
+            // STANDS, and that verdict is conditional on one thing:
+            // `noteRecordMutated`'s early-return guard. Tracking only ever
+            // starts here, and that guard returns early for an untracked key —
+            // so with the assignment gone `isSuperseded` would be permanently
             // false and a parked merge replayed after a later DELETE would
-            // resurrect the record (#1749's guard, gone).
+            // resurrect the record (#1749's guard, gone). A variant that BOTH
+            // deletes the park's assignment AND lets a write start tracking
+            // (dropping that guard) also passes the suite; the shipped shape is
+            // still preferred, because it never begins tracking a record that
+            // never parked.
             let key = Self.recordKey(entry.table, entry.recordId)
             if latestArrivalOrdinal[key] == nil {
                 latestArrivalOrdinal[key] = entry.arrivalOrdinal

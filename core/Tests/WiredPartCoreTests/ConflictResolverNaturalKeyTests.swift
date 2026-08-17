@@ -1085,6 +1085,26 @@ struct ConflictResolverNaturalKeyTests {
         }
     }
 
+    private func categoryIsActive(_ db: AppDatabase, _ id: Int) throws -> Int? {
+        try db.writer.read { dbConn in
+            try Int.fetchOne(
+                dbConn, sql: "SELECT is_active FROM part_categories WHERE id = ?", arguments: [id]
+            )
+        }
+    }
+
+    /// Apply through the REAL delta entry point — the one
+    /// `PeerManager.applyIncomingChanges` uses for incremental sync. It shares
+    /// `ApplyContext` (and therefore `enqueueDeferredMerge`) with the snapshot
+    /// path, so the #1737 park defect is live on BOTH; only the regression fence
+    /// was snapshot-only.
+    private func applyDelta(
+        _ db: AppDatabase,
+        _ changes: [IncomingChange]
+    ) throws -> MergeResult {
+        try ConflictResolver.resolveAndApplyChangesAtomically(db: db, changes: changes)
+    }
+
     /// T-20a. The park was carved OUT of T-18's "only a WRITE counts" rule, and
     /// the carve-out is false.
     ///
@@ -1326,6 +1346,121 @@ struct ConflictResolverNaturalKeyTests {
         #expect(try categoryName(db, 5) == "Romex", "both superseded payloads are dropped whole")
         #expect(result.supersededMerges == 2, "BOTH parked entries must be discarded")
         #expect(result.keyCollisions == 0)
+        #expect(result.skipped == 0)
+        #expect(result.errors == 0)
+    }
+
+    /// T-20f. The same defect, discriminated on ROW CONTENT rather than on the
+    /// residue counters — which is what makes it the load-bearing test of the
+    /// set. T-20a/T-20b pin `supersededMerges` and `keyCollisions`, and those two
+    /// fields have no consumer anywhere in the repo; this one loses real bytes
+    /// out of a real row.
+    ///
+    /// Shape: THREE parks on `part_categories` id 5, every one of them carrying
+    /// `name = 'THHN'` — a key held by id 9 which NOTHING in the batch ever
+    /// vacates. So no replay pass can ever free them, the fixed point terminates
+    /// with all three still buffered, and the final `isDraining` pass resolves
+    /// each one IN PLACE through the REDUCED SET clause: `name` is withheld and
+    /// every other column the change carried is written.
+    ///
+    /// Because the reduction leaves a non-empty SET clause, each entry writes a
+    /// DIFFERENT set of columns, and the strict in-order oracle is the union with
+    /// last-writer-wins per field:
+    ///
+    ///     ord1 {name:THHN, description:d1, sort_order:1}
+    ///     ord2 {name:THHN, description:d2, is_active:0}
+    ///     ord3 {name:THHN, description:d3}
+    ///     → name=Romex (withheld) desc=d3 sort_order=1 is_active=0
+    ///
+    /// At the parent commit the unconditional refresh in `enqueueDeferredMerge`
+    /// made parks 1 and 2 look superseded by park 3, so only park 3 ran: the row
+    /// came out `desc=d3 sort_order=0 is_active=1` — the schema defaults. Two
+    /// columns a peer explicitly set were destroyed, silently (the drain runs
+    /// under `_sync_apply_guard`, so nothing is re-broadcast) and permanently
+    /// (the peer's watermark advances regardless).
+    ///
+    /// MUTATION CHECK: restore the unconditional
+    /// `latestArrivalOrdinal[key] = entry.arrivalOrdinal` in
+    /// `enqueueDeferredMerge` and this goes red on `sort_order` (1 → 0) and
+    /// `is_active` (0 → 1).
+    @Test("T-20f three parks resolved in place must each land their own non-key columns")
+    func testThreeParksResolvedInPlaceEachLandTheirOwnNonKeyColumns() throws {
+        let db = try freshDB()
+        try seedTwoCategories(db)
+
+        let result = try applyStreamed(db, [
+            update("part_categories", "5",
+                   #"{"name":"THHN","description":"d1","sort_order":"1"}"#,
+                   timestamp: "2026-08-16T10:00:00Z"),
+            update("part_categories", "5",
+                   #"{"name":"THHN","description":"d2","is_active":"0"}"#,
+                   timestamp: "2026-08-16T10:00:01Z"),
+            update("part_categories", "5",
+                   #"{"name":"THHN","description":"d3"}"#,
+                   timestamp: "2026-08-16T10:00:02Z"),
+        ])
+
+        // ROW STATE — the strict in-order oracle, field by field.
+        #expect(try categoryName(db, 5) == "Romex",
+                "the contested key column is withheld on every rung")
+        #expect(try categoryDescription(db, 5) == "d3",
+                "the LAST park still wins the field all three carried")
+        #expect(try categorySortOrder(db, 5) == 1,
+                "…and the FIRST park's own column must not be thrown away with it")
+        #expect(try categoryIsActive(db, 5) == 0,
+                "…nor the SECOND park's")
+        #expect(try categoryName(db, 9) == "THHN", "the slot was never vacated")
+
+        #expect(result.supersededMerges == 0,
+                "a park is not a write: no park superseded any other")
+        #expect(result.keyCollisions == 3, "all three reached the ladder and were counted there")
+        #expect(result.skipped == 0, "a constraint outcome may NEVER produce a gate input (#1749)")
+        #expect(result.errors == 0)
+    }
+
+    /// T-20g. The same defect on the DELTA path.
+    ///
+    /// Every other test in this suite drives `resolveAndApplyStreamedChangesAtomically`
+    /// (the snapshot path) because that is where the #1749 whole-company-rollback
+    /// class lives. The #1737 park defect is different: it lives in `ApplyContext`,
+    /// which BOTH entry points share, so it is equally live on
+    /// `resolveAndApplyChangesAtomically` — the one `PeerManager.applyIncomingChanges`
+    /// calls for incremental sync. The fix already covered it; only the fence was
+    /// snapshot-only, and delta sync is this project's current top blocker.
+    ///
+    /// The batch is T-20a's original repro, applied through the delta door: two
+    /// parks on id 5, the second carrying nothing but the contested key column,
+    /// so its in-place resolution hits the `reduced.isEmpty` rung and writes
+    /// nothing at all.
+    ///
+    /// MUTATION CHECK: restore the unconditional
+    /// `latestArrivalOrdinal[key] = entry.arrivalOrdinal` in
+    /// `enqueueDeferredMerge` and this goes red — `description` falls back to the
+    /// seeded `local five`, `supersededMerges` becomes 1 and `keyCollisions`
+    /// becomes 1.
+    @Test("T-20g the park defect is fenced on the DELTA path too, not just the snapshot path")
+    func testSecondParkDoesNotDiscardTheFirstOnTheDeltaPath() throws {
+        let db = try freshDB()
+        try seedTwoCategories(db)
+
+        let result = try applyDelta(db, [
+            update("part_categories", "5",
+                   #"{"name":"THHN","description":"peer desc"}"#,
+                   timestamp: "2026-08-16T10:00:00Z"),
+            update("part_categories", "5",
+                   #"{"name":"THHN"}"#,
+                   timestamp: "2026-08-16T10:00:01Z"),
+        ])
+
+        #expect(try categoryDescription(db, 5) == "peer desc",
+                "the first park's non-key payload must survive — nothing wrote over it")
+        #expect(try categoryName(db, 5) == "Romex", "the contested key column is still withheld")
+        #expect(try categoryName(db, 9) == "THHN", "exactly one row holds the key")
+
+        #expect(result.supersededMerges == 0,
+                "a park is not a write: neither parked entry superseded the other")
+        #expect(result.keyCollisions == 2,
+                "both entries reached the ladder and were counted there")
         #expect(result.skipped == 0)
         #expect(result.errors == 0)
     }
