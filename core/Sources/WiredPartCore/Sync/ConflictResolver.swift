@@ -483,9 +483,17 @@ public enum ConflictResolver {
 
     /// Apply a batch in one database transaction or roll the entire batch back.
     ///
-    /// Initial Bluetooth snapshots use this stricter contract: reporting an apply
-    /// failure while retaining a successful prefix would leave onboarding with a
-    /// partial company snapshot. Normal ongoing sync keeps the best-effort API above.
+    /// This is the **ongoing multipeer delta** door (#1684), not the snapshot door.
+    /// Reporting an apply failure while retaining a successful prefix would leave a
+    /// peer holding a partially-merged batch it believes was rejected, so the whole
+    /// batch rolls back. The best-effort API above (`resolveAndApplyChanges`) keeps
+    /// the per-row contract for the LAN/pull path.
+    ///
+    /// Initial Bluetooth snapshots do **not** reach here. Since WEI-7022 they are
+    /// staged durably and applied by the streaming twin
+    /// `resolveAndApplyStreamedChangesAtomically` via `PeerManager.applyStagedSnapshot`.
+    /// Sole caller: `PeerManager.applyIncomingChanges`, reached from the two `else`
+    /// branches of `if snapshotStagingPeers.contains(...)`.
     static func resolveAndApplyChangesAtomically(
         db: AppDatabase,
         changes: [IncomingChange],

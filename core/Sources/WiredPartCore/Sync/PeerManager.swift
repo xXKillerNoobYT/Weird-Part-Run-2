@@ -2867,7 +2867,11 @@ public actor PeerManager {
         return changes
     }
 
-    /// Apply one or all buffered snapshot batches synchronously in one transaction.
+    /// Apply a batch of ongoing **delta** changes synchronously in one transaction.
+    ///
+    /// Not the snapshot path. Both callers reach this from the `else` branch of
+    /// `if snapshotStagingPeers.contains(...)`, so a peer mid-snapshot never arrives
+    /// here — its frames are staged and applied by `applyStagedSnapshot` instead.
     /// GRDB does not return until commit, so a following completion acknowledgement is truthful.
     private func applyIncomingChanges(_ changes: [IncomingChange]) throws -> Int {
         let did = serverState?.deviceId ?? "unknown"
