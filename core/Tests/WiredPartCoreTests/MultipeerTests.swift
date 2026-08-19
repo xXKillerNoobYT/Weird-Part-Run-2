@@ -94,9 +94,9 @@ struct MultipeerTests {
             }
             #expect(shown.hasPrefix(error.code + " — "), "code must lead so it survives a photograph: \(shown)")
             #expect(shown.count > error.code.count + 20, "\(error) has no usable reason after its code")
-            #expect(!error.failureReason.isEmpty)
+            #expect(!error.reasonText.isEmpty)
             // The whole point: no two causes may read identically.
-            #expect(shown.contains(error.failureReason))
+            #expect(shown.contains(error.reasonText))
         }
 
         let rendered = MultipeerPairingError.allCases.compactMap(\.errorDescription)
@@ -111,6 +111,14 @@ struct MultipeerTests {
             let asLocalized = (error as Error) as? LocalizedError
             #expect(asLocalized != nil, "\(error) is not LocalizedError — the joiner would show no reason")
             #expect(asLocalized?.errorDescription != nil)
+            // #1726: `failureReason` was declared as a non-optional `String`,
+            // which does NOT satisfy the protocol's `String?` requirement — it
+            // shadowed it. Reading it off the CONCRETE type looked correct,
+            // while this access, through the protocol, silently returned the
+            // defaulted nil. Pin the protocol path; the concrete one never
+            // reproduced the bug.
+            #expect(asLocalized?.failureReason == error.reasonText,
+                    "\(error) does not deliver its reason through LocalizedError")
         }
     }
 
