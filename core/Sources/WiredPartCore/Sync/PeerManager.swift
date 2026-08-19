@@ -250,7 +250,15 @@ extension MultipeerPairingError: LocalizedError {
 
     /// Plain-English cause plus what to actually do about it. Written for an
     /// electrician on a job site with no signal, not for a developer.
-    public var failureReason: String {
+    ///
+    /// Deliberately NOT named `failureReason`: `LocalizedError.failureReason`
+    /// is `String?`, so a non-optional property of that name does not satisfy
+    /// the requirement — it silently shadows it, and every caller reaching the
+    /// error through the protocol gets the defaulted `nil` instead of this
+    /// text. Keeping the rich text non-optional under its own name lets the
+    /// witness below satisfy the protocol for real, without forcing the
+    /// call sites that want a guaranteed string to unwrap. (#1726)
+    public var reasonText: String {
         switch self {
         case .notAvailable:
             return "Bluetooth sync isn't running on this device. Close and reopen the app, then try again."
@@ -273,10 +281,15 @@ extension MultipeerPairingError: LocalizedError {
         }
     }
 
+    /// The real `LocalizedError` witness. Without this, `(error as
+    /// LocalizedError).failureReason` returns the protocol default of `nil`
+    /// and the text above never reaches anyone going through the protocol.
+    public var failureReason: String? { reasonText }
+
     /// What the user sees. Code first so it survives being read aloud,
     /// photographed, or retyped into a bug report.
     public var errorDescription: String? {
-        "\(code) — \(failureReason)"
+        "\(code) — \(reasonText)"
     }
 }
 

@@ -444,10 +444,6 @@ struct PanelRedesignBuilderView: View {
     }
 }
 
-extension PanelEditorDraft: Identifiable {
-    public var id: String { "\(anchorSpace)-\(kind.rawValue)" }
-}
-
 #Preview("Redesigned builder") {
     struct Host: View {
         @State var panel: DesignPanelState = {

@@ -69,12 +69,21 @@ public struct PanelBuildPreset: Identifiable, Sendable, Equatable {
 }
 
 /// Editable draft behind the circuit editor sheet.
-public struct PanelEditorDraft: Sendable, Equatable {
+public struct PanelEditorDraft: Sendable, Equatable, Identifiable {
     public var kind: PanelEditorKind
     public var poles: Int                     // full only: 1/2/3
     public var quadMode: QuadMode             // quad only
     public var sections: [DesignSubCircuit]   // count depends on kind/mode
     public let anchorSpace: Int
+
+    /// Identity for SwiftUI lists/sheets. Declared HERE, in the module that
+    /// owns the type, rather than as a retroactive conformance in the iOS
+    /// layer: a conformance added from another module is undefined behaviour
+    /// the moment the owning module declares its own. (#1726, #1658)
+    ///
+    /// A draft is identified by the space it is anchored at plus its kind —
+    /// only one draft can be open per anchor, and switching kind resets it.
+    public var id: String { "\(anchorSpace)-\(kind.rawValue)" }
 
     // MARK: Construction
 

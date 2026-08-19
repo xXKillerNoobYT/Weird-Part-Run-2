@@ -1757,10 +1757,11 @@ final class IOSSyncManager {
         switch bluetoothError {
         case let pairing as MultipeerPairingError:
             // #1693 gave every pairing failure a stable BT-PAIR-* code. Take it
-            // from the error rather than restating it, and use `failureReason`
+            // from the error rather than restating it, and use `reasonText`
             // rather than `errorDescription` because the code is rendered as
             // its own field now — embedding it in the sentence would show it
-            // twice.
+            // twice. `reasonText` is the non-optional form; the `failureReason`
+            // protocol witness returns the same string as `String?`. (#1726)
             code = pairing.code
             switch pairing {
             case .rejected:
@@ -1781,7 +1782,7 @@ final class IOSSyncManager {
                 and keep the shop device's Add-a-Device screen open for the whole transfer
                 """
             default:
-                bluetoothReason = pairing.failureReason
+                bluetoothReason = pairing.reasonText
             }
 
         default:
