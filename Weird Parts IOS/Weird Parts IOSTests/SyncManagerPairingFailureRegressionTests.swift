@@ -271,6 +271,87 @@ final class SyncManagerFailureSurfacingRegressionTests: XCTestCase {
         )
     }
 
+    // MARK: - #1693 sibling — the fan-out must say WHY, not just how many
+
+    /// Behavioural. `syncWithPeer` has always rendered the real reason; the
+    /// all-peers fan-out rendered only a count, so every cause collapsed into
+    /// "Sync failed with 1 peer(s)". Field-confirmed on build 68 (2026-08-20):
+    /// a peer still forming its session reported a hard failure with no reason,
+    /// while the row behind the alert visibly said "Connecting".
+    func testFanOutFailureMessageCarriesTheReasonNotJustACount() {
+        let stillConnecting = PeerSyncResult(
+            peerDeviceId: "mac-1",
+            peerName: "crystals-mac-studio",
+            success: false,
+            error: "Still connecting to crystals-mac-studio over Bluetooth — try again in a moment.",
+            deferred: false
+        )
+
+        let message = IOSSyncManager.peerSyncFailureMessage(for: [stillConnecting])
+
+        XCTAssertEqual(
+            message,
+            "Still connecting to crystals-mac-studio over Bluetooth — try again in a moment. for crystals-mac-studio",
+            "the fan-out must surface PeerSyncResult.error verbatim, as the row-level path already does"
+        )
+        XCTAssertFalse(
+            message?.contains("peer(s)") ?? true,
+            "a bare count tells the user nothing actionable — that is the defect being pinned"
+        )
+    }
+
+    /// Two peers failing for DIFFERENT causes is exactly when a single-reason
+    /// summary misleads, so every reason must survive.
+    func testFanOutFailureMessageReportsEveryDistinctReason() {
+        let a = PeerSyncResult(
+            peerDeviceId: "mac-1",
+            peerName: "Shop Mac",
+            success: false,
+            error: "Sync server not running",
+            deferred: false
+        )
+        let b = PeerSyncResult(
+            peerDeviceId: "ipad-1",
+            peerName: "Van iPad",
+            success: false,
+            error: "Bluetooth transfer aborted",
+            deferred: false
+        )
+
+        let message = IOSSyncManager.peerSyncFailureMessage(for: [a, b]) ?? ""
+
+        XCTAssertTrue(message.contains("Sync server not running for Shop Mac"))
+        XCTAssertTrue(
+            message.contains("Bluetooth transfer aborted for Van iPad"),
+            "the second peer's distinct cause must not be swallowed by the first"
+        )
+        XCTAssertNil(
+            IOSSyncManager.peerSyncFailureMessage(for: []),
+            "no failures means no error message — the caller guards on nil"
+        )
+    }
+
+    /// Structural. The behavioural tests above still pass if `syncNow` stops
+    /// calling the helper and re-derives its own count string, which is exactly
+    /// the mutation that produced this bug: the row-level path was repaired for
+    /// #1693 and its fan-out twin was left alone.
+    func testFanOutRoutesItsFailureMessageThroughTheSharedHelper() throws {
+        let source = try Self.readSyncManagerSource()
+        let body = try TestSourceSlicer.braceBalancedBody(
+            after: "func syncNow() async",
+            in: source
+        )
+
+        XCTAssertTrue(
+            body.contains("Self.peerSyncFailureMessage(for: failed)"),
+            "the fan-out must reuse the shared wording, not re-derive one"
+        )
+        XCTAssertFalse(
+            body.contains("peer(s)"),
+            "a re-introduced bare count would hide the reason the app already holds"
+        )
+    }
+
     /// Structural, and deliberately so: the helper test above still passes if a
     /// call site stops calling the helper. This one fails on exactly that
     /// mutation. The row-level Nearby Devices tap regressed this way once —

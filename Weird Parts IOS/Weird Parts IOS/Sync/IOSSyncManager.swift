@@ -391,7 +391,7 @@ final class IOSSyncManager {
             // correctly waiting for the joiner's first download.
             let failed = Self.peerSyncFailures(in: results)
             if !failed.isEmpty, errorMessage == nil {
-                errorMessage = "Sync failed with \(failed.count) peer(s)"
+                errorMessage = Self.peerSyncFailureMessage(for: failed)
             }
             if errorMessage == nil,
                let waitingMessage = Self.waitingForFirstDownloadMessage(for: results) {
@@ -1071,6 +1071,36 @@ final class IOSSyncManager {
     /// and painted a red "Sync Error" over a healthy transfer (#1699).
     nonisolated static func peerSyncFailures(in results: [PeerSyncResult]) -> [PeerSyncResult] {
         results.filter { !$0.success && !$0.deferred }
+    }
+
+    /// The user-facing message for a fan-out sync that had real failures.
+    ///
+    /// #1693, sibling half. `syncWithPeer` already renders
+    /// `PeerSyncResult.error` verbatim ("<reason> for <peer>"), but the
+    /// all-peers fan-out reported only a COUNT — "Sync failed with 1 peer(s)".
+    /// So every distinct cause collapsed into one content-free sentence: the
+    /// nine `MultipeerPairingError` values, and benign transient states such as
+    /// "Still connecting to <peer> over Bluetooth — try again in a moment."
+    /// The reason sat in `results` one field away and never reached the screen.
+    ///
+    /// Field-confirmed on build 68 (owner, 2026-08-20): the Nearby Devices
+    /// sheet showed the peer row spinning on "Connecting" while the alert said
+    /// "Sync failed with 1 peer(s)" — a retryable stall presented as a hard
+    /// failure with no reason. Diagnosing that cost hours of radio-level
+    /// investigation for a string the app already held.
+    ///
+    /// Every failing peer's reason is surfaced, not just the first: two peers
+    /// failing for different causes is exactly when a single-reason summary
+    /// misleads. Capped so a large fleet cannot produce an unreadable alert.
+    nonisolated static func peerSyncFailureMessage(for failures: [PeerSyncResult]) -> String? {
+        guard !failures.isEmpty else { return nil }
+        let maxShown = 3
+        let shown = failures.prefix(maxShown).map { failure in
+            "\(failure.error ?? "Sync failed") for \(failure.peerName)"
+        }
+        let remainder = failures.count - shown.count
+        guard remainder > 0 else { return shown.joined(separator: "\n") }
+        return (shown + ["…and \(remainder) more"]).joined(separator: "\n")
     }
 
     /// The progress line for peers still downloading their first snapshot, or
