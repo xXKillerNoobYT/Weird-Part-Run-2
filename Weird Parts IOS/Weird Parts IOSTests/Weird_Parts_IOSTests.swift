@@ -1662,6 +1662,31 @@ final class IOSSyncManagerTransportErrorXCTests: XCTestCase {
         XCTAssertEqual(manager.bluetoothTransportError, "BT-SCAN-START — access denied")
         XCTAssertFalse(manager.isScanning)
     }
+
+    /// A retained Bluetooth row prevents discovery flicker, but must never
+    /// retain its old "connected" actionability once PeerManager no longer
+    /// resolves that device ID (#1779).
+    @MainActor
+    func testDroppedMultipeerPeerIsRetainedAsWaitingAndNotSyncable() {
+        let manager = IOSSyncManager()
+        manager.discoveredPeers = [
+            IOSSyncManager.PeerInfo(
+                id: "dropped-peer",
+                name: "Field iPad",
+                state: "connected",
+                discoveredAt: "2026-08-20T05:16:00Z",
+                address: nil,
+                isManuallySyncable: true
+            )
+        ]
+
+        manager.handlePeerStateChange(PeerManagerState())
+
+        let retainedPeer = try! XCTUnwrap(manager.discoveredPeers.first)
+        XCTAssertEqual(retainedPeer.id, "dropped-peer")
+        XCTAssertEqual(retainedPeer.state, "multipeer")
+        XCTAssertFalse(retainedPeer.isManuallySyncable)
+    }
 }
 
 /// Host-side sync summary (#1693).

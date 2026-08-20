@@ -952,10 +952,26 @@ final class IOSSyncManager {
             )
         }
 
-        // Keep multipeer-only peers that aren't also in LAN
-        let lanIds = Set(lanPeers.map(\.id))
-        let multipeerOnly = discoveredPeers.filter { !lanIds.contains($0.id) && isMultipeerDiscoveredPeer($0) }
-        discoveredPeers = lanPeers + multipeerOnly
+        // Keep rows for recently dropped Multipeer peers so discovery does not
+        // flicker, but make PeerManager's current state the authority for their
+        // presentation and actionability. A retained value-type row may still
+        // say "connected" from a prior state update even though syncWithPeer
+        // can no longer resolve it; presenting that row as Waiting prevents a
+        // tappable "Peer not found" dead end (#1779).
+        let authoritativePeerIDs = Set(lanPeers.map(\.id))
+        let retainedMultipeerPeers = discoveredPeers
+            .filter { !authoritativePeerIDs.contains($0.id) && isMultipeerDiscoveredPeer($0) }
+            .map { peer in
+                PeerInfo(
+                    id: peer.id,
+                    name: peer.name,
+                    state: "multipeer",
+                    discoveredAt: peer.discoveredAt,
+                    address: nil,
+                    isManuallySyncable: false
+                )
+            }
+        discoveredPeers = lanPeers + retainedMultipeerPeers
     }
 
     /// Simulator-only fixture for UI accessibility coverage of the pairing
