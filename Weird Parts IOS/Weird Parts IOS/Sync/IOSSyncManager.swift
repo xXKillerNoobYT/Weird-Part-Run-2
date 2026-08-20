@@ -146,6 +146,12 @@ final class IOSSyncManager {
     private var peerDiscoveryGeneration = 0
     private var lastSurfacedSyncReadFailure: String?
 
+    /// The Multipeer callback can briefly race its corresponding PeerManager
+    /// snapshot. Keep the row stable through that gap, but never let retained
+    /// presentation outlive the authority that can execute its action.
+    private static let bluetoothPeerRetentionInterval: TimeInterval = 5
+    private var bluetoothPeerRetentionDeadlines: [String: Date] = [:]
+
     struct PeerInfo: Identifiable, Sendable {
         let id: String
         let name: String
@@ -952,10 +958,32 @@ final class IOSSyncManager {
             )
         }
 
-        // Keep multipeer-only peers that aren't also in LAN
+        // Keep Bluetooth-only rows briefly so the nearby-devices list does not
+        // flicker when Multipeer and PeerManager publish adjacent snapshots. The
+        // PeerManager snapshot is the sync authority, however: a retained row
+        // that it no longer contains must be neutral and cannot expose Send
+        // Changes, because `PeerManager.syncWithPeer(deviceId:)` would reject it.
+        let now = Date()
+        let authoritativePeerIds = Set(state.peers.map(\.deviceId))
         let lanIds = Set(lanPeers.map(\.id))
-        let multipeerOnly = discoveredPeers.filter { !lanIds.contains($0.id) && isMultipeerDiscoveredPeer($0) }
-        discoveredPeers = lanPeers + multipeerOnly
+        let retainedBluetoothPeers = discoveredPeers.compactMap { peer -> PeerInfo? in
+            guard !lanIds.contains(peer.id), isMultipeerDiscoveredPeer(peer) else { return nil }
+            guard bluetoothPeerRetentionDeadlines[peer.id, default: now] > now else {
+                bluetoothPeerRetentionDeadlines.removeValue(forKey: peer.id)
+                return nil
+            }
+            guard !authoritativePeerIds.contains(peer.id) else { return nil }
+
+            return PeerInfo(
+                id: peer.id,
+                name: peer.name,
+                state: "multipeer",
+                discoveredAt: peer.discoveredAt,
+                address: nil,
+                isManuallySyncable: false
+            )
+        }
+        discoveredPeers = lanPeers + retainedBluetoothPeers
     }
 
     /// Simulator-only fixture for UI accessibility coverage of the pairing
@@ -982,7 +1010,14 @@ final class IOSSyncManager {
         return false
     }
 
-    private func handleMultipeerPeersChanged(_ peers: [MultipeerPeerInfo]) {
+    func handleMultipeerPeersChanged(_ peers: [MultipeerPeerInfo]) {
+        let retentionDeadline = Date().addingTimeInterval(Self.bluetoothPeerRetentionInterval)
+        let multipeerPeerIds = Set(peers.map(\.deviceId))
+        bluetoothPeerRetentionDeadlines = bluetoothPeerRetentionDeadlines.filter { multipeerPeerIds.contains($0.key) }
+        for peerId in multipeerPeerIds {
+            bluetoothPeerRetentionDeadlines[peerId] = retentionDeadline
+        }
+
         let mpPeers = peers.map { peer in
             PeerInfo(
                 id: peer.deviceId,

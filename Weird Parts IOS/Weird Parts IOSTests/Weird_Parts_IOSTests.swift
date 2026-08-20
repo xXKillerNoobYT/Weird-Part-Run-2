@@ -1832,3 +1832,58 @@ final class IOSSyncManagerHostSummaryXCTests: XCTestCase {
         )
     }
 }
+
+/// Regression for #1779: display retention must never manufacture a Send
+/// Changes action after PeerManager has already dropped the transport peer.
+final class IOSSyncManagerRetainedPeerAuthorityXCTests: XCTestCase {
+    private let deviceId = "bluetooth-phone-1"
+
+    private func connectedMultipeerInfo() -> MultipeerPeerInfo {
+        MultipeerPeerInfo(
+            deviceId: deviceId,
+            deviceName: "Field iPhone",
+            companyId: "company-1",
+            state: .connected
+        )
+    }
+
+    @MainActor
+    func testStaleRetainedBluetoothPeerIsNeutralAndNotManuallySyncable() {
+        let manager = IOSSyncManager()
+        manager.handleMultipeerPeersChanged([connectedMultipeerInfo()])
+        XCTAssertTrue(manager.discoveredPeers[0].isManuallySyncable)
+
+        // PeerManager is the authority for sync execution. This emulates its
+        // post-disconnect snapshot arriving after the UI callback retained the
+        // formerly-connected Bluetooth row.
+        manager.handlePeerStateChange(PeerManagerState())
+
+        let retainedPeer = try? XCTUnwrap(manager.discoveredPeers.first)
+        XCTAssertNotNil(retainedPeer)
+        XCTAssertEqual(retainedPeer?.id, deviceId)
+        XCTAssertEqual(retainedPeer?.state, "multipeer")
+        XCTAssertFalse(retainedPeer?.isManuallySyncable ?? true)
+    }
+
+    @MainActor
+    func testLiveAddresslessBluetoothPeerRemainsManuallySyncable() {
+        let manager = IOSSyncManager()
+        let peer = DiscoveredPeer(
+            deviceId: deviceId,
+            deviceName: "Field iPhone",
+            companyId: "company-1",
+            host: "",
+            port: 0,
+            transport: "multipeer",
+            multipeerState: "connected"
+        )
+
+        manager.handlePeerStateChange(PeerManagerState(peers: [peer]))
+
+        let displayedPeer = try? XCTUnwrap(manager.discoveredPeers.first)
+        XCTAssertNotNil(displayedPeer)
+        XCTAssertNil(displayedPeer?.address)
+        XCTAssertEqual(displayedPeer?.state, "connected")
+        XCTAssertTrue(displayedPeer?.isManuallySyncable ?? false)
+    }
+}
