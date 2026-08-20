@@ -4348,7 +4348,10 @@
           "return transport == \"lan\" && address != nil",
           "isManuallySyncable: Self.isManuallySyncablePeer(",
           "case \"connecting\": return \"connecting\"",
-          "state: Self.multipeerDisplayState(peer.state.rawValue)",
+          "let authoritativePeerIds = Set(state.peers.map(\\.deviceId))",
+          "guard !authoritativePeerIds.contains(peer.id) else { return nil }",
+          "state: \"multipeer\"",
+          "isManuallySyncable: false",
           "? Self.multipeerDisplayState(peer.multipeerState)",
           "peer.state == \"multipeer\" || peer.state == \"connecting\""
         ],
@@ -4360,6 +4363,22 @@
               "syncWithAllPeers()",
               "manualSync("
             ]
+          }
+        ],
+        "scoped": [
+          {
+            "start": "let retainedBluetoothPeers = discoveredPeers.compactMap { peer -> PeerInfo? in",
+            "end": "discoveredPeers = lanPeers + retainedBluetoothPeers",
+            "rule": {
+              "contains": [
+                "guard !authoritativePeerIds.contains(peer.id) else { return nil }",
+                "state: \"multipeer\"",
+                "isManuallySyncable: false"
+              ],
+              "not_contains": [
+                "isManuallySyncable: Self.isManuallySyncablePeer("
+              ]
+            }
           }
         ]
       }
@@ -4661,7 +4680,11 @@
           "let address = formattedPeerAddress(host: peer.host, port: Int(peer.port))",
           "host.contains(\":\") && !host.hasPrefix(\"[\") ? \"[\\(host)]\" : host",
           "await pm.stopMultipeerDiscovery()",
-          "let multipeerOnly = mpPeers.filter { !nonMultipeerIds.contains($0.id) }"
+          "let liveAddresslessMultipeerPeers = state.peers.filter { peer in",
+          "bluetoothPeerRetentionDeadlines[peer.deviceId] = now.addingTimeInterval(Self.bluetoothPeerRetentionInterval)",
+          "let retainedBluetoothPeers = discoveredPeers.compactMap { peer -> PeerInfo? in",
+          "guard !authoritativePeerIds.contains(peer.id) else { return nil }",
+          "isManuallySyncable: false"
         ]
       }
     },

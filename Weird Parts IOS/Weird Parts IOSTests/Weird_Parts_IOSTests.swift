@@ -1832,3 +1832,45 @@ final class IOSSyncManagerHostSummaryXCTests: XCTestCase {
         )
     }
 }
+
+/// Regression for #1779: display retention must never manufacture a Send
+/// Changes action after PeerManager has already dropped the transport peer.
+final class IOSSyncManagerRetainedPeerAuthorityXCTests: XCTestCase {
+    private let deviceId = "bluetooth-phone-1"
+
+    private func connectedAddresslessMultipeerPeer() -> DiscoveredPeer {
+        DiscoveredPeer(
+            deviceId: deviceId,
+            deviceName: "Field iPhone",
+            companyId: "company-1",
+            host: "",
+            port: 0,
+            transport: "multipeer",
+            multipeerState: "connected"
+        )
+    }
+
+    @MainActor
+    func testLiveThenDroppedAddresslessMultipeerPeerIsNeutralUntilDeterministicExpiry() throws {
+        let startedAt = Date(timeIntervalSinceReferenceDate: 1_000)
+        var now = startedAt
+        let manager = IOSSyncManager(clock: { now })
+
+        // Both snapshots enter through the production PeerManager state handler.
+        manager.handlePeerStateChange(PeerManagerState(peers: [connectedAddresslessMultipeerPeer()]))
+        XCTAssertEqual(manager.discoveredPeers.count, 1)
+        XCTAssertTrue(manager.discoveredPeers[0].isManuallySyncable)
+
+        manager.handlePeerStateChange(PeerManagerState())
+
+        let retainedPeer = try XCTUnwrap(manager.discoveredPeers.first)
+        XCTAssertEqual(manager.discoveredPeers.count, 1)
+        XCTAssertEqual(retainedPeer.id, deviceId)
+        XCTAssertEqual(retainedPeer.state, "multipeer")
+        XCTAssertFalse(retainedPeer.isManuallySyncable)
+
+        now = startedAt.addingTimeInterval(5)
+        manager.handlePeerStateChange(PeerManagerState())
+        XCTAssertTrue(manager.discoveredPeers.isEmpty)
+    }
+}
