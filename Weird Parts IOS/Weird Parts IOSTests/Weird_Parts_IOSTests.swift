@@ -1838,37 +1838,8 @@ final class IOSSyncManagerHostSummaryXCTests: XCTestCase {
 final class IOSSyncManagerRetainedPeerAuthorityXCTests: XCTestCase {
     private let deviceId = "bluetooth-phone-1"
 
-    private func connectedMultipeerInfo() -> MultipeerPeerInfo {
-        MultipeerPeerInfo(
-            deviceId: deviceId,
-            deviceName: "Field iPhone",
-            companyId: "company-1",
-            state: .connected
-        )
-    }
-
-    @MainActor
-    func testStaleRetainedBluetoothPeerIsNeutralAndNotManuallySyncable() {
-        let manager = IOSSyncManager()
-        manager.handleMultipeerPeersChanged([connectedMultipeerInfo()])
-        XCTAssertTrue(manager.discoveredPeers[0].isManuallySyncable)
-
-        // PeerManager is the authority for sync execution. This emulates its
-        // post-disconnect snapshot arriving after the UI callback retained the
-        // formerly-connected Bluetooth row.
-        manager.handlePeerStateChange(PeerManagerState())
-
-        let retainedPeer = try? XCTUnwrap(manager.discoveredPeers.first)
-        XCTAssertNotNil(retainedPeer)
-        XCTAssertEqual(retainedPeer?.id, deviceId)
-        XCTAssertEqual(retainedPeer?.state, "multipeer")
-        XCTAssertFalse(retainedPeer?.isManuallySyncable ?? true)
-    }
-
-    @MainActor
-    func testLiveAddresslessBluetoothPeerRemainsManuallySyncable() {
-        let manager = IOSSyncManager()
-        let peer = DiscoveredPeer(
+    private func connectedAddresslessMultipeerPeer() -> DiscoveredPeer {
+        DiscoveredPeer(
             deviceId: deviceId,
             deviceName: "Field iPhone",
             companyId: "company-1",
@@ -1877,13 +1848,29 @@ final class IOSSyncManagerRetainedPeerAuthorityXCTests: XCTestCase {
             transport: "multipeer",
             multipeerState: "connected"
         )
+    }
 
-        manager.handlePeerStateChange(PeerManagerState(peers: [peer]))
+    @MainActor
+    func testLiveThenDroppedAddresslessMultipeerPeerIsNeutralUntilDeterministicExpiry() throws {
+        let startedAt = Date(timeIntervalSinceReferenceDate: 1_000)
+        var now = startedAt
+        let manager = IOSSyncManager(clock: { now })
 
-        let displayedPeer = try? XCTUnwrap(manager.discoveredPeers.first)
-        XCTAssertNotNil(displayedPeer)
-        XCTAssertNil(displayedPeer?.address)
-        XCTAssertEqual(displayedPeer?.state, "connected")
-        XCTAssertTrue(displayedPeer?.isManuallySyncable ?? false)
+        // Both snapshots enter through the production PeerManager state handler.
+        manager.handlePeerStateChange(PeerManagerState(peers: [connectedAddresslessMultipeerPeer()]))
+        XCTAssertEqual(manager.discoveredPeers.count, 1)
+        XCTAssertTrue(manager.discoveredPeers[0].isManuallySyncable)
+
+        manager.handlePeerStateChange(PeerManagerState())
+
+        let retainedPeer = try XCTUnwrap(manager.discoveredPeers.first)
+        XCTAssertEqual(manager.discoveredPeers.count, 1)
+        XCTAssertEqual(retainedPeer.id, deviceId)
+        XCTAssertEqual(retainedPeer.state, "multipeer")
+        XCTAssertFalse(retainedPeer.isManuallySyncable)
+
+        now = startedAt.addingTimeInterval(5)
+        manager.handlePeerStateChange(PeerManagerState())
+        XCTAssertTrue(manager.discoveredPeers.isEmpty)
     }
 }

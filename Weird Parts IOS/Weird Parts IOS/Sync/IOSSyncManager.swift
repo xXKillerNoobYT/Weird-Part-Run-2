@@ -151,6 +151,7 @@ final class IOSSyncManager {
     /// presentation outlive the authority that can execute its action.
     private static let bluetoothPeerRetentionInterval: TimeInterval = 5
     private var bluetoothPeerRetentionDeadlines: [String: Date] = [:]
+    private let clock: () -> Date
 
     struct PeerInfo: Identifiable, Sendable {
         let id: String
@@ -255,7 +256,9 @@ final class IOSSyncManager {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    init() {}
+    init(clock: @escaping () -> Date = Date.init) {
+        self.clock = clock
+    }
 
     /// Attach the database and settings service after bootstrap.
     func configure(db: AppDatabase, settingsService: SettingsService) {
@@ -939,6 +942,21 @@ final class IOSSyncManager {
             syncProgressMessage = "Downloading data… \(records) records received"
         }
 
+        let now = clock()
+        // PeerManager is the production authority for both discovery and action
+        // eligibility. Seed retention from its live, connected, address-less
+        // Multipeer rows so the immediately following dropped snapshot can keep
+        // one neutral presentation row without manufacturing a sync action.
+        let liveAddresslessMultipeerPeers = state.peers.filter { peer in
+            peer.transport == "multipeer"
+                && peer.multipeerState == "connected"
+                && formattedPeerAddress(host: peer.host, port: Int(peer.port)) == nil
+        }
+        for peer in liveAddresslessMultipeerPeers {
+            bluetoothPeerRetentionDeadlines[peer.deviceId] = now.addingTimeInterval(Self.bluetoothPeerRetentionInterval)
+        }
+        bluetoothPeerRetentionDeadlines = bluetoothPeerRetentionDeadlines.filter { $0.value > now }
+
         // Merge LAN peers into our peer list
         let lanPeers = state.peers.map { peer in
             let address = formattedPeerAddress(host: peer.host, port: Int(peer.port))
@@ -963,7 +981,6 @@ final class IOSSyncManager {
         // PeerManager snapshot is the sync authority, however: a retained row
         // that it no longer contains must be neutral and cannot expose Send
         // Changes, because `PeerManager.syncWithPeer(deviceId:)` would reject it.
-        let now = Date()
         let authoritativePeerIds = Set(state.peers.map(\.deviceId))
         let lanIds = Set(lanPeers.map(\.id))
         let retainedBluetoothPeers = discoveredPeers.compactMap { peer -> PeerInfo? in
@@ -1010,37 +1027,6 @@ final class IOSSyncManager {
         return false
     }
 
-    func handleMultipeerPeersChanged(_ peers: [MultipeerPeerInfo]) {
-        let retentionDeadline = Date().addingTimeInterval(Self.bluetoothPeerRetentionInterval)
-        let multipeerPeerIds = Set(peers.map(\.deviceId))
-        bluetoothPeerRetentionDeadlines = bluetoothPeerRetentionDeadlines.filter { multipeerPeerIds.contains($0.key) }
-        for peerId in multipeerPeerIds {
-            bluetoothPeerRetentionDeadlines[peerId] = retentionDeadline
-        }
-
-        let mpPeers = peers.map { peer in
-            PeerInfo(
-                id: peer.deviceId,
-                name: peer.deviceName,
-                state: Self.multipeerDisplayState(peer.state.rawValue),
-                discoveredAt: peer.discoveredAt,
-                address: nil,
-                isManuallySyncable: Self.isManuallySyncablePeer(
-                    transport: "multipeer",
-                    multipeerState: peer.state.rawValue,
-                    address: nil
-                )
-            )
-        }
-
-        // Merge: keep LAN/addressable entries when the same device is also seen via Multipeer.
-        // Bluetooth-only rows are useful fallbacks, but they must not replace a peer with a
-        // usable Wi-Fi address during onboarding pairing.
-        let nonMultipeer = discoveredPeers.filter { !isMultipeerDiscoveredPeer($0) }
-        let nonMultipeerIds = Set(nonMultipeer.map(\.id))
-        let multipeerOnly = mpPeers.filter { !nonMultipeerIds.contains($0.id) }
-        discoveredPeers = nonMultipeer + multipeerOnly
-    }
 
     private func removeMultipeerDiscoveredPeers() {
         discoveredPeers.removeAll { isMultipeerDiscoveredPeer($0) }
