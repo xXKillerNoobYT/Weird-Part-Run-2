@@ -1044,14 +1044,13 @@ struct ConflictResolverNaturalKeyTests {
                 "a write issued after the refusal must still land")
     }
 
-    // MARK: - The delta path records immediately, by design
+    // MARK: - LAN deferred replay preserves per-row isolation
 
-    /// The per-row path has one transaction PER ROW, so there is no later row
-    /// inside the transaction that could vacate the slot and no batch to replay
-    /// against. A collision is therefore resolved or recorded immediately. The
-    /// asymmetry with the batched paths is deliberate; this test pins it.
-    @Test("the per-row delta path records a collision immediately, without a fixed point")
-    func testDeltaPathRecordsCollisionsImmediately() throws {
+    /// LAN/HTTP still commits each row independently, but it now shares a bounded
+    /// replay context across the input array. The first row parks, the second
+    /// commits and vacates the key, then the parked row replays successfully.
+    @Test("the per-row LAN path replays an ordering collision after later committed rows")
+    func testPerRowPathReplaysOrderingCollisions() throws {
         let db = try freshDB()
         try seedArchivedTemplate(db)
 
@@ -1060,9 +1059,7 @@ struct ConflictResolverNaturalKeyTests {
             update("job_stage_templates", "1", #"{"is_default":"0"}"#),
         ])
 
-        // Same two changes in the same order that T-8b resolves to zero: with no
-        // batch transaction there is nothing to replay, so it stands as residue.
-        #expect(result.keyCollisions == 1)
+        #expect(result.keyCollisions == 0, "the replay must land after the later row vacates the key")
         #expect(result.errors == 0, "a collision must not land in `errors` either")
         #expect(result.skipped == 0)
     }
@@ -1463,5 +1460,46 @@ struct ConflictResolverNaturalKeyTests {
                 "both entries reached the ladder and were counted there")
         #expect(result.skipped == 0)
         #expect(result.errors == 0)
+    }
+
+    @Test("LAN deferred replay matches Bluetooth delta committed rows and conflict log")
+    func testLANDeferredReplayMatchesBluetoothDelta() throws {
+        let lanDB = try freshDB()
+        let bluetoothDB = try freshDB()
+        try seedTwoCategories(lanDB)
+        try seedTwoCategories(bluetoothDB)
+
+        let changes = [
+            update("part_categories", "5", #"{"name":"THHN","description":"peer five"}"#),
+            update("part_categories", "9", #"{"name":"Zebra"}"#),
+        ]
+        let lanResult = try ConflictResolver.resolveAndApplyChanges(db: lanDB, changes: changes)
+        let bluetoothResult = try applyDelta(bluetoothDB, changes)
+
+        #expect(lanResult.keyCollisions == bluetoothResult.keyCollisions)
+        #expect(try categoryName(lanDB, 5) == "THHN")
+        #expect(try categoryName(lanDB, 9) == "Zebra")
+        #expect(try categoryName(lanDB, 5) == categoryName(bluetoothDB, 5))
+        #expect(try categoryName(lanDB, 9) == categoryName(bluetoothDB, 9))
+        #expect(try categoryDescription(lanDB, 5) == categoryDescription(bluetoothDB, 5))
+        #expect(try ConflictResolver.getUnreviewedConflicts(db: lanDB).isEmpty)
+        #expect(try ConflictResolver.getUnreviewedConflicts(db: bluetoothDB).isEmpty,
+                "no fabricated winner=local conflict may be needed to complete the swap")
+    }
+
+    @Test("LAN row failures do not roll back surrounding committed rows")
+    func testLANRowFailureIsolation() throws {
+        let db = try freshDB()
+        let changes = [
+            IncomingChange(deviceId: "remote-device", tableName: "part_categories", recordId: "51", operation: "INSERT", recordData: #"{"id":"51","name":"Before broken"}"#, timestamp: "2026-08-16T10:00:00Z"),
+            IncomingChange(deviceId: "remote-device", tableName: "part_styles", recordId: "77", operation: "INSERT", recordData: #"{"id":"77","category_id":"999999","name":"Broken foreign key"}"#, timestamp: "2026-08-16T10:00:01Z"),
+            IncomingChange(deviceId: "remote-device", tableName: "part_categories", recordId: "52", operation: "INSERT", recordData: #"{"id":"52","name":"After broken"}"#, timestamp: "2026-08-16T10:00:02Z"),
+        ]
+
+        let result = try ConflictResolver.resolveAndApplyChanges(db: db, changes: changes)
+
+        #expect(result.errors == 1)
+        #expect(try categoryName(db, 51) == "Before broken")
+        #expect(try categoryName(db, 52) == "After broken")
     }
 }

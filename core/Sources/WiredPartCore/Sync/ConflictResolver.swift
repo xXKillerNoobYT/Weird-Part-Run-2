@@ -377,10 +377,16 @@ public enum ConflictResolver {
 
     // MARK: - Public API
 
-    /// Apply incoming peer changes with field-level LWW merge.
+    /// Apply incoming LAN/HTTP changes with field-level LWW merge.
     ///
-    /// Never throws for individual change failures — increments `result.errors` instead.
-    /// This ensures one bad change doesn't block the rest of the batch.
+    /// Each initial and deferred-replay row owns its own writer transaction: a
+    /// malformed/failing row increments `result.errors` without rolling back a
+    /// committed sibling or preventing a later row from being attempted. One
+    /// shared, bounded context nevertheless parks recoverable ordering-induced
+    /// UNIQUE collisions and replays them after later rows can vacate their keys.
+    /// The committed row set and `_conflict_log` outcome therefore match the
+    /// Bluetooth delta door for that recoverable class without turning this path
+    /// into a whole-payload transaction.
     public static func resolveAndApplyChanges(
         db: AppDatabase,
         changes: [IncomingChange],
@@ -388,9 +394,13 @@ public enum ConflictResolver {
     ) throws -> MergeResult {
         var result = MergeResult()
         let localDevice = localDeviceId ?? DeviceIdentity.current
+        let context = ApplyContext(disposition: .perRowDeferred)
 
         for change in changes {
-            // Reject changes with invalid/unknown table names to prevent SQL injection
+            // Arrival order spans the entire LAN payload, including rejected
+            // rows, because supersession is defined by position rather than by
+            // transaction boundaries.
+            context.noteChangeArriving()
             guard isAllowedTable(change.tableName) else {
                 result.skipped += 1
                 continue
@@ -398,86 +408,35 @@ public enum ConflictResolver {
 
             do {
                 let outcome = try db.writer.write { dbConn -> ApplyOutcome in
-                    // One context per row, because one TRANSACTION per row: this
-                    // path has no batch to replay a collision against, so a
-                    // collision is resolved (or given up on) immediately. See
-                    // `ApplyContext.Disposition.perRow` — the asymmetry with the
-                    // batched paths is deliberate.
-                    let context = ApplyContext(disposition: .perRow)
-
-                    // Echo guard: while this transaction applies a PEER's change,
-                    // the change-tracking triggers (migration 112) must not log
-                    // the write — otherwise every applied change would be re-
-                    // pushed back to the peer forever. The guard row lives only
-                    // inside this transaction (rolled back with it on failure).
-                    try dbConn.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
-
-                    let outcome: ApplyOutcome
-
-                    // `_device_registry` is keyed by device_id (TEXT), not `id`,
-                    // so the generic id-keyed apply below could NEVER apply it —
-                    // every incoming row failed with "no such column: id" and was
-                    // swallowed as result.errors. Net effect (security audit
-                    // 2026-08-03, P0): deactivating a lost/stolen device revoked
-                    // it ONLY on the device that performed the revocation; every
-                    // other paired device kept treating it as trusted forever.
-                    if change.tableName == "_device_registry" {
-                        let applied = try applyDeviceRegistryChange(db: dbConn, change: change)
+                    let checkpoint = context.checkpoint()
+                    do {
+                        try dbConn.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
+                        let outcome = try applyOneAtomically(
+                            dbConn, change, localDevice, context, noteArrival: false
+                        )
                         try dbConn.execute(sql: "DELETE FROM _sync_apply_guard")
-                        return ApplyOutcome(applied: applied, skipped: applied == 1 ? 0 : 1)
-                    }
-
-                    switch change.operation.uppercased() {
-                    case "DELETE":
-                        try applyDelete(db: dbConn, change: change, localDeviceId: localDevice)
-                        outcome = ApplyOutcome(applied: 1)
-
-                    case "INSERT":
-                        let conflictCount = try applyInsert(
-                            db: dbConn, change: change, localDeviceId: localDevice, context: context
+                        return ApplyOutcome(
+                            applied: outcome.applied,
+                            conflicts: outcome.conflicts,
+                            skipped: outcome.skipped
                         )
-                        outcome = ApplyOutcome(applied: 1, conflicts: conflictCount)
-
-                    case "UPDATE":
-                        let conflictCount = try applyUpdate(
-                            db: dbConn, change: change, localDeviceId: localDevice, context: context
-                        )
-                        outcome = ApplyOutcome(applied: 1, conflicts: conflictCount)
-
-                    default:
-                        outcome = ApplyOutcome(skipped: 1)
+                    } catch {
+                        // The database transaction will roll back. Keep the shared
+                        // context equally atomic while retaining the already-assigned
+                        // arrival ordinal for the failed input position.
+                        context.restore(checkpoint)
+                        throw error
                     }
-
-                    // Cleanup participates in the transaction: failure rolls back
-                    // the peer write instead of silently disabling local tracking.
-                    try dbConn.execute(sql: "DELETE FROM _sync_apply_guard")
-
-                    // Residue rides back inside the transaction's own return
-                    // value: if this row's write rolls back, its residue is
-                    // discarded with it rather than being counted for a change
-                    // that left no trace.
-                    var combined = outcome
-                    let residue = context.residue()
-                    combined.conflicts += residue.conflicts
-                    combined.keyCollisions += residue.keyCollisions
-                    combined.schemaDrops += residue.schemaDrops
-                    // Always zero on this path — nothing may be parked here, so
-                    // nothing can be superseded — but summed rather than assumed,
-                    // so the two paths stay structurally identical.
-                    combined.supersededMerges += residue.supersededMerges
-                    return combined
                 }
                 result.add(outcome)
-            } catch ApplyError.missingLocalRecord {
-                // Fix #220: UPDATE for a record we don't have yet — count as skipped,
-                // not errored. A follow-up full-record resync should re-deliver it.
-                result.skipped += 1
             } catch {
                 result.errors += 1
                 logger.error("Failed to apply incoming change: \(error.localizedDescription, privacy: .public)")
             }
         }
 
+        result.errors += try drainDeferredMergesPerRow(db, context)
+        result.add(context.residue())
         return result
     }
 
@@ -809,21 +768,26 @@ public enum ConflictResolver {
         _ dbConn: Database,
         _ change: IncomingChange,
         _ localDeviceId: String,
-        _ context: ApplyContext
+        _ context: ApplyContext,
+        noteArrival: Bool = true
     ) throws -> (applied: Int, conflicts: Int, skipped: Int) {
-        // BEFORE the table guard and before any dispatch: what is being counted
-        // is this change's POSITION in the batch, and a rejected row still
-        // occupies one. A hole in the count would make an entry parked after it
-        // look older than it is. See `ApplyContext.noteChangeArriving`.
-        //
-        // This counts the position and NOTHING else. Whether this change may
-        // supersede a parked merge is decided by whether it actually writes,
-        // which only the write sites know — see `ApplyContext.noteRecordMutated`.
-        context.noteChangeArriving()
+        // A batch owns ordinal assignment at its dispatch point. The LAN path
+        // assigns it before opening a row transaction so a failed row still
+        // occupies its original input position.
+        if noteArrival {
+            context.noteChangeArriving()
+        }
 
         guard isAllowedTable(change.tableName) else { return (0, 0, 1) }
 
         do {
+            // `_device_registry` is keyed by device_id (TEXT), not `id`; keep
+            // its dedicated apply path on both atomic and per-row callers.
+            if change.tableName == "_device_registry" {
+                let applied = try applyDeviceRegistryChange(db: dbConn, change: change)
+                return (applied, 0, applied == 1 ? 0 : 1)
+            }
+
             switch change.operation.uppercased() {
             case "DELETE":
                 // The one write site not reached through `context`: `applyDelete`
@@ -999,26 +963,10 @@ public enum ConflictResolver {
 
     /// State that lives exactly as long as ONE apply, and no longer.
     ///
-    /// Deliberately an instance threaded through the call chain rather than a
-    /// `static var`. On the BATCHED paths `suspendJobStageSortIndex` DROPS a
-    /// unique index for the duration of the apply, so the answer to "which
-    /// columns are unique here" is only valid inside that window; a
-    /// process-global cache would serve a later apply a schema snapshot taken
-    /// while an index was missing (or be poisoned by one taken while it was
-    /// present). It would also be shared mutable state under Swift 6
-    /// concurrency checking.
-    ///
-    /// **The suspension is NOT a global invariant, and nothing here should be
-    /// read as if it were.** `resolveAndApplyChanges` — the per-row delta path —
-    /// never suspends anything, so on that path the enumeration DOES report
-    /// `job_stages.sort_order` and the ladder's attempt 2 will withhold it. The
-    /// consequence is a half-merged `job_stages` row plus a `_conflict_log` row
-    /// recording `winner: "local"` for a field no user edited locally — it was a
-    /// constraint refusal, not an edit. That is a real (if narrow) defect and is
-    /// deliberately NOT fixed in this commit: the candidate fixes are running
-    /// DDL inside every delta transaction, or teaching the enumeration which
-    /// index is currently suspended, and both are behaviour changes to the delta
-    /// path with their own test surface.
+    /// `resolveAndApplyChanges` shares this context across its otherwise
+    /// independent LAN/HTTP row transactions. That gives recoverable UNIQUE
+    /// collisions the same bounded replay and final `_conflict_log` outcome as
+    /// the Bluetooth delta door while preserving per-row commit isolation.
     final class ApplyContext {
         /// Whether a key collision may be parked and retried later.
         enum Disposition {
@@ -1026,10 +974,13 @@ public enum ConflictResolver {
             /// stop colliding once a later row vacates the slot, so park it and
             /// replay after the batch (§6 fixed point).
             case batched
-            /// One transaction PER ROW (`resolveAndApplyChanges`): there is no
-            /// later row inside this transaction and no batch to replay, so a
-            /// collision is resolved or recorded immediately. This asymmetry is
-            /// deliberate, not an oversight.
+            /// One transaction PER ROW with a shared top-level context
+            /// (`resolveAndApplyChanges`). Initial and replayed rows remain
+            /// isolated, but recoverable ordering collisions may park and replay
+            /// after later committed rows vacate their keys.
+            case perRowDeferred
+            /// Retained for callers that intentionally resolve each row in place
+            /// with no later replay opportunity.
             case perRow
         }
 
@@ -1094,7 +1045,50 @@ public enum ConflictResolver {
             self.disposition = disposition
         }
 
-        var canDefer: Bool { disposition == .batched && !isDraining }
+        /// Mutable state that must roll back with an individual LAN row. The
+        /// arrival ordinal is intentionally excluded: even a failed input keeps
+        /// its place in the top-level payload's ordering.
+        struct Checkpoint {
+            let isDraining: Bool
+            let deferred: [DeferredMerge]
+            let deferredBytes: Int
+            let latestArrivalOrdinal: [String: Int]
+            let replayingArrivalOrdinal: Int?
+            let keyCollisions: Int
+            let schemaDrops: Int
+            let supersededMerges: Int
+            let replayConflicts: Int
+        }
+
+        func checkpoint() -> Checkpoint {
+            Checkpoint(
+                isDraining: isDraining,
+                deferred: deferred,
+                deferredBytes: deferredBytes,
+                latestArrivalOrdinal: latestArrivalOrdinal,
+                replayingArrivalOrdinal: replayingArrivalOrdinal,
+                keyCollisions: keyCollisions,
+                schemaDrops: schemaDrops,
+                supersededMerges: supersededMerges,
+                replayConflicts: replayConflicts
+            )
+        }
+
+        func restore(_ checkpoint: Checkpoint) {
+            isDraining = checkpoint.isDraining
+            deferred = checkpoint.deferred
+            deferredBytes = checkpoint.deferredBytes
+            latestArrivalOrdinal = checkpoint.latestArrivalOrdinal
+            replayingArrivalOrdinal = checkpoint.replayingArrivalOrdinal
+            keyCollisions = checkpoint.keyCollisions
+            schemaDrops = checkpoint.schemaDrops
+            supersededMerges = checkpoint.supersededMerges
+            replayConflicts = checkpoint.replayConflicts
+        }
+
+        var canDefer: Bool {
+            (disposition == .batched || disposition == .perRowDeferred) && !isDraining
+        }
         var hasDeferredWork: Bool { !deferred.isEmpty }
         var deferredCount: Int { deferred.count }
 
@@ -1363,84 +1357,91 @@ public enum ConflictResolver {
     /// One replay pass over the deferral buffer.
     private static func replayDeferredMerges(_ db: Database, _ context: ApplyContext) throws {
         for entry in context.takeDeferred() {
-            // Deferral RE-ORDERS a change: this payload was change number
-            // `entry.arrivalOrdinal`, and it is being applied after change
-            // number N. That is a repair only while nothing else in the batch
-            // touched the record in between; otherwise it is a rewrite of the
-            // record's history that no counter would notice, because the replay
-            // SUCCEEDS. Discard it instead — and say so.
-            if context.isSuperseded(entry) {
-                context.supersededMerges += 1
-                // The message names the mechanism exactly, because it is the
-                // only signal a discard produces. "Wrote" is literal: a later
-                // change that wrote NOTHING — refused by NOT NULL/CHECK, an
-                // unrecognised operation verb, an UPDATE carrying no fields, or
-                // one that merely PARKED and then resolved to a rung of the
-                // ladder that runs no statement — no longer reaches here at
-                // all. See `noteRecordMutated` and `enqueueDeferredMerge`.
-                let supersededAt = context.supersedingWriteOrdinal(entry) ?? entry.arrivalOrdinal
-                logger.warning(
-                    """
-                    Deferred merge discarded: a later change in the same batch wrote this record — \
-                    table=\(entry.table, privacy: .public) id=\(entry.recordId, privacy: .public) \
-                    parkedAt=\(entry.arrivalOrdinal, privacy: .public) \
-                    supersededAt=\(supersededAt, privacy: .public) \
-                    from device=\(entry.change.deviceId, privacy: .public)
-                    """
-                )
-                continue
-            }
-
-            guard let localRow = try getLocalRecord(
-                db: db,
-                tableName: entry.table,
-                recordId: entry.recordId
-            ) else {
-                // The row we meant to merge into is gone — a hard DELETE removed
-                // it (a soft delete leaves the row, and is caught by the
-                // supersession check above). Re-inserting it belongs to the
-                // insert builders, not here, so record the cause and move on.
-                //
-                // This is caught DELIBERATELY rather than allowed to reach
-                // `applyUpdate`'s `missingLocalRecord` throw: that would land in
-                // `skipped`, which the snapshot gate throws on inside the write
-                // transaction. A replayed row must never be able to create a new
-                // producer of a gate input.
-                //
-                // The cause is `supersededMerges`, NOT `keyCollisions`: no index
-                // refused anything here. Counting a vanished record as a
-                // constraint refusal is the same category error as counting one
-                // as `skipped`, one counter further down.
-                context.supersededMerges += 1
-                logger.warning(
-                    """
-                    Deferred merge discarded: local record vanished during the batch — \
-                    table=\(entry.table, privacy: .public) id=\(entry.recordId, privacy: .public) \
-                    parkedAt=\(entry.arrivalOrdinal, privacy: .public)
-                    """
-                )
-                continue
-            }
-
-            // `replaying` keeps the entry's ORIGINAL batch position on anything
-            // this merge re-parks, so surviving a pass never promotes a change
-            // to "newest for this record".
-            let conflicts = try context.replaying(entry) {
-                try fieldLevelMerge(
-                    db: db,
-                    table: entry.table,
-                    recordId: entry.recordId,
-                    localRow: localRow,
-                    incomingFields: entry.incomingFields,
-                    change: entry.change,
-                    localDeviceId: entry.localDeviceId,
-                    context: context
-                )
-            }
-            // The change was already tallied when it first arrived, so only the
-            // conflict rows written by THIS pass are new.
-            context.replayConflicts += conflicts
+            try replayDeferredMerge(db, context, entry)
         }
+    }
+
+    /// Replay one parked entry on a caller-owned connection.
+    private static func replayDeferredMerge(
+        _ db: Database,
+        _ context: ApplyContext,
+        _ entry: DeferredMerge
+    ) throws {
+        if context.isSuperseded(entry) {
+            context.supersededMerges += 1
+            return
+        }
+
+        guard let localRow = try getLocalRecord(
+            db: db,
+            tableName: entry.table,
+            recordId: entry.recordId
+        ) else {
+            context.supersededMerges += 1
+            return
+        }
+
+        let conflicts = try context.replaying(entry) {
+            try fieldLevelMerge(
+                db: db,
+                table: entry.table,
+                recordId: entry.recordId,
+                localRow: localRow,
+                incomingFields: entry.incomingFields,
+                change: entry.change,
+                localDeviceId: entry.localDeviceId,
+                context: context
+            )
+        }
+        context.replayConflicts += conflicts
+    }
+
+    /// LAN/HTTP replay counterpart to `drainDeferredMerges`. The buffer is
+    /// shared, but every attempt gets its own transaction and echo guard, so a
+    /// malformed replay cannot undo or suppress a previously committed sibling.
+    private static func drainDeferredMergesPerRow(
+        _ db: AppDatabase,
+        _ context: ApplyContext
+    ) throws -> Int {
+        var errors = 0
+        var passes = 0
+        while context.hasDeferredWork, passes < ApplyContext.maxReplayPasses {
+            passes += 1
+            let before = context.deferredCount
+            errors += try replayDeferredMergesPerRow(db, context)
+            if context.deferredCount >= before { break }
+        }
+
+        context.isDraining = true
+        errors += try replayDeferredMergesPerRow(db, context)
+        context.isDraining = false
+        return errors
+    }
+
+    private static func replayDeferredMergesPerRow(
+        _ db: AppDatabase,
+        _ context: ApplyContext
+    ) throws -> Int {
+        var errors = 0
+        for entry in context.takeDeferred() {
+            do {
+                try db.writer.write { dbConn in
+                    let checkpoint = context.checkpoint()
+                    do {
+                        try dbConn.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
+                        try replayDeferredMerge(dbConn, context, entry)
+                        try dbConn.execute(sql: "DELETE FROM _sync_apply_guard")
+                    } catch {
+                        context.restore(checkpoint)
+                        throw error
+                    }
+                }
+            } catch {
+                errors += 1
+                logger.error("Failed to replay deferred incoming change: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+        return errors
     }
 
     /// Get unreviewed conflicts for admin review.
