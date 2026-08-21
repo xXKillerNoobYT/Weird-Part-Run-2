@@ -146,10 +146,17 @@ public enum SyncSelfCheck {
                 let sqlOperation = op.uppercased()
                 let rowReference = (sqlOperation == "DELETE") ? "OLD" : "NEW"
                 let name = triggerName(table: state.table, operation: op)
+                // Migration 126 replaced device_logs' original unconditional
+                // triggers with this severity guard. Recreating the generic
+                // shape would make verbose logs replicate again, even though
+                // the audit would call the trigger healthy by name alone.
+                let deviceLogSeverityGuard = state.table == "device_logs"
+                    ? "\n     AND COALESCE(\(rowReference).severity, 30) >= \(DeviceLogService.replicationMinSeverity)"
+                    : ""
                 try db.execute(sql: """
                     CREATE TRIGGER IF NOT EXISTS \(name)
                     AFTER \(sqlOperation) ON [\(state.table)]
-                    WHEN (SELECT COUNT(*) FROM _sync_apply_guard) = 0
+                    WHEN (SELECT COUNT(*) FROM _sync_apply_guard) = 0\(deviceLogSeverityGuard)
                     BEGIN
                         INSERT INTO _change_log (device_id, table_name, record_id, operation)
                         VALUES ('', '\(state.table)', \(rowReference).id, '\(sqlOperation)');

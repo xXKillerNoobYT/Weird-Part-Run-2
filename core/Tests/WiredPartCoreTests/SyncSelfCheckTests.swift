@@ -97,10 +97,10 @@ struct SyncSelfCheckTests {
     /// it is schema-independent (no coupling to any table's columns or foreign
     /// keys, which drift across migrations) and it is a stricter claim — byte
     /// equality with what the migration produced, for all three operations.
-    @Test("A reconciled trigger is byte-identical to the migration-created one")
-    func reconciledTriggerMatchesTheMigrationDefinition() throws {
+    @Test("A reconciled device_logs trigger preserves migration 126's severity guard")
+    func reconciledDeviceLogTriggerMatchesMigration126Definition() throws {
         let db = try AppDatabase.openInMemoryDatabase()
-        let table = "part_types"
+        let table = "device_logs"
 
         func storedSQL(_ dbc: Database, _ name: String) throws -> String? {
             try String.fetchOne(
@@ -123,7 +123,11 @@ struct SyncSelfCheckTests {
             let rebuilt = try db.writer.read { try storedSQL($0, name) }
             #expect(
                 rebuilt == original,
-                "reconciled \(name) differs from the migration's definition — a trigger that exists but behaves differently is worse than a missing one, because the audit calls it healthy"
+                "reconciled \(name) differs from migration 126's severity-gated definition — a trigger that exists but replicates info logs is worse than a missing one, because the audit calls it healthy"
+            )
+            #expect(
+                rebuilt?.contains("COALESCE(\(op == "delete" ? "OLD" : "NEW").severity, 30) >= \(DeviceLogService.replicationMinSeverity)") == true,
+                "reconciled \(name) must retain migration 126's device_logs severity guard"
             )
         }
     }
@@ -134,8 +138,13 @@ struct SyncSelfCheckTests {
         let audit = try db.writer.read { try SyncSelfCheck.auditTriggers($0) }
         let text = SyncSelfCheck.renderTriggerAudit(audit)
 
-        #expect(text.contains("checked on device"))
-        #expect(text.contains("\(audit.checkedTables)"))
-        #expect(text.contains("allowlisted tables"))
+        #expect(
+            text.contains("allowlisted tables : \(ConflictResolver.allowedSyncTables.count)"),
+            "the report must distinguish the complete allowlist from the eligible checked denominator"
+        )
+        #expect(
+            text.contains("checked on device  : \(audit.checkedTables)"),
+            "the report must state the exact checked-on-device denominator"
+        )
     }
 }
