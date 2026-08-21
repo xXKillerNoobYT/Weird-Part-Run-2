@@ -25,6 +25,18 @@ Classification rule: preserve canonical; preserve dirty trees; preserve unmerged
 - `RETAIN_UNMERGED_HEAD`: 26 paths / 21.90 GiB
 - `REVIEW_DELETE_CANDIDATE`: 61 paths / 25.02 GiB
 
+## Open PR disposition
+
+All five open PRs are `repair`; none prove the merge-now predicate. The local Mac iOS runners are online, and the listed Beta-Gate results are historical current-head evidence only—each branch is behind `main` and needs a new exact-head run after repair/rebase.
+
+| PR | Disposition | Evidence and next action |
+|---|---|---|
+| [#1608](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/pull/1608) | `repair` | Draft; `DIRTY`; changes requested; iPhone/iPad gate last passed. Owner must resolve requested changes/conflict, rebase, then request the review lanes. |
+| [#1635](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/pull/1635) | `repair` | Non-draft but behind; both iOS Beta Gates failed. Repair/rebase and obtain current-head local-runner gates before a merge review. |
+| [#1750](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/pull/1750) | `repair` | Draft and behind; prior checks passed. Rebase, complete implementation, mark ready, and run current-head review/gates. |
+| [#1769](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/pull/1769) | `repair` | Draft and behind; both iOS Beta Gates failed (the PR describes a deliberately red test). Owner must choose the valid repair/supersession route; it cannot enter merge queue. |
+| [#1781](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/pull/1781) | `repair` | Draft and behind; prior checks passed. Rebase and complete draft/review prerequisites before queue admission. |
+
 ## Per-worktree evidence
 
 | Classification | Issue hint | Paperclip status / active run | Clean | Merged into main | Unique/unmerged HEAD | Branch | Approx. GiB | Path |
