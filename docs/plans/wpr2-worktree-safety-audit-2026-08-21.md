@@ -37,6 +37,74 @@ All five open PRs are `repair`; none prove the merge-now predicate. The local Ma
 | [#1769](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/pull/1769) | `repair` | Draft and behind; both iOS Beta Gates failed (the PR describes a deliberately red test). Owner must choose the valid repair/supersession route; it cannot enter merge queue. |
 | [#1781](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/pull/1781) | `repair` | Draft and behind; prior checks passed. Rebase and complete draft/review prerequisites before queue admission. |
 
+## Remote-branch evidence
+
+Snapshot source: `git fetch origin "+refs/heads/*:refs/remotes/origin/*" --prune` followed by `git merge-base --is-ancestor <remote-head> origin/main`. This is a classification only: no local or remote branch was deleted. Open-PR heads are retained for repair; a merged remote branch remains review-only until its related worktree/PR/owner state passes the required cleanup lane.
+
+| Classification | Remote branch | Head |
+|---|---|---|
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `WEI-2953-wei-2812-plan-scope-ai-assisted-universal-import-architecture-and-staged-delivery-plan` | `bc22c43a1c07` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `WEI-2958-wei-2812-stage-3-add-digital-pdf-and-ocr-import-preview-adapters` | `6c3eaaffcbd0` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `WEI-4745-keep-github-issue-work-moving` | `523c112009a6` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `WEI-5124-keep-github-issue-work-moving` | `d906c8351fdb` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `WEI-5835-merge-repair-pr-1501-restore-traceability-and-revalidate-after-1495` | `21d813d9c623` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `WEI-7022-sync-critical-joiner-buffers-the-whole-snapshot-in-memory-stage-it-durably-instead` | `01bdd9a96606` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `WEI-7024-cto-design-gate-stage-safe-bluetooth-snapshot-transfer-remediation-for-wei-7021-wei-7022` | `8a9208f78baf` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `ci/1481-ios-ipad-beta-gate` | `6b121df179da` |
+| RETAIN_OPEN_PR_REPAIR | `claude/sync-self-check` | `0e70410bbce4` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `codex/wei-1028-auth-hardening-local-sync-20260513` | `2c1d45cde81e` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `copilot/fix-bug-1484` | `0326c6e324d5` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `copilot/fix-code-scanning-alerts` | `8a1cfb330869` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `copilot/fix-code-scanning-alerts-28` | `842d6ce51865` |
+| RETAIN_OPEN_PR_REPAIR | `copilot/fix-code-scanning-alerts-32` | `d04144b2611b` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `copilot/fix-code-scanning-alerts-again` | `7dd48e18fcfa` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `docs/copilot-gate-suspension` | `ecb226d8ece6` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `docs/pin-mac-rootcause-todo` | `ecf2897e970a` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `feat/agent-link-core` | `805eef7adcef` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `feat/agent-link-tools` | `14856581cbdf` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `feat/device-logs-sync` | `9dd826970e3b` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `fix/1341-restore-copilot-approval-gates` | `8eeaea130c13` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `fix/1547-aifallback-ui-smoke-login` | `b6126c58cfe1` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `fix/1627-bootstrap-key-fallback` | `6453a4327d99` |
+| RETAIN_OPEN_PR_REPAIR | `fix/1739-join-path` | `1e7ca5591b7a` |
+| RETAIN_OPEN_PR_REPAIR | `fix/1765-ac1-door-parity-test` | `c52bc13e7d7d` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `fix/6808-agent-link-plan-current-main` | `b2dbb2a2f802` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `fix/mac-session-key-fallback` | `28a64b9f42b6` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `fix/mac-startup-real-error` | `bf331fdcbe8b` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `fix/snapshot-idle-timeout` | `394f903a54e2` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `fix/sync-allowlist-gap` | `8536212a3d85` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `fix/sync-deferred-not-failure` | `425386ac3bcf` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `fix/sync-untrusted-writes` | `6762e5d65012` |
+| RETAIN_OPEN_PR_REPAIR | `hermes/hermes-10470fcb` | `a16a71e78f06` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `hermes/hermes-1bc7554f` | `30aceec3f8e0` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `hermes/hermes-22215998` | `a471dae8853c` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `hermes/hermes-2d106376` | `9d4ded6e5e34` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `hermes/hermes-308a5e64` | `f8defba3cea9` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `hermes/hermes-32523f63` | `334ee9be82d7` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `hermes/hermes-335da4b2` | `c94b031d52c2` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `hermes/hermes-44632472` | `c2a060d81f54` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `hermes/hermes-5be49416` | `632e928f845d` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `hermes/hermes-5ffbe68b` | `9bab4e244ac3` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `hermes/hermes-6936f42a` | `e7d0e5f46ebe` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `hermes/hermes-752e6c7d` | `793f39f86b54` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `hermes/hermes-9315b6df` | `76b1a7b27990` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `hermes/hermes-df1c927f` | `c94ebab62af8` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `hermes/hermes-fc0788af` | `913d64a1ac1b` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `integration/big-startup-sync` | `1616da7f1331` |
+| RETAIN_CANONICAL | `main` | `30e0285333e7` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `repair/1468-retry-save-gates` | `802510036cea` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `rescue/278-detents` | `6ce2848b6e0a` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `rescue/278-search-empty` | `e0d706c66929` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `rescue/278-trailer-nav` | `d1648d4e0a7b` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `rescue/437-pretrip` | `0daf0593ceb4` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `rescue/438-tool-policies` | `960d640af78e` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `rescue/439-dispatch` | `8cd7fd36f03a` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `rescue/80-panel-dnd` | `691c0ffc2189` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `rescue/80-pdf-export` | `22f5a5c31b9e` |
+| RETAIN_UNMERGED_OR_AMBIGUOUS | `rescue/80-slash-palette` | `38d1a092f4b2` |
+
+Branch summary: 59 remote branches — `RETAIN_CANONICAL` 1, `RETAIN_OPEN_PR_REPAIR` 5, `RETAIN_UNMERGED_OR_AMBIGUOUS` 53.
+
 ## Per-worktree evidence
 
 | Classification | Issue hint | Paperclip status / active run | Clean | Merged into main | Unique/unmerged HEAD | Branch | Approx. GiB | Path |
