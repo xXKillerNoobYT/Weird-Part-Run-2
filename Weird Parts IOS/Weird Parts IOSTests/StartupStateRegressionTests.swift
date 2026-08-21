@@ -55,6 +55,34 @@ final class StartupStateRegressionTests: XCTestCase {
         )
     }
 
+    /// A paired device with no roster must remain on the retryable full-sync
+    /// path. Login's incremental sync cannot fetch pre-pairing records.
+    func testJoinedAwaitingRosterIsDistinctFromTheLoginReadyState() {
+        XCTAssertEqual(
+            AppCore.startupState(hasUsers: false, hasProfile: false, hasPairedPeer: true),
+            .joinedAwaitingRoster
+        )
+    }
+
+    /// The company-setup wizard creates first-device rows. A joined admin with
+    /// a false local completion flag must not be routed there after login.
+    func testJoinedAdminSkipsCompanySetupWizard() {
+        XCTAssertFalse(
+            WiredPartIOSApp.shouldShowCompanySetup(
+                isAdmin: true,
+                hasCompletedCompanySetup: false,
+                joinedExistingBusiness: true
+            )
+        )
+        XCTAssertTrue(
+            WiredPartIOSApp.shouldShowCompanySetup(
+                isAdmin: true,
+                hasCompletedCompanySetup: false,
+                joinedExistingBusiness: false
+            )
+        )
+    }
+
     /// The genuinely new device must still get onboarding — the fix must not
     /// strand a first-run user.
     func testTrulyNewDeviceStillGetsOnboarding() {

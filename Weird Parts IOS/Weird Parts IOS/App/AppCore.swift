@@ -40,6 +40,12 @@ final class AppCore: ObservableObject {
     @Published private(set) var requiresUnreadableDatabaseRecovery = false
     @Published var needsBootstrap = false
     @Published var needsOnboarding = false
+    /// A joined device with an incomplete roster must re-enter the full-snapshot
+    /// flow. Incremental launch sync cannot recover pre-pairing records.
+    @Published private(set) var needsInitialSync = false
+    /// Durable local pairing evidence used to prevent joiners from entering the
+    /// first-device company setup wizard after login.
+    @Published private(set) var joinedExistingBusiness = false
     @Published var currentUser: User?
     @Published var currentToken: String?
     @Published var permissions: [String] = []
@@ -400,12 +406,23 @@ final class AppCore: ObservableObject {
                 UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
                 needsOnboarding = true
                 needsBootstrap = false
+                needsInitialSync = false
+                joinedExistingBusiness = false
             case .needsFirstAdmin:
                 needsBootstrap = true
                 needsOnboarding = false
-            case .joinedAwaitingRoster, .ready:
+                needsInitialSync = false
+                joinedExistingBusiness = false
+            case .joinedAwaitingRoster:
                 needsBootstrap = false
                 needsOnboarding = false
+                needsInitialSync = true
+                joinedExistingBusiness = true
+            case .ready:
+                needsBootstrap = false
+                needsOnboarding = false
+                needsInitialSync = false
+                joinedExistingBusiness = result.hasPairedPeer
             }
 
             let uiTestDisplayName = ProcessInfo.processInfo.arguments.contains("-UITestingTeamsViewOnly")
@@ -690,6 +707,7 @@ final class AppCore: ObservableObject {
     /// Finish onboarding and transition to the main app (or login screen).
     func completeOnboarding() {
         needsOnboarding = false
+        needsInitialSync = false
         // If seedFirstAdmin was called during onboarding, currentUser is set
         // and the app will go straight to IOSMainView.
         // If joining an existing business (sync path), currentUser is nil

@@ -72,6 +72,16 @@ struct WiredPartIOSApp: App {
         appCore.hasPermission("manage_people") && appCore.hasPermission("manage_jobs")
     }
 
+    /// Company setup creates first-device records. A device that paired with an
+    /// existing business must skip it even if its local completion flag is false.
+    static func shouldShowCompanySetup(
+        isAdmin: Bool,
+        hasCompletedCompanySetup: Bool,
+        joinedExistingBusiness: Bool
+    ) -> Bool {
+        isAdmin && !hasCompletedCompanySetup && !joinedExistingBusiness
+    }
+
     private var shouldOpenWarehouseSetupForUITest: Bool {
         ProcessInfo.processInfo.arguments.contains("-UITestingWarehouseSetupWizard")
     }
@@ -279,6 +289,11 @@ struct WiredPartIOSApp: App {
                     } else if appCore.needsBootstrap {
                         BootstrapView()
                             .environmentObject(appCore)
+                    } else if appCore.needsInitialSync {
+                        NavigationStack {
+                            SyncWaitingView(canCancel: false)
+                                .environmentObject(appCore)
+                        }
                     } else if appCore.currentUser == nil {
                         LoginView()
                             .environmentObject(appCore)
@@ -311,7 +326,11 @@ struct WiredPartIOSApp: App {
                             .environmentObject(appCore)
                             .environmentObject(tabPrefs)
                             .environmentObject(appCore.badgeCountManager)
-                    } else if isAdmin && !hasCompletedCompanySetup {
+                    } else if Self.shouldShowCompanySetup(
+                        isAdmin: isAdmin,
+                        hasCompletedCompanySetup: hasCompletedCompanySetup,
+                        joinedExistingBusiness: appCore.joinedExistingBusiness
+                    ) {
                         CompanySetupWizard()
                             .environmentObject(appCore)
                     } else if onboardAIMVPEnabled && !hasSeenOnboardAIMVPEntry {
