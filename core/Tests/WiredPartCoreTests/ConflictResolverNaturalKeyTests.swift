@@ -1044,14 +1044,13 @@ struct ConflictResolverNaturalKeyTests {
                 "a write issued after the refusal must still land")
     }
 
-    // MARK: - The delta path records immediately, by design
+    // MARK: - LAN deferred replay preserves per-row isolation
 
-    /// The per-row path has one transaction PER ROW, so there is no later row
-    /// inside the transaction that could vacate the slot and no batch to replay
-    /// against. A collision is therefore resolved or recorded immediately. The
-    /// asymmetry with the batched paths is deliberate; this test pins it.
-    @Test("the per-row delta path records a collision immediately, without a fixed point")
-    func testDeltaPathRecordsCollisionsImmediately() throws {
+    /// LAN/HTTP still commits each row independently, but it now shares a bounded
+    /// replay context across the input array. The first row parks, the second
+    /// commits and vacates the key, then the parked row replays successfully.
+    @Test("the per-row LAN path replays an ordering collision after later committed rows")
+    func testPerRowPathReplaysOrderingCollisions() throws {
         let db = try freshDB()
         try seedArchivedTemplate(db)
 
@@ -1060,9 +1059,7 @@ struct ConflictResolverNaturalKeyTests {
             update("job_stage_templates", "1", #"{"is_default":"0"}"#),
         ])
 
-        // Same two changes in the same order that T-8b resolves to zero: with no
-        // batch transaction there is nothing to replay, so it stands as residue.
-        #expect(result.keyCollisions == 1)
+        #expect(result.keyCollisions == 0, "the replay must land after the later row vacates the key")
         #expect(result.errors == 0, "a collision must not land in `errors` either")
         #expect(result.skipped == 0)
     }
@@ -1463,5 +1460,115 @@ struct ConflictResolverNaturalKeyTests {
                 "both entries reached the ladder and were counted there")
         #expect(result.skipped == 0)
         #expect(result.errors == 0)
+    }
+
+    @Test("LAN deferred replay matches Bluetooth delta committed rows and conflict log")
+    func testLANDeferredReplayMatchesBluetoothDelta() throws {
+        let lanDB = try freshDB()
+        let bluetoothDB = try freshDB()
+        try seedTwoCategories(lanDB)
+        try seedTwoCategories(bluetoothDB)
+
+        let changes = [
+            update("part_categories", "5", #"{"name":"THHN","description":"peer five"}"#),
+            update("part_categories", "9", #"{"name":"Zebra"}"#),
+        ]
+        let lanResult = try ConflictResolver.resolveAndApplyChanges(db: lanDB, changes: changes)
+        let bluetoothResult = try applyDelta(bluetoothDB, changes)
+
+        #expect(lanResult.keyCollisions == bluetoothResult.keyCollisions)
+        #expect(try categoryName(lanDB, 5) == "THHN")
+        #expect(try categoryName(lanDB, 9) == "Zebra")
+        #expect(try categoryName(lanDB, 5) == categoryName(bluetoothDB, 5))
+        #expect(try categoryName(lanDB, 9) == categoryName(bluetoothDB, 9))
+        #expect(try categoryDescription(lanDB, 5) == categoryDescription(bluetoothDB, 5))
+        #expect(try ConflictResolver.getUnreviewedConflicts(db: lanDB).isEmpty)
+        #expect(try ConflictResolver.getUnreviewedConflicts(db: bluetoothDB).isEmpty,
+                "no fabricated winner=local conflict may be needed to complete the swap")
+    }
+
+    @Test("Deferred supersession preserves unchanged non-key data and persists evidence for every transport")
+    func testDeferredSupersessionPreservationEvidenceAcrossTransports() throws {
+        let changes = [
+            update("part_categories", "5", #"{"name":"THHN","description":"preserved peer description"}"#),
+            update("part_categories", "5", #"{"sort_order":"7"}"#),
+        ]
+        let transports: [(String, (AppDatabase) throws -> MergeResult)] = [
+            ("lan", { try ConflictResolver.resolveAndApplyChanges(db: $0, changes: changes) }),
+            ("bluetooth_delta", { try self.applyDelta($0, changes) }),
+            ("bluetooth_snapshot", { try self.applyStreamed($0, changes) }),
+        ]
+
+        for (transport, apply) in transports {
+            let db = try freshDB()
+            try seedTwoCategories(db)
+            _ = try apply(db)
+            #expect(try categoryDescription(db, 5) == "preserved peer description")
+            #expect(try categorySortOrder(db, 5) == 7)
+            let evidence = try ConflictResolver.getDeferredSupersessionEvidence(db: db, tableName: "part_categories", recordId: "5")
+            #expect(evidence.count == 1)
+            #expect(evidence[0].transport == transport)
+            #expect(evidence[0].result == "preserved")
+            #expect(evidence[0].keyFieldDisposition == "withheld_by_in_place_ladder")
+            #expect(evidence[0].nonKeyFieldDisposition == "preserved_when_unchanged_since_park")
+            #expect(evidence[0].arrivalOrdinal == 1)
+            #expect(evidence[0].supersedingOrdinal == 2)
+            let conflicts = try ConflictResolver.getUnreviewedConflicts(db: db)
+            #expect(conflicts.contains { $0.fieldName == "__deferred_supersession__" })
+        }
+    }
+
+    @Test("Vanished deferred merge persists linked discarded conflict evidence for every transport")
+    func testVanishedDeferredSupersessionPersistsDiscardEvidenceAcrossTransports() throws {
+        let changes = [
+            update("part_categories", "5", #"{"name":"THHN","description":"must not resurrect"}"#),
+            delete("part_categories", "5"),
+        ]
+        let transports: [(String, (AppDatabase) throws -> MergeResult)] = [
+            ("lan", { try ConflictResolver.resolveAndApplyChanges(db: $0, changes: changes) }),
+            ("bluetooth_delta", { try self.applyDelta($0, changes) }),
+            ("bluetooth_snapshot", { try self.applyStreamed($0, changes) }),
+        ]
+
+        for (transport, apply) in transports {
+            let db = try freshDB()
+            try seedTwoCategories(db)
+            _ = try apply(db)
+
+            let evidence = try ConflictResolver.getDeferredSupersessionEvidence(
+                db: db, tableName: "part_categories", recordId: "5"
+            )
+            #expect(evidence.count == 1)
+            let deferredEvidence = try #require(evidence.first)
+            #expect(deferredEvidence.transport == transport)
+            #expect(deferredEvidence.supersedingEvent == "vanished_record")
+            #expect(deferredEvidence.result == "discarded")
+            #expect(deferredEvidence.nonKeyFieldDisposition == "discarded_record_missing")
+
+            let conflicts = try ConflictResolver.getUnreviewedConflicts(db: db).filter {
+                $0.tableName == "part_categories"
+                    && $0.recordId == "5"
+                    && $0.fieldName == "__deferred_supersession__"
+            }
+            #expect(conflicts.count == 1)
+            let linkedConflict = try #require(conflicts.first)
+            #expect(linkedConflict.id == deferredEvidence.conflictLogId)
+        }
+    }
+
+    @Test("LAN row failures do not roll back surrounding committed rows")
+    func testLANRowFailureIsolation() throws {
+        let db = try freshDB()
+        let changes = [
+            IncomingChange(deviceId: "remote-device", tableName: "part_categories", recordId: "51", operation: "INSERT", recordData: #"{"id":"51","name":"Before broken"}"#, timestamp: "2026-08-16T10:00:00Z"),
+            IncomingChange(deviceId: "remote-device", tableName: "part_styles", recordId: "77", operation: "INSERT", recordData: #"{"id":"77","category_id":"999999","name":"Broken foreign key"}"#, timestamp: "2026-08-16T10:00:01Z"),
+            IncomingChange(deviceId: "remote-device", tableName: "part_categories", recordId: "52", operation: "INSERT", recordData: #"{"id":"52","name":"After broken"}"#, timestamp: "2026-08-16T10:00:02Z"),
+        ]
+
+        let result = try ConflictResolver.resolveAndApplyChanges(db: db, changes: changes)
+
+        #expect(result.errors == 1)
+        #expect(try categoryName(db, 51) == "Before broken")
+        #expect(try categoryName(db, 52) == "After broken")
     }
 }
