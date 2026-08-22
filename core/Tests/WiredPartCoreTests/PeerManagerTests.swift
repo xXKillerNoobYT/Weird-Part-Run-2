@@ -233,7 +233,8 @@ private func seedPriorTrust(
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
             arguments: [
-                peerDeviceId, "Prior Device", "legacy", "viewer", "prior-certificate",
+                peerDeviceId, "Prior Device", "legacy", "viewer",
+                "x25519:\(Data(repeating: 0x42, count: 32).base64EncodedString())",
                 "2026-06-01T01:02:03Z", "2026-06-02T04:05:06Z", 1, 1,
                 "2026-05-01T00:00:00Z",
             ]
@@ -1077,7 +1078,61 @@ struct PeerManagerTests {
         ))
     }
 
-    @Test("Full snapshot authorization requires a trusted active device")
+    /// A keyless registration is not trusted, while a pre-certificate legacy
+    /// trusted row retains its established compatibility semantics. The original
+    /// `_device_registry` schema created trusted peers before it had a certificate
+    /// column; it is not replicated as a general table (only monotonic revocations
+    /// are applied by `ConflictResolver`). Do not misattribute that legacy state to
+    /// replication or tighten trust during this validation hardening.
+    @Test("A peer that supplied no key-agreement key is never trusted (#1608)")
+    func testPeerWithoutKeyAgreementKeyIsNeverTrusted() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+
+        try ChangeTracker.registerPeerDevice(
+            db: db,
+            peerId: "keyless-peer",
+            peerName: "Keyless Peer",
+            platform: "ios",
+            keyAgreementPublicKey: nil          // → certificate NULL, is_trusted 0
+        )
+
+        #expect(
+            try await pm.isTrustedBluetoothPeer("keyless-peer") == false,
+            "a peer with no key-agreement key must not be trusted"
+        )
+        #expect(try await pm.isTrustedBluetoothPeer("never-registered") == false)
+
+        // The pre-certificate schema legitimately left existing trusted rows with
+        // no pin. `_device_registry` is not generally replicated: the conflict
+        // resolver applies only monotonic revocations. Preserve that legacy state
+        // without claiming replication can create it.
+        try await db.writer.write { dbc in
+            try dbc.execute(sql: """
+                INSERT OR REPLACE INTO _device_registry
+                    (device_id, device_name, platform, is_trusted, is_deactivated)
+                VALUES ('replicated-peer', 'Replicated', 'ios', 1, 0)
+                """)
+        }
+        #expect(
+            try await pm.isTrustedBluetoothPeer("replicated-peer") == true,
+            "a trusted replicated row with no certificate was revoked by encryption"
+        )
+
+        // Contrast: supplying a key does grant trust, so the assertion above is
+        // about the missing key and not about registration failing outright.
+        let (_, publicKey) = SyncCrypto.generateKeyAgreementPair()
+        try ChangeTracker.registerPeerDevice(
+            db: db,
+            peerId: "keyed-peer",
+            peerName: "Keyed Peer",
+            platform: "ios",
+            keyAgreementPublicKey: publicKey
+        )
+        #expect(try await pm.isTrustedBluetoothPeer("keyed-peer") == true)
+    }
+
+    @Test("Malformed and unsupported certificate envelopes deny Bluetooth snapshot trust")
     func testFullSnapshotRequiresTrustedActiveDevice() async throws {
         let db = try freshDB()
         let pm = PeerManager(db: db)
@@ -1092,6 +1147,34 @@ struct PeerManagerTests {
             keyAgreementPublicKey: publicKey
         )
         #expect(try await pm.isTrustedBluetoothPeer("joiner") == true)
+
+        // This row was paired successfully, then corrupted at rest. Snapshot
+        // authorization must fail closed instead of treating trusted metadata alone
+        // as sufficient proof of the peer's pairing material.
+        try await db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE _device_registry SET certificate = ? WHERE device_id = ?",
+                arguments: ["wpdr-cert:v1:truncated", "joiner"]
+            )
+        }
+        let trustedAfterCertificateCorruption = try await pm.isTrustedBluetoothPeer("joiner")
+        #expect(trustedAfterCertificateCorruption == false)
+
+        // An old device-local envelope (including one written under a different
+        // device key) is also an unsupported reserved value, never plaintext.
+        try await db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE _device_registry SET certificate = ? WHERE device_id = ?",
+                arguments: ["wpdr-cert:v1:YW55LW90aGVyLWRldmljZS1rZXk=", "joiner"]
+            )
+        }
+        #expect(try await pm.isTrustedBluetoothPeer("joiner") == false)
+        #expect(!BluetoothSnapshotAuthorization.isAuthorized(
+            trustedDevice: trustedAfterCertificateCorruption,
+            providedToken: "pairing-capability",
+            expectedToken: "pairing-capability"
+        ))
+
         try await db.writer.write { dbConn in
             try dbConn.execute(
                 sql: "UPDATE _device_registry SET is_deactivated = 1 WHERE device_id = ?",
