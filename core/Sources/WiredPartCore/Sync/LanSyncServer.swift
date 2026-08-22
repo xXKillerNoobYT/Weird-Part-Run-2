@@ -461,8 +461,9 @@ public actor SyncServerState {
                 arguments: [deviceId]
             )
         }
-        guard let encoded, encoded.hasPrefix("x25519:") else { return nil }
-        return Self.validKeyAgreementPublicKey(String(encoded.dropFirst("x25519:".count)))
+        guard let decoded = try DeviceRegistryCertificateCodec.production.read(encoded),
+              decoded.hasPrefix("x25519:") else { return nil }
+        return Self.validKeyAgreementPublicKey(String(decoded.dropFirst("x25519:".count)))
     }
 
     private static func validKeyAgreementPublicKey(_ key: String?) -> String? {

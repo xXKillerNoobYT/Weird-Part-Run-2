@@ -1,4 +1,5 @@
 import Testing
+import Foundation
 import GRDB
 @testable import WiredPartCore
 
@@ -429,5 +430,75 @@ struct ChangeTrackerTests {
         let deleted = try ChangeTracker.pruneOldChanges(db: db)
         #expect(deleted == 0)
         #expect(try ChangeTracker.getChangesForPeer(db: db, peerId: "peer-slow").count == 3)
+    }
+
+    @Test("Raw certificate pins remain compatible while reserved envelopes fail closed")
+    func testCertificateLegacyCompatibilityAndFailClosedDecoding() throws {
+        let (_, publicKey) = SyncCrypto.generateKeyAgreementPair()
+        let legacy = "x25519:\(publicKey)"
+        let codec = DeviceRegistryCertificateCodec.production
+        let reservedEnvelope = "wpdr-cert:v1:\(Data(legacy.utf8).base64EncodedString())"
+
+        #expect(try codec.store(legacy) == legacy)
+        #expect(try codec.read(legacy) == legacy)
+        #expect(throws: DeviceRegistryCertificateError.self) {
+            try codec.read("x25519:not-base64")
+        }
+        #expect(throws: DeviceRegistryCertificateError.self) {
+            try codec.read(reservedEnvelope)
+        }
+    }
+
+    @Test("Malformed certificate storage denies authorization and rollback")
+    func testMalformedCertificateDeniesAuthorizationAndRollback() async throws {
+        let db = try freshDB()
+        let (_, publicKey) = SyncCrypto.generateKeyAgreementPair()
+        try ChangeTracker.registerPeerDevice(
+            db: db, peerId: "peer-1", peerName: "Peer", keyAgreementPublicKey: publicKey
+        )
+        let state = SyncServerState(
+            deviceId: "server", deviceName: "Server", companyId: "company", db: db
+        )
+        try await db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE _device_registry SET certificate = ? WHERE device_id = ?",
+                arguments: ["wpdr-cert:v1:truncated", "peer-1"]
+            )
+        }
+        #expect((try? await state.authorizedPeerKey(deviceId: "peer-1")) == nil)
+        #expect(throws: DeviceRegistryCertificateError.self) {
+            try ChangeTracker.capturePeerDeviceTrust(db: db, peerId: "peer-1")
+        }
+
+        let invalidSnapshot = PeerDeviceTrustSnapshot(
+            deviceName: "Peer", platform: "ios", role: nil,
+            certificate: "wpdr-cert:v1:truncated", lastSeenAt: nil, lastSyncAt: nil,
+            isTrusted: 1, isDeactivated: 0, createdAt: "2026-08-01T00:00:00Z"
+        )
+        #expect(throws: DeviceRegistryCertificateError.self) {
+            try ChangeTracker.restorePeerDeviceTrust(db: db, peerId: "peer-1", snapshot: invalidSnapshot)
+        }
+    }
+
+    @Test("Capture and restore preserve canonical public-key storage")
+    func testCertificateCaptureRestorePreservesRepresentation() throws {
+        let db = try freshDB()
+        let (_, publicKey) = SyncCrypto.generateKeyAgreementPair()
+        let legacy = "x25519:\(publicKey)"
+        try ChangeTracker.registerPeerDevice(
+            db: db, peerId: "peer-1", peerName: "Peer", keyAgreementPublicKey: publicKey
+        )
+        let capturedSnapshot = try ChangeTracker.capturePeerDeviceTrust(db: db, peerId: "peer-1")
+        let captured = try #require(capturedSnapshot)
+        #expect(captured.certificate == legacy)
+        try ChangeTracker.restorePeerDeviceTrust(db: db, peerId: "peer-1", snapshot: captured)
+        let restored = try db.writer.read { dbConn in
+            try String.fetchOne(
+                dbConn,
+                sql: "SELECT certificate FROM _device_registry WHERE device_id = ?",
+                arguments: ["peer-1"]
+            )
+        }
+        #expect(restored == legacy)
     }
 }

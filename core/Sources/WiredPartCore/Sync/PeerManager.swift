@@ -1182,8 +1182,9 @@ public actor PeerManager {
                 arguments: [deviceId]
             )
         }
-        guard let encoded, encoded.hasPrefix("x25519:") else { return nil }
-        let key = String(encoded.dropFirst("x25519:".count))
+        guard let decoded = try DeviceRegistryCertificateCodec.production.read(encoded),
+              decoded.hasPrefix("x25519:") else { return nil }
+        let key = String(decoded.dropFirst("x25519:".count))
         guard Data(base64Encoded: key)?.count == 32 else { return nil }
         return key
     }
@@ -1758,11 +1759,38 @@ public actor PeerManager {
 
     func isTrustedBluetoothPeer(_ peerDeviceId: String) throws -> Bool {
         try db.writer.read { dbConn in
-            try Bool.fetchOne(
+            // Fetch the ROW, not the column: `String.fetchOne` returns nil both
+            // for "no trusted row" and for "row present, certificate NULL", and
+            // those are different facts.
+            guard let row = try Row.fetchOne(
                 dbConn,
-                sql: "SELECT is_trusted = 1 AND is_deactivated = 0 FROM _device_registry WHERE device_id = ?",
+                sql: """
+                    SELECT certificate
+                    FROM _device_registry
+                    WHERE device_id = ? AND is_trusted = 1 AND is_deactivated = 0
+                    """,
                 arguments: [peerDeviceId]
-            ) ?? false
+            ) else {
+                return false
+            }
+            let certificate: String? = row["certificate"]
+
+            // A trusted row with no certificate preserves the compatibility
+            // semantics of devices paired before the certificate column existed.
+            // `_device_registry` does not generally replicate: the conflict
+            // resolver accepts only monotonic deactivation/distrust updates. A
+            // missing certificate is therefore legacy local state, not a reason to
+            // silently revoke an already-paired device during this hardening.
+            guard let certificate else { return true }
+
+            do {
+                // Present: it must be a canonical public pin. Envelope-shaped
+                // values never fall through as legacy plaintext.
+                return try DeviceRegistryCertificateCodec.production.read(certificate) != nil
+            } catch {
+                // Present but unreadable or unsupported. Fail closed.
+                return false
+            }
         }
     }
 
