@@ -1487,6 +1487,54 @@ struct ConflictResolverNaturalKeyTests {
                 "no fabricated winner=local conflict may be needed to complete the swap")
     }
 
+    @Test("Deferred supersession preserves unchanged non-key data and persists evidence for every transport")
+    func testDeferredSupersessionPreservationEvidenceAcrossTransports() throws {
+        let changes = [
+            update("part_categories", "5", #"{"name":"THHN","description":"preserved peer description"}"#),
+            update("part_categories", "5", #"{"sort_order":"7"}"#),
+        ]
+        let transports: [(String, (AppDatabase) throws -> MergeResult)] = [
+            ("lan", { try ConflictResolver.resolveAndApplyChanges(db: $0, changes: changes) }),
+            ("bluetooth_delta", { try self.applyDelta($0, changes) }),
+            ("bluetooth_snapshot", { try self.applyStreamed($0, changes) }),
+        ]
+
+        for (transport, apply) in transports {
+            let db = try freshDB()
+            try seedTwoCategories(db)
+            _ = try apply(db)
+            #expect(try categoryDescription(db, 5) == "preserved peer description")
+            #expect(try categorySortOrder(db, 5) == 7)
+            let evidence = try ConflictResolver.getDeferredSupersessionEvidence(db: db, tableName: "part_categories", recordId: "5")
+            #expect(evidence.count == 1)
+            #expect(evidence[0].transport == transport)
+            #expect(evidence[0].result == "preserved")
+            #expect(evidence[0].keyFieldDisposition == "withheld_by_in_place_ladder")
+            #expect(evidence[0].nonKeyFieldDisposition == "preserved_when_unchanged_since_park")
+            #expect(evidence[0].arrivalOrdinal == 1)
+            #expect(evidence[0].supersedingOrdinal == 2)
+            let conflicts = try ConflictResolver.getUnreviewedConflicts(db: db)
+            #expect(conflicts.contains { $0.fieldName == "__deferred_supersession__" })
+        }
+    }
+
+    @Test("Vanished deferred merge persists discarded conflict evidence")
+    func testVanishedDeferredSupersessionPersistsDiscardEvidence() throws {
+        let db = try freshDB()
+        try seedTwoCategories(db)
+        _ = try applyDelta(db, [
+            update("part_categories", "5", #"{"name":"THHN","description":"must not resurrect"}"#),
+            delete("part_categories", "5"),
+        ])
+        let evidence = try ConflictResolver.getDeferredSupersessionEvidence(db: db, tableName: "part_categories", recordId: "5")
+        #expect(evidence.count == 1)
+        #expect(evidence[0].transport == "bluetooth_delta")
+        #expect(evidence[0].supersedingEvent == "vanished_record")
+        #expect(evidence[0].result == "discarded")
+        #expect(evidence[0].nonKeyFieldDisposition == "discarded_record_missing")
+        #expect(try ConflictResolver.getUnreviewedConflicts(db: db).contains { $0.fieldName == "__deferred_supersession__" })
+    }
+
     @Test("LAN row failures do not roll back surrounding committed rows")
     func testLANRowFailureIsolation() throws {
         let db = try freshDB()

@@ -168,6 +168,7 @@ extension AppDatabase {
         registerMigration124PeerSendWatermark(&migrator)
         registerMigration125ClockOutQuestionsSoftDelete(&migrator)
         registerMigration126DeviceLogDiagnostics(&migrator)
+        registerMigration127DeferredSupersessionEvidence(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6684,5 +6685,29 @@ private func registerMigration126DeviceLogDiagnostics(_ migrator: inout Database
                 END
                 """)
         }
+    }
+}
+
+// MARK: - Migration 127: durable deferred-merge supersession evidence (#1765)
+
+private func registerMigration127DeferredSupersessionEvidence(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("127_deferred_supersession_evidence") { db in
+        try db.create(table: "_deferred_supersession_log") { t in
+            t.autoIncrementedPrimaryKey("id")
+            t.column("conflict_log_id", .integer).notNull().references("_conflict_log", onDelete: .cascade)
+            t.column("transport", .text).notNull()
+            t.column("table_name", .text).notNull()
+            t.column("record_id", .text).notNull()
+            t.column("key_field_disposition", .text).notNull()
+            t.column("non_key_field_disposition", .text).notNull()
+            t.column("arrival_ordinal", .integer).notNull()
+            t.column("parked_ordinal", .integer).notNull()
+            t.column("superseding_ordinal", .integer)
+            t.column("superseding_event", .text).notNull()
+            t.column("result", .text).notNull()
+            t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+        }
+        try db.create(index: "idx_deferred_supersession_record", on: "_deferred_supersession_log", columns: ["table_name", "record_id", "created_at"])
+        try db.create(index: "idx_deferred_supersession_conflict", on: "_deferred_supersession_log", columns: ["conflict_log_id"])
     }
 }

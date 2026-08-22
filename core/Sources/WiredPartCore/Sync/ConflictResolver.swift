@@ -477,7 +477,7 @@ public enum ConflictResolver {
             // withhold `job_stages.sort_order` and silently break the #1729
             // permutation path.
             let sortIndexDDL = try suspendJobStageSortIndex(dbConn)
-            let context = ApplyContext(disposition: .batched)
+            let context = ApplyContext(disposition: .bluetoothDelta)
 
             for change in changes {
                 result.add(ApplyOutcome(try applyOneAtomically(dbConn, change, localDevice, context)))
@@ -737,7 +737,7 @@ public enum ConflictResolver {
             // earlier would let the ladder withhold `job_stages.sort_order` and
             // silently break the #1729 permutation path.
             let sortIndexDDL = try suspendJobStageSortIndex(dbConn)
-            let context = ApplyContext(disposition: .batched)
+            let context = ApplyContext(disposition: .bluetoothSnapshot)
 
             try produceChanges(dbConn) { change in
                 result.add(ApplyOutcome(try applyOneAtomically(dbConn, change, localDevice, context)))
@@ -949,6 +949,12 @@ public enum ConflictResolver {
         let incomingFields: [String: String?]
         let change: IncomingChange
         let localDeviceId: String
+        /// Values present when the merge was parked. A later write may only
+        /// preserve a non-key field when it has not changed since this snapshot.
+        let baselineFields: [String: String?]
+        /// UNIQUE-key columns from the refused statement; these are never replayed
+        /// after a later write, even if the slot was subsequently vacated.
+        let keyFields: Set<String>
         /// This change's POSITION in the batch, assigned on arrival.
         ///
         /// Load-bearing, not diagnostic. Deferral moves a change to the END of
@@ -973,6 +979,9 @@ public enum ConflictResolver {
             /// One transaction for the whole batch: a row that collides now may
             /// stop colliding once a later row vacates the slot, so park it and
             /// replay after the batch (§6 fixed point).
+            case bluetoothDelta
+            case bluetoothSnapshot
+            /// Test/internal generic batched route; production callers must name a transport.
             case batched
             /// One transaction PER ROW with a shared top-level context
             /// (`resolveAndApplyChanges`). Initial and replayed rows remain
@@ -1087,7 +1096,14 @@ public enum ConflictResolver {
         }
 
         var canDefer: Bool {
-            (disposition == .batched || disposition == .perRowDeferred) && !isDraining
+            (disposition == .bluetoothDelta || disposition == .bluetoothSnapshot || disposition == .batched || disposition == .perRowDeferred) && !isDraining
+        }
+        var transport: String {
+            switch disposition {
+            case .perRowDeferred, .perRow: return "lan"
+            case .bluetoothDelta: return "bluetooth_delta"
+            case .bluetoothSnapshot, .batched: return "bluetooth_snapshot"
+            }
         }
         var hasDeferredWork: Bool { !deferred.isEmpty }
         var deferredCount: Int { deferred.count }
@@ -1368,7 +1384,66 @@ public enum ConflictResolver {
         _ entry: DeferredMerge
     ) throws {
         if context.isSuperseded(entry) {
+            // A later write makes replaying the contested key unsafe, but must not
+            // erase otherwise-landable non-key fields. Resolve this entry through
+            // the existing in-place ladder with deferral disabled: it withholds the
+            // contested key, preserves the safely writable remainder, and records
+            // both the conflict and structured operational evidence.
+            guard let localRow = try getLocalRecord(
+                db: db,
+                tableName: entry.table,
+                recordId: entry.recordId
+            ) else {
+                context.supersededMerges += 1
+                try recordDeferredSupersession(
+                    db: db, context: context, entry: entry,
+                    supersedingOrdinal: context.supersedingWriteOrdinal(entry),
+                    event: "vanished_record", result: "discarded",
+                    keyDisposition: "discarded_record_missing",
+                    nonKeyDisposition: "discarded_record_missing"
+                )
+                return
+            }
+
+            if let deletedAt: String = localRow["deleted_at"], !deletedAt.isEmpty {
+                context.supersededMerges += 1
+                try recordDeferredSupersession(
+                    db: db, context: context, entry: entry,
+                    supersedingOrdinal: context.supersedingWriteOrdinal(entry),
+                    event: "vanished_record", result: "discarded",
+                    keyDisposition: "discarded_record_missing",
+                    nonKeyDisposition: "discarded_record_missing"
+                )
+                return
+            }
+            var safeFields: [String: String?] = [:]
+            for (field, value) in entry.incomingFields {
+                guard field != "id", !entry.keyFields.contains(field) else { continue }
+                if stringifyValue(localRow[field] as DatabaseValue) == entry.baselineFields[field] {
+                    safeFields[field] = value
+                }
+            }
+            let hasPreservedNonKey = !safeFields.isEmpty
+            let wasDraining = context.isDraining
+            context.isDraining = true
+            defer { context.isDraining = wasDraining }
+            let conflicts = try context.replaying(entry) {
+                try fieldLevelMerge(
+                    db: db, table: entry.table, recordId: entry.recordId,
+                    localRow: localRow, incomingFields: safeFields,
+                    change: entry.change, localDeviceId: entry.localDeviceId,
+                    context: context
+                )
+            }
+            context.replayConflicts += conflicts
             context.supersededMerges += 1
+            try recordDeferredSupersession(
+                db: db, context: context, entry: entry,
+                supersedingOrdinal: context.supersedingWriteOrdinal(entry),
+                event: "later_write", result: hasPreservedNonKey ? "preserved" : "discarded",
+                keyDisposition: "withheld_by_in_place_ladder",
+                nonKeyDisposition: hasPreservedNonKey ? "preserved_when_unchanged_since_park" : "discarded_newer_field_write"
+            )
             return
         }
 
@@ -1827,6 +1902,32 @@ public enum ConflictResolver {
         }
     }
 
+    /// Admin/operational query surface for durable deferred supersession evidence.
+    public static func getDeferredSupersessionEvidence(
+        db: AppDatabase,
+        tableName: String? = nil,
+        recordId: String? = nil
+    ) throws -> [DeferredSupersessionEvidence] {
+        try db.writer.read { dbConn in
+            var predicates: [String] = []
+            var arguments = StatementArguments()
+            if let tableName {
+                predicates.append("table_name = ?")
+                arguments += [tableName]
+            }
+            if let recordId {
+                predicates.append("record_id = ?")
+                arguments += [recordId]
+            }
+            let whereClause = predicates.isEmpty ? "" : " WHERE " + predicates.joined(separator: " AND ")
+            return try DeferredSupersessionEvidence.fetchAll(
+                dbConn,
+                sql: "SELECT * FROM _deferred_supersession_log\(whereClause) ORDER BY id ASC",
+                arguments: arguments
+            )
+        }
+    }
+
     // MARK: - Private: Apply Operations
 
     /// Apply a DELETE change — soft delete when the table has `deleted_at`, hard
@@ -2228,12 +2329,18 @@ public enum ConflictResolver {
                 // change in the batch touched the same record. See
                 // `ApplyContext.isSuperseded`.
                 if context.canDefer {
+                    let keyFields = try context.uniqueParticipatingColumns(db, table)
+                    let baselineFields = Dictionary(uniqueKeysWithValues: incomingFields.keys.map { field in
+                        (field, stringifyValue(localRow[field] as DatabaseValue))
+                    })
                     let parked = context.enqueueDeferredMerge(DeferredMerge(
                         table: table,
                         recordId: recordId,
                         incomingFields: incomingFields,
                         change: change,
                         localDeviceId: localDeviceId,
+                        baselineFields: baselineFields,
+                        keyFields: keyFields,
                         arrivalOrdinal: context.ordinalForParking,
                         approximateBytes: approximatePayloadBytes(incomingFields, change)
                     ))
@@ -2591,6 +2698,54 @@ public enum ConflictResolver {
         for var conflict in conflicts {
             try conflict.insert(db)
         }
+    }
+
+    /// Every deferred supersession is a durable administrative event, not a
+    /// warning or aggregate counter. The linked conflict row keeps the existing
+    /// conflict review path authoritative while this structured record makes the
+    /// transport/ordinal/disposition fields queryable.
+    private static func recordDeferredSupersession(
+        db: Database,
+        context: ApplyContext,
+        entry: DeferredMerge,
+        supersedingOrdinal: Int?,
+        event: String,
+        result: String,
+        keyDisposition: String,
+        nonKeyDisposition: String
+    ) throws {
+        var conflict = ConflictLogEntry(
+            tableName: entry.table,
+            recordId: entry.recordId,
+            fieldName: "__deferred_supersession__",
+            localValue: "parked_ordinal=\(entry.arrivalOrdinal)",
+            remoteValue: "superseding_ordinal=\(supersedingOrdinal.map(String.init) ?? "none")",
+            winner: result == "preserved" ? "remote" : "local",
+            localDevice: entry.localDeviceId,
+            remoteDevice: entry.change.deviceId,
+            localTs: currentTimestamp(),
+            remoteTs: entry.change.timestamp,
+            resolvedAt: currentTimestamp()
+        )
+        try conflict.insert(db)
+        guard let conflictLogId = conflict.id else {
+            throw DatabaseError(resultCode: .SQLITE_CONSTRAINT, message: "Deferred supersession conflict was not assigned an id")
+        }
+        try DeferredSupersessionEvidence(
+            id: nil,
+            conflictLogId: conflictLogId,
+            transport: context.transport,
+            tableName: entry.table,
+            recordId: entry.recordId,
+            keyFieldDisposition: keyDisposition,
+            nonKeyFieldDisposition: nonKeyDisposition,
+            arrivalOrdinal: entry.arrivalOrdinal,
+            parkedOrdinal: entry.arrivalOrdinal,
+            supersedingOrdinal: supersedingOrdinal,
+            supersedingEvent: event,
+            result: result,
+            createdAt: currentTimestamp()
+        ).insert(db)
     }
 
     /// Parse a JSON string into a dictionary.

@@ -76,6 +76,44 @@ public struct ConflictLogEntry: Codable, FetchableRecord, MutablePersistableReco
     }
 }
 
+// MARK: - DeferredSupersessionEvidence
+
+/// Durable, admin-queryable evidence for a deferred UNIQUE merge whose final
+/// disposition was determined after a later write or a vanished record.
+public struct DeferredSupersessionEvidence: Codable, FetchableRecord, PersistableRecord, Sendable {
+    public static let databaseTableName = "_deferred_supersession_log"
+
+    public var id: Int64?
+    public var conflictLogId: Int64
+    public var transport: String
+    public var tableName: String
+    public var recordId: String
+    public var keyFieldDisposition: String
+    public var nonKeyFieldDisposition: String
+    public var arrivalOrdinal: Int
+    public var parkedOrdinal: Int
+    public var supersedingOrdinal: Int?
+    public var supersedingEvent: String
+    public var result: String
+    public var createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case conflictLogId = "conflict_log_id"
+        case transport
+        case tableName = "table_name"
+        case recordId = "record_id"
+        case keyFieldDisposition = "key_field_disposition"
+        case nonKeyFieldDisposition = "non_key_field_disposition"
+        case arrivalOrdinal = "arrival_ordinal"
+        case parkedOrdinal = "parked_ordinal"
+        case supersedingOrdinal = "superseding_ordinal"
+        case supersedingEvent = "superseding_event"
+        case result
+        case createdAt = "created_at"
+    }
+}
+
 // MARK: - VectorClockEntry
 
 public struct VectorClockEntry: Codable, FetchableRecord, PersistableRecord, Sendable {
