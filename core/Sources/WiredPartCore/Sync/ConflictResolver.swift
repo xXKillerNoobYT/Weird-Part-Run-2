@@ -126,6 +126,26 @@ public struct MergeResult: Sendable {
         self.supersededMerges = supersededMerges
     }
 
+    /// Whether a receive-side sync cursor (a pull vector clock, or a drained
+    /// server inbox) may be advanced/cleared past this batch.
+    ///
+    /// The rule is `errors == 0`, and the distinction is load-bearing:
+    ///
+    /// - `errors` are TRANSIENT (SQLITE_BUSY, disk full, a DB-level fault). They
+    ///   are retryable, so the cursor must NOT advance — the peer re-sends them
+    ///   next time and they apply.
+    /// - `keyCollisions`, `schemaDrops`, `supersededMerges` are DETERMINISTIC
+    ///   non-applies (see this type's field docs). They will never apply, so
+    ///   holding the cursor for them re-sends the same rows forever and the peer
+    ///   never converges — the failure that got PR #1749 reverted. They must NOT
+    ///   block the advance.
+    ///
+    /// The atomic snapshot / Bluetooth-delta paths encode the same rule as
+    /// `guard result.errors == 0` (PeerManager.applyStagedSnapshot,
+    /// applyIncomingChanges). This predicate names it once so the LAN pull path
+    /// (#1793) and the inbox drain path (#1792) cannot drift from it.
+    public var isSafeToAdvanceReceiveCursor: Bool { errors == 0 }
+
     /// Accumulate one change's outcome. Keeps the batched and streamed atomic
     /// apply paths tallying identically instead of by copy-paste.
     ///
