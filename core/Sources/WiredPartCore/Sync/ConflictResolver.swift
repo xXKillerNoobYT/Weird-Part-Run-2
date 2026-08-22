@@ -80,6 +80,12 @@ public struct MergeResult: Sendable {
     /// because a retry can never fix it — only a schema migration can.
     public var schemaDrops: Int = 0
 
+    /// A FOREIGN KEY / TRIGGER / missing-table refusal that is deterministic for
+    /// this receiver. These rows cannot be retried into success without a schema
+    /// or data repair, so receive cursors must advance past them rather than
+    /// pinning an inbox or vector clock forever.
+    public var permanentRefusals: Int = 0
+
     /// A merge that was PARKED for the fixed-point replay was then DISCARDED
     /// unapplied, because the batch moved past it: a LATER change in the same
     /// batch WROTE the same `(table, record_id)`, or the record it was going
@@ -115,6 +121,7 @@ public struct MergeResult: Sendable {
         errors: Int = 0,
         keyCollisions: Int = 0,
         schemaDrops: Int = 0,
+        permanentRefusals: Int = 0,
         supersededMerges: Int = 0
     ) {
         self.applied = applied
@@ -123,6 +130,7 @@ public struct MergeResult: Sendable {
         self.errors = errors
         self.keyCollisions = keyCollisions
         self.schemaDrops = schemaDrops
+        self.permanentRefusals = permanentRefusals
         self.supersededMerges = supersededMerges
     }
 
@@ -457,8 +465,13 @@ public enum ConflictResolver {
                 }
                 result.add(outcome)
             } catch {
-                result.errors += 1
-                logger.error("Failed to apply incoming change: \(error.localizedDescription, privacy: .public)")
+                if isPermanentApplyRefusal(error) {
+                    result.permanentRefusals += 1
+                    logger.warning("Permanently refused incoming change: \(error.localizedDescription, privacy: .public)")
+                } else {
+                    result.errors += 1
+                    logger.error("Failed to apply incoming change: \(error.localizedDescription, privacy: .public)")
+                }
             }
         }
 
@@ -909,6 +922,20 @@ public enum ConflictResolver {
             default:
                 throw error
             }
+        }
+    }
+
+    /// Rows rejected because a required parent is absent, a trigger rejects the
+    /// write, or this receiver lacks the target table cannot succeed on retry.
+    /// Keep those distinct from infrastructure faults so a receive cursor is
+    /// retained only for failures whose retry can make progress.
+    private static func isPermanentApplyRefusal(_ error: Error) -> Bool {
+        guard let databaseError = error as? DatabaseError else { return false }
+        switch databaseError.extendedResultCode {
+        case .SQLITE_CONSTRAINT_FOREIGNKEY, .SQLITE_CONSTRAINT_TRIGGER:
+            return true
+        default:
+            return databaseError.message?.lowercased().contains("no such table") == true
         }
     }
 

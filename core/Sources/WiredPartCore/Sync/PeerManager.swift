@@ -1245,32 +1245,31 @@ public actor PeerManager {
 
     /// Process changes received by our sync server from peers who pushed to us.
     private func processInbox() async {
+        await processInbox { inbox, deviceId in
+            try ConflictResolver.resolveAndApplyChanges(
+                db: self.db,
+                changes: inbox,
+                localDeviceId: deviceId
+            )
+        }
+    }
+
+    /// Shared inbox policy: retry only a transient apply result. Deterministic
+    /// refusals are recorded by `ConflictResolver` and must not pin later inbox
+    /// entries behind a row this receiver can never apply.
+    private func processInbox(
+        applying apply: ([IncomingChange], String) throws -> MergeResult
+    ) async {
         guard let sState = serverState else { return }
         let inbox = await sState.drainInbox()
         guard !inbox.isEmpty else { return }
 
-        let deviceId = sState.deviceId
-
         do {
-            let result = try ConflictResolver.resolveAndApplyChanges(
-                db: db,
-                changes: inbox,
-                localDeviceId: deviceId
-            )
-            // Transient per-row failures (SQLITE_BUSY, disk full). drainInbox already
-            // emptied the in-memory inbox and the sender advanced its send watermark on
-            // the transport-accept 200, so it will NOT resend — re-queue here so the next
-            // processInbox pass retries. Re-applying rows that did commit is LWW-idempotent;
-            // deterministic constraint outcomes are counted as keyCollisions/schemaDrops
-            // (never `errors`), so this converges rather than looping (#1792). Same
-            // transient-vs-deterministic rule as the pull path, via one predicate.
+            let result = try apply(inbox, sState.deviceId)
             if !result.isSafeToAdvanceReceiveCursor {
                 await sState.appendToInbox(inbox)
             }
         } catch {
-            // Whole-batch failure before anything committed — nothing was applied. The
-            // drained rows would otherwise be lost forever (previously swallowed here, and
-            // the sender never resends). Restore them for the next pass (#1792).
             await sState.appendToInbox(inbox)
         }
     }
@@ -2411,6 +2410,16 @@ public actor PeerManager {
 
     // State-machine probes keep capability lifecycle regressions deterministic
     // without requiring a physical two-device Multipeer session.
+    func testInstallServerState(_ state: SyncServerState) {
+        serverState = state
+    }
+
+    func testProcessInbox(
+        applying apply: ([IncomingChange], String) throws -> MergeResult
+    ) async {
+        await processInbox(applying: apply)
+    }
+
     func testIssueHostedSnapshotToken(_ token: String, for peerDeviceId: String) {
         issueHostedSnapshotToken(token, for: peerDeviceId)
     }
