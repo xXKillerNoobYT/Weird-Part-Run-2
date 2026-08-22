@@ -2414,6 +2414,10 @@ public actor PeerManager {
         serverState = state
     }
 
+    func testProcessInbox() async {
+        await processInbox()
+    }
+
     func testProcessInbox(
         applying apply: ([IncomingChange], String) throws -> MergeResult
     ) async {

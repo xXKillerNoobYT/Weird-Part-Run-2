@@ -1,6 +1,6 @@
 # Sync — "advance the cursor on confirmed apply, not on transport-accept" (Cluster A)
 
-**Status:** IMPLEMENTED — tests green (2696/2696), PR open · **Issues:** #1792 (P1), #1793 (P1), #1794 (P2)
+**Status:** IMPLEMENTED — focused regression suite green (10 tests), PR open · **Issues:** #1792 (P1), #1793 (P1), #1794 (P2)
 **Branch:** `fix/sync-advance-on-apply-cluster-a`
 **Found by:** adversarially-verified sync + data-core review, 2026-08-21
 
@@ -55,15 +55,14 @@ re-queue converges rather than looping.
 
 ## Verification signal (current evidence)
 
-`swift test --filter SyncCursorAdvanceTests` — 7 focused tests exercise:
+`swift test --filter SyncCursorAdvanceTests` — 10 focused tests exercise:
 1. `ConflictResolver.resolveAndApplyChanges` classifies an actual foreign-key refusal as `permanentRefusals`, not `errors`.
-2. The shared production inbox policy clears deterministic results and requeues a transient result.
-3. The capped `getPendingChanges` window differs from the true pending count.
+2. The real `PeerManager.processInbox()` path drains a permanent refusal, applies the later valid row, and leaves the inbox clear; the injected-policy companion confirms transient outcomes still requeue.
+3. The real LAN `PeerManager.syncWithPeer` → `syncViaHTTP` path receives a permanent refusal, reports zero applied rows, and advances the receiver's remote vector clock to sequence 41.
+4. The real `SyncEngine.runSync` success path uploads its 500-row window and reports the five remaining pending rows.
+5. The capped `getPendingChanges` window differs from the true pending count.
 
-**Still required before review:** direct production-call-site regression coverage for
-`syncViaHTTP` cursor advancement and `SyncEngine.runSync` successful pending-count reporting,
-plus the requested revert-mutation proof. This plan intentionally does not claim those checks
-have run yet.
+Required before review: run and record the requested revert-mutation proof; then rebase against current `main` and obtain fresh exact-head iPhone/iPad + serialized review-lane evidence.
 
 Not verifiable headless: a real two-device LAN round-trip. Field confirmation on paired
 hardware remains a follow-up.
