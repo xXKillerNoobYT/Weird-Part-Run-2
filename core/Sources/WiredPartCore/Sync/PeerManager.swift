@@ -1023,19 +1023,24 @@ public actor PeerManager {
         pulled = result.changes.count
 
         if !result.changes.isEmpty {
-            _ = try ConflictResolver.resolveAndApplyChanges(
+            let receipt = try OrderedReceiveJournal.receive(
                 db: db,
                 changes: result.changes,
+                sourcePeerId: result.serverDeviceId,
+                transport: "lan-pull",
                 localDeviceId: deviceId
             )
+            pulled = receipt.appliedCount
 
-            // Update vector clock with highest sequence from this peer
-            let maxSeq = result.changes.compactMap { $0.id }.max() ?? 0
-            if maxSeq > 0 {
+            // The vector records durable RECEIPT, not apply completion. This may
+            // advance while an FK child remains in the journal awaiting a parent;
+            // the payload is still queryable/retryable, so no source row becomes
+            // unreachable by moving the peer cursor.
+            if let highest = receipt.highestDurableSourceOrder, highest > 0 {
                 try ChangeTracker.updateVectorClock(
                     db: db,
                     peerId: result.serverDeviceId,
-                    lastSequence: maxSeq,
+                    lastSequence: highest,
                     deviceId: deviceId
                 )
             }
@@ -1244,15 +1249,20 @@ public actor PeerManager {
         guard !inbox.isEmpty else { return }
 
         let deviceId = sState.deviceId
+        let sourcePeerId = inbox.first?.deviceId ?? "unknown"
 
         do {
-            _ = try ConflictResolver.resolveAndApplyChanges(
+            _ = try OrderedReceiveJournal.receive(
                 db: db,
                 changes: inbox,
+                sourcePeerId: sourcePeerId,
+                transport: "lan-push",
                 localDeviceId: deviceId
             )
         } catch {
-            // Non-critical — changes will be retried on next sync
+            // Receipt itself failed. Requeue the untouched in-memory delivery so
+            // no accepted transport row is made unreachable before durable state.
+            await sState.appendToInbox(inbox)
         }
     }
 
@@ -1837,7 +1847,11 @@ public actor PeerManager {
                             snapshotStagedRecords[message.fromDeviceId] ?? 0
                         notifyStateChanged()
                     } else {
-                        count = try applyIncomingChanges(changes)
+                        count = try applyIncomingChanges(
+                            changes,
+                            from: message.fromDeviceId,
+                            transport: "multipeer"
+                        )
                         // #1684: reply with OUR pending changes for this peer.
                         //
                         // The multipeer branch of `syncWithPeer` only ever
@@ -1956,7 +1970,11 @@ public actor PeerManager {
             // Legacy bare-array senders predate transfer identity entirely.
             count = try stageSnapshotChanges(changes, from: message.fromDeviceId, transferId: nil)
         } else {
-            count = try applyIncomingChanges(changes)
+            count = try applyIncomingChanges(
+                changes,
+                from: message.fromDeviceId,
+                transport: "multipeer-legacy"
+            )
         }
         return .changesApplied(count)
     }
@@ -2886,17 +2904,23 @@ public actor PeerManager {
     /// `if snapshotStagingPeers.contains(...)`, so a peer mid-snapshot never arrives
     /// here — its frames are staged and applied by `applyStagedSnapshot` instead.
     /// GRDB does not return until commit, so a following completion acknowledgement is truthful.
-    private func applyIncomingChanges(_ changes: [IncomingChange]) throws -> Int {
+    private func applyIncomingChanges(
+        _ changes: [IncomingChange],
+        from sourcePeerId: String,
+        transport: String
+    ) throws -> Int {
         let did = serverState?.deviceId ?? "unknown"
-        let result = try ConflictResolver.resolveAndApplyChangesAtomically(
+        let receipt = try OrderedReceiveJournal.receive(
             db: db,
             changes: changes,
+            sourcePeerId: sourcePeerId,
+            transport: transport,
             localDeviceId: did
         )
-        guard result.errors == 0 else {
-            throw MultipeerSnapshotError.batchApplyFailed(errorCount: result.errors)
-        }
-        return result.applied
+        // Receipt is the acknowledgement invariant. `appliedCount` intentionally
+        // remains separate: a child deferred for a later parent is durable and
+        // must be acknowledged without being reported as fully applied.
+        return receipt.appliedCount
     }
 
     /// Host side: a joiner sent a code-authenticated proof over Bluetooth. Validate

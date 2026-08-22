@@ -169,6 +169,7 @@ extension AppDatabase {
         registerMigration125ClockOutQuestionsSoftDelete(&migrator)
         registerMigration126DeviceLogDiagnostics(&migrator)
         registerMigration127DeferredSupersessionEvidence(&migrator)
+        registerMigration128OrderedReceiveJournal(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6709,5 +6710,42 @@ private func registerMigration127DeferredSupersessionEvidence(_ migrator: inout 
         }
         try db.create(index: "idx_deferred_supersession_record", on: "_deferred_supersession_log", columns: ["table_name", "record_id", "created_at"])
         try db.create(index: "idx_deferred_supersession_conflict", on: "_deferred_supersession_log", columns: ["conflict_log_id"])
+    }
+}
+
+// MARK: - Migration 128: durable ordered incremental receive journal (#1807)
+
+/// Receipt is durable before application: a cursor/vector can advance after the
+/// exact source row is in this local journal, while apply completion stays separate.
+/// Local infrastructure tables deliberately have no change-tracking triggers.
+private func registerMigration128OrderedReceiveJournal(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("128_ordered_receive_journal") { db in
+        try db.create(table: "_sync_receive_journal") { t in
+            t.autoIncrementedPrimaryKey("id")
+            t.column("source_peer_id", .text).notNull()
+            t.column("source_order", .integer).notNull()
+            t.column("transport", .text).notNull()
+            t.column("payload", .text).notNull()
+            t.column("state", .text).notNull().defaults(to: "received")
+            t.column("retry_state", .text).notNull().defaults(to: "pending")
+            t.column("last_error", .text)
+            t.column("retry_count", .integer).notNull().defaults(to: 0)
+            t.column("received_at", .text).notNull()
+            t.column("updated_at", .text).notNull()
+            t.uniqueKey(["source_peer_id", "source_order"])
+        }
+        try db.create(index: "idx_receive_journal_retry", on: "_sync_receive_journal", columns: ["source_peer_id", "source_order"])
+
+        try db.create(table: "_sync_receive_journal_audit") { t in
+            t.autoIncrementedPrimaryKey("id")
+            t.column("journal_id", .integer).notNull()
+            t.column("disposition", .text).notNull()
+            t.column("reason", .text)
+            t.column("payload", .text).notNull()
+            t.column("source_peer_id", .text).notNull()
+            t.column("source_order", .integer).notNull()
+            t.column("recorded_at", .text).notNull()
+        }
+        try db.create(index: "idx_receive_journal_audit_source", on: "_sync_receive_journal_audit", columns: ["source_peer_id", "source_order"])
     }
 }
