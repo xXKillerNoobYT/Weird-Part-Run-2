@@ -73,6 +73,40 @@ struct SyncCursorAdvanceTests {
         #expect(result.isSafeToAdvanceReceiveCursor)
     }
 
+    @Test("processInbox acknowledges a permanent refusal and applies later rows through the production path")
+    func processInboxDoesNotBlockLaterRowsAfterPermanentRefusal() async throws {
+        let db = try freshDB()
+        let manager = PeerManager(db: db)
+        let serverState = SyncServerState(deviceId: "receiver", deviceName: "Receiver", companyId: "company", db: db)
+        await manager.testInstallServerState(serverState)
+        await serverState.appendToInbox([
+            IncomingChange(
+                deviceId: "peer",
+                tableName: "job_stages",
+                recordId: "1",
+                operation: "UPDATE",
+                changedFields: #"{"template_id":"999999"}"#,
+                timestamp: "2026-08-22T00:00:00Z"
+            ),
+            IncomingChange(
+                deviceId: "peer",
+                tableName: "users",
+                recordId: "100",
+                operation: "INSERT",
+                recordData: #"{"id":100,"display_name":"later row","pin_hash":"hash","is_active":1}"#,
+                timestamp: "2026-08-22T00:00:01Z"
+            ),
+        ])
+
+        await manager.testProcessInbox()
+
+        #expect((await serverState.inbox).isEmpty)
+        let displayName = try await db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: "SELECT display_name FROM users WHERE id = 100")
+        }
+        #expect(displayName == "later row")
+    }
+
     @Test("processInbox clears deterministic results but requeues transient results")
     func processInboxClassifiesRetryPolicyAtTheProductionCallSite() async throws {
         let db = try freshDB()
@@ -93,7 +127,107 @@ struct SyncCursorAdvanceTests {
         #expect((await serverState.inbox).count == 1)
     }
 
+    @Test("syncWithPeer advances the LAN receive vector for a permanent refusal")
+    func syncWithPeerAdvancesVectorClockAfterPermanentRefusal() async throws {
+        let db = try freshDB()
+        let manager = PeerManager(db: db)
+        let remoteState = SyncServerState(
+            deviceId: "remote",
+            deviceName: "Remote",
+            companyId: "company"
+        )
+        let remoteServer = LanSyncServer(state: remoteState)
+        let remotePort = try await remoteServer.start()
+        defer { Task { await remoteServer.stop() } }
+
+        try ChangeTracker.registerPeerDevice(
+            db: db,
+            peerId: "remote",
+            peerName: "Remote",
+            platform: "test",
+            keyAgreementPublicKey: remoteState.kaPublicKeyB64
+        )
+        await remoteState.setOutbox([IncomingChange(
+            id: 41,
+            deviceId: "remote",
+            tableName: "job_stages",
+            recordId: "1",
+            operation: "UPDATE",
+            changedFields: #"{"template_id":"999999"}"#,
+            timestamp: "2026-08-22T00:00:00Z"
+        )])
+
+        try await manager.startPeerSync(
+            deviceId: "receiver",
+            deviceName: "Receiver",
+            companyId: "company",
+            startMultipeer: false
+        )
+        defer { Task { await manager.stopPeerSync() } }
+        let receiverIdentity = try await manager.localSyncIdentity(deviceId: "receiver")
+        try await remoteState.registerAuthorizedPeer(
+            deviceId: "receiver",
+            deviceName: "Receiver",
+            platform: "test",
+            keyAgreementPublicKey: receiverIdentity.publicKeyB64
+        )
+
+        let result = await manager.syncWithPeer(DiscoveredPeer(
+            deviceId: "remote",
+            deviceName: "Remote",
+            companyId: "company",
+            host: "127.0.0.1",
+            port: remotePort,
+            transport: "lan"
+        ))
+
+        #expect(result.success)
+        #expect(result.pulled == 0)
+        #expect(try ChangeTracker.getVectorClock(db: db, deviceId: "receiver")["remote"] == 41)
+    }
+
     // MARK: - #1794: backlog is capped, count is not
+
+    @Test("runSync reports the remaining pending backlog after a successful capped upload")
+    func runSyncReportsRemainingPendingBacklog() async throws {
+        let db = try freshDB()
+        try await db.writer.write { dbConn in
+            try dbConn.execute(sql: "DELETE FROM _change_log")
+        }
+        for index in 1...505 {
+            try ChangeTracker.trackChange(
+                db: db,
+                tableName: "parts",
+                recordId: Int64(index),
+                operation: .insert,
+                deviceId: "device"
+            )
+        }
+
+        let server = try HTTPStubServer { request in
+            switch request.path {
+            case "/api/sync/push":
+                return HTTPStubResponse(
+                    statusCode: 200,
+                    body: #"{"data":{"sync_batch_id":"batch","shop_changes":[]}}"#
+                )
+            case "/api/sync/ack":
+                return HTTPStubResponse(statusCode: 200, body: #"{"ok":true}"#)
+            default:
+                return HTTPStubResponse(statusCode: 404, body: #"{"error":"not found"}"#)
+            }
+        }
+        let port = try await server.start()
+        defer { server.stop() }
+
+        let engine = SyncEngine(db: db)
+        #expect(await engine.runSync(deviceId: "device", shopUrl: "http://127.0.0.1:\(port)"))
+
+        let state = await engine.getState()
+        #expect(state.status == .synced)
+        #expect(state.pendingCount == 5)
+        #expect(try ChangeTracker.getPendingChangeCount(db: db) == 5)
+    }
 
     @Test("getPendingChanges is capped at 500 while getPendingChangeCount is the true backlog")
     func pendingCapVersusCount() throws {
