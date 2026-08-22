@@ -1518,21 +1518,42 @@ struct ConflictResolverNaturalKeyTests {
         }
     }
 
-    @Test("Vanished deferred merge persists discarded conflict evidence")
-    func testVanishedDeferredSupersessionPersistsDiscardEvidence() throws {
-        let db = try freshDB()
-        try seedTwoCategories(db)
-        _ = try applyDelta(db, [
+    @Test("Vanished deferred merge persists linked discarded conflict evidence for every transport")
+    func testVanishedDeferredSupersessionPersistsDiscardEvidenceAcrossTransports() throws {
+        let changes = [
             update("part_categories", "5", #"{"name":"THHN","description":"must not resurrect"}"#),
             delete("part_categories", "5"),
-        ])
-        let evidence = try ConflictResolver.getDeferredSupersessionEvidence(db: db, tableName: "part_categories", recordId: "5")
-        #expect(evidence.count == 1)
-        #expect(evidence[0].transport == "bluetooth_delta")
-        #expect(evidence[0].supersedingEvent == "vanished_record")
-        #expect(evidence[0].result == "discarded")
-        #expect(evidence[0].nonKeyFieldDisposition == "discarded_record_missing")
-        #expect(try ConflictResolver.getUnreviewedConflicts(db: db).contains { $0.fieldName == "__deferred_supersession__" })
+        ]
+        let transports: [(String, (AppDatabase) throws -> MergeResult)] = [
+            ("lan", { try ConflictResolver.resolveAndApplyChanges(db: $0, changes: changes) }),
+            ("bluetooth_delta", { try self.applyDelta($0, changes) }),
+            ("bluetooth_snapshot", { try self.applyStreamed($0, changes) }),
+        ]
+
+        for (transport, apply) in transports {
+            let db = try freshDB()
+            try seedTwoCategories(db)
+            _ = try apply(db)
+
+            let evidence = try ConflictResolver.getDeferredSupersessionEvidence(
+                db: db, tableName: "part_categories", recordId: "5"
+            )
+            #expect(evidence.count == 1)
+            let deferredEvidence = try #require(evidence.first)
+            #expect(deferredEvidence.transport == transport)
+            #expect(deferredEvidence.supersedingEvent == "vanished_record")
+            #expect(deferredEvidence.result == "discarded")
+            #expect(deferredEvidence.nonKeyFieldDisposition == "discarded_record_missing")
+
+            let conflicts = try ConflictResolver.getUnreviewedConflicts(db: db).filter {
+                $0.tableName == "part_categories"
+                    && $0.recordId == "5"
+                    && $0.fieldName == "__deferred_supersession__"
+            }
+            #expect(conflicts.count == 1)
+            let linkedConflict = try #require(conflicts.first)
+            #expect(linkedConflict.id == deferredEvidence.conflictLogId)
+        }
     }
 
     @Test("LAN row failures do not roll back surrounding committed rows")
