@@ -353,8 +353,16 @@ public actor SyncEngine {
             }
             let sqlStatements = stmts
 
-            // Execute all statements in a single write transaction
+            // Execute all statements in a single write transaction, UNDER the
+            // _sync_apply_guard so the migration-112 change-tracking triggers do not
+            // fire (#1796). Without the guard, every INSERT OR REPLACE of a just-
+            // downloaded row logs a synced=0 _change_log entry, and the very next
+            // runSync uploads the entire freshly-downloaded dataset back to the shop
+            // (and inflates the pending badge by the whole database). Same mechanism
+            // ConflictResolver uses to apply remote changes without re-broadcasting them.
             try await db.writer.write { dbConn in
+                try dbConn.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
+                defer { try? dbConn.execute(sql: "DELETE FROM _sync_apply_guard") }
                 for (sql, values) in sqlStatements {
                     try dbConn.execute(sql: sql, arguments: StatementArguments(values))
                 }

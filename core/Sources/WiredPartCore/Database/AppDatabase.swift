@@ -35,14 +35,40 @@ public final class AppDatabase: Sendable {
         Self.registerMigrations(&migrator)
         try migrator.migrate(writer)
 
-        // Record schema version after successful migration
+        // Record schema version after successful migration.
         try writer.write { db in
-            try db.execute(sql: """
-                INSERT OR REPLACE INTO settings (key, value, category, updated_at)
+            try Self.stampSchemaVersion(db)
+        }
+    }
+
+    /// Stamp per-device schema bookkeeping (`db_schema_version`, `last_migration_date`).
+    ///
+    /// These keys are LOCAL system state, not business data: their `settings.id`
+    /// rowids are assigned per device, so replicating them can never converge on a
+    /// peer and just churns `_change_log` every launch (#1805). Two fixes together:
+    ///
+    /// 1. Write UNDER `_sync_apply_guard`, so the migration-112 change-tracking
+    ///    triggers do not log these writes — they stay local and never sync.
+    /// 2. `ON CONFLICT(key) DO UPDATE` instead of `INSERT OR REPLACE`, so the row id
+    ///    is stable rather than reassigned by a DELETE+INSERT on every launch.
+    ///
+    /// Shared by the normal migrate path and the SQLCipher rekey path so the two
+    /// stamps cannot drift.
+    static func stampSchemaVersion(_ db: Database) throws {
+        try db.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
+        defer { try? db.execute(sql: "DELETE FROM _sync_apply_guard") }
+        try db.execute(
+            sql: """
+                INSERT INTO settings (key, value, category, updated_at)
                 VALUES ('db_schema_version', ?, 'system', datetime('now')),
                        ('last_migration_date', datetime('now'), 'system', datetime('now'))
-                """, arguments: ["\(Self.schemaVersion)"])
-        }
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    category = excluded.category,
+                    updated_at = excluded.updated_at
+                """,
+            arguments: ["\(Self.schemaVersion)"]
+        )
     }
 
     /// Open a file-based database at the given path.

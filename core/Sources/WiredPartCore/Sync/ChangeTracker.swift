@@ -68,6 +68,17 @@ public enum ChangeTracker {
             // _change_log (sync push, notebook history, audit log) sees doubles.
             // Plain UPDATE + changesCount (not RETURNING — unsupported on older
             // system SQLite builds; Copilot review on PR #1422).
+            //
+            // Claims the NEWEST matching bare row (MAX(id)). NOTE (#1795): this is a
+            // heuristic and is not reliable when a stale bare row already exists for the
+            // same (table, record, op) from a write that never calls trackChange
+            // (BaseRepository track:false, rawRun, direct db.execute — all still fire the
+            // migration-112 trigger). The correct fix binds the upgrade to the specific
+            // bare row THIS write created (upgrade inside the write's own transaction, or
+            // capture last_insert_rowid), which is out of scope here and tracked in #1795.
+            // MAX is kept as the safer status quo: for a normal track:true write it claims
+            // that write's own newest bare row; MIN would instead claim the stale older
+            // row and mislabel it with the new write's field detail under the old timestamp.
             try dbConnection.execute(
                 sql: """
                     UPDATE _change_log
