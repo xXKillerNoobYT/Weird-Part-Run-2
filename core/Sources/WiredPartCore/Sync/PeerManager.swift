@@ -1020,24 +1020,30 @@ public actor PeerManager {
             localDeviceId: deviceId
         )
         let result = try JSONDecoder().decode(SyncPullResponse.self, from: plainPullData)
-        pulled = result.changes.count
 
         if !result.changes.isEmpty {
-            _ = try ConflictResolver.resolveAndApplyChanges(
+            let mergeResult = try ConflictResolver.resolveAndApplyChanges(
                 db: db,
                 changes: result.changes,
                 localDeviceId: deviceId
             )
+            // Report the honest count, not "every row we received" (#1793).
+            pulled = mergeResult.applied
 
-            // Update vector clock with highest sequence from this peer
-            let maxSeq = result.changes.compactMap { $0.id }.max() ?? 0
-            if maxSeq > 0 {
-                try ChangeTracker.updateVectorClock(
-                    db: db,
-                    peerId: result.serverDeviceId,
-                    lastSequence: maxSeq,
-                    deviceId: deviceId
-                )
+            // Advance the receive vector clock only when it is safe to do so — i.e. no
+            // TRANSIENT failure. Deterministic non-applies (keyCollisions/schemaDrops/…)
+            // must not block the advance or the peer re-sends forever (#1749); only
+            // retryable `errors` hold the clock. See isSafeToAdvanceReceiveCursor (#1793).
+            if mergeResult.isSafeToAdvanceReceiveCursor {
+                let maxSeq = result.changes.compactMap { $0.id }.max() ?? 0
+                if maxSeq > 0 {
+                    try ChangeTracker.updateVectorClock(
+                        db: db,
+                        peerId: result.serverDeviceId,
+                        lastSequence: maxSeq,
+                        deviceId: deviceId
+                    )
+                }
             }
         }
 
@@ -1246,13 +1252,26 @@ public actor PeerManager {
         let deviceId = sState.deviceId
 
         do {
-            _ = try ConflictResolver.resolveAndApplyChanges(
+            let result = try ConflictResolver.resolveAndApplyChanges(
                 db: db,
                 changes: inbox,
                 localDeviceId: deviceId
             )
+            // Transient per-row failures (SQLITE_BUSY, disk full). drainInbox already
+            // emptied the in-memory inbox and the sender advanced its send watermark on
+            // the transport-accept 200, so it will NOT resend — re-queue here so the next
+            // processInbox pass retries. Re-applying rows that did commit is LWW-idempotent;
+            // deterministic constraint outcomes are counted as keyCollisions/schemaDrops
+            // (never `errors`), so this converges rather than looping (#1792). Same
+            // transient-vs-deterministic rule as the pull path, via one predicate.
+            if !result.isSafeToAdvanceReceiveCursor {
+                await sState.appendToInbox(inbox)
+            }
         } catch {
-            // Non-critical — changes will be retried on next sync
+            // Whole-batch failure before anything committed — nothing was applied. The
+            // drained rows would otherwise be lost forever (previously swallowed here, and
+            // the sender never resends). Restore them for the next pass (#1792).
+            await sState.appendToInbox(inbox)
         }
     }
 

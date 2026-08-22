@@ -271,10 +271,15 @@ public actor SyncEngine {
 
             // Success
             let now = currentTimestamp()
+            // Re-read the real backlog instead of hardcoding 0: getPendingChanges is
+            // capped at LIMIT 500, so a push of >500 rows leaves a non-empty backlog
+            // that a hardcoded 0 would hide (#1794). Matches every error path above,
+            // which already reports getPendingChangeCount rather than an assumed count.
+            let remainingPending = (try? ChangeTracker.getPendingChangeCount(db: db)) ?? 0
             updateState(
                 status: .synced,
                 lastSyncAt: now,
-                pendingCount: 0,
+                pendingCount: remainingPending,
                 error: nil,
                 consecutiveFailures: 0
             )
