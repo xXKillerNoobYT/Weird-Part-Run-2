@@ -73,6 +73,31 @@ struct SyncCursorAdvanceTests {
         #expect(result.isSafeToAdvanceReceiveCursor)
     }
 
+    @Test("A missing target table is deterministic rather than retryable")
+    func missingTableRefusalAdvances() throws {
+        let db = try freshDB()
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: "DROP TABLE business_profiles")
+        }
+
+        let result = try ConflictResolver.resolveAndApplyChanges(
+            db: db,
+            changes: [IncomingChange(
+                deviceId: "peer",
+                tableName: "business_profiles",
+                recordId: "1",
+                operation: "INSERT",
+                recordData: #"{"id":1}"#,
+                timestamp: "2026-08-22T00:00:00Z"
+            )],
+            localDeviceId: "receiver"
+        )
+
+        #expect(result.permanentRefusals == 1)
+        #expect(result.errors == 0)
+        #expect(result.isSafeToAdvanceReceiveCursor)
+    }
+
     @Test("processInbox acknowledges a permanent refusal and applies later rows through the production path")
     func processInboxDoesNotBlockLaterRowsAfterPermanentRefusal() async throws {
         let db = try freshDB()

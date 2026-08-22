@@ -1,6 +1,6 @@
 # Sync — "advance the cursor on confirmed apply, not on transport-accept" (Cluster A)
 
-**Status:** IMPLEMENTED — focused regression suite green (10 tests), PR open · **Issues:** #1792 (P1), #1793 (P1), #1794 (P2)
+**Status:** IMPLEMENTED — production-call-site regression coverage and deterministic-refusal classification repaired; fresh exact-head iPhone/iPad gates required before review · **Issues:** #1792 (P1), #1793 (P1), #1794 (P2)
 **Branch:** `fix/sync-advance-on-apply-cluster-a`
 **Found by:** adversarially-verified sync + data-core review, 2026-08-21
 
@@ -53,16 +53,17 @@ Re-queue safety: re-applying an already-applied row is LWW-idempotent; determini
 constraint outcomes are counted as `keyCollisions`/`schemaDrops` (never `errors`), so the
 re-queue converges rather than looping.
 
-## Verification signal (current evidence)
+## Verification signal
 
-`swift test --filter SyncCursorAdvanceTests` — 10 focused tests exercise:
-1. `ConflictResolver.resolveAndApplyChanges` classifies an actual foreign-key refusal as `permanentRefusals`, not `errors`.
-2. The real `PeerManager.processInbox()` path drains a permanent refusal, applies the later valid row, and leaves the inbox clear; the injected-policy companion confirms transient outcomes still requeue.
-3. The real LAN `PeerManager.syncWithPeer` → `syncViaHTTP` path receives a permanent refusal, reports zero applied rows, and advances the receiver's remote vector clock to sequence 41.
-4. The real `SyncEngine.runSync` success path uploads its 500-row window and reports the five remaining pending rows.
-5. The capped `getPendingChanges` window differs from the true pending count.
+On 2026-08-22, branch head `999dd1155815e869beb488c18cd7aff0c2cbcb42` rebased cleanly onto `main` at `a5b674a8edfe189cdd3faee9320122965b94b5c8` before the final expectation repair below.
 
-Required before review: run and record the requested revert-mutation proof; then rebase against current `main` and obtain fresh exact-head iPhone/iPad + serialized review-lane evidence.
+Focused behavior evidence:
+1. `swift test --filter SyncCursorAdvanceTests` passed **11 tests**. It invokes the real `PeerManager.processInbox()`, real LAN `syncWithPeer` → `syncViaHTTP`, and real `SyncEngine.runSync` call paths.
+2. A temporary revert mutation inverted both receive-cursor policy branches and restored `pendingCount: 0`; the same suite failed with five assertions: deterministic inbox clear/later-row flow, transient requeue, LAN vector advance, and remaining pending count. The mutations were restored before this update.
+3. Actual SQLite FOREIGN KEY, TRIGGER, and missing-table refusals are asserted as `permanentRefusals == 1` and `errors == 0`; the two pre-existing counter expectations that still asserted `errors == 1` were corrected in this repair.
+4. The focused natural-key and conflict-resolver suites report all **31** and **44** Swift Testing cases passed. Their `swift test --filter` command wrapper also prints a legacy XCTest "no matching test cases" warning, so the canonical current-head iPhone/iPad gate remains the final platform proof.
+
+The previous exact-head iPhone and iPad gate run on `999dd1155815e869beb488c18cd7aff0c2cbcb42` completed UI smokes (5/5 each) but failed unit regression only because those two stale `errors == 1` expectations were still present. Fresh iPhone+iPad runs on the post-repair SHA are required before the SecurityAgent → LocalFirstReviewer → GPTReviewer → ClaudeReviewer sequence may begin.
 
 Not verifiable headless: a real two-device LAN round-trip. Field confirmation on paired
 hardware remains a follow-up.
