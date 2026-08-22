@@ -33,7 +33,9 @@ rows), so every retry re-derives it"; a `schemaDrop` "a retry can never fix … 
 migration can." Holding the watermark for those re-sends the same rows **forever** and the
 peer never converges.
 
-Only `errors` (SQLITE_BUSY, disk full, transient DB faults) are **retryable**. So the correct
+Only `errors` (SQLITE_BUSY, disk full, transient DB faults) are retryable. Permanent
+FOREIGN KEY / TRIGGER / missing-table refusals are separately counted in
+`permanentRefusals`, alongside the existing deterministic counters. So the correct
 rule is: **advance unless `errors > 0`.** This is exactly what the existing atomic paths
 already do — `PeerManager.applyStagedSnapshot` (`guard result.errors == 0`, line 1602) and
 `applyIncomingChanges` (line 2896). The fix makes the LAN pull + inbox paths **match the
@@ -51,14 +53,17 @@ Re-queue safety: re-applying an already-applied row is LWW-idempotent; determini
 constraint outcomes are counted as `keyCollisions`/`schemaDrops` (never `errors`), so the
 re-queue converges rather than looping.
 
-## Verification signal (Rule 13)
+## Verification signal (current evidence)
 
-`swift test` in `core/` — new/extended tests assert:
-1. `runSync` reports the true remaining backlog after a capped (>500) push.
-2. The receive vector clock does **not** advance when the merge reports `errors > 0`, and
-   **does** advance when the only non-applies are `keyCollisions`/`schemaDrops`.
-3. `processInbox` re-queues a batch it could not apply instead of losing it.
+`swift test --filter SyncCursorAdvanceTests` — 7 focused tests exercise:
+1. `ConflictResolver.resolveAndApplyChanges` classifies an actual foreign-key refusal as `permanentRefusals`, not `errors`.
+2. The shared production inbox policy clears deterministic results and requeues a transient result.
+3. The capped `getPendingChanges` window differs from the true pending count.
 
-Not verifiable headless (documented as UNMEASURED, not passed): a real two-device LAN
-round-trip. The tests above exercise the logic; field confirmation on paired hardware is a
-follow-up.
+**Still required before review:** direct production-call-site regression coverage for
+`syncViaHTTP` cursor advancement and `SyncEngine.runSync` successful pending-count reporting,
+plus the requested revert-mutation proof. This plan intentionally does not claim those checks
+have run yet.
+
+Not verifiable headless: a real two-device LAN round-trip. Field confirmation on paired
+hardware remains a follow-up.

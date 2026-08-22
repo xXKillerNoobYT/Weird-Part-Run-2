@@ -52,6 +52,47 @@ struct SyncCursorAdvanceTests {
         #expect(r.isSafeToAdvanceReceiveCursor == false)
     }
 
+    @Test("A permanent foreign-key refusal is deterministic rather than retryable")
+    func permanentForeignKeyRefusalAdvances() throws {
+        let db = try freshDB()
+        let result = try ConflictResolver.resolveAndApplyChanges(
+            db: db,
+            changes: [IncomingChange(
+                deviceId: "peer",
+                tableName: "job_stages",
+                recordId: "1",
+                operation: "UPDATE",
+                changedFields: #"{"template_id":"999999"}"#,
+                timestamp: "2026-08-22T00:00:00Z"
+            )],
+            localDeviceId: "receiver"
+        )
+
+        #expect(result.permanentRefusals == 1)
+        #expect(result.errors == 0)
+        #expect(result.isSafeToAdvanceReceiveCursor)
+    }
+
+    @Test("processInbox clears deterministic results but requeues transient results")
+    func processInboxClassifiesRetryPolicyAtTheProductionCallSite() async throws {
+        let db = try freshDB()
+        let manager = PeerManager(db: db)
+        let serverState = SyncServerState(deviceId: "receiver", deviceName: "Receiver", companyId: "company", db: db)
+        await manager.testInstallServerState(serverState)
+
+        let row = IncomingChange(
+            deviceId: "peer", tableName: "users", recordId: "100", operation: "INSERT",
+            timestamp: "2026-08-22T00:00:00Z"
+        )
+        await serverState.appendToInbox([row])
+        await manager.testProcessInbox { _, _ in MergeResult(permanentRefusals: 1) }
+        #expect((await serverState.inbox).isEmpty)
+
+        await serverState.appendToInbox([row])
+        await manager.testProcessInbox { _, _ in MergeResult(errors: 1) }
+        #expect((await serverState.inbox).count == 1)
+    }
+
     // MARK: - #1794: backlog is capped, count is not
 
     @Test("getPendingChanges is capped at 500 while getPendingChangeCount is the true backlog")
