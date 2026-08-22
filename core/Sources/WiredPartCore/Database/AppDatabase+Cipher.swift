@@ -235,15 +235,9 @@ extension AppDatabase {
             }
 
             // --- Step 4: Stamp current schema version (data copy may have overwritten it) ---
+            // Guarded, id-stable stamp shared with the normal migrate path (#1805).
             try newPool.write { db in
-                try db.execute(
-                    sql: """
-                        INSERT OR REPLACE INTO settings (key, value, category, updated_at)
-                        VALUES ('db_schema_version', ?, 'system', datetime('now')),
-                               ('last_migration_date', datetime('now'), 'system', datetime('now'))
-                    """,
-                    arguments: ["\(AppDatabase.schemaVersion)"]
-                )
+                try AppDatabase.stampSchemaVersion(db)
             }
 
             try newPool.close()
