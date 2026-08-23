@@ -83,10 +83,11 @@ final class IOSSyncManager {
     /// checkmark, so "Sync with iPhone failed" appeared under a success icon
     /// (owner screenshot, build 62). A failure must never carry a success mark.
     var lastHostSyncSucceeded = false
-    /// Bluetooth change delivery is currently send-only for one manual action:
-    /// the other device must send its own pending changes back. Keeping this
-    /// separate from `syncStatus` prevents a successful send from rendering as
-    /// a completed two-way sync (#6916).
+    /// A Bluetooth send completes before the reciprocal reply is received, so
+    /// the result can report only the records accepted by the first transport
+    /// leg. The peer automatically returns its pending changes while both apps
+    /// remain connected; this remains separate from `syncStatus` so the first
+    /// leg never masquerades as confirmed two-way application (#1684).
     var lastOneWayBluetoothSyncSummary: String?
     /// Why Bluetooth could not start, shown on screen with a code (#1580).
     ///
@@ -135,6 +136,11 @@ final class IOSSyncManager {
     // takes effect (deinit needs synchronous access); no view observes the timer.
     @ObservationIgnored nonisolated(unsafe) private var syncTimer: Timer?
     private var syncIntervalSeconds: TimeInterval = 60
+
+    /// Observable only to the app's unit tests through `@testable import`.
+    /// Production callers start and stop the timer through the lifecycle APIs.
+    var isAutoSyncScheduled: Bool { syncTimer != nil }
+    var scheduledAutoSyncInterval: TimeInterval { syncIntervalSeconds }
 
     private var db: AppDatabase?
     private var settingsService: SettingsService?
@@ -1066,10 +1072,10 @@ final class IOSSyncManager {
         return transport == "lan" && address != nil
     }
 
-    /// The Multipeer protocol currently sends local pending changes but does
-    /// not await a reciprocal batch in that same user action. This wording is
-    /// deliberately explicit so a green completion state never promises that
-    /// the selected device's changes were pulled too (#6916).
+    /// The first Multipeer leg completes before its automatic reciprocal reply,
+    /// so this copy reports only the records accepted by that first leg. It must
+    /// neither claim that the return was applied nor instruct the user to tap the
+    /// other device now that #1684 makes that return automatic.
     static func oneWayBluetoothSyncSummary(peerNames: [String], recordsSent: Int) -> String {
         var uniqueNames: [String] = []
         for name in peerNames where !uniqueNames.contains(name) {
@@ -1078,8 +1084,7 @@ final class IOSSyncManager {
         let destination = uniqueNames.count == 1
             ? (uniqueNames.first ?? "the nearby device")
             : "\(uniqueNames.count) nearby devices"
-        let nextAction = uniqueNames.count == 1 ? destination : "each device"
-        return "Sent \(recordsSent) records to \(destination). To receive their changes, tap Send Changes on \(nextAction)."
+        return "Sent \(recordsSent) records to \(destination). Any pending changes there will return automatically while both apps stay open."
     }
 
     /// The peers whose outcome is a genuine failure the user must act on.
@@ -1650,9 +1655,40 @@ final class IOSSyncManager {
             throw SyncError.noServerConfigured
         }
 
+        activateOngoingSyncAfterInitialDownload()
         refreshPendingCount()
         refreshConflictCount()
         syncProgressMessage = nil
+    }
+
+    /// Replace onboarding's temporary, receive-only discovery session with the
+    /// normal same-company peer system after the initial snapshot is durable.
+    ///
+    /// The onboarding manager intentionally uses a throwaway company id, does
+    /// not advertise, does not auto-invite, and does not run the LAN sync server.
+    /// Leaving it alive after pairing means `syncWithPeer` has no `serverState`
+    /// and a dropped MCSession cannot reconnect automatically. Restarting here
+    /// is safe because the full snapshot has finished and acknowledged before
+    /// `performInitialSync` reaches this point.
+    func activateOngoingSyncAfterInitialDownload() {
+        if Self.bluetoothSyncEnabled {
+            startPeerDiscovery()
+        }
+
+        guard isAutoSyncEnabled else {
+            stopAutoSync()
+            return
+        }
+
+        let configuredInterval: String?
+        if let settingsService {
+            configuredInterval = try? settingsService.getSettingsByCategory("sync")["sync_interval"]
+        } else {
+            configuredInterval = nil
+        }
+        let interval = max(TimeInterval(configuredInterval ?? "60") ?? 60, 15)
+        startAutoSync(intervalSeconds: interval)
+        logger.info("[IOSSyncManager] Initial download complete; ongoing peer discovery and auto-sync are active.")
     }
 
     // MARK: - App Lifecycle Sync

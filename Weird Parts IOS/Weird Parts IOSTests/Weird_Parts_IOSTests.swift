@@ -316,17 +316,54 @@ struct Weird_Parts_IOSTests {
     }
 
     @MainActor
-    @Test func oneWayBluetoothSyncSummaryNeverClaimsReciprocalSync() {
+    @Test func bluetoothSyncSummaryExplainsAutomaticReciprocalReturnWithoutClaimingItApplied() {
         #expect(
             IOSSyncManager.oneWayBluetoothSyncSummary(peerNames: ["Field iPad"], recordsSent: 3)
-                == "Sent 3 records to Field iPad. To receive their changes, tap Send Changes on Field iPad."
+                == "Sent 3 records to Field iPad. Any pending changes there will return automatically while both apps stay open."
         )
         #expect(
             IOSSyncManager.oneWayBluetoothSyncSummary(
                 peerNames: ["Field iPad", "Shop iPhone", "Field iPad"],
                 recordsSent: 5
-            ) == "Sent 5 records to 2 nearby devices. To receive their changes, tap Send Changes on each device."
+            ) == "Sent 5 records to 2 nearby devices. Any pending changes there will return automatically while both apps stay open."
         )
+    }
+
+    @MainActor
+    @Test func completedInitialDownloadActivatesCompanyDiscoveryAndConfiguredTimer() throws {
+        let bluetoothKey = "bluetooth_sync_enabled"
+        let previousBluetoothValue = UserDefaults.standard.object(forKey: bluetoothKey)
+        UserDefaults.standard.set(false, forKey: bluetoothKey)
+        defer {
+            if let previousBluetoothValue {
+                UserDefaults.standard.set(previousBluetoothValue, forKey: bluetoothKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: bluetoothKey)
+            }
+        }
+
+        let db = try AppDatabase.openInMemoryDatabase()
+        let settings = SettingsService(db: db)
+        try settings.upsertSettingsMap([
+            "company_id": "company-auto-sync-test",
+        ], category: "company")
+        try settings.upsertSettingsMap([
+            "auto_sync": "true",
+            "sync_interval": "5",
+        ], category: "sync")
+
+        let manager = IOSSyncManager()
+        manager.configure(db: db, settingsService: settings)
+        #expect(!manager.isScanning)
+        #expect(!manager.isAutoSyncScheduled)
+
+        UserDefaults.standard.set(true, forKey: bluetoothKey)
+        manager.activateOngoingSyncAfterInitialDownload()
+        defer { manager.cleanup() }
+
+        #expect(manager.isScanning)
+        #expect(manager.isAutoSyncScheduled)
+        #expect(manager.scheduledAutoSyncInterval == 15)
     }
 
     @MainActor
