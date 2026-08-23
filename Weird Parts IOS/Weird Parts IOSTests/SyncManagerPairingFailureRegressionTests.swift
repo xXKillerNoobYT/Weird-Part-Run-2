@@ -183,6 +183,25 @@ final class SyncManagerFailureSurfacingRegressionTests: XCTestCase {
         XCTAssertTrue(failureBody.contains("throw error"))
     }
 
+    func testSuccessfulInitialDownloadTransitionsOutOfTemporaryOnboardingDiscovery() throws {
+        let source = try Self.readSyncManagerSource()
+        let initialSyncBody = try TestSourceSlicer.braceBalancedBody(
+            after: "func performInitialSync() async throws",
+            in: source
+        )
+
+        let activation = try XCTUnwrap(
+            initialSyncBody.range(of: "activateOngoingSyncAfterInitialDownload()")
+        )
+        let errorExit = try XCTUnwrap(
+            initialSyncBody.range(of: "throw SyncError.noServerConfigured", options: .backwards)
+        )
+        let refresh = try XCTUnwrap(initialSyncBody.range(of: "refreshPendingCount()", options: .backwards))
+
+        XCTAssertGreaterThan(activation.lowerBound, errorExit.lowerBound)
+        XCTAssertLessThan(activation.lowerBound, refresh.lowerBound)
+    }
+
 
     private static func repoRoot(file: StaticString = #filePath) -> URL {
         URL(fileURLWithPath: "\(file)")
