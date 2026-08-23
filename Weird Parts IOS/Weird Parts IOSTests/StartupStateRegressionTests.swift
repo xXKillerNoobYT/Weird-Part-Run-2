@@ -4,7 +4,7 @@ import XCTest
 /// #1739 — a device that had already joined a company was offered
 /// "Create New Business" again on its next launch.
 ///
-/// Reported on build 67: *"it's showing the company sat set up when this device
+/// Reported on build 67: *"it's showing the company setup when this device
 /// is joining a company it's not a new company"*, in the same session as *"only
 /// some of the info is sycing … the user them selves did not sync"*. Those are
 /// one event, not two.
@@ -25,28 +25,48 @@ import XCTest
 @MainActor
 final class StartupStateRegressionTests: XCTestCase {
 
-    /// The regression. Paired, but nothing replicated yet.
-    func testPairedDeviceWithNoRosterIsNotTreatedAsNew() {
+    func testOnlyVerifiedJoinerSettingsSignalAJoinedDevice() {
+        XCTAssertTrue(
+            AppCore.hasVerifiedJoinerPairing(syncSettings: [
+                "paired_shop_device_id": "host-device",
+                "device_pairing_verified_at": "2026-08-23T14:00:00Z",
+            ])
+        )
+        XCTAssertFalse(
+            AppCore.hasVerifiedJoinerPairing(syncSettings: [
+                "paired_shop_device_id": "host-device",
+            ])
+        )
+        XCTAssertFalse(
+            AppCore.hasVerifiedJoinerPairing(syncSettings: [
+                "device_pairing_verified_at": "2026-08-23T14:00:00Z",
+            ])
+        )
+        XCTAssertFalse(AppCore.hasVerifiedJoinerPairing(syncSettings: [:]))
+    }
+
+    /// The regression. Verified joiner pairing, but nothing replicated yet.
+    func testJoinedDeviceWithNoRosterIsNotTreatedAsNew() {
         let state = AppCore.startupState(
             hasUsers: false,
             hasProfile: false,
-            hasPairedPeer: true
+            hasVerifiedJoinerPairing: true
         )
         XCTAssertEqual(
             state, .joinedAwaitingRoster,
-            "A device that has paired has joined a company. Offering it the create-company path seeds a second admin and a second set of hats."
+            "A device that has completed verified pairing has joined a company. Offering it the create-company path seeds a second admin and a second set of hats."
         )
         XCTAssertNotEqual(state, .newDevice)
     }
 
-    /// Pairing outranks the business profile too: a joined device whose profile
-    /// arrived but whose users did not must not be pushed through first-admin
-    /// seeding, which would create the same divergence.
-    func testPairedDeviceWithProfileButNoUsersDoesNotSeedAnAdmin() {
+    /// Verified joiner pairing outranks the business profile too: a joined device
+    /// whose profile arrived but whose users did not must not be pushed through
+    /// first-admin seeding, which would create the same divergence.
+    func testJoinedDeviceWithProfileButNoUsersDoesNotSeedAnAdmin() {
         let state = AppCore.startupState(
             hasUsers: false,
             hasProfile: true,
-            hasPairedPeer: true
+            hasVerifiedJoinerPairing: true
         )
         XCTAssertEqual(state, .joinedAwaitingRoster)
         XCTAssertNotEqual(
@@ -55,11 +75,15 @@ final class StartupStateRegressionTests: XCTestCase {
         )
     }
 
-    /// A paired device with no roster must remain on the retryable full-sync
+    /// A joined device with no roster must remain on the retryable full-sync
     /// path. Login's incremental sync cannot fetch pre-pairing records.
     func testJoinedAwaitingRosterIsDistinctFromTheLoginReadyState() {
         XCTAssertEqual(
-            AppCore.startupState(hasUsers: false, hasProfile: false, hasPairedPeer: true),
+            AppCore.startupState(
+                hasUsers: false,
+                hasProfile: false,
+                hasVerifiedJoinerPairing: true
+            ),
             .joinedAwaitingRoster
         )
     }
@@ -74,6 +98,18 @@ final class StartupStateRegressionTests: XCTestCase {
                 joinedExistingBusiness: true
             )
         )
+    }
+
+    /// A host gains trusted peers when others join it, but it does not acquire
+    /// the joiner-only verified-pairing settings. It must retain company setup
+    /// when the local completion flag is still false.
+    func testHostWithTrustedPeersRetainsCompanySetupBehavior() {
+        let hostState = AppCore.startupState(
+            hasUsers: true,
+            hasProfile: true,
+            hasVerifiedJoinerPairing: false
+        )
+        XCTAssertEqual(hostState, .ready)
         XCTAssertTrue(
             WiredPartIOSApp.shouldShowCompanySetup(
                 isAdmin: true,
@@ -87,7 +123,11 @@ final class StartupStateRegressionTests: XCTestCase {
     /// strand a first-run user.
     func testTrulyNewDeviceStillGetsOnboarding() {
         XCTAssertEqual(
-            AppCore.startupState(hasUsers: false, hasProfile: false, hasPairedPeer: false),
+            AppCore.startupState(
+                hasUsers: false,
+                hasProfile: false,
+                hasVerifiedJoinerPairing: false
+            ),
             .newDevice
         )
     }
@@ -96,7 +136,11 @@ final class StartupStateRegressionTests: XCTestCase {
     /// never paired.
     func testProfileWithoutUsersOrPairingStillNeedsFirstAdmin() {
         XCTAssertEqual(
-            AppCore.startupState(hasUsers: false, hasProfile: true, hasPairedPeer: false),
+            AppCore.startupState(
+                hasUsers: false,
+                hasProfile: true,
+                hasVerifiedJoinerPairing: false
+            ),
             .needsFirstAdmin
         )
     }
@@ -104,15 +148,15 @@ final class StartupStateRegressionTests: XCTestCase {
     /// Any device holding users is simply ready, however it got them.
     func testDeviceWithUsersIsReady() {
         for hasProfile in [true, false] {
-            for hasPairedPeer in [true, false] {
+            for hasVerifiedJoinerPairing in [true, false] {
                 XCTAssertEqual(
                     AppCore.startupState(
                         hasUsers: true,
                         hasProfile: hasProfile,
-                        hasPairedPeer: hasPairedPeer
+                        hasVerifiedJoinerPairing: hasVerifiedJoinerPairing
                     ),
                     .ready,
-                    "users present should always mean ready (profile=\(hasProfile) paired=\(hasPairedPeer))"
+                    "users present should always mean ready (profile=\(hasProfile) joined=\(hasVerifiedJoinerPairing))"
                 )
             }
         }
@@ -125,23 +169,23 @@ final class StartupStateRegressionTests: XCTestCase {
         var newDeviceCombinations = 0
         for hasUsers in [true, false] {
             for hasProfile in [true, false] {
-                for hasPairedPeer in [true, false] {
+                for hasVerifiedJoinerPairing in [true, false] {
                     if AppCore.startupState(
                         hasUsers: hasUsers,
                         hasProfile: hasProfile,
-                        hasPairedPeer: hasPairedPeer
+                        hasVerifiedJoinerPairing: hasVerifiedJoinerPairing
                     ) == .newDevice {
                         newDeviceCombinations += 1
                         XCTAssertFalse(hasUsers)
                         XCTAssertFalse(hasProfile)
-                        XCTAssertFalse(hasPairedPeer)
+                        XCTAssertFalse(hasVerifiedJoinerPairing)
                     }
                 }
             }
         }
         XCTAssertEqual(
             newDeviceCombinations, 1,
-            "Only a device with no users, no profile and no pairing may be offered the create-company path."
+            "Only a device with no users, no profile and no verified joiner pairing may be offered the create-company path."
         )
     }
 }

@@ -155,10 +155,11 @@ final class AppCore: ObservableObject {
     /// same event. A device that had genuinely joined was told on its next
     /// launch that it was brand new.
     ///
-    /// `hasPairedPeer` is a **local** fact (a trusted row in `_device_registry`
-    /// written at pairing time and untouched by a failed sync), which is why it
-    /// belongs in this decision: "am I a new device?" must not be answered with
-    /// data that arrives over the network.
+    /// `hasVerifiedJoinerPairing` is a **local, joiner-only** fact: pairing
+    /// writes `paired_shop_device_id` and `device_pairing_verified_at` to this
+    /// device's non-replicating sync settings only after verification succeeds.
+    /// A host can legitimately have trusted peers in `_device_registry`, so peer
+    /// existence cannot answer "did *this* device join another business?".
     ///
     /// Offering "Create New Business" to a joined device is not merely
     /// confusing — it would seed a second admin and a second set of built-in
@@ -167,14 +168,22 @@ final class AppCore: ObservableObject {
     static func startupState(
         hasUsers: Bool,
         hasProfile: Bool,
-        hasPairedPeer: Bool
+        hasVerifiedJoinerPairing: Bool
     ) -> StartupState {
         if hasUsers { return .ready }
-        // Paired outranks everything below: this device has joined, whatever
-        // else did or did not replicate.
-        if hasPairedPeer { return .joinedAwaitingRoster }
+        // A verified joiner pairing outranks everything below: this device has
+        // joined, whatever else did or did not replicate.
+        if hasVerifiedJoinerPairing { return .joinedAwaitingRoster }
         if hasProfile { return .needsFirstAdmin }
         return .newDevice
+    }
+
+    nonisolated static func hasVerifiedJoinerPairing(syncSettings: [String: String]) -> Bool {
+        let pairedHostID = (syncSettings["paired_shop_device_id"] ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let verificationTime = (syncSettings["device_pairing_verified_at"] ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return !pairedHostID.isEmpty && !verificationTime.isEmpty
     }
 
     /// Shared sync manager — all views observe this single instance.
@@ -304,27 +313,15 @@ final class AppCore: ObservableObject {
                 let theme = try? settings.getTheme()
                 let users = try auth.getActiveUsers()
                 let hasProfile = try settings.hasBusinessProfile()
-                // #1739. Durable, device-local evidence that this device has
-                // already joined a company: pairing writes a trusted peer here
-                // and nothing in a failed or partial sync removes it.
-                //
-                // The onboarding decision below used to rest ENTIRELY on synced
-                // data (`users` / business profile). That data is exactly what
-                // fails to arrive when sync is partial — the owner's build-67
-                // report was "only some of the info is sycing … the user them
-                // selves did not sync" — so a device that had genuinely joined
-                // was told, on its next launch, that it was brand new and
-                // offered "Create New Business". Deciding "am I a new device?"
-                // from data that arrives over the network is the bug; this is a
-                // local fact.
-                let hasPairedPeer = (try? database.writer.read { dbc in
-                    try Bool.fetchOne(dbc, sql: """
-                        SELECT EXISTS(
-                            SELECT 1 FROM _device_registry
-                            WHERE is_trusted = 1 AND is_deactivated = 0
-                        )
-                        """) ?? false
-                }) ?? false
+                // #1739. Durable, device-local proof that *this* device joined
+                // an existing business. These settings are only written after
+                // verified pairing succeeds, and SettingsService keeps them out
+                // of company replication. A host's trusted-peer roster is not
+                // equivalent: it grows when another device joins the host.
+                let syncSettings = (try? settings.getSettingsByCategory("sync")) ?? [:]
+                let hasVerifiedJoinerPairing = Self.hasVerifiedJoinerPairing(
+                    syncSettings: syncSettings
+                )
 
                 return (
                     database: database,
@@ -352,7 +349,7 @@ final class AppCore: ObservableObject {
                     theme: theme,
                     users: users,
                     hasProfile: hasProfile,
-                    hasPairedPeer: hasPairedPeer
+                    hasVerifiedJoinerPairing: hasVerifiedJoinerPairing
                 )
             }.value
 
@@ -396,7 +393,7 @@ final class AppCore: ObservableObject {
             switch Self.startupState(
                 hasUsers: !result.users.isEmpty,
                 hasProfile: result.hasProfile,
-                hasPairedPeer: result.hasPairedPeer
+                hasVerifiedJoinerPairing: result.hasVerifiedJoinerPairing
             ) {
             case .newDevice:
                 // Clear stale UserDefaults flags so a fresh-build DB doesn't
@@ -422,7 +419,7 @@ final class AppCore: ObservableObject {
                 needsBootstrap = false
                 needsOnboarding = false
                 needsInitialSync = false
-                joinedExistingBusiness = result.hasPairedPeer
+                joinedExistingBusiness = result.hasVerifiedJoinerPairing
             }
 
             let uiTestDisplayName = ProcessInfo.processInfo.arguments.contains("-UITestingTeamsViewOnly")
