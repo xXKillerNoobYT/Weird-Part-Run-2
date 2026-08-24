@@ -11,12 +11,21 @@ struct SyncWaitingView: View {
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
 
+    /// The ordinary pairing stack can go back to device selection. A launch
+    /// recovery has no parent stack, so it must keep the retryable full-sync
+    /// screen visible rather than exposing a no-op back action.
+    let canCancel: Bool
+
     @State private var syncComplete = false
     @State private var syncError: SyncFailureReport?
     @State private var showTechnicalDetail = false
     @State private var didCopyDetails = false
 
     private var syncManager: IOSSyncManager { appCore.syncManager }
+
+    init(canCancel: Bool = true) {
+        self.canCancel = canCancel
+    }
 
     var body: some View {
         VStack(spacing: 32) {
@@ -32,7 +41,7 @@ struct SyncWaitingView: View {
 
             Spacer()
 
-            if !syncComplete && syncError == nil {
+            if canCancel && !syncComplete && syncError == nil {
                 Button("Cancel") { dismiss() }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
@@ -184,8 +193,10 @@ struct SyncWaitingView: View {
                 }
                 .buttonStyle(.borderedProminent)
 
-                Button("Go Back") { dismiss() }
-                    .buttonStyle(.bordered)
+                if canCancel {
+                    Button("Go Back") { dismiss() }
+                        .buttonStyle(.bordered)
+                }
             }
         }
     }

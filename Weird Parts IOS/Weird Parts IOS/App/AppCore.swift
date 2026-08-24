@@ -40,6 +40,12 @@ final class AppCore: ObservableObject {
     @Published private(set) var requiresUnreadableDatabaseRecovery = false
     @Published var needsBootstrap = false
     @Published var needsOnboarding = false
+    /// A joined device with an incomplete roster must re-enter the full-snapshot
+    /// flow. Incremental launch sync cannot recover pre-pairing records.
+    @Published private(set) var needsInitialSync = false
+    /// Durable local pairing evidence used to prevent joiners from entering the
+    /// first-device company setup wizard after login.
+    @Published private(set) var joinedExistingBusiness = false
     @Published var currentUser: User?
     @Published var currentToken: String?
     @Published var permissions: [String] = []
@@ -123,6 +129,61 @@ final class AppCore: ObservableObject {
         )
         let verbose = UserDefaults.standard.bool(forKey: "wp_verbose_device_logging")
         return DeviceLogService(db: db, device: info, verboseEnabled: verbose)
+    }
+
+    /// What the app should show at launch.
+    ///
+    /// Extracted as a pure function so the decision is testable without
+    /// standing up the whole async bootstrap — it is the part that was wrong,
+    /// and it is one line of logic buried in fifty lines of plumbing.
+    enum StartupState: Equatable {
+        /// Never joined, never set up — offer the two-path onboarding.
+        case newDevice
+        /// A business profile exists but no admin yet.
+        case needsFirstAdmin
+        /// Paired with a company, but the user roster has not arrived.
+        case joinedAwaitingRoster
+        /// Normal launch.
+        case ready
+    }
+
+    /// #1739. The old decision rested ENTIRELY on synced data (`users`, the
+    /// business profile), and that data is exactly what fails to arrive when
+    /// sync is partial. The owner's build-67 report was *"it's showing the
+    /// company set up when this device is joining a company"* alongside *"only
+    /// some of the info is sycing … the user them selves did not sync"* — the
+    /// same event. A device that had genuinely joined was told on its next
+    /// launch that it was brand new.
+    ///
+    /// `hasVerifiedJoinerPairing` is a **local, joiner-only** fact: pairing
+    /// writes `paired_shop_device_id` and `device_pairing_verified_at` to this
+    /// device's non-replicating sync settings only after verification succeeds.
+    /// A host can legitimately have trusted peers in `_device_registry`, so peer
+    /// existence cannot answer "did *this* device join another business?".
+    ///
+    /// Offering "Create New Business" to a joined device is not merely
+    /// confusing — it would seed a second admin and a second set of built-in
+    /// hats, putting divergent ids for the same natural keys onto the mesh,
+    /// which is the collision class #1737 exists to contain.
+    static func startupState(
+        hasUsers: Bool,
+        hasProfile: Bool,
+        hasVerifiedJoinerPairing: Bool
+    ) -> StartupState {
+        if hasUsers { return .ready }
+        // A verified joiner pairing outranks everything below: this device has
+        // joined, whatever else did or did not replicate.
+        if hasVerifiedJoinerPairing { return .joinedAwaitingRoster }
+        if hasProfile { return .needsFirstAdmin }
+        return .newDevice
+    }
+
+    nonisolated static func hasVerifiedJoinerPairing(syncSettings: [String: String]) -> Bool {
+        let pairedHostID = (syncSettings["paired_shop_device_id"] ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let verificationTime = (syncSettings["device_pairing_verified_at"] ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return !pairedHostID.isEmpty && !verificationTime.isEmpty
     }
 
     /// Shared sync manager — all views observe this single instance.
@@ -252,6 +313,15 @@ final class AppCore: ObservableObject {
                 let theme = try? settings.getTheme()
                 let users = try auth.getActiveUsers()
                 let hasProfile = try settings.hasBusinessProfile()
+                // #1739. Durable, device-local proof that *this* device joined
+                // an existing business. These settings are only written after
+                // verified pairing succeeds, and SettingsService keeps them out
+                // of company replication. A host's trusted-peer roster is not
+                // equivalent: it grows when another device joins the host.
+                let syncSettings = (try? settings.getSettingsByCategory("sync")) ?? [:]
+                let hasVerifiedJoinerPairing = Self.hasVerifiedJoinerPairing(
+                    syncSettings: syncSettings
+                )
 
                 return (
                     database: database,
@@ -278,7 +348,8 @@ final class AppCore: ObservableObject {
                     badgeCount: BadgeCountService(db: database),
                     theme: theme,
                     users: users,
-                    hasProfile: hasProfile
+                    hasProfile: hasProfile,
+                    hasVerifiedJoinerPairing: hasVerifiedJoinerPairing
                 )
             }.value
 
@@ -319,8 +390,12 @@ final class AppCore: ObservableObject {
                 self.theme = theme
             }
 
-            if result.users.isEmpty && !result.hasProfile {
-                // Brand-new device — show two-path onboarding.
+            switch Self.startupState(
+                hasUsers: !result.users.isEmpty,
+                hasProfile: result.hasProfile,
+                hasVerifiedJoinerPairing: result.hasVerifiedJoinerPairing
+            ) {
+            case .newDevice:
                 // Clear stale UserDefaults flags so a fresh-build DB doesn't
                 // inherit "already completed" flags from a previous install.
                 UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
@@ -328,13 +403,23 @@ final class AppCore: ObservableObject {
                 UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
                 needsOnboarding = true
                 needsBootstrap = false
-            } else if result.users.isEmpty && result.hasProfile {
-                // Business profile exists but no admin yet (edge case)
+                needsInitialSync = false
+                joinedExistingBusiness = false
+            case .needsFirstAdmin:
                 needsBootstrap = true
                 needsOnboarding = false
-            } else {
+                needsInitialSync = false
+                joinedExistingBusiness = false
+            case .joinedAwaitingRoster:
                 needsBootstrap = false
                 needsOnboarding = false
+                needsInitialSync = true
+                joinedExistingBusiness = true
+            case .ready:
+                needsBootstrap = false
+                needsOnboarding = false
+                needsInitialSync = false
+                joinedExistingBusiness = result.hasVerifiedJoinerPairing
             }
 
             let uiTestDisplayName = ProcessInfo.processInfo.arguments.contains("-UITestingTeamsViewOnly")
@@ -619,6 +704,7 @@ final class AppCore: ObservableObject {
     /// Finish onboarding and transition to the main app (or login screen).
     func completeOnboarding() {
         needsOnboarding = false
+        needsInitialSync = false
         // If seedFirstAdmin was called during onboarding, currentUser is set
         // and the app will go straight to IOSMainView.
         // If joining an existing business (sync path), currentUser is nil
