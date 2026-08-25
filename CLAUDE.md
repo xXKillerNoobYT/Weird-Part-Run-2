@@ -202,6 +202,31 @@ For every PR before merge:
 3. Merge readiness: linked issues resolved, branch current with `main`, required checks green, unresolved review threads resolved, agent review done, and no owner/security/product blocker.
 4. Branches of branches and PRs of PRs are allowed when they improve quality or isolate fixes.
 
+### Separation of duties — the run that did the work does NOT close it (owner directive 2026-08-25)
+
+Owner: *"if one run takes an issue from the backlog to ready and then the next one moves it to in progress then to review the next run should do the review before moving an issue to done — that['s] what the run that did the work not doing the review."*
+
+The lifecycle (matching the `Status` field on Project #7 — `Backlog · Ready · In progress · In review · Done`) is advanced by **different runs**:
+
+| Transition | Who |
+|---|---|
+| Backlog → Ready | a run that scopes it |
+| Ready → In progress → **In review** | the run that does the work |
+| **In review → Done** | a **LATER, DIFFERENT run** that reviews it |
+
+**A run may never move an issue to `Done` that it moved to `In review`.** The implementing run stops at `In review` — always. Closing your own work is not a review, it is a self-assessment wearing a review's label.
+
+**Why this is enforced rather than encouraged:**
+
+- A prior measurement on this repo found an agent's own *"already done"* claim **survives adversarial attack only ~18% of the time** — code ships, the review ceremony never actually runs, and the issue closes on merge state alone.
+- Demonstrated live 2026-08-25: an agent self-reviewed its own PR, declared it verified, and **missed a failure the CI gate then caught** (`notebook_entry_edits` left unclassified, #1817). The self-review was thorough and still insufficient — the author cannot see their own blind spot, which is what makes it a blind spot.
+
+**Practical rules:**
+
+- Record **which run/agent did the work** on the issue, so the reviewing run can confirm it is a different one. A review that cannot prove separation has not demonstrated it.
+- Do not close an issue on merge state alone. Merged ≠ reviewed, and merging is not deploying.
+- This applies to humans-in-a-hurry and agents equally. "I already checked it" is the claim being guarded against.
+
 **Rules:**
 
 1. **Find something broken? Track it without spraying.** Every bug, gap, or missing feature gets GitHub tracking with: title prefix `[Area][Type]`, description of what's wrong, impact, and fix approach. Search first. If the finding shares a root cause/fix with existing issues, comment/update the existing issue or umbrella checklist instead of creating another issue.
