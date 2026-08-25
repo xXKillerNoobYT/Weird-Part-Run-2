@@ -1118,10 +1118,33 @@ public actor PeerManager {
         peerDeviceId: String,
         localDeviceId: String
     ) async throws -> Data {
-        // Use cached peer KA public key if available
+        // The cache only avoids a network round trip; it is never authorization.
+        // Revalidate the durable certificate pin before every cached reuse so an
+        // in-process key cannot outlive certificate corruption or deactivation.
         let peerKAKey: String
-        if let cached = peerKAPublicKeys[peerDeviceId], !cached.isEmpty {
-            peerKAKey = cached
+        if let cached = peerKAPublicKeys[peerDeviceId] {
+            let trustedKey: String?
+            do {
+                trustedKey = try trustedPeerKey(deviceId: peerDeviceId)
+            } catch {
+                peerKAPublicKeys.removeValue(forKey: peerDeviceId)
+                throw PeerSyncHTTPError.malformedResponse(endpoint: "key")
+            }
+            guard let trustedKey else {
+                peerKAPublicKeys.removeValue(forKey: peerDeviceId)
+                throw PeerSyncHTTPError.malformedResponse(endpoint: "key")
+            }
+
+            if cached == trustedKey {
+                peerKAKey = cached
+            } else {
+                peerKAPublicKeys.removeValue(forKey: peerDeviceId)
+                peerKAKey = try await fetchPeerKAPublicKey(
+                    baseURL: baseURL,
+                    peerDeviceId: peerDeviceId,
+                    localDeviceId: localDeviceId
+                )
+            }
         } else {
             peerKAKey = try await fetchPeerKAPublicKey(
                 baseURL: baseURL,

@@ -860,6 +860,66 @@ struct PeerManagerTests {
         await pm.stopPeerSync()
     }
 
+    @Test("LAN sync rejects a corrupted certificate after caching the paired key")
+    func testLANSyncRejectsCorruptedCertificateAfterCachingPeerKey() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+        let (_, peerPublicKey) = SyncCrypto.generateKeyAgreementPair()
+        try ChangeTracker.registerPeerDevice(
+            db: db,
+            peerId: "shop-dev",
+            peerName: "Shop",
+            platform: "shop",
+            keyAgreementPublicKey: peerPublicKey
+        )
+        try await pm.startPeerSync(
+            deviceId: "local-dev",
+            deviceName: "Local Device",
+            companyId: "local-company"
+        )
+        try await clearChangeLog(db)
+
+        let keyBody = String(
+            data: try JSONEncoder().encode(SyncKeyResponse(key: peerPublicKey)),
+            encoding: .utf8
+        )!
+        let peerServer = try HTTPStubServer { request in
+            request.path == "/sync/key"
+                ? HTTPStubResponse(statusCode: 200, body: keyBody)
+                : HTTPStubResponse(statusCode: 403, body: #"{"error":"expected pull failure"}"#)
+        }
+        let port = try await peerServer.start()
+        let peer = DiscoveredPeer(
+            deviceId: "shop-dev",
+            deviceName: "Shop",
+            companyId: "local-company",
+            host: "127.0.0.1",
+            port: port,
+            transport: "lan"
+        )
+
+        // The first attempt pins the server key in the session cache before the
+        // controlled pull failure, reproducing a normal prior LAN sync.
+        let firstResult = await pm.syncWithPeer(peer)
+        #expect(firstResult.error == "LAN sync pull failed: HTTP 403")
+
+        try await db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE _device_registry SET certificate = ? WHERE device_id = ?",
+                arguments: ["wpdr-cert:v1:truncated", "shop-dev"]
+            )
+        }
+        peerServer.stop()
+
+        // The cached key is not authorization. A corrupted present certificate
+        // must stop the next sync before any request can reuse the cache.
+        let secondResult = await pm.syncWithPeer(peer)
+        #expect(secondResult.success == false)
+        #expect(secondResult.error == "LAN sync key failed: malformed response")
+
+        await pm.stopPeerSync()
+    }
+
     @Test("Sync with a down peer reports failure rather than false success")
     func testSyncWithDownPeerReportsFailure() async throws {
         let db = try freshDB()
