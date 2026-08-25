@@ -212,9 +212,21 @@ The lifecycle (matching the `Status` field on Project #7 — `Backlog · Ready �
 |---|---|
 | Backlog → Ready | a run that scopes it |
 | Ready → In progress → **In review** | the run that does the work |
-| **In review → Done** | a **LATER, DIFFERENT run** that reviews it |
+| **In review → Done / In progress / new issue** | a **LATER, DIFFERENT run** that reviews it |
 
 **A run may never move an issue to `Done` that it moved to `In review`.** The implementing run stops at `In review` — always. Closing your own work is not a review, it is a self-assessment wearing a review's label.
+
+**The reviewing run has three legitimate outcomes** (owner directive 2026-08-25) — `Done` is only one of them:
+
+| Outcome | When | Why it is distinct |
+|---|---|---|
+| → **Done** | the issue's acceptance criteria are met | — |
+| → back to **In progress** | the acceptance criteria are **not** met | The work is unfinished. It returns to the implementer, and the issue stays open. |
+| → **new issue** | something was found that is **outside this issue's scope** | The original issue may still close; the finding gets its own tracking rather than silently widening scope or being lost in a comment. |
+
+Never close an issue with an unaddressed finding attached as a caveat. If the finding belongs to this issue, it goes back to `In progress`; if it does not, it becomes its own issue. "Closed, but note that…" is how a defect disappears.
+
+When routing to a new issue, apply the **audit-the-class** rule above: check whether what the review caught is one instance of a wider pattern before filing it as a one-off.
 
 **Why this is enforced rather than encouraged:**
 
