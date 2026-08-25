@@ -128,6 +128,12 @@ Notebooks sync via the standard sync engine. Conflicts are resolved **per-block*
 
 ### Conflict Resolution Flow
 
+> **CORRECTION 2026-08-25 — the note below is STALE AS FACT, not merely superseded.** AI merge is
+> **implemented and wired**: `NotebooksService.resolveBlockConflictWithFoundationModels` (:2080) and
+> `detectBlockConflicts` (:1971), called from `IOSNotebookDetailPage.swift` :1967 and :1524, with passing
+> "Foundation Models merge" tests. It did NOT wait for Phase 12. Anyone reading the note below as current
+> state will rebuild a shipped feature — see #1819.
+>
 > **SUPERSEDED 2026-08-25 by `docs/plans/isaac-14-notebook-block-overhaul.md` §4 (#Isaac-14).**
 > AI merge is no longer deferred, and the owner has specified that **wall-clock time is explicitly NOT the
 > tiebreaker** for the four named conflict cases. The note below is kept for the reasoning trail.

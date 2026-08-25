@@ -1047,7 +1047,8 @@ public final class NotebooksService: Sendable {
         warrantyTimerEnd: String? = nil,
         clearWarrantyTimerEnd: Bool = false,
         isQuestion: Bool? = nil,
-        updatedBy: Int64
+        updatedBy: Int64,
+        deviceId: String = DeviceIdentity.current
     ) throws {
         try db.writer.write { dbConn in
             try ServicePermissionGate.requirePermission(dbConn, userId: updatedBy, permissionKey: "manage_notebooks")
@@ -1091,7 +1092,7 @@ public final class NotebooksService: Sendable {
                     work_classification = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, work_classification) END,
                     warranty_timer_end = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, warranty_timer_end) END,
                     is_question = COALESCE(?, is_question),
-                    updated_by = ?, updated_at = datetime('now')
+                    device_id = ?, updated_by = ?, updated_at = datetime('now')
                 WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [
                     newTitle, content, blockData, headingLevel, checklistItems,
@@ -1105,7 +1106,7 @@ public final class NotebooksService: Sendable {
                     clearWorkClassification ? 1 : 0, workClassification,
                     clearWarrantyTimerEnd ? 1 : 0, warrantyTimerEnd,
                     isQuestion.map { $0 ? 1 : 0 },
-                    updatedBy, entryId
+                    deviceId, updatedBy, entryId
                 ])
 
             var changedFields: [String: Any] = [:]
@@ -1163,7 +1164,103 @@ public final class NotebooksService: Sendable {
                     (device_id, table_name, record_id, operation, changed_fields, old_values, timestamp)
                     VALUES ('local', 'notebook_entries', ?, 'UPDATE', ?, ?, datetime('now'))
                     """, arguments: [entryId, changedFieldsJSON, oldValuesJSON])
+
+                // Only a real change earns a history slot. Recording no-op saves would let a
+                // user's six-deep history be flushed by six taps that changed nothing.
+                try Self.appendBlockEdit(
+                    dbConn,
+                    entryId: entryId,
+                    userId: updatedBy,
+                    deviceId: deviceId,
+                    title: newTitle,
+                    content: content,
+                    blockData: blockData
+                )
             }
+        }
+    }
+
+    // MARK: - Per-User Block Edit History (#1817 / #Isaac-14)
+
+    /// How many saved edits are retained **per user, per block**.
+    ///
+    /// This is not a per-block total. Three users editing one block retain
+    /// `3 * blockEditRetentionPerUser` rows, because eviction is scoped to
+    /// `(entry_id, user_id)` — one user's saves must never evict another's, which is the
+    /// entire point of keeping history for a multi-editor document.
+    public static let blockEditRetentionPerUser = 6
+
+    /// Appends one revision to a block's per-user ring buffer and evicts that user's oldest.
+    ///
+    /// Ordering uses a monotonic `edit_ordinal` per `(entry_id, user_id)` rather than
+    /// `saved_at`: `datetime('now')` is second-resolution, so two saves inside one second tie
+    /// and "the newest six" stops being well defined. An ordinal cannot tie, and it stays
+    /// meaningful across devices whose clocks disagree.
+    ///
+    /// Must be called inside an existing write transaction — the insert and the eviction have
+    /// to be atomic, or a crash between them leaves a seven-deep history.
+    static func appendBlockEdit(
+        _ dbConn: Database,
+        entryId: Int64,
+        userId: Int64,
+        deviceId: String,
+        title: String?,
+        content: String?,
+        blockData: String?,
+        retainPerUser: Int = NotebooksService.blockEditRetentionPerUser
+    ) throws {
+        let nextOrdinal = try Int64.fetchOne(dbConn, sql: """
+            SELECT COALESCE(MAX(edit_ordinal), 0) + 1
+            FROM notebook_entry_edits
+            WHERE entry_id = ? AND user_id = ?
+            """, arguments: [entryId, userId]) ?? 1
+
+        try dbConn.execute(sql: """
+            INSERT INTO notebook_entry_edits
+            (entry_id, user_id, device_id, edit_ordinal, title_snapshot, content_snapshot,
+             block_data_snapshot, saved_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            """, arguments: [entryId, userId, deviceId, nextOrdinal, title, content, blockData])
+
+        // Scoped to this (entry, user) pair — never a bare "oldest rows for this block".
+        try dbConn.execute(sql: """
+            DELETE FROM notebook_entry_edits
+            WHERE entry_id = ? AND user_id = ? AND edit_ordinal <= ?
+            """, arguments: [entryId, userId, nextOrdinal - Int64(retainPerUser)])
+    }
+
+    /// The retained edits for a block, newest first. Pass `userId` for one user's history,
+    /// or omit it for every editor's — which is what a conflict review needs.
+    public func blockEditHistory(entryId: Int64, userId: Int64? = nil) throws -> [NotebookEntryEdit] {
+        try db.writer.read { dbConn in
+            if let userId {
+                return try NotebookEntryEdit.fetchAll(dbConn, sql: """
+                    SELECT * FROM notebook_entry_edits
+                    WHERE entry_id = ? AND user_id = ?
+                    ORDER BY edit_ordinal DESC
+                    """, arguments: [entryId, userId])
+            }
+            return try NotebookEntryEdit.fetchAll(dbConn, sql: """
+                SELECT * FROM notebook_entry_edits
+                WHERE entry_id = ?
+                ORDER BY user_id ASC, edit_ordinal DESC
+                """, arguments: [entryId])
+        }
+    }
+
+    /// Drops edit history older than `retentionDays` and returns how many rows went.
+    ///
+    /// The owner's requirement is 90 days "on at least the server computer", so a device may
+    /// purge on this schedule while the designated host keeps the durable copy. Returning the
+    /// count matters: a silent purge is indistinguishable from a purge that matched nothing.
+    @discardableResult
+    public func purgeExpiredBlockEdits(retentionDays: Int = 90) throws -> Int {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                DELETE FROM notebook_entry_edits
+                WHERE saved_at < datetime('now', ?)
+                """, arguments: ["-\(retentionDays) days"])
+            return dbConn.changesCount
         }
     }
 

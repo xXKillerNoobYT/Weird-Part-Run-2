@@ -169,6 +169,7 @@ extension AppDatabase {
         registerMigration125ClockOutQuestionsSoftDelete(&migrator)
         registerMigration126DeviceLogDiagnostics(&migrator)
         registerMigration127DeferredSupersessionEvidence(&migrator)
+        registerMigration128NotebookBlockProvenance(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6709,5 +6710,71 @@ private func registerMigration127DeferredSupersessionEvidence(_ migrator: inout 
         }
         try db.create(index: "idx_deferred_supersession_record", on: "_deferred_supersession_log", columns: ["table_name", "record_id", "created_at"])
         try db.create(index: "idx_deferred_supersession_conflict", on: "_deferred_supersession_log", columns: ["conflict_log_id"])
+    }
+}
+
+
+/// #1817 (#Isaac-14) — per-block provenance and a bounded per-user edit history.
+///
+/// A "block" is a `notebook_entries` row. It already carries created/updated/deleted
+/// timestamps and created_by/updated_by/deleted_by, so this adds only what was
+/// genuinely missing:
+///
+/// - `device_id`       which device last wrote the block (previously only `_conflict_log` knew)
+/// - `block_status`    a GENERAL block lifecycle status. Deliberately NOT `task_status`,
+///                     which is to-do-specific — overloading it would make a to-do's
+///                     workflow state and a block's lifecycle state the same column.
+/// The owner also asked for a live "editing user". That already exists: migration 098's
+/// `notebook_entry_edit_locks` (advisory, expiring, with `acquireBlockEditLock` /
+/// `releaseBlockEditLock` / `activeBlockEditLocks`) is exactly that feature. Adding an
+/// `editing_user_id` column here would create a SECOND source of truth for "who is in this
+/// block", and two writers of one status slot disagree the moment a lock expires. Use the
+/// lock table.
+///
+/// `notebook_entry_edits` keeps the last 6 saved edits **per user, per block** (owner
+/// clarification 2026-08-25). Three users editing one block retain 6 + 6 + 6 rows, not 6
+/// shared. Eviction is scoped to (entry_id, user_id) so one user's saves never evict
+/// another's — that isolation is the whole point, since the feature exists for the
+/// multi-editor case.
+///
+/// Ordering uses a monotonic `edit_ordinal` per (entry_id, user_id) rather than `saved_at`.
+/// `datetime('now')` is second-resolution, so two saves in the same second tie and the
+/// "newest 6" become ambiguous; an ordinal cannot tie and is stable across devices whose
+/// clocks disagree.
+///
+/// SYNC: this table is deliberately ABSENT from `ConflictResolver.allowedSyncTables`.
+/// Replicating a per-user edit history would multiply per-block payload on a
+/// Bluetooth-first transport that still has open flow-control defects, and history is
+/// only needed where it is read. Whether it should sync (or live host-only) is the
+/// measurement gate recorded in #1817 — do not add it to the allowlist without that
+/// measurement.
+private func registerMigration128NotebookBlockProvenance(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("128_notebook_block_provenance") { db in
+        try addColumnIfMissing(db, table: "notebook_entries", column: "device_id", type: .text)
+        try addColumnIfMissing(db, table: "notebook_entries", column: "block_status", type: .text)
+
+        try db.create(table: "notebook_entry_edits") { t in
+            t.autoIncrementedPrimaryKey("id")
+            t.column("entry_id", .integer).notNull().references("notebook_entries", onDelete: .cascade)
+            t.column("user_id", .integer).notNull()
+            t.column("device_id", .text)
+            t.column("edit_ordinal", .integer).notNull()
+            t.column("title_snapshot", .text)
+            t.column("content_snapshot", .text)
+            t.column("block_data_snapshot", .text)
+            t.column("saved_at", .text).notNull().defaults(sql: "(datetime('now'))")
+        }
+
+        // The ring buffer is read and evicted by (entry, user, ordinal) on every save,
+        // so that tuple carries the index. UNIQUE also makes a double-insert of the same
+        // ordinal a loud constraint failure instead of a silently over-long history.
+        try db.create(
+            index: "idx_nb_entry_edits_entry_user_ordinal",
+            on: "notebook_entry_edits",
+            columns: ["entry_id", "user_id", "edit_ordinal"],
+            unique: true
+        )
+        // Retention sweeps scan by age alone.
+        try db.create(index: "idx_nb_entry_edits_saved_at", on: "notebook_entry_edits", columns: ["saved_at"])
     }
 }

@@ -1,7 +1,7 @@
 # #Isaac-14 — Notebook Block Editor Overhaul
 
 > **Source:** Owner design spec delivered in chat, 2026-08-25, tagged `#Isaac-14`.
-> **Status:** DESIGN — approved direction, not yet scheduled.
+> **Status:** DESIGN — approved direction. §3 IMPLEMENTED (#1817); the rest not yet scheduled.
 > **Supersedes:** the `2026-04-19` implementation notes in `docs/plans/ios-notebooks-pages.md`
 > §2 (Shortcut Commands) and §3 (Conflict Resolution Flow) that deferred the `/` command
 > palette and the AI merge. Those deferrals are now **lifted** — see §0.
@@ -64,8 +64,11 @@ Verified at `4a3ff3534`. **A "block" is a `notebook_entries` row.**
 
 ### Already present elsewhere
 
-- `NotebookBlockConflict` model + `_conflict_log` with `localDeviceId` / `remoteDeviceId` /
-  `winner` — conflict **detection** exists; only resolution UX and AI merge are missing.
+- `NotebookBlockConflict` + `_conflict_log` — conflict detection exists.
+- **AI merge exists AND is wired** (corrected 2026-08-25): `resolveBlockConflictWithFoundationModels`
+  (:2080), `detectBlockConflicts` (:1971), called from `IOSNotebookDetailPage.swift` :1967 / :1524.
+- **Advisory edit locks exist**: `notebook_entry_edit_locks` (migration 098) with
+  `acquireBlockEditLock` / `releaseBlockEditLock` / `activeBlockEditLocks`.
 - Panel Schedule mini-app: `PanelScheduleModels`, `PanelEditorDraft`, `DesignPanelState`,
   `PanelPrintDocument`.
 - `/table` and `/panel` are **already in the block-type table** in the existing plan.
@@ -77,7 +80,7 @@ Verified at `4a3ff3534`. **A "block" is a `notebook_entries` row.**
 | type, created/updated/deleted timestamps, editing user | ✅ **exists** |
 | **Device ID on the block** | ❌ missing (exists only in `_conflict_log`) |
 | **General block `status`** | ❌ missing (`taskStatus` is to-do-specific, not general) |
-| **Live "currently editing" user** | ❌ missing (`updatedBy` is last-saver, not current-editor) |
+| **Live "currently editing" user** | ✅ **exists** — `notebook_entry_edit_locks` (migration 098). Do NOT add an `editing_user_id` column: two writers of one status slot disagree the moment a lock expires. |
 | **Last 6 saved edits per user** | ❌ missing — no edit-history table |
 | **90-day history/deleted retention** | ❌ missing |
 
@@ -118,10 +121,13 @@ rules decidable.
 ### Fields to add
 
 ```
-device_id        TEXT     -- device that last wrote this block
-status           TEXT     -- general block lifecycle status (distinct from task_status)
-editing_user_id  INTEGER  -- live editor; advisory, expires (see plan §3 "Conflict Prevention")
+device_id     TEXT   -- device that last wrote this block
+block_status  TEXT   -- general block lifecycle status (deliberately NOT task_status,
+                     -- which is to-do-specific)
 ```
+
+The live-editor field the owner asked for is **not** added here — `notebook_entry_edit_locks`
+(migration 098) already provides it, and a column would be a second competing source of truth.
 
 ### Edit history — last 6 saved edits **per user, per block**
 
@@ -131,9 +137,15 @@ over Bluetooth.
 ```
 notebook_entry_edits
   id, entry_id, user_id, device_id,
-  content_snapshot, block_data_snapshot,
-  saved_at, edit_ordinal            -- 1..6, oldest evicted
+  title_snapshot, content_snapshot, block_data_snapshot,
+  saved_at, edit_ordinal   -- monotonic per (entry_id, user_id); newest 6 kept
 ```
+
+**6 per user, per block** (owner clarification 2026-08-25) — three users on one block retain
+6 + 6 + 6, not 6 shared. Eviction is scoped to `(entry_id, user_id)`.
+
+`edit_ordinal` is the ordering key rather than `saved_at`: `datetime('now')` is second-resolution,
+so two saves in the same second tie and "the newest six" stops being well defined.
 
 **Sync-cost warning:** this multiplies per-block payload. The transport is Bluetooth-first and
 already has open flow-control defects. The history table **must** be evaluated against
@@ -148,9 +160,14 @@ shop Mac). Device-local retention may be shorter; the host is the durable copy.
 
 ## 4. AI conflict resolution
 
-> Lifts the `2026-04-19` deferral in `ios-notebooks-pages.md` §3 step 2. Prompt
-> `xcode-ai/fix-prompts/done/62J-notebook-ai-merge.md` explicitly scoped AI merge as *"a future
-> enhancement"* and shipped pick-a-side. **This is that enhancement.**
+> **CORRECTED 2026-08-25 after measurement.** An earlier draft of this section said AI merge was
+> unimplemented, citing the `2026-04-19` deferral in `ios-notebooks-pages.md` §3 and 62J's *"future
+> enhancement"* wording. **Both are stale.** AI merge is built and wired:
+> `NotebooksService.resolveBlockConflictWithFoundationModels` (:2080), `detectBlockConflicts` (:1971),
+> called from `IOSNotebookDetailPage.swift` :1967 / :1524, with passing tests.
+>
+> This section is therefore an **extension of a working feature**, not new construction. The deltas are
+> below; audit the existing implementation against them before writing code (#1819).
 
 ### The four cases the owner named
 
