@@ -18,6 +18,77 @@
 
 ---
 
+## Non-Negotiable Working Rules
+
+Owner-stated rules and lessons that have each cost real time on this repo. Read these before starting work, not after a review catches you.
+
+### 1. Use the built-in system before building one
+
+Owner, 2026-08-25: *"why dount you use that Built in systome more?"* — asked twice in a row.
+
+Before writing a loop, a script, a list, or a mechanism, **find out what already does the job**. The hand-rolled version is not neutral; it is usually a worse copy that fails in ways the built-in already handles. Real cases, one night: a hand-rolled CI poller shipped two bugs and printed "GATES SETTLED" while both gates were running; a hardcoded `/` palette was how the plan's 14 block types and the enum's 10 drifted apart.
+
+- Enumerable UI derives from the enum (`BlockType.allCases`), never a hardcoded copy.
+- CI watching is Autofix's job — do not write a poller.
+- Check the skills list before hand-rolling a workflow. `xcode-planner-and-review` is **mandatory** for iOS/Swift planning.
+- Prefer Apple's built-ins (Writing Tools, image recognition) over bespoke implementations.
+
+**The tell:** the thought *"I'll just write a quick script/loop/list for this"*. Stop and ask what already does it.
+
+### 2. A problem in one area is probably a problem everywhere — audit the CLASS
+
+Owner, 2026-08-25: *"when somthing is a problome in one aria see if its a problome elswhere"*.
+
+Concurrent-insert id collisions were filed as a Notebook bug. One `grep -c` showed **228** synced tables, **242** `autoIncrementedPrimaryKey` declarations, **22** integer `sort_order` columns — the program's default pattern, not a Notebook bug (#1838).
+
+After confirming any defect, **before filing it**:
+
+1. **Name the class**, not the instance — "locally-minted identity collides on offline insert", not "notebook blocks collide".
+2. **Count the class.** One grep. It costs seconds and can turn a P1 area ticket into a P0 architectural one.
+3. **File the class, link the instance.** A bespoke fix for one instance guarantees a rewrite later.
+
+**The tell:** a finding phrased with an area name in it is probably hiding the class. Ask *"why would this be true only here?"* — usually there is no reason, because the cause is a shared helper, pattern, or default.
+
+### 3. Measure the program; never trust a doc, plan, or closed issue
+
+A plan, doc, comment, or previous agent's conclusion is a **claim**, not reality.
+
+Measured 2026-08-25: **three** separate documents asserted Notebook AI merge was unimplemented while `resolveBlockConflictWithFoundationModels` was live and wired from `IOSNotebookDetailPage.swift:1967`. Acting on any of them means rebuilding a shipped feature.
+
+- **GREP before building a requested feature** — it may exist and merely be unwired. A tested service with zero call sites looks exactly like a missing one.
+- Not every such note is stale — verify each. In the same sweep, the chat `@`-picker "not implemented" note proved **accurate**.
+- When you find a stale claim of fact, mark it `CORRECTION <date>` — not `SUPERSEDED`. They mean different things and readers act on them differently.
+
+### 4. Every zero needs a positive control
+
+Before writing "this does not exist" / "0 results" / "no alerts", **prove the method can find something known to be present**.
+
+- A grep must speak the codebase's idiom — GRDB `t.add(column:)`, not `ADD COLUMN`.
+- An empty API result is **UNMEASURED**, not zero: an invalid filter or sort silently returns 200 + empty (`?state=all` on dependabot; any `sort=` on ASC builds).
+- A probe that errors, 403s, or returns an unexpected shape is UNMEASURED. Say so; never report it as clean.
+
+### 5. Never trust a piped exit code, and never filter the stream
+
+`swift test 2>&1 | tail -30` returns **`tail`'s** exit status, not the test runner's — and the truncation deletes the line naming the failure. This produced a false "tests pass" report to the owner and cost a second full run.
+
+- Write the full log to a file, then filter the **file**.
+- `--filter`ed results are evidence about that filter and nothing else. Say which filter; never report it as "tests pass".
+- Match every terminal state, not just success: `grep -E "✘|error:|Test run with"`.
+- Mutation-test a fix: revert it and the suite **must** go red — including a mutation that unwires the production call site, not just the helper.
+
+### 6. Sync convergence is program-wide and enforced
+
+Owner, 2026-08-25: *"the pages should look the same on every device after a synce"* … *"that logic … carry's out throw the hole program NOTE to enforce"*.
+
+After sync, **every device must display the same thing** — every area, not just Notebooks (#1838).
+
+- **Identity** must be globally unique without coordination. Two offline devices must never mint the same id for different records.
+- **Order** must be expressible *between* two neighbours, writing only the new row, converging to the same total order everywhere — a fractional key **plus a stable per-device tiebreak**, because two devices computing the same midpoint still tie.
+- Adding a record is an **insert, not a conflict**. Resolving concurrent inserts by picking a winner **deletes a user's work**.
+- Ordering divergence fails **silently** — two devices showing different order forever, with no conflict reported. Test for it explicitly.
+
+---
+
 ## Large File Auto-Split Rule
 
 When a code file is too large to read or process in a single pass, automatically split it into smaller files that work together without breaking functionality.
@@ -130,6 +201,43 @@ For every PR before merge:
 2. Copilot review is OPTIONAL: request it only if the subscription is active and quota is available; never block a merge waiting on Copilot.
 3. Merge readiness: linked issues resolved, branch current with `main`, required checks green, unresolved review threads resolved, agent review done, and no owner/security/product blocker.
 4. Branches of branches and PRs of PRs are allowed when they improve quality or isolate fixes.
+
+### Separation of duties — the run that did the work does NOT close it (owner directive 2026-08-25)
+
+Owner: *"if one run takes an issue from the backlog to ready and then the next one moves it to in progress then to review the next run should do the review before moving an issue to done — that['s] what the run that did the work not doing the review."*
+
+The lifecycle (matching the `Status` field on Project #7 — `Backlog · Ready · In progress · In review · Done`) is advanced by **different runs**:
+
+| Transition | Who |
+|---|---|
+| Backlog → Ready | a run that scopes it |
+| Ready → In progress → **In review** | the run that does the work |
+| **In review → Done / In progress / new issue** | a **LATER, DIFFERENT run** that reviews it |
+
+**A run may never move an issue to `Done` that it moved to `In review`.** The implementing run stops at `In review` — always. Closing your own work is not a review, it is a self-assessment wearing a review's label.
+
+**The reviewing run has three legitimate outcomes** (owner directive 2026-08-25) — `Done` is only one of them:
+
+| Outcome | When | Why it is distinct |
+|---|---|---|
+| → **Done** | the issue's acceptance criteria are met | — |
+| → back to **In progress** | the acceptance criteria are **not** met | The work is unfinished. It returns to the implementer, and the issue stays open. |
+| → **new issue** | something was found that is **outside this issue's scope** | The original issue may still close; the finding gets its own tracking rather than silently widening scope or being lost in a comment. |
+
+Never close an issue with an unaddressed finding attached as a caveat. If the finding belongs to this issue, it goes back to `In progress`; if it does not, it becomes its own issue. "Closed, but note that…" is how a defect disappears.
+
+When routing to a new issue, apply the **audit-the-class** rule above: check whether what the review caught is one instance of a wider pattern before filing it as a one-off.
+
+**Why this is enforced rather than encouraged:**
+
+- A prior measurement on this repo found an agent's own *"already done"* claim **survives adversarial attack only ~18% of the time** — code ships, the review ceremony never actually runs, and the issue closes on merge state alone.
+- Demonstrated live 2026-08-25: an agent self-reviewed its own PR, declared it verified, and **missed a failure the CI gate then caught** (`notebook_entry_edits` left unclassified, #1817). The self-review was thorough and still insufficient — the author cannot see their own blind spot, which is what makes it a blind spot.
+
+**Practical rules:**
+
+- Record **which run/agent did the work** on the issue, so the reviewing run can confirm it is a different one. A review that cannot prove separation has not demonstrated it.
+- Do not close an issue on merge state alone. Merged ≠ reviewed, and merging is not deploying.
+- This applies to humans-in-a-hurry and agents equally. "I already checked it" is the claim being guarded against.
 
 **Rules:**
 

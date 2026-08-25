@@ -2389,4 +2389,155 @@ struct NotebooksServiceTests {
             return dbConn.lastInsertedRowID
         }
     }
+
+    // MARK: - Per-User Block Edit History (#1817 / #Isaac-14)
+
+    /// Helper: a notebook with one text block, ready to edit.
+    private func makeBlock(_ env: E2ETestHelpers.TestEnvironment) throws -> Int64 {
+        let nbId = try env.notebooks.createNotebook(
+            title: "History", notebookType: "general", createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(notebookId: nbId, groupId: nil, name: "Main")
+        return try env.notebooks.createBlockEntry(
+            sectionId: sectionId, blockType: "text", title: "Draft",
+            content: "v0", createdBy: env.adminUserId
+        )
+    }
+
+    @Test("Block edit history retains only the newest 6 per user, through the production update path")
+    func testBlockEditHistoryRingBufferViaUpdateBlockEntry() throws {
+        let env = try E2ETestHelpers.setUp()
+        let entryId = try self.makeBlock(env)
+
+        // Drive the REAL call site, not the ring-buffer helper — a test that only exercises
+        // appendBlockEdit would still pass if updateBlockEntry never called it.
+        for i in 1...7 {
+            try env.notebooks.updateBlockEntry(
+                entryId: entryId, content: "v\(i)", blockData: nil, updatedBy: env.adminUserId
+            )
+        }
+
+        let history = try env.notebooks.blockEditHistory(entryId: entryId, userId: env.adminUserId)
+        #expect(history.count == 6)
+
+        // Newest first, and the first save must be gone.
+        #expect(history.first?.contentSnapshot == "v7")
+        #expect(history.last?.contentSnapshot == "v2")
+        #expect(!history.contains { $0.contentSnapshot == "v1" })
+
+        // Ordinals stay monotonic — they are not renumbered on eviction.
+        #expect(history.map(\.editOrdinal) == [7, 6, 5, 4, 3, 2])
+    }
+
+    @Test("A no-op save does not consume a history slot")
+    func testNoOpSaveDoesNotBurnHistory() throws {
+        let env = try E2ETestHelpers.setUp()
+        let entryId = try self.makeBlock(env)
+
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId, content: "same", blockData: nil, updatedBy: env.adminUserId
+        )
+        let after1 = try env.notebooks.blockEditHistory(entryId: entryId)
+        // Re-saving identical content changes nothing, so it must not evict real history.
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId, content: "same", blockData: nil, updatedBy: env.adminUserId
+        )
+        let after2 = try env.notebooks.blockEditHistory(entryId: entryId)
+
+        #expect(after1.count == 1)
+        #expect(after2.count == 1)
+    }
+
+    @Test("Retention is 6 PER USER, not 6 per block — one user's saves never evict another's")
+    func testBlockEditHistoryIsScopedPerUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let entryId = try self.makeBlock(env)
+
+        // Owner clarification 2026-08-25: three users saving 7, 6 and 2 times must leave
+        // 6 + 6 + 2 = 14 rows. Exercised at the ring buffer directly so the assertion is about
+        // eviction scoping rather than about seeding three permissioned users.
+        try env.db.writer.write { dbConn in
+            for i in 1...7 {
+                try NotebooksService.appendBlockEdit(
+                    dbConn, entryId: entryId, userId: 101, deviceId: "device-A",
+                    title: "t", content: "alice-\(i)", blockData: nil
+                )
+            }
+            for i in 1...6 {
+                try NotebooksService.appendBlockEdit(
+                    dbConn, entryId: entryId, userId: 102, deviceId: "device-B",
+                    title: "t", content: "bob-\(i)", blockData: nil
+                )
+            }
+            for i in 1...2 {
+                try NotebooksService.appendBlockEdit(
+                    dbConn, entryId: entryId, userId: 103, deviceId: "device-C",
+                    title: "t", content: "carol-\(i)", blockData: nil
+                )
+            }
+        }
+
+        let alice = try env.notebooks.blockEditHistory(entryId: entryId, userId: 101)
+        let bob = try env.notebooks.blockEditHistory(entryId: entryId, userId: 102)
+        let carol = try env.notebooks.blockEditHistory(entryId: entryId, userId: 103)
+
+        #expect(alice.count == 6)
+        #expect(bob.count == 6)
+        #expect(carol.count == 2)
+        #expect(alice.count + bob.count + carol.count == 14)
+
+        // Alice's 7th evicted ALICE's oldest and nothing of Bob's or Carol's.
+        #expect(!alice.contains { $0.contentSnapshot == "alice-1" })
+        #expect(bob.contains { $0.contentSnapshot == "bob-1" })
+        #expect(carol.contains { $0.contentSnapshot == "carol-1" })
+    }
+
+    @Test("Editing a block records the writing device on the block")
+    func testUpdateBlockEntryRecordsDeviceId() throws {
+        let env = try E2ETestHelpers.setUp()
+        let entryId = try self.makeBlock(env)
+
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId, content: "from the shop iPad", blockData: nil,
+            updatedBy: env.adminUserId, deviceId: "ipad-shop-1"
+        )
+
+        let deviceId = try env.db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: "SELECT device_id FROM notebook_entries WHERE id = ?", arguments: [entryId])
+        }
+        #expect(deviceId == "ipad-shop-1")
+
+        let history = try env.notebooks.blockEditHistory(entryId: entryId)
+        #expect(history.first?.deviceId == "ipad-shop-1")
+    }
+
+    @Test("Purge drops edit history past the retention window and reports the real count")
+    func testPurgeExpiredBlockEdits() throws {
+        let env = try E2ETestHelpers.setUp()
+        let entryId = try self.makeBlock(env)
+
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId, content: "recent", blockData: nil, updatedBy: env.adminUserId
+        )
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId, content: "ancient", blockData: nil, updatedBy: env.adminUserId
+        )
+        // Backdate one row past 90 days.
+        try env.db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE notebook_entry_edits SET saved_at = datetime('now', '-91 days')
+                WHERE content_snapshot = 'ancient'
+                """)
+        }
+
+        let purged = try env.notebooks.purgeExpiredBlockEdits(retentionDays: 90)
+        #expect(purged == 1)
+
+        let remaining = try env.notebooks.blockEditHistory(entryId: entryId)
+        #expect(remaining.count == 1)
+        #expect(remaining.first?.contentSnapshot == "recent")
+
+        // A second purge finds nothing — the count must not be manufactured.
+        #expect(try env.notebooks.purgeExpiredBlockEdits(retentionDays: 90) == 0)
+    }
 }

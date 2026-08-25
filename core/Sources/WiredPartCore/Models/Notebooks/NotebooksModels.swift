@@ -230,6 +230,16 @@ public struct NotebookEntry: Codable, FetchableRecord, MutablePersistableRecord,
     public var referenceType: String?     // "part", "po", "jpo", "job"
     public var referenceId: Int64?
 
+    // Block provenance (#1817 / #Isaac-14)
+    /// Device that last wrote this block. Previously only `_conflict_log` knew this,
+    /// which meant provenance existed only *after* a conflict, never before one.
+    public var deviceId: String?
+    /// General block lifecycle status. Distinct from `taskStatus`, which is to-do-specific.
+    public var blockStatus: String?
+    // NOTE: there is deliberately no `editingUserId` here. The live-editor concept is served
+    // by `notebook_entry_edit_locks` (migration 098) via `activeBlockEditLocks`; a column here
+    // would be a second, competing source of truth that disagrees whenever a lock expires.
+
     enum CodingKeys: String, CodingKey {
         case id, title, content
         case sectionId = "section_id"
@@ -258,6 +268,68 @@ public struct NotebookEntry: Codable, FetchableRecord, MutablePersistableRecord,
         case photoPath = "photo_path"
         case referenceType = "reference_type"
         case referenceId = "reference_id"
+        case deviceId = "device_id"
+        case blockStatus = "block_status"
+    }
+
+    public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
+}
+
+// MARK: - NotebookEntryEdit
+
+/// One saved revision of a block, retained as a bounded per-user ring buffer (#1817).
+///
+/// The bound is **6 per user, per block** — not 6 per block. Three users editing one block
+/// retain 6 + 6 + 6 rows. Eviction is scoped to `(entryId, userId)` so one user's saves never
+/// evict another's; the multi-editor case is the entire reason the history exists.
+///
+/// `editOrdinal` is monotonic per `(entryId, userId)` and is the ordering key. `savedAt` is
+/// second-resolution `datetime('now')`, so two saves within one second tie and "the newest 6"
+/// becomes ambiguous — an ordinal cannot tie, and is stable across devices whose clocks disagree.
+public struct NotebookEntryEdit: Codable, FetchableRecord, MutablePersistableRecord, Sendable, Identifiable {
+    public static let databaseTableName = "notebook_entry_edits"
+    public var id: Int64?
+    public var entryId: Int64
+    public var userId: Int64
+    public var deviceId: String?
+    public var editOrdinal: Int64
+    public var titleSnapshot: String?
+    public var contentSnapshot: String?
+    public var blockDataSnapshot: String?
+    public var savedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case entryId = "entry_id"
+        case userId = "user_id"
+        case deviceId = "device_id"
+        case editOrdinal = "edit_ordinal"
+        case titleSnapshot = "title_snapshot"
+        case contentSnapshot = "content_snapshot"
+        case blockDataSnapshot = "block_data_snapshot"
+        case savedAt = "saved_at"
+    }
+
+    public init(
+        id: Int64? = nil,
+        entryId: Int64,
+        userId: Int64,
+        deviceId: String? = nil,
+        editOrdinal: Int64,
+        titleSnapshot: String? = nil,
+        contentSnapshot: String? = nil,
+        blockDataSnapshot: String? = nil,
+        savedAt: String? = nil
+    ) {
+        self.id = id
+        self.entryId = entryId
+        self.userId = userId
+        self.deviceId = deviceId
+        self.editOrdinal = editOrdinal
+        self.titleSnapshot = titleSnapshot
+        self.contentSnapshot = contentSnapshot
+        self.blockDataSnapshot = blockDataSnapshot
+        self.savedAt = savedAt
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }

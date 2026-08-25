@@ -363,6 +363,13 @@ public enum ConflictResolver {
         // Local operational logs and locks (lock semantics cannot survive
         // asynchronous merge).
         "background_task_log", "notebook_entry_edit_locks",
+        // Per-user block edit history (#1817). Device-local PROVISIONALLY, not
+        // permanently: replicating six revisions per user per block would
+        // multiply per-block payload on a Bluetooth-first transport that still
+        // has open flow-control defects. Whether it should sync — or stay
+        // host-only — is the measurement gate recorded on #1817. Move it to
+        // allowedSyncTables only with that measurement and a trigger migration.
+        "notebook_entry_edits",
         // On-device AI conversations (architecture: never leave the device).
         "ai_conversation_messages",
         // Regenerable ML derivatives.
