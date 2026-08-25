@@ -95,6 +95,11 @@ updated_by: UUID (user)
 
 ### Shortcut Commands
 
+> **SUPERSEDED 2026-08-25 by `docs/plans/isaac-14-notebook-block-overhaul.md` §2 (#Isaac-14).**
+> The owner has reversed the "Picker dropdown is acceptable UX" judgement below: the `/` palette must be
+> a **list**, popups are reserved for elements/mini-apps only, and `/panel` filters the list. The deferral
+> is lifted. The note below is kept for the reasoning trail.
+>
 > **Implementation note (2026-04-19):** The `/` command palette described below is the Phase 2 design target. The current implementation (Phase 4.5 complete) uses a **Picker dropdown** for block type selection + toolbar shortcut buttons for the most common types (heading, checklist, to-do, callout, divider). This is more iOS-native and is acceptable UX. The command palette can be added in a future polish pass.
 
 Typing `/` at the start of a new block opens a command palette showing all available block types. User can:
@@ -123,6 +128,10 @@ Notebooks sync via the standard sync engine. Conflicts are resolved **per-block*
 
 ### Conflict Resolution Flow
 
+> **SUPERSEDED 2026-08-25 by `docs/plans/isaac-14-notebook-block-overhaul.md` §4 (#Isaac-14).**
+> AI merge is no longer deferred, and the owner has specified that **wall-clock time is explicitly NOT the
+> tiebreaker** for the four named conflict cases. The note below is kept for the reasoning trail.
+>
 > **Implementation note (2026-04-19):** Step 2 (AI Merge Attempt) is a Phase 2 design target requiring Foundation Models integration. Current implementation (Phase 4.5) skips the AI merge and goes directly to step 3 (User Review with local vs. remote choice). Foundation Models integration is planned for Phase 12 (AI Integration).
 
 When two devices edit the same block:
