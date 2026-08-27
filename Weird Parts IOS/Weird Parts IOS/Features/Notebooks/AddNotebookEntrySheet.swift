@@ -543,6 +543,7 @@ struct AddNotebookEntrySheet: View {
                     entryId: entry.id,
                     title: title,
                     content: content.isEmpty ? nil : content,
+                    clearContent: content.isEmpty,
                     blockData: blockType == "checklist" ? nil : blockData,
                     headingLevel: blockType == "heading" ? headingLevel : nil,
                     checklistItems: blockType == "checklist" ? blockData : nil,
