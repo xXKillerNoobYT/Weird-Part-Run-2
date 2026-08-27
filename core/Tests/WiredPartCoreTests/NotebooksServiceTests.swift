@@ -2647,4 +2647,73 @@ struct NotebooksServiceTests {
         #expect(json.contains("content"))
         #expect(!json.contains("device_id"))
     }
+
+    @Test("Provenance-only device saves replicate without consuming block edit history")
+    func testProvenanceOnlyDeviceSavesDoNotEvictBlockEditHistory() throws {
+        let env = try E2ETestHelpers.setUp()
+        let entryId = try self.makeBlock(env)
+
+        // Migration 128 added nullable device_id. Filling a pre-128 row's NULL provenance is
+        // replication work, not a user edit, so it must not manufacture the first revision.
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId, content: "v0", blockData: nil,
+            updatedBy: env.adminUserId, deviceId: "ipad-first"
+        )
+        #expect(try env.notebooks.blockEditHistory(entryId: entryId).isEmpty)
+        let firstSavePayload = try self.changedFieldsJSON(env, entryId: entryId)
+        #expect(firstSavePayload.contains("device_id"))
+        #expect(firstSavePayload.contains("ipad-first"))
+        #expect(!firstSavePayload.contains("content"))
+
+        // Fill the ring buffer with actual content edits, then save the same content from a
+        // different device. The second save has a replication delta but no editable delta.
+        for version in 1...6 {
+            try env.notebooks.updateBlockEntry(
+                entryId: entryId, content: "v\(version)", blockData: nil,
+                updatedBy: env.adminUserId, deviceId: "ipad-first"
+            )
+        }
+        let before = try env.notebooks.blockEditHistory(entryId: entryId, userId: env.adminUserId)
+
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId, content: "v6", blockData: nil,
+            updatedBy: env.adminUserId, deviceId: "phone-second"
+        )
+        let after = try env.notebooks.blockEditHistory(entryId: entryId, userId: env.adminUserId)
+
+        // On the broken PR head this appends a seventh revision, evicts v1, and records v6
+        // again. Provenance may replicate, but it may not consume a retained content revision.
+        #expect(after.count == before.count)
+        #expect(after.map(\.editOrdinal) == before.map(\.editOrdinal))
+        #expect(after.map(\.contentSnapshot) == before.map(\.contentSnapshot))
+        let payload = try self.changedFieldsJSON(env, entryId: entryId)
+        #expect(payload.contains("device_id"))
+        #expect(payload.contains("phone-second"))
+        #expect(!payload.contains("content"))
+    }
+
+    @Test("Provenance-only block status saves replicate without consuming block edit history")
+    func testProvenanceOnlyBlockStatusSavesDoNotCreateBlockEditHistory() throws {
+        let env = try E2ETestHelpers.setUp()
+        let entryId = try self.makeBlock(env)
+
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId, content: "v0", blockData: nil, blockStatus: "needs_review",
+            updatedBy: env.adminUserId, deviceId: "ipad-first"
+        )
+        #expect(try env.notebooks.blockEditHistory(entryId: entryId).isEmpty)
+        let setPayload = try self.changedFieldsJSON(env, entryId: entryId)
+        #expect(setPayload.contains("block_status"))
+        #expect(setPayload.contains("needs_review"))
+        #expect(!setPayload.contains("content"))
+
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId, content: "v0", blockData: nil, clearBlockStatus: true,
+            updatedBy: env.adminUserId, deviceId: "ipad-first"
+        )
+        #expect(try env.notebooks.blockEditHistory(entryId: entryId).isEmpty)
+        let clearPayload = try self.changedFieldsJSON(env, entryId: entryId)
+        #expect(clearPayload.contains("block_status"))
+        #expect(!clearPayload.contains("content"))
+    }
 }

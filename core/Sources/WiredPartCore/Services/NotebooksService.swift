@@ -1118,22 +1118,26 @@ public final class NotebooksService: Sendable {
 
             var changedFields: [String: Any] = [:]
             var oldValues: [String: Any] = [:]
-            func trackString(_ field: String, old: String?, new: String?) {
+            var hasEditableChange = false
+            func trackString(_ field: String, old: String?, new: String?, recordsHistory: Bool = true) {
                 if old != new {
                     changedFields[field] = new ?? NSNull()
                     oldValues[field] = old ?? NSNull()
+                    hasEditableChange = hasEditableChange || recordsHistory
                 }
             }
-            func trackInt(_ field: String, old: Int?, new: Int?) {
+            func trackInt(_ field: String, old: Int?, new: Int?, recordsHistory: Bool = true) {
                 if old != new {
                     changedFields[field] = new ?? NSNull()
                     oldValues[field] = old ?? NSNull()
+                    hasEditableChange = hasEditableChange || recordsHistory
                 }
             }
-            func trackInt64(_ field: String, old: Int64?, new: Int64?) {
+            func trackInt64(_ field: String, old: Int64?, new: Int64?, recordsHistory: Bool = true) {
                 if old != new {
                     changedFields[field] = new ?? NSNull()
                     oldValues[field] = old ?? NSNull()
+                    hasEditableChange = hasEditableChange || recordsHistory
                 }
             }
             trackString("title", old: oldTitle, new: newTitle)
@@ -1157,11 +1161,14 @@ public final class NotebooksService: Sendable {
             // provenance that works locally and fails at the sync boundary it exists for.
             // `block_status` gains a writer here and is tracked from the outset so it cannot
             // repeat it.
-            trackString("device_id", old: oldDeviceId, new: deviceId)
+            // Provenance changes must replicate, but they are not user-editable block content
+            // and therefore must not consume the per-user retained revision ring buffer.
+            trackString("device_id", old: oldDeviceId, new: deviceId, recordsHistory: false)
             trackString(
                 "block_status",
                 old: oldBlockStatus,
-                new: clearBlockStatus ? nil : (blockStatus ?? oldBlockStatus)
+                new: clearBlockStatus ? nil : (blockStatus ?? oldBlockStatus),
+                recordsHistory: false
             )
             trackInt(
                 "is_question",
@@ -1183,17 +1190,19 @@ public final class NotebooksService: Sendable {
                     VALUES ('local', 'notebook_entries', ?, 'UPDATE', ?, ?, datetime('now'))
                     """, arguments: [entryId, changedFieldsJSON, oldValuesJSON])
 
-                // Only a real change earns a history slot. Recording no-op saves would let a
-                // user's six-deep history be flushed by six taps that changed nothing.
-                try Self.appendBlockEdit(
-                    dbConn,
-                    entryId: entryId,
-                    userId: updatedBy,
-                    deviceId: deviceId,
-                    title: newTitle,
-                    content: content,
-                    blockData: blockData
-                )
+                // A replication delta is broader than a real edit: provenance must leave this
+                // device, but only user-editable block changes earn a retained history slot.
+                if hasEditableChange {
+                    try Self.appendBlockEdit(
+                        dbConn,
+                        entryId: entryId,
+                        userId: updatedBy,
+                        deviceId: deviceId,
+                        title: newTitle,
+                        content: content,
+                        blockData: blockData
+                    )
+                }
             }
         }
     }
