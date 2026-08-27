@@ -87,11 +87,49 @@ if ! gh api graphql \
     "$PR" "$linked_issues_log" >&2
   exit 1
 fi
-if ! jq -e '.data.repository.pullRequest | {number, closingIssuesReferences}' "$linked_issues_log"; then
-  printf 'UNMEASURED/ERROR: closing-linked-issue query returned an unexpected shape for PR #%s; see %s. Do not classify this as no linked issues.\n' \
+validate_closing_issues_response() {
+  jq -e --argjson expected_pr "$PR" '
+    (if has("errors") then (.errors | type == "array" and length == 0) else true end)
+    and (.data | type == "object")
+    and (.data.repository | type == "object")
+    and (.data.repository.pullRequest | type == "object")
+    and (.data.repository.pullRequest.number | type == "number" and . == $expected_pr)
+    and (.data.repository.pullRequest.closingIssuesReferences | type == "object")
+    and (.data.repository.pullRequest.closingIssuesReferences.totalCount
+         | type == "number" and floor == . and . >= 0)
+    and (.data.repository.pullRequest.closingIssuesReferences.nodes | type == "array")
+    and ([.data.repository.pullRequest.closingIssuesReferences.nodes[]
+          | type == "object"
+            and (.number | type == "number" and floor == . and . > 0)
+            and (.title | type == "string")
+            and (.url | type == "string")
+            and (.state | type == "string")]
+         | all)
+  ' "$1"
+}
+
+if ! validate_closing_issues_response "$linked_issues_log"; then
+  printf 'UNMEASURED/ERROR: closing-linked-issue query returned an unexpected GraphQL envelope for PR #%s; see %s. Do not classify this as no linked issues.\n' \
     "$PR" "$linked_issues_log" >&2
   exit 1
 fi
+
+# Negative controls: each malformed response must be rejected, rather than being
+# treated as an empty linked-issue connection. Keep fixtures in run scratch.
+fixture_dir="${PAPERCLIP_RUN_SCRATCH_DIR:?}/wpr2-pr-disposition/linked-issue-fixtures-$PR"
+mkdir -p "$fixture_dir"
+jq -n '{data:{repository:{pullRequest:null}}}' >"$fixture_dir/null-pull-request.json"
+jq -n --argjson pr "$PR" '{data:{repository:{pullRequest:{number:$pr,closingIssuesReferences:{totalCount:"0",nodes:[]}}}}}' >"$fixture_dir/wrong-total-count-type.json"
+jq -n --argjson pr "$PR" '{errors:[{message:"deliberate GraphQL error"}],data:{repository:{pullRequest:{number:$pr,closingIssuesReferences:{totalCount:0,nodes:[]}}}}}' >"$fixture_dir/graphql-errors.json"
+for fixture in "$fixture_dir"/*.json; do
+  if validate_closing_issues_response "$fixture"; then
+    printf 'UNMEASURED/ERROR: negative fixture was accepted: %s.\n' "$fixture" >&2
+    exit 1
+  fi
+done
+# A rejected negative control exits nonzero by design; normalize the successful
+# fixture suite's final status so the surrounding snapshot script can continue.
+true
 ```
 
 The candidate head is authoritative only when all head-bearing responses agree
