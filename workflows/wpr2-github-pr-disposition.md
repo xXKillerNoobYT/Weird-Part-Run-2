@@ -68,7 +68,30 @@ gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){
   }}}
 }' -f owner=xXKillerNoobYT -f repo=Weird-Part-Run-2 -F number="$PR"
 
-gh api "repos/$repo/pulls/$PR/issues" --paginate
+# GitHub has no supported `GET /repos/{owner}/{repo}/pulls/{pull_number}/issues`
+# endpoint. Query the PR's closing-linked issues through GraphQL instead. A query
+# failure (including auth, transport, or an unavailable/404 endpoint) is
+# UNMEASURED/ERROR, never an empty linked-issue result.
+linked_issues_log="${PAPERCLIP_RUN_SCRATCH_DIR:?}/wpr2-pr-disposition/linked-issues-$PR.json"
+mkdir -p "$(dirname "$linked_issues_log")"
+if ! gh api graphql \
+  -f query='query($owner:String!,$repo:String!,$number:Int!){
+    repository(owner:$owner,name:$repo){ pullRequest(number:$number){
+      number
+      closingIssuesReferences(first:100){ totalCount nodes { number title url state } }
+    }}
+  }' \
+  -f owner=xXKillerNoobYT -f repo=Weird-Part-Run-2 -F number="$PR" \
+  >"$linked_issues_log" 2>&1; then
+  printf 'UNMEASURED/ERROR: closing-linked-issue query failed for PR #%s; see %s. Do not classify this as no linked issues.\n' \
+    "$PR" "$linked_issues_log" >&2
+  exit 1
+fi
+if ! jq -e '.data.repository.pullRequest | {number, closingIssuesReferences}' "$linked_issues_log"; then
+  printf 'UNMEASURED/ERROR: closing-linked-issue query returned an unexpected shape for PR #%s; see %s. Do not classify this as no linked issues.\n' \
+    "$PR" "$linked_issues_log" >&2
+  exit 1
+fi
 ```
 
 The candidate head is authoritative only when all head-bearing responses agree
