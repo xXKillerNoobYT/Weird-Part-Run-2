@@ -292,7 +292,26 @@ A queue pass is complete only when every open PR has one of the four
 - residual risk and explicit next owner action.
 
 For this workflow itself, validation is: read the canonical path from the
-assigned workspace, verify the section headings `Logs, artifacts, cadence, and
-issue threshold`, `Failure handling`, `Review cadence`, and `Issue threshold`,
-run `git diff --check`, commit/push it, and route its PR through
-`LocalFirstReviewer → GPTReviewer → ClaudeReviewer` before any merge.
+assigned workspace and reproducibly locate the `## Logs, artifacts, cadence,
+and issue threshold` heading plus each distinct requirement bullet with:
+
+```bash
+workflow=workflows/wpr2-github-pr-disposition.md
+section=$(sed -n \
+  '/^## Logs, artifacts, cadence, and issue threshold$/,/^## Verification and closeout evidence$/p' \
+  "$workflow")
+for anchor in \
+  '## Logs, artifacts, cadence, and issue threshold' \
+  '- **Failure handling:**' \
+  '- **Review cadence:**' \
+  '- **Issue threshold:**'; do
+  matches=$(printf '%s\n' "$section" | rg --fixed-strings -- "$anchor" | wc -l | tr -d ' ')
+  test "$matches" -eq 1
+done
+```
+
+The scoped command must return one match for the heading and one match for each
+named bullet; a missing, duplicated, or renamed anchor is a validation failure. Run
+`git diff --check "$(git merge-base origin/main HEAD)" HEAD`, commit/push it,
+and route its PR through `LocalFirstReviewer → GPTReviewer → ClaudeReviewer`
+before any merge.
