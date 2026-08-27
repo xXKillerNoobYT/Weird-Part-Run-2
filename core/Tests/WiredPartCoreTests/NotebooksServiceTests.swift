@@ -2540,4 +2540,180 @@ struct NotebooksServiceTests {
         // A second purge finds nothing — the count must not be manufactured.
         #expect(try env.notebooks.purgeExpiredBlockEdits(retentionDays: 90) == 0)
     }
+
+    // MARK: - Block Provenance Replication (#1840)
+
+    /// The defect this guards: a column written to the row but absent from `changedFields`
+    /// never reaches `_change_log`, so it never enters a sync payload and never leaves the
+    /// device. `device_id` shipped with exactly that flaw in #1817 — provenance that worked
+    /// locally and failed at the sync boundary it exists for. Nothing asserted the column
+    /// reached the payload, which is why the gap was invisible.
+    private func changedFieldsJSON(_ env: E2ETestHelpers.TestEnvironment, entryId: Int64) throws -> String {
+        try env.db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: """
+                SELECT changed_fields FROM _change_log
+                WHERE table_name = 'notebook_entries' AND record_id = ?
+                  AND operation = 'UPDATE' AND changed_fields IS NOT NULL
+                ORDER BY id DESC LIMIT 1
+                """, arguments: [entryId]) ?? ""
+        }
+    }
+
+    @Test("Editing a block replicates device_id — it reaches _change_log, not just the row")
+    func testDeviceIdReachesChangeLog() throws {
+        let env = try E2ETestHelpers.setUp()
+        let entryId = try self.makeBlock(env)
+
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId, content: "written on the shop iPad", blockData: nil,
+            updatedBy: env.adminUserId, deviceId: "ipad-shop-1"
+        )
+
+        // The row carries it...
+        let rowDeviceId = try env.db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: "SELECT device_id FROM notebook_entries WHERE id = ?", arguments: [entryId])
+        }
+        #expect(rowDeviceId == "ipad-shop-1")
+
+        // ...and so does the payload. This second assertion is the whole point: the first
+        // passed before the fix and the second did not.
+        let json = try self.changedFieldsJSON(env, entryId: entryId)
+        #expect(json.contains("device_id"))
+        #expect(json.contains("ipad-shop-1"))
+    }
+
+    @Test("block_status is writable and replicates")
+    func testBlockStatusWritableAndReplicates() throws {
+        let env = try E2ETestHelpers.setUp()
+        let entryId = try self.makeBlock(env)
+
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId, content: "needs review", blockData: nil,
+            blockStatus: "needs_review", updatedBy: env.adminUserId
+        )
+
+        let stored = try env.db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: "SELECT block_status FROM notebook_entries WHERE id = ?", arguments: [entryId])
+        }
+        #expect(stored == "needs_review")
+
+        let json = try self.changedFieldsJSON(env, entryId: entryId)
+        #expect(json.contains("block_status"))
+        #expect(json.contains("needs_review"))
+    }
+
+    @Test("block_status can be cleared, and the clear replicates")
+    func testBlockStatusClearReplicates() throws {
+        let env = try E2ETestHelpers.setUp()
+        let entryId = try self.makeBlock(env)
+
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId, content: "a", blockData: nil,
+            blockStatus: "needs_review", updatedBy: env.adminUserId
+        )
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId, content: "b", blockData: nil,
+            clearBlockStatus: true, updatedBy: env.adminUserId
+        )
+
+        let stored = try env.db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: "SELECT block_status FROM notebook_entries WHERE id = ?", arguments: [entryId])
+        }
+        #expect(stored == nil)
+
+        // A clear is a change like any other and must replicate, or the field un-clears on
+        // the next sync from a peer that still holds the old value.
+        let json = try self.changedFieldsJSON(env, entryId: entryId)
+        #expect(json.contains("block_status"))
+    }
+
+    @Test("A save from the same device does not re-log device_id as changed")
+    func testSameDeviceDoesNotChurnDeviceId() throws {
+        let env = try E2ETestHelpers.setUp()
+        let entryId = try self.makeBlock(env)
+
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId, content: "first", blockData: nil,
+            updatedBy: env.adminUserId, deviceId: "mac-shop"
+        )
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId, content: "second", blockData: nil,
+            updatedBy: env.adminUserId, deviceId: "mac-shop"
+        )
+
+        // device_id is unchanged on the second save, so tracking it must not add it to the
+        // delta — otherwise every edit ships a redundant field forever.
+        let json = try self.changedFieldsJSON(env, entryId: entryId)
+        #expect(json.contains("content"))
+        #expect(!json.contains("device_id"))
+    }
+
+    @Test("Provenance-only device saves replicate without consuming block edit history")
+    func testProvenanceOnlyDeviceSavesDoNotEvictBlockEditHistory() throws {
+        let env = try E2ETestHelpers.setUp()
+        let entryId = try self.makeBlock(env)
+
+        // Migration 128 added nullable device_id. Filling a pre-128 row's NULL provenance is
+        // replication work, not a user edit, so it must not manufacture the first revision.
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId, content: "v0", blockData: nil,
+            updatedBy: env.adminUserId, deviceId: "ipad-first"
+        )
+        #expect(try env.notebooks.blockEditHistory(entryId: entryId).isEmpty)
+        let firstSavePayload = try self.changedFieldsJSON(env, entryId: entryId)
+        #expect(firstSavePayload.contains("device_id"))
+        #expect(firstSavePayload.contains("ipad-first"))
+        #expect(!firstSavePayload.contains("content"))
+
+        // Fill the ring buffer with actual content edits, then save the same content from a
+        // different device. The second save has a replication delta but no editable delta.
+        for version in 1...6 {
+            try env.notebooks.updateBlockEntry(
+                entryId: entryId, content: "v\(version)", blockData: nil,
+                updatedBy: env.adminUserId, deviceId: "ipad-first"
+            )
+        }
+        let before = try env.notebooks.blockEditHistory(entryId: entryId, userId: env.adminUserId)
+
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId, content: "v6", blockData: nil,
+            updatedBy: env.adminUserId, deviceId: "phone-second"
+        )
+        let after = try env.notebooks.blockEditHistory(entryId: entryId, userId: env.adminUserId)
+
+        // On the broken PR head this appends a seventh revision, evicts v1, and records v6
+        // again. Provenance may replicate, but it may not consume a retained content revision.
+        #expect(after.count == before.count)
+        #expect(after.map(\.editOrdinal) == before.map(\.editOrdinal))
+        #expect(after.map(\.contentSnapshot) == before.map(\.contentSnapshot))
+        let payload = try self.changedFieldsJSON(env, entryId: entryId)
+        #expect(payload.contains("device_id"))
+        #expect(payload.contains("phone-second"))
+        #expect(!payload.contains("content"))
+    }
+
+    @Test("Provenance-only block status saves replicate without consuming block edit history")
+    func testProvenanceOnlyBlockStatusSavesDoNotCreateBlockEditHistory() throws {
+        let env = try E2ETestHelpers.setUp()
+        let entryId = try self.makeBlock(env)
+
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId, content: "v0", blockData: nil, blockStatus: "needs_review",
+            updatedBy: env.adminUserId, deviceId: "ipad-first"
+        )
+        #expect(try env.notebooks.blockEditHistory(entryId: entryId).isEmpty)
+        let setPayload = try self.changedFieldsJSON(env, entryId: entryId)
+        #expect(setPayload.contains("block_status"))
+        #expect(setPayload.contains("needs_review"))
+        #expect(!setPayload.contains("content"))
+
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId, content: "v0", blockData: nil, clearBlockStatus: true,
+            updatedBy: env.adminUserId, deviceId: "ipad-first"
+        )
+        #expect(try env.notebooks.blockEditHistory(entryId: entryId).isEmpty)
+        let clearPayload = try self.changedFieldsJSON(env, entryId: entryId)
+        #expect(clearPayload.contains("block_status"))
+        #expect(!clearPayload.contains("content"))
+    }
 }

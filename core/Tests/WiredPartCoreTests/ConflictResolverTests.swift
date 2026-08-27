@@ -1412,6 +1412,135 @@ struct ConflictResolverTests {
         #expect(templateId == 77)
     }
 
+    // MARK: - Migration 128 notebook provenance must not kill pre-128 receivers
+
+    /// Construct a persisted notebook block, then remove migration 128's two
+    /// columns to model a receiver which is still on migration 127. Keeping the
+    /// ordinary `content` field in every change proves that version skew drops
+    /// only unsupported provenance fields, not the entire update.
+    private func makePre128NotebookEntry(_ db: AppDatabase) throws -> Int64 {
+        let userId = try insertUser(db: db, displayName: "Legacy Receiver")
+        return try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "INSERT INTO notebooks (title, created_by) VALUES ('Legacy notebook', ?)",
+                arguments: [userId]
+            )
+            let notebookId = dbConn.lastInsertedRowID
+            try dbConn.execute(
+                sql: "INSERT INTO notebook_sections (notebook_id, name) VALUES (?, 'Notes')",
+                arguments: [notebookId]
+            )
+            let sectionId = dbConn.lastInsertedRowID
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO notebook_entries (section_id, title, content, created_by)
+                    VALUES (?, 'Legacy block', 'before sync', ?)
+                    """,
+                arguments: [sectionId, userId]
+            )
+            let entryId = dbConn.lastInsertedRowID
+            try dbConn.execute(sql: "ALTER TABLE notebook_entries DROP COLUMN device_id")
+            try dbConn.execute(sql: "ALTER TABLE notebook_entries DROP COLUMN block_status")
+            return entryId
+        }
+    }
+
+    private func applyPre128NotebookUpdate(
+        _ db: AppDatabase,
+        entryId: Int64,
+        changedFields: String
+    ) throws -> MergeResult {
+        try ConflictResolver.resolveAndApplyStreamedChangesAtomically(
+            db: db,
+            produceChanges: { _, emit in
+                try emit(IncomingChange(
+                    deviceId: "migration-128-sender",
+                    tableName: "notebook_entries",
+                    recordId: "\(entryId)",
+                    operation: "UPDATE",
+                    changedFields: changedFields,
+                    timestamp: "2026-08-27T05:00:00Z"
+                ))
+            }
+        )
+    }
+
+    @Test("A pre-128 receiver drops device_id while applying a notebook block update")
+    func testPre128ReceiverDropsDeviceIdAndAppliesKnownNotebookFields() throws {
+        let db = try freshDB()
+        let entryId = try makePre128NotebookEntry(db)
+
+        let result = try applyPre128NotebookUpdate(
+            db,
+            entryId: entryId,
+            changedFields: #"{"content":"device provenance omitted","device_id":"ipad-newer"}"#
+        )
+
+        #expect(result.applied == 1)
+        #expect(result.errors == 0)
+        let content = try db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: "SELECT content FROM notebook_entries WHERE id = ?", arguments: [entryId])
+        }
+        #expect(content == "device provenance omitted")
+    }
+
+    @Test("A pre-128 receiver drops block_status while applying a notebook block update")
+    func testPre128ReceiverDropsBlockStatusAndAppliesKnownNotebookFields() throws {
+        let db = try freshDB()
+        let entryId = try makePre128NotebookEntry(db)
+
+        let result = try applyPre128NotebookUpdate(
+            db,
+            entryId: entryId,
+            changedFields: #"{"content":"status provenance omitted","block_status":"needs_review"}"#
+        )
+
+        #expect(result.applied == 1)
+        #expect(result.errors == 0)
+        let content = try db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: "SELECT content FROM notebook_entries WHERE id = ?", arguments: [entryId])
+        }
+        #expect(content == "status provenance omitted")
+    }
+
+    @Test("A pre-128 receiver drops combined provenance fields without stopping streamed sync")
+    func testPre128ReceiverCombinedProvenanceDoesNotStopStreamedSync() throws {
+        let db = try freshDB()
+        let entryId = try makePre128NotebookEntry(db)
+        let changes = [
+            IncomingChange(
+                deviceId: "migration-128-sender",
+                tableName: "notebook_entries",
+                recordId: "\(entryId)",
+                operation: "UPDATE",
+                changedFields: #"{"content":"combined provenance omitted","device_id":"ipad-newer","block_status":"needs_review"}"#,
+                timestamp: "2026-08-27T05:00:00Z"
+            ),
+            IncomingChange(
+                deviceId: "migration-128-sender",
+                tableName: "notebook_entries",
+                recordId: "\(entryId)",
+                operation: "UPDATE",
+                changedFields: #"{"content":"cursor advanced after skewed row"}"#,
+                timestamp: "2026-08-27T05:01:00Z"
+            )
+        ]
+
+        let result = try ConflictResolver.resolveAndApplyStreamedChangesAtomically(
+            db: db,
+            produceChanges: { _, emit in
+                for change in changes { try emit(change) }
+            }
+        )
+
+        #expect(result.applied == 2)
+        #expect(result.errors == 0)
+        let content = try db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: "SELECT content FROM notebook_entries WHERE id = ?", arguments: [entryId])
+        }
+        #expect(content == "cursor advanced after skewed row")
+    }
+
     // MARK: - A newer sender's column must not kill the join
 
     /// The sender decides the payload's column set (`SELECT *` + a key per
