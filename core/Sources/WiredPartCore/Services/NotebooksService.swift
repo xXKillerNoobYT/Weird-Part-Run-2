@@ -1047,6 +1047,8 @@ public final class NotebooksService: Sendable {
         warrantyTimerEnd: String? = nil,
         clearWarrantyTimerEnd: Bool = false,
         isQuestion: Bool? = nil,
+        blockStatus: String? = nil,
+        clearBlockStatus: Bool = false,
         updatedBy: Int64,
         deviceId: String = DeviceIdentity.current
     ) throws {
@@ -1057,7 +1059,8 @@ public final class NotebooksService: Sendable {
                 SELECT title, content, block_data, heading_level, checklist_items,
                        photo_path, reference_type, reference_id,
                        task_status, task_due_date, task_assigned_to, task_parts_note,
-                       work_classification, warranty_timer_end, is_question
+                       work_classification, warranty_timer_end, is_question,
+                       device_id, block_status
                 FROM notebook_entries
                 WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [entryId]) else { return }
@@ -1078,6 +1081,8 @@ public final class NotebooksService: Sendable {
             let oldWorkClassification = existing["work_classification"] as String?
             let oldWarrantyTimerEnd = existing["warranty_timer_end"] as String?
             let oldIsQuestionInt = existing["is_question"] as Int?
+            let oldDeviceId = existing["device_id"] as String?
+            let oldBlockStatus = existing["block_status"] as String?
 
             try dbConn.execute(sql: """
                 UPDATE notebook_entries
@@ -1092,6 +1097,7 @@ public final class NotebooksService: Sendable {
                     work_classification = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, work_classification) END,
                     warranty_timer_end = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, warranty_timer_end) END,
                     is_question = COALESCE(?, is_question),
+                    block_status = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, block_status) END,
                     device_id = ?, updated_by = ?, updated_at = datetime('now')
                 WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [
@@ -1106,6 +1112,7 @@ public final class NotebooksService: Sendable {
                     clearWorkClassification ? 1 : 0, workClassification,
                     clearWarrantyTimerEnd ? 1 : 0, warrantyTimerEnd,
                     isQuestion.map { $0 ? 1 : 0 },
+                    clearBlockStatus ? 1 : 0, blockStatus,
                     deviceId, updatedBy, entryId
                 ])
 
@@ -1145,6 +1152,17 @@ public final class NotebooksService: Sendable {
             trackString("task_parts_note", old: oldTaskPartsNote, new: clearTaskPartsNote ? nil : (taskPartsNote ?? oldTaskPartsNote))
             trackString("work_classification", old: oldWorkClassification, new: clearWorkClassification ? nil : (workClassification ?? oldWorkClassification))
             trackString("warranty_timer_end", old: oldWarrantyTimerEnd, new: clearWarrantyTimerEnd ? nil : (warrantyTimerEnd ?? oldWarrantyTimerEnd))
+            // #1840: a column written to the row but absent from `changedFields` never reaches
+            // `_change_log` and so never leaves this device. `device_id` had exactly that defect —
+            // provenance that works locally and fails at the sync boundary it exists for.
+            // `block_status` gains a writer here and is tracked from the outset so it cannot
+            // repeat it.
+            trackString("device_id", old: oldDeviceId, new: deviceId)
+            trackString(
+                "block_status",
+                old: oldBlockStatus,
+                new: clearBlockStatus ? nil : (blockStatus ?? oldBlockStatus)
+            )
             trackInt(
                 "is_question",
                 old: oldIsQuestionInt,
