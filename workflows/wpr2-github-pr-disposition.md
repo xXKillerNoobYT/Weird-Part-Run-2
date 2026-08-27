@@ -293,25 +293,68 @@ A queue pass is complete only when every open PR has one of the four
 
 For this workflow itself, validation is: read the canonical path from the
 assigned workspace and reproducibly locate the `## Logs, artifacts, cadence,
-and issue threshold` heading plus each distinct requirement bullet with:
+and issue threshold` heading plus each distinct requirement bullet. Each
+assertion is fail-fast: a missing, duplicated, or renamed anchor stops the
+validation immediately and cannot be masked by a later successful assertion.
 
 ```bash
 workflow=workflows/wpr2-github-pr-disposition.md
-section=$(sed -n \
-  '/^## Logs, artifacts, cadence, and issue threshold$/,/^## Verification and closeout evidence$/p' \
-  "$workflow")
-for anchor in \
-  '## Logs, artifacts, cadence, and issue threshold' \
-  '- **Failure handling:**' \
-  '- **Review cadence:**' \
-  '- **Issue threshold:**'; do
-  matches=$(printf '%s\n' "$section" | rg --fixed-strings -- "$anchor" | wc -l | tr -d ' ')
-  test "$matches" -eq 1
+validate_closeout_anchors() {
+  local candidate="$1" section anchor matches
+  section=$(sed -n \
+    '/^## Logs, artifacts, cadence, and issue threshold$/,/^## Verification and closeout evidence$/p' \
+    "$candidate") || return 1
+
+  for anchor in \
+    '## Logs, artifacts, cadence, and issue threshold' \
+    '- **Failure handling:**' \
+    '- **Review cadence:**' \
+    '- **Issue threshold:**'; do
+    matches=$(printf '%s\n' "$section" | rg --fixed-strings -- "$anchor" | wc -l | tr -d ' ')
+    if [ "$matches" -ne 1 ]; then
+      printf 'FAIL: expected exactly one closeout anchor %q in %s; found %s.\n' \
+        "$anchor" "$candidate" "$matches" >&2
+      return 1
+    fi
+  done
+}
+
+validate_closeout_anchors "$workflow" || exit 1
+
+# Required negative controls. Each must be rejected; a control accepted by
+# validate_closeout_anchors is a test failure. Fixtures stay in run scratch.
+fixture_dir="${PAPERCLIP_RUN_SCRATCH_DIR:?}/wpr2-pr-disposition/closeout-anchor-controls"
+mkdir -p "$fixture_dir"
+
+# Missing anchor: remove the required bullet entirely.
+perl -0pe 's/^- \*\*Review cadence:\*\*.*?^  explicitly enabled one\.\n//ms' \
+  "$workflow" >"$fixture_dir/missing-review-cadence.md"
+
+# Duplicated anchor: append a second required bullet inside the validated section.
+perl -0pe 's/(^- \*\*Issue threshold:\*\*.*?^  the same root cause; never spray duplicate descendants\.\n)/$1- **Review cadence:** deliberate duplicate control.\n/ms' \
+  "$workflow" >"$fixture_dir/duplicated-review-cadence.md"
+
+# Renamed anchor: change the required literal so it is absent from the section.
+perl -0pe 's/- \*\*Failure handling:\*\*/- **Failure response:**/' \
+  "$workflow" >"$fixture_dir/renamed-failure-handling.md"
+
+for control in \
+  "$fixture_dir/missing-review-cadence.md" \
+  "$fixture_dir/duplicated-review-cadence.md" \
+  "$fixture_dir/renamed-failure-handling.md"; do
+  if validate_closeout_anchors "$control"; then
+    printf 'FAIL: negative closeout-anchor control was accepted: %s\n' "$control" >&2
+    exit 1
+  fi
 done
+printf 'PASS: missing, duplicated, and renamed closeout-anchor controls were rejected.\n'
+exit 0
 ```
 
-The scoped command must return one match for the heading and one match for each
-named bullet; a missing, duplicated, or renamed anchor is a validation failure. Run
+The scoped positive control must return one match for the heading and one match
+for each named bullet. Then, in the same shell invocation, run the three
+required negative controls above. They prove a missing, duplicated, or renamed
+anchor fails immediately. Run
 `git diff --check "$(git merge-base origin/main HEAD)" HEAD`, commit/push it,
 and route its PR through `LocalFirstReviewer → GPTReviewer → ClaudeReviewer`
 before any merge.
