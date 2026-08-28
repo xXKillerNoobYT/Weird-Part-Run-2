@@ -1025,9 +1025,13 @@ public final class NotebooksService: Sendable {
         entryId: Int64,
         title: String? = nil,
         content: String?,
+        clearContent: Bool = false,
         blockData: String?,
+        clearBlockData: Bool = false,
         headingLevel: Int? = nil,
+        clearHeadingLevel: Bool = false,
         checklistItems: String? = nil,
+        clearChecklistItems: Bool = false,
         photoPath: String? = nil,
         clearPhotoPath: Bool = false,
         referenceType: String? = nil,
@@ -1083,10 +1087,18 @@ public final class NotebooksService: Sendable {
             let oldIsQuestionInt = existing["is_question"] as Int?
             let oldDeviceId = existing["device_id"] as String?
             let oldBlockStatus = existing["block_status"] as String?
+            let newContent = clearContent ? nil : (content ?? oldContent)
+            let newBlockData = clearBlockData ? nil : (blockData ?? oldBlockData)
+            let newHeadingLevel = clearHeadingLevel ? nil : (headingLevel ?? oldHeadingLevel)
+            let newChecklistItems = clearChecklistItems ? nil : (checklistItems ?? oldChecklistItems)
 
             try dbConn.execute(sql: """
                 UPDATE notebook_entries
-                SET title = ?, content = ?, block_data = ?, heading_level = ?, checklist_items = ?,
+                SET title = ?,
+                    content = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, content) END,
+                    block_data = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, block_data) END,
+                    heading_level = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, heading_level) END,
+                    checklist_items = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, checklist_items) END,
                     photo_path = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, photo_path) END,
                     reference_type = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, reference_type) END,
                     reference_id = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, reference_id) END,
@@ -1101,7 +1113,11 @@ public final class NotebooksService: Sendable {
                     device_id = ?, updated_by = ?, updated_at = datetime('now')
                 WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [
-                    newTitle, content, blockData, headingLevel, checklistItems,
+                    newTitle,
+                    clearContent ? 1 : 0, content,
+                    clearBlockData ? 1 : 0, blockData,
+                    clearHeadingLevel ? 1 : 0, headingLevel,
+                    clearChecklistItems ? 1 : 0, checklistItems,
                     clearPhotoPath ? 1 : 0, photoPath,
                     clearReferenceType ? 1 : 0, referenceType,
                     clearReferenceId ? 1 : 0, referenceId,
@@ -1141,10 +1157,10 @@ public final class NotebooksService: Sendable {
                 }
             }
             trackString("title", old: oldTitle, new: newTitle)
-            trackString("content", old: oldContent, new: content)
-            trackString("block_data", old: oldBlockData, new: blockData)
-            trackInt("heading_level", old: oldHeadingLevel, new: headingLevel)
-            trackString("checklist_items", old: oldChecklistItems, new: checklistItems)
+            trackString("content", old: oldContent, new: newContent)
+            trackString("block_data", old: oldBlockData, new: newBlockData)
+            trackInt("heading_level", old: oldHeadingLevel, new: newHeadingLevel)
+            trackString("checklist_items", old: oldChecklistItems, new: newChecklistItems)
             // When a clear* flag is true the column is set to NULL; otherwise CASE WHEN falls
             // through to COALESCE(param, col), so nil param = leave unchanged (keep old value).
             trackString("photo_path", old: oldPhotoPath, new: clearPhotoPath ? nil : (photoPath ?? oldPhotoPath))
@@ -1199,8 +1215,8 @@ public final class NotebooksService: Sendable {
                         userId: updatedBy,
                         deviceId: deviceId,
                         title: newTitle,
-                        content: content,
-                        blockData: blockData
+                        content: newContent,
+                        blockData: newBlockData
                     )
                 }
             }
