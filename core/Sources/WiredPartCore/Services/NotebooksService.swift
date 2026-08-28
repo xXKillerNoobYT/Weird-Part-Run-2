@@ -1087,10 +1087,22 @@ public final class NotebooksService: Sendable {
             let oldIsQuestionInt = existing["is_question"] as Int?
             let oldDeviceId = existing["device_id"] as String?
             let oldBlockStatus = existing["block_status"] as String?
-            let newContent = clearContent ? nil : (content ?? oldContent)
-            let newBlockData = clearBlockData ? nil : (blockData ?? oldBlockData)
-            let newHeadingLevel = clearHeadingLevel ? nil : (headingLevel ?? oldHeadingLevel)
-            let newChecklistItems = clearChecklistItems ? nil : (checklistItems ?? oldChecklistItems)
+            // Clearing a value that is already absent is not an edit (#1857, #1871).
+            // Seeded template blocks store content as the empty string rather than NULL (the
+            // built-in "Notes" and "Customer Complaint" blocks below), and a row's NULL and ""
+            // both render as empty, so a title-only edit of one of those blocks arrives here as
+            // clearContent = true with nothing actually to clear. Writing NULL anyway records a
+            // phantom change that replicates as NSNull and overwrites a peer's body. A genuine
+            // clear — old value non-empty — still writes NULL and must still replicate.
+            let effectiveClearContent = clearContent && !(oldContent ?? "").isEmpty
+            let effectiveClearBlockData = clearBlockData && !(oldBlockData ?? "").isEmpty
+            let effectiveClearHeadingLevel = clearHeadingLevel && oldHeadingLevel != nil
+            let effectiveClearChecklistItems = clearChecklistItems && !(oldChecklistItems ?? "").isEmpty
+
+            let newContent = effectiveClearContent ? nil : (content ?? oldContent)
+            let newBlockData = effectiveClearBlockData ? nil : (blockData ?? oldBlockData)
+            let newHeadingLevel = effectiveClearHeadingLevel ? nil : (headingLevel ?? oldHeadingLevel)
+            let newChecklistItems = effectiveClearChecklistItems ? nil : (checklistItems ?? oldChecklistItems)
 
             try dbConn.execute(sql: """
                 UPDATE notebook_entries
@@ -1114,10 +1126,10 @@ public final class NotebooksService: Sendable {
                 WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [
                     newTitle,
-                    clearContent ? 1 : 0, content,
-                    clearBlockData ? 1 : 0, blockData,
-                    clearHeadingLevel ? 1 : 0, headingLevel,
-                    clearChecklistItems ? 1 : 0, checklistItems,
+                    effectiveClearContent ? 1 : 0, content,
+                    effectiveClearBlockData ? 1 : 0, blockData,
+                    effectiveClearHeadingLevel ? 1 : 0, headingLevel,
+                    effectiveClearChecklistItems ? 1 : 0, checklistItems,
                     clearPhotoPath ? 1 : 0, photoPath,
                     clearReferenceType ? 1 : 0, referenceType,
                     clearReferenceId ? 1 : 0, referenceId,

@@ -250,6 +250,65 @@ struct NotebooksServiceTests {
         #expect(changedFields["content"] is NSNull)
     }
 
+    /// #1871 — a block whose content is stored as the EMPTY STRING (the seeded template
+    /// default, e.g. the built-in "Notes" and "Customer Complaint" blocks) must not have a
+    /// title-only edit turned into a replicable NULL write. The UI cannot tell "" from NULL,
+    /// so it sends clearContent: true for both; clearing an already-empty value is not an edit,
+    /// and recording it as one replicates NSNull that overwrites a peer's body (#1857).
+    @Test("Title-only edit of an empty-string block does not record a phantom content clear")
+    func testUpdateBlockEntryEmptyStringContentIsNotAPhantomClear() throws {
+        let env = try E2ETestHelpers.setUp()
+        let notebookId = try env.notebooks.createNotebook(
+            title: "Seeded Template Block",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: notebookId, groupId: nil, name: "Main"
+        )
+        // Seeded template blocks are created with "" rather than nil.
+        let entryId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "text",
+            title: "Customer Complaint",
+            content: "",
+            createdBy: env.adminUserId
+        )
+
+        // A title-only edit: the sheet sends content: nil + clearContent: true because an
+        // empty editor field is indistinguishable from a cleared one.
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId,
+            title: "Customer Complaint (renamed)",
+            content: nil,
+            clearContent: true,
+            blockData: nil,
+            updatedBy: env.adminUserId
+        )
+
+        let storedContent = try env.db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: "SELECT content FROM notebook_entries WHERE id = ?", arguments: [entryId])
+        }
+        // The empty string is preserved; it must NOT be collapsed to NULL.
+        #expect(storedContent == "")
+
+        let changedFieldsJSON = try #require(env.db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: """
+                SELECT changed_fields
+                FROM _change_log
+                WHERE table_name = 'notebook_entries' AND record_id = ? AND operation = 'UPDATE'
+                ORDER BY id DESC
+                LIMIT 1
+                """, arguments: [entryId])
+        })
+        let changedFieldsData = try #require(changedFieldsJSON.data(using: .utf8))
+        let changedFields = try #require(JSONSerialization.jsonObject(with: changedFieldsData) as? [String: Any])
+        #expect(changedFields["title"] as? String == "Customer Complaint (renamed)")
+        // The phantom clear: content must be absent entirely, not present as NSNull.
+        #expect(changedFields["content"] == nil)
+        #expect(!(changedFields["content"] is NSNull))
+    }
+
     @Test("Editing a block entry updates title and records change history")
     func testUpdateBlockEntryTitleAndHistory() throws {
         let env = try E2ETestHelpers.setUp()
