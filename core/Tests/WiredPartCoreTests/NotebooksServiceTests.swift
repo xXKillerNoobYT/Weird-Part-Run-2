@@ -131,6 +131,125 @@ struct NotebooksServiceTests {
         #expect(updated?.content == "Revised content")
     }
 
+    @Test("Title-only block updates preserve nullable content fields and do not replicate phantom clears")
+    func testUpdateBlockEntryTitleOnlyPreservesNullableFields() throws {
+        let env = try E2ETestHelpers.setUp()
+        let notebookId = try env.notebooks.createNotebook(
+            title: "Preserve Block Fields",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: notebookId, groupId: nil, name: "Main"
+        )
+        let entryId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "heading",
+            title: "Original title",
+            content: "Body the user typed",
+            blockData: "{\"style\":\"callout\"}",
+            headingLevel: 2,
+            checklistItems: "[{\"text\":\"Retain me\",\"checked\":false}]",
+            createdBy: env.adminUserId
+        )
+
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId,
+            title: "Renamed only",
+            content: nil,
+            blockData: nil,
+            updatedBy: env.adminUserId
+        )
+
+        let stored = try env.db.writer.read { dbConn in
+            try Row.fetchOne(dbConn, sql: """
+                SELECT title, content, block_data, heading_level, checklist_items
+                FROM notebook_entries
+                WHERE id = ?
+                """, arguments: [entryId])
+        }
+        #expect(stored?["title"] as String? == "Renamed only")
+        #expect(stored?["content"] as String? == "Body the user typed")
+        #expect(stored?["block_data"] as String? == "{\"style\":\"callout\"}")
+        #expect(stored?["heading_level"] as Int? == 2)
+        #expect(stored?["checklist_items"] as String? == "[{\"text\":\"Retain me\",\"checked\":false}]")
+
+        let changedFieldsJSON = try #require(env.db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: """
+                SELECT changed_fields
+                FROM _change_log
+                WHERE table_name = 'notebook_entries' AND record_id = ? AND operation = 'UPDATE'
+                ORDER BY id DESC
+                LIMIT 1
+                """, arguments: [entryId])
+        })
+        let changedFieldsData = try #require(changedFieldsJSON.data(using: .utf8))
+        let changedFields = try #require(JSONSerialization.jsonObject(with: changedFieldsData) as? [String: Any])
+        #expect(changedFields["title"] as? String == "Renamed only")
+        #expect(changedFields["content"] == nil)
+        #expect(changedFields["block_data"] == nil)
+        #expect(changedFields["heading_level"] == nil)
+        #expect(changedFields["checklist_items"] == nil)
+    }
+
+    @Test("Explicit content clear persists null and records a replicable clear")
+    func testUpdateBlockEntryExplicitlyClearsContent() throws {
+        let env = try E2ETestHelpers.setUp()
+        let notebookId = try env.notebooks.createNotebook(
+            title: "Clear Block Content",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: notebookId, groupId: nil, name: "Main"
+        )
+        let entryId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "text",
+            title: "Clear me",
+            content: "Body the user typed",
+            createdBy: env.adminUserId
+        )
+
+        // Omitted content is an unchanged field, not a clear request.
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId,
+            content: nil,
+            blockData: nil,
+            updatedBy: env.adminUserId
+        )
+        let preservedContent = try env.db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: "SELECT content FROM notebook_entries WHERE id = ?", arguments: [entryId])
+        }
+        #expect(preservedContent == "Body the user typed")
+
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId,
+            content: nil,
+            clearContent: true,
+            blockData: nil,
+            updatedBy: env.adminUserId
+        )
+
+        let storedContent = try env.db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: "SELECT content FROM notebook_entries WHERE id = ?", arguments: [entryId])
+        }
+        #expect(storedContent == nil)
+
+        let changedFieldsJSON = try #require(env.db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: """
+                SELECT changed_fields
+                FROM _change_log
+                WHERE table_name = 'notebook_entries' AND record_id = ? AND operation = 'UPDATE'
+                ORDER BY id DESC
+                LIMIT 1
+                """, arguments: [entryId])
+        })
+        let changedFieldsData = try #require(changedFieldsJSON.data(using: .utf8))
+        let changedFields = try #require(JSONSerialization.jsonObject(with: changedFieldsData) as? [String: Any])
+        #expect(changedFields["content"] is NSNull)
+    }
+
     @Test("Editing a block entry updates title and records change history")
     func testUpdateBlockEntryTitleAndHistory() throws {
         let env = try E2ETestHelpers.setUp()

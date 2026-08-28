@@ -1604,6 +1604,7 @@ struct IOSNotebookDetailPage: View {
                 try service.updateBlockEntry(
                     entryId: existingEntryId,
                     content: nil,
+                    clearContent: true,
                     blockData: jsonString,
                     updatedBy: userId
                 )
@@ -1703,6 +1704,7 @@ struct IOSNotebookDetailPage: View {
                 try service.updateBlockEntry(
                     entryId: existingEntryId,
                     content: nil,
+                    clearContent: true,
                     blockData: jsonString,
                     updatedBy: userId
                 )
