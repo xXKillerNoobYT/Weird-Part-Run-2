@@ -65,8 +65,7 @@ gh api "repos/$repo/pulls/$PR" \
 gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){
   repository(owner:$owner,name:$repo){ pullRequest(number:$number){
     reviewThreads(first:100){ nodes { isResolved isOutdated path comments(first:1){nodes{url}} } }
-  }}}
-}' -f owner=xXKillerNoobYT -f repo=Weird-Part-Run-2 -F number="$PR"
+  }}}' -f owner=xXKillerNoobYT -f repo=Weird-Part-Run-2 -F number="$PR"
 
 # GitHub has no supported `GET /repos/{owner}/{repo}/pulls/{pull_number}/issues`
 # endpoint. Query the PR's closing-linked issues through GraphQL instead. A query
