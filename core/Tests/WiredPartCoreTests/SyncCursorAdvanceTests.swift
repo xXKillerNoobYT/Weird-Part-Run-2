@@ -98,26 +98,23 @@ struct SyncCursorAdvanceTests {
         #expect(result.isSafeToAdvanceReceiveCursor)
     }
 
-    @Test("processInbox acknowledges a permanent refusal and applies later rows through the production path")
+    @Test("processInbox records a terminal refusal and applies later rows through the production path")
     func processInboxDoesNotBlockLaterRowsAfterPermanentRefusal() async throws {
         let db = try freshDB()
+        try await db.writer.write { dbConn in
+            try dbConn.execute(sql: "DROP TABLE business_profiles")
+        }
         let manager = PeerManager(db: db)
         let serverState = SyncServerState(deviceId: "receiver", deviceName: "Receiver", companyId: "company", db: db)
         await manager.testInstallServerState(serverState)
         await serverState.appendToInbox([
             IncomingChange(
-                deviceId: "peer",
-                tableName: "job_stages",
-                recordId: "1",
-                operation: "UPDATE",
-                changedFields: #"{"template_id":"999999"}"#,
+                deviceId: "peer", tableName: "business_profiles", recordId: "1", operation: "INSERT",
+                recordData: #"{"id":1}"#,
                 timestamp: "2026-08-22T00:00:00Z"
             ),
             IncomingChange(
-                deviceId: "peer",
-                tableName: "users",
-                recordId: "100",
-                operation: "INSERT",
+                deviceId: "peer", tableName: "users", recordId: "100", operation: "INSERT",
                 recordData: #"{"id":100,"display_name":"later row","pin_hash":"hash","is_active":1}"#,
                 timestamp: "2026-08-22T00:00:01Z"
             ),
@@ -126,10 +123,46 @@ struct SyncCursorAdvanceTests {
         await manager.testProcessInbox()
 
         #expect((await serverState.inbox).isEmpty)
+        let refusalState = try await db.writer.read {
+            try String.fetchOne($0, sql: "SELECT state FROM _sync_receive_journal WHERE source_peer_id = 'lan_inbox' ORDER BY id LIMIT 1")
+        }
+        #expect(refusalState == "refused")
         let displayName = try await db.writer.read { dbConn in
             try String.fetchOne(dbConn, sql: "SELECT display_name FROM users WHERE id = 100")
         }
         #expect(displayName == "later row")
+    }
+
+    @Test("processInbox retains a child until a later parent applies through the production path")
+    func processInboxConvergesChildBeforeParent() async throws {
+        let db = try freshDB()
+        let manager = PeerManager(db: db)
+        let serverState = SyncServerState(deviceId: "receiver", deviceName: "Receiver", companyId: "company", db: db)
+        await manager.testInstallServerState(serverState)
+        await serverState.appendToInbox([
+            IncomingChange(
+                deviceId: "peer", tableName: "part_styles", recordId: "101", operation: "INSERT",
+                recordData: #"{"id":"101","category_id":"901","name":"Inbox child"}"#,
+                timestamp: "2026-08-22T00:00:00Z"
+            ),
+            IncomingChange(
+                deviceId: "peer", tableName: "part_categories", recordId: "901", operation: "INSERT",
+                recordData: #"{"id":"901","name":"Inbox parent"}"#,
+                timestamp: "2026-08-22T00:00:01Z"
+            ),
+        ])
+
+        await manager.testProcessInbox()
+
+        #expect((await serverState.inbox).isEmpty)
+        let childJournalState = try await db.writer.read {
+            try String.fetchOne($0, sql: "SELECT state FROM _sync_receive_journal WHERE source_peer_id = 'lan_inbox' ORDER BY id LIMIT 1")
+        }
+        #expect(childJournalState == "applied")
+        let childName = try await db.writer.read {
+            try String.fetchOne($0, sql: "SELECT name FROM part_styles WHERE id = 101")
+        }
+        #expect(childName == "Inbox child")
     }
 
     @Test("processInbox drains legacy memory input only after persisting it in the journal")
@@ -312,6 +345,58 @@ struct SyncCursorAdvanceTests {
         }
         #expect(journalState != nil, "the vector may advance only after a durable journal receipt")
         #expect(journalState != "received", "receipt must reach an explicit apply disposition")
+    }
+
+    @Test("syncWithPeer converges child-before-parent rows through syncViaHTTP")
+    func syncWithPeerConvergesChildBeforeParent() async throws {
+        let db = try freshDB()
+        let remoteDB = try freshDB()
+        let manager = PeerManager(db: db)
+        let remoteState = SyncServerState(
+            deviceId: "remote", deviceName: "Remote", companyId: "company", db: remoteDB
+        )
+        let remoteServer = LanSyncServer(state: remoteState)
+        let remotePort = try await remoteServer.start()
+        defer { Task { await remoteServer.stop() } }
+
+        try ChangeTracker.registerPeerDevice(
+            db: db, peerId: "remote", peerName: "Remote", platform: "test",
+            keyAgreementPublicKey: remoteState.kaPublicKeyB64
+        )
+        await remoteState.setOutbox([
+            IncomingChange(
+                id: 81, deviceId: "remote", tableName: "part_styles", recordId: "181", operation: "INSERT",
+                recordData: #"{"id":"181","category_id":"981","name":"LAN child"}"#,
+                timestamp: "2026-08-22T00:00:00Z"
+            ),
+            IncomingChange(
+                id: 82, deviceId: "remote", tableName: "part_categories", recordId: "981", operation: "INSERT",
+                recordData: #"{"id":"981","name":"LAN parent"}"#,
+                timestamp: "2026-08-22T00:00:01Z"
+            ),
+        ])
+        try await manager.startPeerSync(
+            deviceId: "receiver", deviceName: "Receiver", companyId: "company", startMultipeer: false
+        )
+        defer { Task { await manager.stopPeerSync() } }
+        let receiverIdentity = try await manager.localSyncIdentity(deviceId: "receiver")
+        try await remoteState.registerAuthorizedPeer(
+            deviceId: "receiver", deviceName: "Receiver", platform: "test",
+            keyAgreementPublicKey: receiverIdentity.publicKeyB64
+        )
+
+        let result = await manager.syncWithPeer(DiscoveredPeer(
+            deviceId: "remote", deviceName: "Remote", companyId: "company",
+            host: "127.0.0.1", port: remotePort, transport: "lan"
+        ))
+
+        #expect(result.success)
+        #expect(result.pulled == 2)
+        #expect(try ChangeTracker.getVectorClock(db: db, deviceId: "receiver")["remote"] == 82)
+        let lanChildName = try await db.writer.read {
+            try String.fetchOne($0, sql: "SELECT name FROM part_styles WHERE id = 181")
+        }
+        #expect(lanChildName == "LAN child")
     }
 
     @Test("syncWithPeer does not advance a receive vector when durable receipt fails")
