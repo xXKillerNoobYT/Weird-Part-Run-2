@@ -71,25 +71,31 @@ an older deferred payload cannot overwrite or un-delete newer state.
 
 ## Verification signal
 
-Current focused behavior evidence (2026-08-29, before the next commit):
+Initial focused behavior evidence (2026-08-30) on baseline PR head
+`0f21ee455f20bcd0cd3e6bfcbe3db84e1c5a010f`, rebased on
+`origin/main` `1439ca8a057a11a4c32ad2776bcab8c19dcccd8e`:
 
-1. `swift test --filter SyncCursorAdvanceTests` passed **17 tests**. It invokes the real
-   `PeerManager.processInbox()`, real LAN `syncWithPeer` → `syncViaHTTP`, and real
-   `SyncEngine.runSync` call paths. The two added production-path regressions deliver a
+1. `swift test --filter SyncCursorAdvanceTests` passed **17 tests in 1 suite**. It invokes
+   real `PeerManager.processInbox()`, real LAN `syncWithPeer` → `syncViaHTTP`, and real
+   `SyncEngine.runSync` call paths. The two production-path regressions deliver a
    `part_styles` child before its `part_categories` parent and assert eventual child apply;
-   the LAN test also asserts vector receipt reaches sequence 82 only after durable journal write.
-2. A temporary mutation replaced the journal fixed-point condition
-   `while appliedThisPass > 0` with `while false`. The same suite failed **11 assertions**,
-   including the new `processInbox` child-before-parent test and the new `syncViaHTTP` LAN
-   child-before-parent test. The original condition was restored, then the 17-test suite passed.
-3. `swift test --filter ConflictResolverTests` passed **44 tests**; `swift test --filter
-   ConflictResolverNaturalKeyTests` passed **31 tests**. The SwiftPM wrapper also prints a
-   legacy XCTest "0 tests" line before Swift Testing; the `Test run with … passed` line is
-   the canonical result.
-4. `git diff --check` was clean before commit. The current branch still needs a post-commit
-   exact-head iPhone+iPad gate and a restarted SecurityAgent → LocalFirstReviewer →
-   GPTReviewer → ClaudeReviewer lane. Previous iPhone/iPad gates must not be treated as
-   evidence for the next head.
+   the LAN test also asserts the vector receipt reaches sequence 82 only after durable
+   journal write.
+2. Mutation proof: changing journal replay from `ORDER BY id ASC` to `DESC` made the focused
+   suite fail with **2 assertions** (the child was not deferred before its later parent).
+   Suppressing the LAN-pull receipt error while preserving vector advancement made it fail
+   with **1 assertion** (the vector advanced after receipt failure). Skipping inbox receipt
+   made it fail with **5 assertions** across the real `processInbox` regressions. Restoring
+   `pendingCount: 0` made `runSyncReportsRemainingPendingBacklog` fail with **1 assertion**.
+   Every mutation was restored before the passing run.
+3. `swift test --filter ConflictResolverTests` and
+   `swift test --filter ConflictResolverNaturalKeyTests` are additional focused checks for
+   the changed classification surface. The SwiftPM wrapper may print a legacy XCTest
+   "0 tests" line before Swift Testing; `Test run with … passed` is the canonical result.
+4. `git diff --check origin/main...HEAD` is clean. Migration
+   `129_sync_receive_journal` is registered. The exact-head iPhone+iPad gates and the
+   SecurityAgent → LocalFirstReviewer → GPTReviewer → ClaudeReviewer lane are separate,
+   required merge evidence; prior-head outcomes do not transfer.
 
-Not verifiable headless: a real two-device LAN round-trip. Field confirmation on paired
-hardware remains a follow-up.
+Not verifiable headless: a real paired-device LAN round-trip. Field confirmation remains a
+follow-up, not a substitute for the exact-head automated device gates.
