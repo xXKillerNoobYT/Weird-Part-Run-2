@@ -8,6 +8,7 @@ import WiredPartCore
 /// in the app's Documents directory; subsequent launches reopen it.
 @main
 struct WiredPartIOSApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var appCore = AppCore()
     @StateObject private var tabPrefs = TabBarPreferences()
     @State private var showLaunchErrorReport = false
@@ -263,6 +264,14 @@ struct WiredPartIOSApp: App {
         }
     }
 
+    static func retryBootstrapOnActiveSceneTransition(
+        phase: ScenePhase,
+        retryBootstrap: () -> Void
+    ) {
+        guard phase == .active else { return }
+        retryBootstrap()
+    }
+
     var body: some Scene {
         WindowGroup {
             Group {
@@ -375,6 +384,11 @@ struct WiredPartIOSApp: App {
             }
             .preferredColorScheme(resolvedColorScheme)
             .tint(accentColor)
+            .onChange(of: scenePhase) { _, phase in
+                Self.retryBootstrapOnActiveSceneTransition(phase: phase) {
+                    appCore.retryBootstrap()
+                }
+            }
         }
     }
 

@@ -97,7 +97,7 @@ public final class CipherKeyManager: Sendable {
         do {
             try writeSaltToKeychain(salt)
             return salt
-        } catch CipherKeyError.keychainAccessFailed(errSecDuplicateItem) {
+        } catch CipherKeyError.keychainAccessFailed(item: _, status: errSecDuplicateItem) {
             // Another thread raced and wrote the salt first. Re-read to get the winner's value
             // so all callers share the same stable salt (different salts → different DB keys →
             // encrypted data becomes unreadable).
@@ -106,8 +106,8 @@ public final class CipherKeyManager: Sendable {
             }
             // Duplicate-item write raced but the follow-up re-read also failed.
             Self.logger.error("CipherKeyManager: salt write raced (errSecDuplicateItem) and re-read also failed")
-            throw CipherKeyError.keychainAccessFailed(errSecDuplicateItem)
-        } catch CipherKeyError.keychainAccessFailed(let status)
+            throw CipherKeyError.keychainAccessFailed(item: "cipher salt", status: errSecDuplicateItem)
+        } catch CipherKeyError.keychainAccessFailed(item: _, status: let status)
             where KeychainAvailability.isUnusable(status) {
             // FIELD P0 (owner, 2026-08-04, builds 41 AND 47 both dead on Mac):
             // the original version rescued only errSecMissingEntitlement and
@@ -189,16 +189,11 @@ public final class CipherKeyManager: Sendable {
 
     // MARK: - Private Keychain Helpers
 
-    /// True on Catalyst AND on the iPad binary running on Apple Silicon —
-    /// the environment TestFlight actually delivers to Macs.
-    static var isRunningOnMac: Bool {
-        #if targetEnvironment(macCatalyst)
-        return true
-        #elseif canImport(UIKit)
-        return ProcessInfo.processInfo.isiOSAppOnMac
-        #else
-        return false
-        #endif
+    /// The accessibility attribute is only valid off the shared runtime-Mac path.
+    /// Keeping this conversion separate from the platform predicate lets tests
+    /// catch a consumer drifting from the iPad-on-Mac behaviour.
+    public static func shouldApplyKeychainAccessibility(isRunningOnMac: Bool) -> Bool {
+        !isRunningOnMac
     }
 
     private func readSaltFromKeychain() -> Data? {
@@ -228,25 +223,25 @@ public final class CipherKeyManager: Sendable {
         // classes with errSecParam, so the attribute is omitted on any Mac
         // (2026-08-04: the compile-time Catalyst check missed iPad-on-Mac,
         // which is what TestFlight actually ships to Macs — the #1622 lesson).
-        if !Self.isRunningOnMac {
+        if Self.shouldApplyKeychainAccessibility(isRunningOnMac: RuntimeMacEnvironment.isRunningOnMac) {
             addQuery[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         }
         let status = SecItemAdd(addQuery as CFDictionary, nil)
         guard status == errSecSuccess || status == errSecDuplicateItem else {
-            throw CipherKeyError.keychainAccessFailed(status)
+            throw CipherKeyError.keychainAccessFailed(item: "cipher salt", status: status)
         }
         // If the item already exists (race condition between two callers), do NOT
         // overwrite it — doing so could change the stored salt, invalidating the
         // derived DB key for all other sessions. Instead, surface the duplicate so
         // loadOrCreateSalt() can re-read and use the already-persisted value.
         if status == errSecDuplicateItem {
-            throw CipherKeyError.keychainAccessFailed(status)
+            throw CipherKeyError.keychainAccessFailed(item: "cipher salt", status: status)
         }
     }
 
     private func catalystFallbackSaltURL() throws -> URL {
         guard let supportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
-            throw CipherKeyError.keychainAccessFailed(errSecParam)
+            throw CipherKeyError.keychainAccessFailed(item: "cipher salt", status: errSecParam)
         }
         let dir = supportURL.appendingPathComponent("WiredPart", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -279,7 +274,7 @@ public final class CipherKeyManager: Sendable {
 public enum CipherKeyError: Error, Sendable {
     case saltGenerationFailed(OSStatus)
     case bootstrapKeyGenerationFailed(OSStatus)
-    case keychainAccessFailed(OSStatus)
+    case keychainAccessFailed(item: String, status: OSStatus)
     case missingPin
 }
 
@@ -290,8 +285,8 @@ extension CipherKeyError: LocalizedError {
             return "Failed to generate cipher salt (OSStatus \(code))."
         case .bootstrapKeyGenerationFailed(let code):
             return "Failed to generate device bootstrap key (OSStatus \(code))."
-        case .keychainAccessFailed(let code):
-            return "Keychain access failed for cipher salt (OSStatus \(code))."
+        case .keychainAccessFailed(let item, let status):
+            return "Keychain access failed for \(item) (OSStatus \(status))."
         case .missingPin:
             return "No PIN available — cannot derive cipher key."
         }

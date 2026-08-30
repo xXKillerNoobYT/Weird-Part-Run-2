@@ -34,12 +34,23 @@ struct CipherKeyFallbackTests {
         #expect(!rescues(errSecInteractionNotAllowed))
     }
 
-    @Test("Mac detection covers the iPad binary, not just Catalyst")
-    func macDetectionCoversIPadOnMac() {
-        // On CI (iOS simulator / macOS SPM) this is false; the value matters
-        // less than the property being READ AT RUNTIME rather than compiled
-        // out — the compile-time Catalyst check is what missed iPad-on-Mac.
-        let value = CipherKeyManager.isRunningOnMac
-        #expect(value == true || value == false)
+    @Test("Shared runtime-Mac predicate covers Catalyst and iPad-on-Mac")
+    func runtimeMacPredicateCoversBothMacExecutionModes() {
+        #expect(RuntimeMacEnvironment.isRunningOnMac(isCatalyst: true, isIOSAppOnMac: false))
+        #expect(RuntimeMacEnvironment.isRunningOnMac(isCatalyst: false, isIOSAppOnMac: true))
+        #expect(!RuntimeMacEnvironment.isRunningOnMac(isCatalyst: false, isIOSAppOnMac: false))
+    }
+
+    @Test("Cipher salt accessibility decision follows the shared runtime-Mac predicate")
+    func cipherSaltAccessibilityDecisionDoesNotDriftFromRuntimeMacPredicate() {
+        for (isCatalyst, isIOSAppOnMac) in [(true, false), (false, true), (false, false)] {
+            let isRunningOnMac = RuntimeMacEnvironment.isRunningOnMac(
+                isCatalyst: isCatalyst,
+                isIOSAppOnMac: isIOSAppOnMac
+            )
+            #expect(
+                CipherKeyManager.shouldApplyKeychainAccessibility(isRunningOnMac: isRunningOnMac) == !isRunningOnMac
+            )
+        }
     }
 }
