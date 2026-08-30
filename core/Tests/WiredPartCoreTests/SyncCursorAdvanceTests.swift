@@ -275,7 +275,7 @@ struct SyncCursorAdvanceTests {
         #expect(evidence?["state"] as String? == "refused")
         #expect(evidence?["disposition_reason"] as String? == "irreconcilable_apply_refusal")
         #expect(evidence?["retry_count"] as Int? == 1)
-        #expect(evidence?["audit_metadata"] as String? == "refusal_test")
+        #expect(evidence?["audit_metadata"] as String? == "test")
     }
 
     @Test("syncWithPeer advances the LAN receive vector for a permanent refusal")
@@ -522,5 +522,114 @@ struct SyncCursorAdvanceTests {
         let remaining = try ChangeTracker.getPendingChangeCount(db: db)
         #expect(remaining == backlog - 500)
         #expect(remaining > 0)
+    }
+
+    @Test("receive journal redacts only expired terminal payloads while retaining audit evidence")
+    func receiveJournalRedactsExpiredTerminalPayloads() throws {
+        let db = try freshDB()
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                INSERT INTO _sync_receive_journal
+                    (source_peer_id, source_sequence, payload, state, disposition_reason,
+                     retry_count, audit_metadata, last_attempt_at, applied_at, created_at, updated_at)
+                VALUES
+                    ('peer-applied', 1, 'applied-business-payload', 'applied', NULL, 2, 'lan_pull',
+                     '2026-03-31 12:00:00', '2026-03-31 12:00:00', '2026-03-01 12:00:00', '2026-03-31 12:00:00'),
+                    ('peer-refused', 2, 'refused-business-payload', 'refused', 'irreconcilable_apply_refusal', 3, 'lan_push',
+                     '2026-03-31 12:00:00', NULL, '2026-03-01 12:00:00', '2026-03-31 12:00:00'),
+                    ('peer-received', 3, 'received-payload', 'received', NULL, 0, 'lan_pull',
+                     NULL, NULL, '2026-03-01 12:00:00', '2026-03-01 12:00:00'),
+                    ('peer-deferred', 4, 'deferred-payload', 'deferred', 'foreign_key_parent_unavailable', 1, 'lan_pull',
+                     '2026-03-01 12:00:00', NULL, '2026-03-01 12:00:00', '2026-03-01 12:00:00'),
+                    ('peer-retry', 5, 'retry-payload', 'retry', 'transient_apply_failure', 1, 'lan_pull',
+                     '2026-03-01 12:00:00', NULL, '2026-03-01 12:00:00', '2026-03-01 12:00:00'),
+                    ('peer-fresh', 6, 'fresh-terminal-payload', 'applied', NULL, 1, 'lan_pull',
+                     '2026-03-31 12:00:01', '2026-03-31 12:00:01', '2026-03-01 12:00:00', '2026-03-31 12:00:01')
+                """
+            )
+        }
+
+        let firstRedaction = try SyncReceiveJournal.redactExpiredTerminalPayloads(
+            db: db, now: "2026-04-30 12:00:00"
+        )
+        #expect(firstRedaction == 2)
+        #expect(try SyncReceiveJournal.redactExpiredTerminalPayloads(
+            db: db, now: "2026-04-30 12:00:00"
+        ) == 0, "redaction is idempotent after payload removal")
+
+        let rows = try db.writer.read { dbConn in
+            try Row.fetchAll(
+                dbConn,
+                sql: """
+                SELECT source_peer_id, source_sequence, payload, state, disposition_reason,
+                       retry_count, audit_metadata, last_attempt_at, applied_at, created_at,
+                       updated_at, redacted_at
+                FROM _sync_receive_journal
+                ORDER BY source_sequence
+                """
+            )
+        }
+        let applied = rows[0]
+        #expect(applied["payload"] as String? == "")
+        #expect(applied["state"] as String? == "applied")
+        #expect(applied["source_peer_id"] as String? == "peer-applied")
+        #expect(applied["source_sequence"] as Int64? == 1)
+        #expect(applied["retry_count"] as Int? == 2)
+        #expect(applied["audit_metadata"] as String? == "lan_pull")
+        #expect(applied["last_attempt_at"] as String? == "2026-03-31 12:00:00")
+        #expect(applied["applied_at"] as String? == "2026-03-31 12:00:00")
+        #expect(applied["created_at"] as String? == "2026-03-01 12:00:00")
+        #expect(applied["updated_at"] as String? == "2026-03-31 12:00:00")
+        #expect(applied["redacted_at"] as String? == "2026-04-30 12:00:00")
+
+        let refused = rows[1]
+        #expect(refused["payload"] as String? == "")
+        #expect(refused["state"] as String? == "refused")
+        #expect(refused["disposition_reason"] as String? == "irreconcilable_apply_refusal")
+        #expect(refused["audit_metadata"] as String? == "lan_push")
+        #expect(refused["redacted_at"] as String? == "2026-04-30 12:00:00")
+
+        for index in 2...5 {
+            #expect(rows[index]["payload"] as String? != "")
+            #expect(rows[index]["redacted_at"] as String? == nil)
+        }
+    }
+
+    @Test("nonterminal journal payload remains replayable before terminal disposition")
+    func receiveJournalKeepsNonterminalPayloadReplayable() throws {
+        let db = try freshDB()
+        let change = IncomingChange(
+            id: 71, deviceId: "peer", tableName: "part_categories", recordId: "701", operation: "INSERT",
+            recordData: #"{"id":"701","name":"Retention replay"}"#,
+            timestamp: "2026-03-01T00:00:00Z"
+        )
+        try SyncReceiveJournal.record(
+            db: db, sourcePeerId: "peer", changes: [change], auditMetadata: #"{"business":"must-not-persist"}"#
+        )
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE _sync_receive_journal SET created_at = '2026-03-01 00:00:00', updated_at = '2026-03-01 00:00:00' WHERE source_sequence = 71"
+            )
+        }
+
+        #expect(try SyncReceiveJournal.redactExpiredTerminalPayloads(
+            db: db, now: "2026-04-30 12:00:00"
+        ) == 0)
+        let receipt = try db.writer.read { dbConn in
+            try Row.fetchOne(
+                dbConn,
+                sql: "SELECT payload, state, audit_metadata, redacted_at FROM _sync_receive_journal WHERE source_sequence = 71"
+            )
+        }
+        #expect(receipt?["payload"] as String? != "")
+        #expect(receipt?["state"] as String? == "received")
+        #expect(receipt?["audit_metadata"] as String? == "test", "business data is not copied into audit metadata")
+        #expect(receipt?["redacted_at"] as String? == nil)
+
+        #expect(try SyncReceiveJournal.applyPending(db: db, localDeviceId: "receiver").applied == 1)
+        #expect(try db.writer.read {
+            try String.fetchOne($0, sql: "SELECT name FROM part_categories WHERE id = 701")
+        } == "Retention replay")
     }
 }
