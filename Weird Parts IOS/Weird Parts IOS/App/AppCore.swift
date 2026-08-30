@@ -23,6 +23,37 @@ final class AppCore: ObservableObject {
     nonisolated private static let uiTestingPreserveDatabaseFlag = "-UITestingPreserveDatabase"
     nonisolated private static let localFallbackBootstrapKeyLock = NSRecursiveLock()
 
+    /// Serializes startup and records whether foregrounding can safely retry a
+    /// locked Keychain failure. Normal foregrounding must never reopen a ready
+    /// database or race the launch bootstrap.
+    struct BootstrapRetryCoordinator {
+        private(set) var isBootstrapInFlight = false
+        private(set) var isReady = false
+        private var retryAfterActiveTransition = false
+
+        mutating func beginBootstrap() -> Bool {
+            guard !isBootstrapInFlight else { return false }
+            isBootstrapInFlight = true
+            retryAfterActiveTransition = false
+            return true
+        }
+
+        mutating func finishBootstrap(success: Bool, error: Error? = nil) {
+            isBootstrapInFlight = false
+            isReady = success
+            retryAfterActiveTransition = !success
+                && error.map(AppCore.isTransientKeychainInteractionNotAllowed) == true
+        }
+
+        mutating func consumeRetryAfterActiveTransition() -> Bool {
+            guard !isBootstrapInFlight, !isReady, retryAfterActiveTransition else {
+                return false
+            }
+            retryAfterActiveTransition = false
+            return true
+        }
+    }
+
     #if DEBUG && targetEnvironment(simulator)
     nonisolated private static let wei5134AIReadFailureFlag = "-UITestingWEI5134AIReadFailure"
     nonisolated private static let wei5159AIPrerequisiteRecoveryFlag = "-UITestingWEI5159AIPrerequisiteRecovery"
@@ -200,6 +231,7 @@ final class AppCore: ObservableObject {
     @Published public var onboardAIRuntimeBootstrap: OnboardAIRuntimeBootstrapResult?
 
     nonisolated let logger = Logger(subsystem: "com.wiredpart.ios", category: "AppCore")
+    private var bootstrapRetryCoordinator = BootstrapRetryCoordinator()
 
     // MARK: - Lifecycle
 
@@ -254,6 +286,7 @@ final class AppCore: ObservableObject {
     }
 
     private func bootstrap() async {
+        guard bootstrapRetryCoordinator.beginBootstrap() else { return }
         do {
             let uiTestingMode = isUITestingMode
             // Resolve the database path on the main actor (it accesses FileManager),
@@ -436,6 +469,7 @@ final class AppCore: ObservableObject {
                 badgeCountManager.setUserId(userId)
             }
             isReady = true
+            bootstrapRetryCoordinator.finishBootstrap(success: true)
             await evaluateOnboardAIRuntimeIfEnabled()
 
             // Configure badge count manager
@@ -554,6 +588,7 @@ final class AppCore: ObservableObject {
                 }
             }
         } catch {
+            bootstrapRetryCoordinator.finishBootstrap(success: false, error: error)
             let nsError = error as NSError
             logger.error(
                 "[AppCore] bootstrap failed domain=\(nsError.domain, privacy: .public) code=\(nsError.code, privacy: .public) description=\(error.localizedDescription, privacy: .public)"
@@ -600,10 +635,31 @@ final class AppCore: ObservableObject {
 
     /// Retry bootstrap after a failure.
     func retryBootstrap() {
+        guard !bootstrapRetryCoordinator.isReady,
+              !bootstrapRetryCoordinator.isBootstrapInFlight else {
+            return
+        }
         loadError = nil
         Task { @MainActor in
             await bootstrap()
         }
+    }
+
+    /// A locked Keychain can become available only after foregrounding. This
+    /// consumes one retry token, so a healthy app and an in-flight launch are
+    /// never reopened by an ordinary scene transition.
+    func retryBootstrapAfterActiveSceneTransition() {
+        guard bootstrapRetryCoordinator.consumeRetryAfterActiveTransition() else {
+            return
+        }
+        retryBootstrap()
+    }
+
+    nonisolated static func isTransientKeychainInteractionNotAllowed(_ error: Error) -> Bool {
+        guard case let .keychainAccessFailed(item: _, status: status) = error as? CipherKeyError else {
+            return false
+        }
+        return status == errSecInteractionNotAllowed
     }
 
     nonisolated static func isRecoverableDebugCipherOpenFailure(_ error: Error) -> Bool {

@@ -691,15 +691,40 @@ struct Weird_Parts_IOSTests {
         }
     }
 
-    @Test func activeSceneTransitionsRetryBootstrapOnceEach() {
+    @MainActor
+    @Test func activeSceneTransitionRetriesOnlyOneEligibleTransientBootstrap() {
+        var coordinator = AppCore.BootstrapRetryCoordinator()
+        let lockedKeychainError = CipherKeyError.keychainAccessFailed(
+            item: "device bootstrap key",
+            status: errSecInteractionNotAllowed
+        )
+        let started = coordinator.beginBootstrap()
+        #expect(started)
+        coordinator.finishBootstrap(success: false, error: lockedKeychainError)
+
         var retryCount = 0
         for phase in [ScenePhase.inactive, .active, .background, .active] {
             WiredPartIOSApp.retryBootstrapOnActiveSceneTransition(phase: phase) {
-                retryCount += 1
+                if coordinator.consumeRetryAfterActiveTransition() {
+                    retryCount += 1
+                }
             }
         }
 
-        #expect(retryCount == 2)
+        #expect(retryCount == 1)
+    }
+
+    @MainActor
+    @Test func activeSceneTransitionCannotRebootstrapReadyOrInFlightApp() {
+        var coordinator = AppCore.BootstrapRetryCoordinator()
+
+        let started = coordinator.beginBootstrap()
+        let retriedWhileInFlight = coordinator.consumeRetryAfterActiveTransition()
+        #expect(started)
+        #expect(!retriedWhileInFlight)
+        coordinator.finishBootstrap(success: true)
+        let retriedWhenReady = coordinator.consumeRetryAfterActiveTransition()
+        #expect(!retriedWhenReady)
     }
 
     @Test func keychainFailuresNameTheirActualKeychainItem() {

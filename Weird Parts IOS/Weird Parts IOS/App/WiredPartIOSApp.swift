@@ -386,7 +386,7 @@ struct WiredPartIOSApp: App {
             .tint(accentColor)
             .onChange(of: scenePhase) { _, phase in
                 Self.retryBootstrapOnActiveSceneTransition(phase: phase) {
-                    appCore.retryBootstrap()
+                    appCore.retryBootstrapAfterActiveSceneTransition()
                 }
             }
         }
