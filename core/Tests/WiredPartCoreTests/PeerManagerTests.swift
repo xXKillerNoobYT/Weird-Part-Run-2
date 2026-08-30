@@ -3284,12 +3284,28 @@ struct PeerManagerTests {
     /// The poison was obsolete; the contract it guards is not, so it is re-armed
     /// here rather than removed.
     ///
-    /// The replacement sets a NOT NULL column to NULL on a migration-seeded row.
-    /// That takes the merge branch, whose `UPDATE` has no conflict clause, so it
-    /// genuinely throws. It is deliberately immune to the two robustness fixes
-    /// around it: `name` is a real column, so the unknown-column filter does not
-    /// touch it, and it is not a foreign key, so `PRAGMA defer_foreign_keys`
-    /// (#1728) does not defer it.
+    /// **Re-armed a second time for #1737.** The previous poison set a NOT NULL
+    /// column to NULL (`{"name":null}` on the seeded `job_stages` id 1). That
+    /// stopped throwing once the merge `UPDATE` began CLASSIFYING row-level
+    /// constraint refusals: a NOT NULL/CHECK refusal is now a `schemaDrop` —
+    /// counted, logged, and left unapplied — precisely because a row this
+    /// device's schema cannot represent must not brick an entire company join
+    /// that would then fail identically on every retry.
+    ///
+    /// So NOT NULL is no longer a batch-killing failure, and these tests are not
+    /// about NOT NULL — they are about a genuine database failure rolling the
+    /// whole transaction back. The replacement is a FOREIGN KEY violation:
+    /// pointing the seeded `job_stages` id 1 at a `template_id` that does not
+    /// exist. It survives every robustness fix in the apply path on purpose:
+    ///
+    /// - `template_id` is a real local column, so the unknown-column filter
+    ///   (#1728's sibling) leaves it alone;
+    /// - `classifyingRowRefusal` rethrows `SQLITE_CONSTRAINT_FOREIGNKEY`
+    ///   unchanged — only UNIQUE/PK/rowid and NOT NULL/CHECK are classified;
+    /// - `PRAGMA defer_foreign_keys` (#1728) moves the failure to COMMIT rather
+    ///   than removing it, so the throw still escapes `db.writer.write` and the
+    ///   entire snapshot still rolls back. That it now surfaces at COMMIT is
+    ///   itself worth pinning: it proves the classifier did not swallow it.
     ///
     /// `job_stages` id 1 is seeded by migration 034 on every device, so the row
     /// is always present locally and the merge branch is always the one taken.
@@ -3299,7 +3315,7 @@ struct PeerManagerTests {
             tableName: "job_stages",
             recordId: "1",
             operation: "UPDATE",
-            changedFields: #"{"name":null}"#,
+            changedFields: #"{"template_id":"999999"}"#,
             timestamp: "2026-07-15T00:00:00Z"
         )
     }
