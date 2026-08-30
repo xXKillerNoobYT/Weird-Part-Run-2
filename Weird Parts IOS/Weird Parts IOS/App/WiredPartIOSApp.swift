@@ -376,7 +376,9 @@ struct WiredPartIOSApp: App {
             }
             .preferredColorScheme(resolvedColorScheme)
             .tint(accentColor)
-            .onChange(of: scenePhase) { _, phase in
+            // `initial: true` seeds the coordinator even when the scene was
+            // already active before this view began observing its phase.
+            .onChange(of: scenePhase, initial: true) { _, phase in
                 appCore.handleScenePhaseChange(phase)
             }
         }

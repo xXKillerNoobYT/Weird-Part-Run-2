@@ -713,7 +713,7 @@ struct Weird_Parts_IOSTests {
     }
 
     @MainActor
-    @Test func activeSceneBeforeTransientBootstrapFailureRetriesOnceWithoutLooping() {
+    @Test func initialActiveSceneObservationRetriesOnceWithoutLooping() {
         var coordinator = AppCore.BootstrapRetryCoordinator()
         let lockedKeychainError = CipherKeyError.keychainAccessFailed(
             item: "device bootstrap key",
@@ -722,20 +722,30 @@ struct Weird_Parts_IOSTests {
 
         let beganInitialBootstrap = coordinator.beginBootstrap()
         #expect(beganInitialBootstrap)
-        let wasAlreadyActive = coordinator.scenePhaseDidChange(to: .active)
-        #expect(!wasAlreadyActive)
-        let retriedImmediately = coordinator.finishBootstrap(success: false, error: lockedKeychainError)
-        #expect(retriedImmediately)
 
-        // The immediate retry is in-flight on the same active generation. If it
-        // fails again, it must wait for a new foreground transition.
+        // This is the `onChange(initial: true)` delivery that occurs when the
+        // observer attaches while the launch scene is already active.
+        let retryDuringInitialObservation = coordinator.scenePhaseDidChange(to: .active)
+        #expect(!retryDuringInitialObservation)
+
+        let immediateRetryRequested = coordinator.finishBootstrap(success: false, error: lockedKeychainError)
+        #expect(immediateRetryRequested)
+
+        // The scheduled retry is the only automatic retry in this active
+        // generation. A second locked failure must not recursively retry.
         let beganImmediateRetry = coordinator.beginBootstrap()
         #expect(beganImmediateRetry)
-        let retriedAgainImmediately = coordinator.finishBootstrap(success: false, error: lockedKeychainError)
-        #expect(!retriedAgainImmediately)
+        let retryLoopAttempt = coordinator.finishBootstrap(success: false, error: lockedKeychainError)
+        #expect(!retryLoopAttempt)
+
+        let automaticRetryCount = (immediateRetryRequested ? 1 : 0) + (retryLoopAttempt ? 1 : 0)
+        #expect(automaticRetryCount == 1)
+
+        // A later foreground transition remains the bounded recovery path after
+        // the non-looping retry has failed.
         let retriedInBackground = coordinator.scenePhaseDidChange(to: .background)
-        #expect(!retriedInBackground)
         let retriedOnNextForeground = coordinator.scenePhaseDidChange(to: .active)
+        #expect(!retriedInBackground)
         #expect(retriedOnNextForeground)
     }
 
