@@ -113,6 +113,24 @@ if ! validate_closing_issues_response "$linked_issues_log"; then
   exit 1
 fi
 
+# Deliberately query an unavailable *non-linked-issues* resource. Its required
+# 404 proves transport/API failures are visibly classified as UNMEASURED/ERROR,
+# without reintroducing the invalid pulls/$PR/issues endpoint.
+unavailable_probe_log="${PAPERCLIP_RUN_SCRATCH_DIR:?}/wpr2-pr-disposition/unavailable-probe-$PR.log"
+if gh api "repos/$repo/pulls/$PR/__wpr2_deliberately_unavailable_probe__" \
+  >"$unavailable_probe_log" 2>&1; then
+  printf 'UNMEASURED/ERROR: deliberate unavailable-query probe unexpectedly succeeded for PR #%s; see %s.\n' \
+    "$PR" "$unavailable_probe_log" >&2
+  exit 1
+fi
+if ! rg --fixed-strings --quiet 'HTTP 404' "$unavailable_probe_log"; then
+  printf 'UNMEASURED/ERROR: deliberate unavailable-query probe did not return the expected 404 for PR #%s; see %s.\n' \
+    "$PR" "$unavailable_probe_log" >&2
+  exit 1
+fi
+printf 'PASS: deliberate unavailable-query 404 for PR #%s is classified as UNMEASURED/ERROR; see %s.\n' \
+  "$PR" "$unavailable_probe_log"
+
 # Negative controls: each malformed response must be rejected, rather than being
 # treated as an empty linked-issue connection. Keep fixtures in run scratch.
 fixture_dir="${PAPERCLIP_RUN_SCRATCH_DIR:?}/wpr2-pr-disposition/linked-issue-fixtures-$PR"
