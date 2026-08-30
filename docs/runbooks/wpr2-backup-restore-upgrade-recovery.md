@@ -203,5 +203,6 @@ the disk and tripped the beta-gate preflight. Standing policy:
   Read the workflow for the live value rather than trusting the script default.
   The gate also reclaims stale local DerivedData before failing (see the
   preflight-cleanup change from #1537/#1536-era work); that reclaim has been
-  measured freeing 8 GiB from a 52 GiB start, so a reading below the threshold
-  is not by itself a blocked gate.
+  measured freeing 8 GiB from a 52 GiB start. Cleanup helps only when stale
+  DerivedData exists; if free space remains below the workflow threshold after
+  cleanup, the gate is hard-blocked and disk-pressure remediation is required.
