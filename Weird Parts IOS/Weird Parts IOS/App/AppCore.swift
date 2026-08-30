@@ -968,7 +968,6 @@ final class AppCore: ObservableObject {
     nonisolated struct BootstrapKeychainAccess: Sendable {
         let read: @Sendable () -> (status: OSStatus, data: Data?)
         let add: @Sendable (Data) -> OSStatus
-        let delete: @Sendable () -> OSStatus
 
         static let live = BootstrapKeychainAccess(
             read: {
@@ -996,14 +995,6 @@ final class AppCore: ObservableObject {
                     query[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
                 }
                 return SecItemAdd(query as CFDictionary, nil)
-            },
-            delete: {
-                let query: [CFString: Any] = [
-                    kSecClass: kSecClassGenericPassword,
-                    kSecAttrService: "com.wiredpart.dbcipher.bootstrap-key",
-                    kSecAttrAccount: "device-bootstrap-key"
-                ]
-                return SecItemDelete(query as CFDictionary)
             }
         )
     }
@@ -1029,26 +1020,36 @@ final class AppCore: ObservableObject {
         defer { localFallbackBootstrapKeyLock.unlock() }
 
         let readResult = keychain.read()
-        if readResult.status == errSecSuccess, let data = readResult.data, data.count == 32 {
-            // #1663 — when BOTH stores hold a key and they disagree, the file wins.
-            //
-            // A container-local fallback is only ever written when the Keychain was
-            // unusable, so its presence is evidence the database may be encrypted
-            // with IT rather than with whatever the Keychain returns today. On the
-            // iPad-on-Mac binary the Keychain answers inconsistently across launches,
-            // so preferring it here wrote the database under one key and opened it
-            // under another — SQLCipher then reports the page header as garbage:
-            // "SQLite error 26: file is not a database", which is what the tester saw
-            // on build 55.
-            //
-            // The empty-Keychain path below already promotes the file, so treating it
-            // as authoritative here is consistent rather than new. A healthy iPhone
-            // never creates one, so this cannot change behaviour there.
-            if let fallbackKeyData = try existingLocalFallbackBootstrapKeyData(in: fallbackDirectory),
-               fallbackKeyData != data {
+        if readResult.status == errSecSuccess {
+            if let data = readResult.data, data.count == 32 {
+                // #1663 — when BOTH stores hold a key and they disagree, the file wins.
+                //
+                // A container-local fallback is only ever written when the Keychain was
+                // unusable, so its presence is evidence the database may be encrypted
+                // with IT rather than with whatever the Keychain returns today. On the
+                // iPad-on-Mac binary the Keychain answers inconsistently across launches,
+                // so preferring it here wrote the database under one key and opened it
+                // under another — SQLCipher then reports the page header as garbage:
+                // "SQLite error 26: file is not a database", which is what the tester saw
+                // on build 55.
+                //
+                // The empty-Keychain path below already promotes the file, so treating it
+                // as authoritative here is consistent rather than new. A healthy iPhone
+                // never creates one, so this cannot change behaviour there.
+                if let fallbackKeyData = try existingLocalFallbackBootstrapKeyData(in: fallbackDirectory),
+                   fallbackKeyData != data {
+                    return fallbackKeyData.map { String(format: "%02x", $0) }.joined()
+                }
+                return data.map { String(format: "%02x", $0) }.joined()
+            }
+
+            // A malformed successful read is not permission to replace the key.
+            // Reuse an established fallback if available; otherwise fail closed so
+            // the original database key cannot be destroyed by a delete/re-add race.
+            if let fallbackKeyData = try existingLocalFallbackBootstrapKeyData(in: fallbackDirectory) {
                 return fallbackKeyData.map { String(format: "%02x", $0) }.joined()
             }
-            return data.map { String(format: "%02x", $0) }.joined()
+            throw CipherKeyError.keychainAccessFailed(item: "device bootstrap key", status: errSecDecode)
         }
         if shouldUseLocalBootstrapKeyFallback(for: readResult.status) {
             return try localFallbackBootstrapKeyHex(in: fallbackDirectory)
@@ -1083,10 +1084,7 @@ final class AppCore: ObservableObject {
             }
             throw CipherKeyError.keychainAccessFailed(item: "device bootstrap key", status: addStatus)
         }
-        if readResult.status == errSecSuccess {
-            // Self-heal legacy/corrupt entries before minting a replacement key.
-            _ = keychain.delete()
-        } else if readResult.status != errSecItemNotFound {
+        guard readResult.status == errSecItemNotFound else {
             throw CipherKeyError.keychainAccessFailed(item: "device bootstrap key", status: readResult.status)
         }
 
@@ -1144,21 +1142,15 @@ final class AppCore: ObservableObject {
             if shouldUseLocalBootstrapKeyFallback(for: rereadResult.status) {
                 return try localFallbackBootstrapKeyHex(in: fallbackDirectory)
             }
-            // Only a missing or corrupt duplicate can be replaced. Locked and
-            // unapproved Keychain states must fail before mutating the key.
-            guard rereadResult.status == errSecSuccess || rereadResult.status == errSecItemNotFound else {
-                throw CipherKeyError.keychainAccessFailed(item: "device bootstrap key", status: rereadResult.status)
+            // A duplicate proves another value exists. If re-reading cannot
+            // recover a valid key, do not replace it: fail closed and preserve the
+            // existing database key for the next successful Keychain read.
+            if rereadResult.status == errSecSuccess,
+               let fallbackKeyData = try existingLocalFallbackBootstrapKeyData(in: fallbackDirectory) {
+                return fallbackKeyData.map { String(format: "%02x", $0) }.joined()
             }
-            // Preserve the existing recovery path for a stale duplicate entry.
-            _ = keychain.delete()
-            let retryAddStatus = keychain.add(keyData)
-            if retryAddStatus == errSecSuccess {
-                return keyData.map { String(format: "%02x", $0) }.joined()
-            }
-            if shouldUseLocalBootstrapKeyFallback(for: retryAddStatus) {
-                return try localFallbackBootstrapKeyHex(in: fallbackDirectory)
-            }
-            throw CipherKeyError.keychainAccessFailed(item: "device bootstrap key", status: retryAddStatus)
+            let failureStatus = rereadResult.status == errSecSuccess ? errSecDecode : rereadResult.status
+            throw CipherKeyError.keychainAccessFailed(item: "device bootstrap key", status: failureStatus)
         }
         throw CipherKeyError.keychainAccessFailed(item: "device bootstrap key", status: addStatus)
     }

@@ -787,8 +787,7 @@ struct Weird_Parts_IOSTests {
             add: { _ in
                 Issue.record("fallback must be used before a Keychain write")
                 return errSecParam
-            },
-            delete: { errSecSuccess }
+            }
         )
 
         let first = try AppCore.deviceBootstrapKeyHex(
@@ -842,8 +841,7 @@ struct Weird_Parts_IOSTests {
             add: { _ in
                 Issue.record("unavailable Keychain must use the local fallback before a write")
                 return errSecParam
-            },
-            delete: { errSecSuccess }
+            }
         )
         let promotionProbe = OperationProbe()
         let recoveredKeychain = AppCore.BootstrapKeychainAccess(
@@ -851,8 +849,7 @@ struct Weird_Parts_IOSTests {
             add: { keyData in
                 promotionProbe.storedKey = keyData
                 return errSecSuccess
-            },
-            delete: { errSecSuccess }
+            }
         )
 
         let fallbackKey = try AppCore.deviceBootstrapKeyHex(
@@ -898,8 +895,7 @@ struct Weird_Parts_IOSTests {
         // database would be encrypted with THIS key.
         let unavailableKeychain = AppCore.BootstrapKeychainAccess(
             read: { (errSecMissingEntitlement, nil) },
-            add: { _ in errSecParam },
-            delete: { errSecSuccess }
+            add: { _ in errSecParam }
         )
         let keyThatEncryptedTheDatabase = try AppCore.deviceBootstrapKeyHex(
             processArguments: [],
@@ -913,8 +909,7 @@ struct Weird_Parts_IOSTests {
         #expect(divergentKeychainKey.map { String(format: "%02x", $0) }.joined() != keyThatEncryptedTheDatabase)
         let divergedKeychain = AppCore.BootstrapKeychainAccess(
             read: { (errSecSuccess, divergentKeychainKey) },
-            add: { _ in errSecSuccess },
-            delete: { errSecSuccess }
+            add: { _ in errSecSuccess }
         )
         let keyUsedOnNextLaunch = try AppCore.deviceBootstrapKeyHex(
             processArguments: [],
@@ -962,16 +957,14 @@ struct Weird_Parts_IOSTests {
             add: { _ in
                 Issue.record("fallback must be used before a Keychain write")
                 return errSecParam
-            },
-            delete: { errSecSuccess }
+            }
         )
         let lockedKeychain = AppCore.BootstrapKeychainAccess(
             read: { (errSecInteractionNotAllowed, nil) },
             add: { _ in
                 Issue.record("locked keychain must not attempt a write")
                 return errSecParam
-            },
-            delete: { errSecSuccess }
+            }
         )
 
         _ = try AppCore.deviceBootstrapKeyHex(
@@ -1013,10 +1006,6 @@ struct Weird_Parts_IOSTests {
                     Issue.record("unexpected retry add after locked reread")
                 }
                 return errSecDuplicateItem
-            },
-            delete: {
-                Issue.record("locked duplicate reread must not delete the Keychain key")
-                return errSecSuccess
             }
         )
 
@@ -1036,6 +1025,66 @@ struct Weird_Parts_IOSTests {
         #expect(!FileManager.default.fileExists(atPath: fallbackURL.path))
     }
 
+    @Test func malformedBootstrapKeyReadFailsWithoutReplacement() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BootstrapFallback-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let probe = OperationProbe()
+        let malformedKeychain = AppCore.BootstrapKeychainAccess(
+            read: { (errSecSuccess, Data(repeating: 0xA5, count: 31)) },
+            add: { _ in
+                probe.addCallCount += 1
+                return errSecSuccess
+            }
+        )
+
+        do {
+            _ = try AppCore.deviceBootstrapKeyHex(
+                processArguments: [],
+                keychain: malformedKeychain,
+                fallbackDirectory: directory
+            )
+            Issue.record("malformed successful read unexpectedly minted a replacement key")
+        } catch let CipherKeyError.keychainAccessFailed(item: item, status: status) {
+            #expect(item == "device bootstrap key")
+            #expect(status == errSecDecode)
+        }
+        #expect(probe.addCallCount == 0, "A malformed bootstrap entry must not be replaced.")
+    }
+
+    @Test func malformedDuplicateBootstrapKeyReadFailsWithoutRetryAdd() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BootstrapFallback-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let probe = OperationProbe()
+        let malformedDuplicateKeychain = AppCore.BootstrapKeychainAccess(
+            read: {
+                if probe.ran {
+                    return (errSecSuccess, Data(repeating: 0x5A, count: 31))
+                }
+                probe.ran = true
+                return (errSecItemNotFound, nil)
+            },
+            add: { _ in
+                probe.addCallCount += 1
+                return errSecDuplicateItem
+            }
+        )
+
+        do {
+            _ = try AppCore.deviceBootstrapKeyHex(
+                processArguments: [],
+                keychain: malformedDuplicateKeychain,
+                fallbackDirectory: directory
+            )
+            Issue.record("malformed duplicate reread unexpectedly retried with a replacement key")
+        } catch let CipherKeyError.keychainAccessFailed(item: item, status: status) {
+            #expect(item == "device bootstrap key")
+            #expect(status == errSecDecode)
+        }
+        #expect(probe.addCallCount == 1, "A duplicate reread must not be followed by a replacement add.")
+    }
+
     @Test func bootstrapFallbackUsesApprovedStatusAfterDuplicateItemReread() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("BootstrapFallback-\(UUID().uuidString)", isDirectory: true)
@@ -1049,11 +1098,7 @@ struct Weird_Parts_IOSTests {
                 probe.ran = true
                 return (errSecItemNotFound, nil)
             },
-            add: { _ in errSecDuplicateItem },
-            delete: {
-                Issue.record("approved reread failure must use fallback before deleting")
-                return errSecSuccess
-            }
+            add: { _ in errSecDuplicateItem }
         )
 
         let keyHex = try AppCore.deviceBootstrapKeyHex(
@@ -1104,10 +1149,6 @@ struct Weird_Parts_IOSTests {
             add: { _ in
                 probe.addCallCount += 1
                 return errSecDuplicateItem
-            },
-            delete: {
-                Issue.record("a recoverable duplicate must not delete the established Keychain key")
-                return errSecSuccess
             }
         )
 
