@@ -53,6 +53,29 @@ Re-queue safety: re-applying an already-applied row is LWW-idempotent; determini
 constraint outcomes are counted as `keyCollisions`/`schemaDrops` (never `errors`), so the
 re-queue converges rather than looping.
 
+## Durable ordered receive journal (PR #1807 repair)
+
+The preceding cursor predicate was insufficient for a valid foreign-key child whose
+parent arrives in a **later delivery**: it could either hold the whole peer forever
+or make the child unreachable after an acknowledgement. The receive path now has two
+separate facts, persisted in migration `129_sync_receive_journal`:
+
+1. **Durable receipt:** the transport commits `(source_peer_id, source_sequence,
+   payload, audit_metadata)` with state `received`. Only after this succeeds may the
+   LAN pull vector advance or a LAN push return acceptance. Receipt acknowledges
+   retention, not business-data application.
+2. **Apply completion:** ordered journal replay attempts rows by receipt id. A missing
+   FK parent becomes `deferred`; a transient database failure becomes `retry`; a
+   deterministic refusal becomes `refused` with `disposition_reason`; and only a
+   confirmed apply becomes `applied`. Fixed-point passes repeat only after progress,
+   preserving source order without tail-requeue or hot loops. Terminal rows stay
+   queryable as audit evidence.
+
+This means a child accepted in one batch is never discarded just because its parent
+is absent. When that parent arrives later, the parent applies and a subsequent
+ordered pass applies the child. Existing LWW checks remain the stale-replay fence:
+an older deferred payload cannot overwrite or un-delete newer state.
+
 ## Verification signal
 
 On 2026-08-22, branch head `999dd1155815e869beb488c18cd7aff0c2cbcb42` rebased cleanly onto `main` at `a5b674a8edfe189cdd3faee9320122965b94b5c8` before the final expectation repair below.
