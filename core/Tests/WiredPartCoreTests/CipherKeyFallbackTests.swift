@@ -34,12 +34,11 @@ struct CipherKeyFallbackTests {
         #expect(!rescues(errSecInteractionNotAllowed))
     }
 
-    @Test("Mac detection covers the iPad binary, not just Catalyst")
-    func macDetectionCoversIPadOnMac() {
-        // On CI (iOS simulator / macOS SPM) this is false; the value matters
-        // less than the property being READ AT RUNTIME rather than compiled
-        // out — the compile-time Catalyst check is what missed iPad-on-Mac.
-        let value = CipherKeyManager.isRunningOnMac
-        #expect(value == true || value == false)
+    @Test("Runtime Mac detection covers Catalyst and the iPad binary")
+    func runtimeMacDetectionCoversEveryMacForm() {
+        #expect(RuntimePlatform.isRunningOnMac(isCatalyst: true, isiOSAppOnMac: false))
+        #expect(RuntimePlatform.isRunningOnMac(isCatalyst: false, isiOSAppOnMac: true))
+        #expect(RuntimePlatform.isRunningOnMac(isCatalyst: true, isiOSAppOnMac: true))
+        #expect(!RuntimePlatform.isRunningOnMac(isCatalyst: false, isiOSAppOnMac: false))
     }
 }

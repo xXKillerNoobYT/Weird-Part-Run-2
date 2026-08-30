@@ -606,6 +606,12 @@ final class AppCore: ObservableObject {
         }
     }
 
+    /// A locked Keychain can become available only after the app enters the
+    /// foreground. Each distinct transition to `.active` therefore retries once.
+    nonisolated static func shouldRetryBootstrap(from previous: ScenePhase, to current: ScenePhase) -> Bool {
+        previous != .active && current == .active
+    }
+
     nonisolated static func isRecoverableDebugCipherOpenFailure(_ error: Error) -> Bool {
         let nsError = error as NSError
         guard nsError.code == 26 else { return false }
@@ -891,16 +897,10 @@ final class AppCore: ObservableObject {
                 return (status, result as? Data)
             },
             add: { keyData in
-                var query: [CFString: Any] = [
-                    kSecClass: kSecClassGenericPassword,
-                    kSecAttrService: "com.wiredpart.dbcipher.bootstrap-key",
-                    kSecAttrAccount: "device-bootstrap-key",
-                    kSecValueData: keyData
-                ]
-                #if !targetEnvironment(macCatalyst)
-                query[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-                #endif
-                return SecItemAdd(query as CFDictionary, nil)
+                SecItemAdd(
+                    AppCore.bootstrapKeychainAddQuery(keyData) as CFDictionary,
+                    nil
+                )
             },
             delete: {
                 let query: [CFString: Any] = [
@@ -911,6 +911,22 @@ final class AppCore: ObservableObject {
                 return SecItemDelete(query as CFDictionary)
             }
         )
+    }
+
+    nonisolated static func bootstrapKeychainAddQuery(
+        _ keyData: Data,
+        isRuntimeMac: Bool = RuntimePlatform.isRunningOnMac
+    ) -> [CFString: Any] {
+        var query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: "com.wiredpart.dbcipher.bootstrap-key",
+            kSecAttrAccount: "device-bootstrap-key",
+            kSecValueData: keyData
+        ]
+        if !isRuntimeMac {
+            query[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        }
+        return query
     }
 
     nonisolated static func deviceBootstrapKeyHex(
@@ -982,13 +998,13 @@ final class AppCore: ObservableObject {
                     return fallbackKeyData.map { String(format: "%02x", $0) }.joined()
                 }
             }
-            throw CipherKeyError.keychainAccessFailed(addStatus)
+            throw CipherKeyError.keychainAccessFailed(item: .bootstrapKey, status: addStatus)
         }
         if readResult.status == errSecSuccess {
             // Self-heal legacy/corrupt entries before minting a replacement key.
             _ = keychain.delete()
         } else if readResult.status != errSecItemNotFound {
-            throw CipherKeyError.keychainAccessFailed(readResult.status)
+            throw CipherKeyError.keychainAccessFailed(item: .bootstrapKey, status: readResult.status)
         }
 
         var keyBytes = [UInt8](repeating: 0, count: 32)
@@ -1048,7 +1064,7 @@ final class AppCore: ObservableObject {
             // Only a missing or corrupt duplicate can be replaced. Locked and
             // unapproved Keychain states must fail before mutating the key.
             guard rereadResult.status == errSecSuccess || rereadResult.status == errSecItemNotFound else {
-                throw CipherKeyError.keychainAccessFailed(rereadResult.status)
+                throw CipherKeyError.keychainAccessFailed(item: .bootstrapKey, status: rereadResult.status)
             }
             // Preserve the existing recovery path for a stale duplicate entry.
             _ = keychain.delete()
@@ -1059,9 +1075,9 @@ final class AppCore: ObservableObject {
             if shouldUseLocalBootstrapKeyFallback(for: retryAddStatus) {
                 return try localFallbackBootstrapKeyHex(in: fallbackDirectory)
             }
-            throw CipherKeyError.keychainAccessFailed(retryAddStatus)
+            throw CipherKeyError.keychainAccessFailed(item: .bootstrapKey, status: retryAddStatus)
         }
-        throw CipherKeyError.keychainAccessFailed(addStatus)
+        throw CipherKeyError.keychainAccessFailed(item: .bootstrapKey, status: addStatus)
     }
 
     nonisolated static func shouldUseLocalBootstrapKeyFallback(for status: OSStatus) -> Bool {

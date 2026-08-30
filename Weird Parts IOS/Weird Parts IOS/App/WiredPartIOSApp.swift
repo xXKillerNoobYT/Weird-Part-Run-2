@@ -8,6 +8,7 @@ import WiredPartCore
 /// in the app's Documents directory; subsequent launches reopen it.
 @main
 struct WiredPartIOSApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var appCore = AppCore()
     @StateObject private var tabPrefs = TabBarPreferences()
     @State private var showLaunchErrorReport = false
@@ -386,6 +387,11 @@ struct WiredPartIOSApp: App {
             }
             .preferredColorScheme(resolvedColorScheme)
             .tint(accentColor)
+            .onChange(of: scenePhase) { previous, current in
+                if AppCore.shouldRetryBootstrap(from: previous, to: current) {
+                    appCore.retryBootstrap()
+                }
+            }
         }
     }
 }

@@ -8,6 +8,7 @@
 import Foundation
 import GRDB
 import Security
+import SwiftUI
 import Testing
 import WiredPartCore
 import XCTest
@@ -634,6 +635,49 @@ struct Weird_Parts_IOSTests {
         }
     }
 
+    @Test func bootstrapKeyAccessibilityMatchesSharedRuntimeMacPredicate() {
+        for (isCatalyst, isiOSAppOnMac) in [
+            (false, false),
+            (true, false),
+            (false, true),
+            (true, true)
+        ] {
+            let isRuntimeMac = RuntimePlatform.isRunningOnMac(
+                isCatalyst: isCatalyst,
+                isiOSAppOnMac: isiOSAppOnMac
+            )
+            let query = AppCore.bootstrapKeychainAddQuery(
+                Data(repeating: 0xA5, count: 32),
+                isRuntimeMac: isRuntimeMac
+            )
+            #expect(
+                (query[kSecAttrAccessible] != nil) == !isRuntimeMac,
+                "Bootstrap accessibility drifted from RuntimePlatform for Catalyst=\(isCatalyst), iPad-on-Mac=\(isiOSAppOnMac)"
+            )
+        }
+    }
+
+    @Test func activeSceneTransitionsRequestExactlyOneBootstrapRetry() {
+        #expect(AppCore.shouldRetryBootstrap(from: .inactive, to: .active))
+        #expect(AppCore.shouldRetryBootstrap(from: .background, to: .active))
+        #expect(!AppCore.shouldRetryBootstrap(from: .active, to: .active))
+        #expect(!AppCore.shouldRetryBootstrap(from: .active, to: .inactive))
+        #expect(!AppCore.shouldRetryBootstrap(from: .inactive, to: .background))
+    }
+
+    @Test func cipherKeychainErrorsNameTheFailedItem() {
+        #expect(
+            CipherKeyError.keychainAccessFailed(item: .bootstrapKey, status: errSecInteractionNotAllowed)
+                .localizedDescription
+                .contains("device bootstrap key")
+        )
+        #expect(
+            CipherKeyError.keychainAccessFailed(item: .cipherSalt, status: errSecInteractionNotAllowed)
+                .localizedDescription
+                .contains("cipher salt")
+        )
+    }
+
     @Test func bootstrapFallbackPersistsForApprovedReadFailureAndCleansUp() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("BootstrapFallback-\(UUID().uuidString)", isDirectory: true)
@@ -842,7 +886,8 @@ struct Weird_Parts_IOSTests {
                 fallbackDirectory: directory
             )
             Issue.record("locked keychain unexpectedly used fallback")
-        } catch let CipherKeyError.keychainAccessFailed(status) {
+        } catch let CipherKeyError.keychainAccessFailed(item: item, status: status) {
+            #expect(item == .bootstrapKey)
             #expect(status == errSecInteractionNotAllowed)
         }
         let fallbackURL = try AppCore.localFallbackBootstrapKeyURL(in: directory)
@@ -882,7 +927,8 @@ struct Weird_Parts_IOSTests {
                 fallbackDirectory: directory
             )
             Issue.record("locked duplicate reread unexpectedly recovered")
-        } catch let CipherKeyError.keychainAccessFailed(status) {
+        } catch let CipherKeyError.keychainAccessFailed(item: item, status: status) {
+            #expect(item == .bootstrapKey)
             #expect(status == errSecInteractionNotAllowed)
         }
 
