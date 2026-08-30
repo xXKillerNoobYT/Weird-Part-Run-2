@@ -171,6 +171,7 @@ extension AppDatabase {
         registerMigration127DeferredSupersessionEvidence(&migrator)
         registerMigration128NotebookBlockProvenance(&migrator)
         registerMigration129SyncReceiveJournal(&migrator)
+        registerMigration130SyncReceiveJournalPayloadRedaction(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6734,6 +6735,21 @@ private func registerMigration129SyncReceiveJournal(_ migrator: inout DatabaseMi
         }
         try db.create(index: "idx_sync_receive_journal_pending", on: "_sync_receive_journal", columns: ["state", "id"])
         try db.execute(sql: "CREATE UNIQUE INDEX idx_sync_receive_journal_source_sequence ON _sync_receive_journal(source_peer_id, source_sequence) WHERE source_sequence IS NOT NULL")
+    }
+}
+
+// MARK: - Migration 130: bounded terminal receive-journal payload retention (#1880)
+
+private func registerMigration130SyncReceiveJournalPayloadRedaction(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("130_sync_receive_journal_payload_redaction") { db in
+        try db.alter(table: "_sync_receive_journal") { t in
+            t.add(column: "redacted_at", .text)
+        }
+        try db.create(
+            index: "idx_sync_receive_journal_terminal_retention",
+            on: "_sync_receive_journal",
+            columns: ["state", "redacted_at", "applied_at", "updated_at"]
+        )
     }
 }
 

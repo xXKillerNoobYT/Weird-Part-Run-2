@@ -38,7 +38,11 @@ enum SyncReceiveJournal {
         auditMetadata: String
     ) throws {
         guard !changes.isEmpty else { return }
+        let normalizedAuditMetadata = normalizedAuditLabel(auditMetadata)
         try db.writer.write { connection in
+            // Receipt is a lifecycle boundary, so it also performs bounded cleanup.
+            // It is one idempotent UPDATE, not a timer or a replay loop.
+            _ = try redactExpiredTerminalPayloads(connection: connection, now: nil)
             for change in changes {
                 let payload = try String(decoding: JSONEncoder().encode(change), as: UTF8.self)
                 if let sequence = change.id {
@@ -48,7 +52,7 @@ enum SyncReceiveJournal {
                             (source_peer_id, source_sequence, payload, state, audit_metadata)
                         VALUES (?, ?, ?, 'received', ?)
                         """,
-                        arguments: [sourcePeerId, sequence, payload, auditMetadata]
+                        arguments: [sourcePeerId, sequence, payload, normalizedAuditMetadata]
                     )
                 } else {
                     try connection.execute(
@@ -57,14 +61,28 @@ enum SyncReceiveJournal {
                             (source_peer_id, payload, state, audit_metadata)
                         VALUES (?, ?, 'received', ?)
                         """,
-                        arguments: [sourcePeerId, payload, auditMetadata]
+                        arguments: [sourcePeerId, payload, normalizedAuditMetadata]
                     )
                 }
             }
         }
     }
 
+    /// Irreversibly remove an expired terminal payload while retaining the receipt's
+    /// identity and disposition evidence. Pending rows are intentionally excluded:
+    /// their payload is required for ordered replay.
+    @discardableResult
+    static func redactExpiredTerminalPayloads(db: AppDatabase, now: String? = nil) throws -> Int {
+        try db.writer.write { connection in
+            try redactExpiredTerminalPayloads(connection: connection, now: now)
+        }
+    }
+
     static func applyPending(db: AppDatabase, localDeviceId: String) throws -> ApplyResult {
+        // Applying pending work is the other deterministic lifecycle boundary.
+        // This remains a single bounded cleanup query even when fixed-point replay
+        // takes multiple passes.
+        _ = try redactExpiredTerminalPayloads(db: db)
         var result = ApplyResult()
         var appliedThisPass: Int
 
@@ -127,6 +145,36 @@ enum SyncReceiveJournal {
                 """,
                 arguments: [state, reason, attempted ? 1 : 0, state, id]
             )
+        }
+    }
+
+    private static func redactExpiredTerminalPayloads(connection: Database, now: String?) throws -> Int {
+        try connection.execute(
+            sql: """
+            UPDATE _sync_receive_journal
+            SET payload = '', redacted_at = COALESCE(?, datetime('now'))
+            WHERE redacted_at IS NULL
+              AND (
+                  (state = 'applied' AND applied_at IS NOT NULL
+                   AND datetime(applied_at, '+30 days') <= datetime(COALESCE(?, 'now')))
+                  OR
+                  (state = 'refused'
+                   AND datetime(updated_at, '+30 days') <= datetime(COALESCE(?, 'now')))
+              )
+            """,
+            arguments: [now, now, now]
+        )
+        return connection.changesCount
+    }
+
+    /// The receive journal records transport provenance, not business payloads.
+    /// Unknown values collapse to a stable test/audit label rather than being stored.
+    private static func normalizedAuditLabel(_ value: String) -> String {
+        switch value {
+        case "lan_push", "lan_pull", "legacy_inbox", "test":
+            return value
+        default:
+            return "test"
         }
     }
 }

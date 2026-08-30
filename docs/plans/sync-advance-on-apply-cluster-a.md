@@ -69,6 +69,29 @@ is absent. When that parent arrives later, the parent applies and a subsequent
 ordered pass applies the child. Existing LWW checks remain the stale-replay fence:
 an older deferred payload cannot overwrite or un-delete newer state.
 
+## Terminal journal payload retention (#1880)
+
+Receive-journal rows separate replay data from durable audit evidence. Migration
+`130_sync_receive_journal_payload_redaction` adds `redacted_at`; it does not delete
+the row or duplicate business data into audit columns.
+
+- `received`, `deferred`, and `retry` rows retain their payload indefinitely. They are
+  the only states selected by replay, so redacted rows are never decoded or applied.
+- `applied` payloads are retained until exactly 30 days after `applied_at`.
+- `refused` payloads are retained until exactly 30 days after the terminal
+  `updated_at`/disposition timestamp. The normalized disposition reason remains.
+- On expiry, the lifecycle helper irreversibly replaces `payload` with an empty
+  unavailable value and sets `redacted_at`. It preserves source peer/sequence,
+  terminal state, normalized disposition reason, retry count, normalized transport
+  label, attempt/apply/created/updated timestamps, and the redaction timestamp.
+- `audit_metadata` accepts only normalized labels (`lan_push`, `lan_pull`,
+  `legacy_inbox`, or the stable test label); it is never a copied business record
+  payload.
+
+Cleanup runs as one idempotent SQL update at existing receipt and pending-apply
+lifecycle boundaries. It is not a timer, does not alter receipt-before-ack, and does
+not add a replay pass or a hot loop.
+
 ## Verification signal
 
 Initial focused behavior evidence (2026-08-30) on baseline PR head
