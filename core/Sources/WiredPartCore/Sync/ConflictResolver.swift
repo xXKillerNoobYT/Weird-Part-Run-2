@@ -86,6 +86,11 @@ public struct MergeResult: Sendable {
     /// pinning an inbox or vector clock forever.
     public var permanentRefusals: Int = 0
 
+    /// A foreign-key refusal is not terminal until the receive journal proves
+    /// its parent cannot arrive. The per-row LAN path must retain it because
+    /// parent and child can arrive in separate deliveries.
+    public var foreignKeyDeferrals: Int = 0
+
     /// A merge that was PARKED for the fixed-point replay was then DISCARDED
     /// unapplied, because the batch moved past it: a LATER change in the same
     /// batch WROTE the same `(table, record_id)`, or the record it was going
@@ -122,6 +127,7 @@ public struct MergeResult: Sendable {
         keyCollisions: Int = 0,
         schemaDrops: Int = 0,
         permanentRefusals: Int = 0,
+        foreignKeyDeferrals: Int = 0,
         supersededMerges: Int = 0
     ) {
         self.applied = applied
@@ -131,6 +137,7 @@ public struct MergeResult: Sendable {
         self.keyCollisions = keyCollisions
         self.schemaDrops = schemaDrops
         self.permanentRefusals = permanentRefusals
+        self.foreignKeyDeferrals = foreignKeyDeferrals
         self.supersededMerges = supersededMerges
     }
 
@@ -465,7 +472,10 @@ public enum ConflictResolver {
                 }
                 result.add(outcome)
             } catch {
-                if isPermanentApplyRefusal(error) {
+                if isForeignKeyRefusal(error) {
+                    result.foreignKeyDeferrals += 1
+                    logger.notice("Deferred incoming change until its foreign-key parent is received: \(error.localizedDescription, privacy: .public)")
+                } else if isPermanentApplyRefusal(error) {
                     result.permanentRefusals += 1
                     logger.warning("Permanently refused incoming change: \(error.localizedDescription, privacy: .public)")
                 } else {
@@ -925,14 +935,18 @@ public enum ConflictResolver {
         }
     }
 
-    /// Rows rejected because a required parent is absent, a trigger rejects the
-    /// write, or this receiver lacks the target table cannot succeed on retry.
+    private static func isForeignKeyRefusal(_ error: Error) -> Bool {
+        (error as? DatabaseError)?.extendedResultCode == .SQLITE_CONSTRAINT_FOREIGNKEY
+    }
+
+    /// Rows rejected because a trigger rejects the write or this receiver lacks
+    /// the target table cannot succeed on retry.
     /// Keep those distinct from infrastructure faults so a receive cursor is
     /// retained only for failures whose retry can make progress.
     private static func isPermanentApplyRefusal(_ error: Error) -> Bool {
         guard let databaseError = error as? DatabaseError else { return false }
         switch databaseError.extendedResultCode {
-        case .SQLITE_CONSTRAINT_FOREIGNKEY, .SQLITE_CONSTRAINT_TRIGGER:
+        case .SQLITE_CONSTRAINT_TRIGGER:
             return true
         default:
             return databaseError.message?.lowercased().contains("no such table") == true

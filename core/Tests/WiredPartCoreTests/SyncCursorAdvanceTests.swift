@@ -52,8 +52,8 @@ struct SyncCursorAdvanceTests {
         #expect(r.isSafeToAdvanceReceiveCursor == false)
     }
 
-    @Test("A permanent foreign-key refusal is deterministic rather than retryable")
-    func permanentForeignKeyRefusalAdvances() throws {
+    @Test("A foreign-key refusal is deferred durably instead of becoming terminal")
+    func foreignKeyRefusalDefers() throws {
         let db = try freshDB()
         let result = try ConflictResolver.resolveAndApplyChanges(
             db: db,
@@ -68,9 +68,9 @@ struct SyncCursorAdvanceTests {
             localDeviceId: "receiver"
         )
 
-        #expect(result.permanentRefusals == 1)
+        #expect(result.foreignKeyDeferrals == 1)
+        #expect(result.permanentRefusals == 0)
         #expect(result.errors == 0)
-        #expect(result.isSafeToAdvanceReceiveCursor)
     }
 
     @Test("A missing target table is deterministic rather than retryable")
@@ -132,8 +132,8 @@ struct SyncCursorAdvanceTests {
         #expect(displayName == "later row")
     }
 
-    @Test("processInbox clears deterministic results but requeues transient results")
-    func processInboxClassifiesRetryPolicyAtTheProductionCallSite() async throws {
+    @Test("processInbox drains legacy memory input only after persisting it in the journal")
+    func processInboxPersistsLegacyRowsBeforeApply() async throws {
         let db = try freshDB()
         let manager = PeerManager(db: db)
         let serverState = SyncServerState(deviceId: "receiver", deviceName: "Receiver", companyId: "company", db: db)
@@ -141,25 +141,55 @@ struct SyncCursorAdvanceTests {
 
         let row = IncomingChange(
             deviceId: "peer", tableName: "users", recordId: "100", operation: "INSERT",
+            recordData: #"{"id":100,"display_name":"journaled","pin_hash":"hash","is_active":1}"#,
             timestamp: "2026-08-22T00:00:00Z"
         )
         await serverState.appendToInbox([row])
-        await manager.testProcessInbox { _, _ in MergeResult(permanentRefusals: 1) }
-        #expect((await serverState.inbox).isEmpty)
+        await manager.testProcessInbox()
 
-        await serverState.appendToInbox([row])
-        await manager.testProcessInbox { _, _ in MergeResult(errors: 1) }
-        #expect((await serverState.inbox).count == 1)
+        #expect((await serverState.inbox).isEmpty)
+        let journalState = try await db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: "SELECT state FROM _sync_receive_journal WHERE source_peer_id = 'lan_inbox'")
+        }
+        #expect(journalState == "applied")
+    }
+
+    @Test("journal retains child before a later parent then converges in source order")
+    func receiveJournalDefersChildUntilLaterParent() throws {
+        let db = try freshDB()
+        let child = IncomingChange(
+            id: 41, deviceId: "peer", tableName: "part_styles", recordId: "77", operation: "INSERT",
+            recordData: #"{"id":"77","category_id":"700","name":"Deferred child"}"#,
+            timestamp: "2026-08-22T00:00:00Z"
+        )
+        try SyncReceiveJournal.record(db: db, sourcePeerId: "peer", changes: [child], auditMetadata: "test")
+        let first = try SyncReceiveJournal.applyPending(db: db, localDeviceId: "receiver")
+        #expect(first.deferred == 1)
+        #expect(try db.writer.read { try String.fetchOne($0, sql: "SELECT state FROM _sync_receive_journal WHERE source_sequence = 41") } == "deferred")
+        #expect(try db.writer.read { try String.fetchOne($0, sql: "SELECT name FROM part_styles WHERE id = 77") } == nil)
+
+        let parent = IncomingChange(
+            id: 42, deviceId: "peer", tableName: "part_categories", recordId: "700", operation: "INSERT",
+            recordData: #"{"id":"700","name":"Later parent"}"#,
+            timestamp: "2026-08-22T00:00:01Z"
+        )
+        try SyncReceiveJournal.record(db: db, sourcePeerId: "peer", changes: [parent], auditMetadata: "test")
+        let second = try SyncReceiveJournal.applyPending(db: db, localDeviceId: "receiver")
+        #expect(second.applied == 2)
+        #expect(try db.writer.read { try String.fetchOne($0, sql: "SELECT state FROM _sync_receive_journal WHERE source_sequence = 41") } == "applied")
+        #expect(try db.writer.read { try String.fetchOne($0, sql: "SELECT name FROM part_styles WHERE id = 77") } == "Deferred child")
     }
 
     @Test("syncWithPeer advances the LAN receive vector for a permanent refusal")
     func syncWithPeerAdvancesVectorClockAfterPermanentRefusal() async throws {
         let db = try freshDB()
+        let remoteDB = try freshDB()
         let manager = PeerManager(db: db)
         let remoteState = SyncServerState(
             deviceId: "remote",
             deviceName: "Remote",
-            companyId: "company"
+            companyId: "company",
+            db: remoteDB
         )
         let remoteServer = LanSyncServer(state: remoteState)
         let remotePort = try await remoteServer.start()
