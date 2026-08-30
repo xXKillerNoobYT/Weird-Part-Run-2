@@ -30,6 +30,9 @@ final class AppCore: ObservableObject {
         private(set) var isBootstrapInFlight = false
         private(set) var isReady = false
         private var retryAfterActiveTransition = false
+        private var isSceneActive = false
+        private var activeTransitionGeneration = 0
+        private var immediateRetryGeneration: Int?
 
         mutating func beginBootstrap() -> Bool {
             guard !isBootstrapInFlight else { return false }
@@ -38,14 +41,46 @@ final class AppCore: ObservableObject {
             return true
         }
 
-        mutating func finishBootstrap(success: Bool, error: Error? = nil) {
+        /// Returns true only for the first eligible transient failure observed
+        /// while the current active-scene generation is still active. A retry
+        /// that also fails must wait for a later foreground transition instead
+        /// of recursively retrying while the Keychain remains locked.
+        @discardableResult
+        mutating func finishBootstrap(success: Bool, error: Error? = nil) -> Bool {
             isBootstrapInFlight = false
             isReady = success
-            retryAfterActiveTransition = !success
-                && error.map(AppCore.isTransientKeychainInteractionNotAllowed) == true
+            guard !success,
+                  error.map(AppCore.isTransientKeychainInteractionNotAllowed) == true else {
+                retryAfterActiveTransition = false
+                return false
+            }
+
+            retryAfterActiveTransition = true
+            guard isSceneActive,
+                  immediateRetryGeneration != activeTransitionGeneration else {
+                return false
+            }
+
+            immediateRetryGeneration = activeTransitionGeneration
+            retryAfterActiveTransition = false
+            return true
         }
 
-        mutating func consumeRetryAfterActiveTransition() -> Bool {
+        /// Records every scene phase so a failure completing after an earlier
+        /// `.active` event can retry once immediately rather than waiting for an
+        /// unrelated second foreground cycle.
+        mutating func scenePhaseDidChange(to phase: ScenePhase) -> Bool {
+            guard phase == .active else {
+                isSceneActive = false
+                return false
+            }
+
+            isSceneActive = true
+            activeTransitionGeneration += 1
+            return consumeRetryAfterActiveTransition()
+        }
+
+        private mutating func consumeRetryAfterActiveTransition() -> Bool {
             guard !isBootstrapInFlight, !isReady, retryAfterActiveTransition else {
                 return false
             }
@@ -588,7 +623,7 @@ final class AppCore: ObservableObject {
                 }
             }
         } catch {
-            bootstrapRetryCoordinator.finishBootstrap(success: false, error: error)
+            let retryWhileStillActive = bootstrapRetryCoordinator.finishBootstrap(success: false, error: error)
             let nsError = error as NSError
             logger.error(
                 "[AppCore] bootstrap failed domain=\(nsError.domain, privacy: .public) code=\(nsError.code, privacy: .public) description=\(error.localizedDescription, privacy: .public)"
@@ -607,6 +642,9 @@ final class AppCore: ObservableObject {
                 loadError = "\(friendly)\n\n\(technical)"
             }
             BugReportErrorLog.shared.record(loadError ?? error.localizedDescription, context: "App startup")
+            if retryWhileStillActive {
+                retryBootstrap()
+            }
         }
     }
 
@@ -645,11 +683,10 @@ final class AppCore: ObservableObject {
         }
     }
 
-    /// A locked Keychain can become available only after foregrounding. This
-    /// consumes one retry token, so a healthy app and an in-flight launch are
-    /// never reopened by an ordinary scene transition.
-    func retryBootstrapAfterActiveSceneTransition() {
-        guard bootstrapRetryCoordinator.consumeRetryAfterActiveTransition() else {
+    /// Records a scene transition and retries only when the coordinator has an
+    /// eligible transient-failure token for that foreground generation.
+    func handleScenePhaseChange(_ phase: ScenePhase) {
+        guard bootstrapRetryCoordinator.scenePhaseDidChange(to: phase) else {
             return
         }
         retryBootstrap()

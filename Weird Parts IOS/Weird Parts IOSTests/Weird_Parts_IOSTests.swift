@@ -704,10 +704,8 @@ struct Weird_Parts_IOSTests {
 
         var retryCount = 0
         for phase in [ScenePhase.inactive, .active, .background, .active] {
-            WiredPartIOSApp.retryBootstrapOnActiveSceneTransition(phase: phase) {
-                if coordinator.consumeRetryAfterActiveTransition() {
-                    retryCount += 1
-                }
+            if coordinator.scenePhaseDidChange(to: phase) {
+                retryCount += 1
             }
         }
 
@@ -715,15 +713,43 @@ struct Weird_Parts_IOSTests {
     }
 
     @MainActor
+    @Test func activeSceneBeforeTransientBootstrapFailureRetriesOnceWithoutLooping() {
+        var coordinator = AppCore.BootstrapRetryCoordinator()
+        let lockedKeychainError = CipherKeyError.keychainAccessFailed(
+            item: "device bootstrap key",
+            status: errSecInteractionNotAllowed
+        )
+
+        let beganInitialBootstrap = coordinator.beginBootstrap()
+        #expect(beganInitialBootstrap)
+        let wasAlreadyActive = coordinator.scenePhaseDidChange(to: .active)
+        #expect(!wasAlreadyActive)
+        let retriedImmediately = coordinator.finishBootstrap(success: false, error: lockedKeychainError)
+        #expect(retriedImmediately)
+
+        // The immediate retry is in-flight on the same active generation. If it
+        // fails again, it must wait for a new foreground transition.
+        let beganImmediateRetry = coordinator.beginBootstrap()
+        #expect(beganImmediateRetry)
+        let retriedAgainImmediately = coordinator.finishBootstrap(success: false, error: lockedKeychainError)
+        #expect(!retriedAgainImmediately)
+        let retriedInBackground = coordinator.scenePhaseDidChange(to: .background)
+        #expect(!retriedInBackground)
+        let retriedOnNextForeground = coordinator.scenePhaseDidChange(to: .active)
+        #expect(retriedOnNextForeground)
+    }
+
+    @MainActor
     @Test func activeSceneTransitionCannotRebootstrapReadyOrInFlightApp() {
         var coordinator = AppCore.BootstrapRetryCoordinator()
 
         let started = coordinator.beginBootstrap()
-        let retriedWhileInFlight = coordinator.consumeRetryAfterActiveTransition()
+        let retriedWhileInFlight = coordinator.scenePhaseDidChange(to: .active)
         #expect(started)
         #expect(!retriedWhileInFlight)
-        coordinator.finishBootstrap(success: true)
-        let retriedWhenReady = coordinator.consumeRetryAfterActiveTransition()
+        let didRetryOnSuccessfulBootstrap = coordinator.finishBootstrap(success: true)
+        #expect(!didRetryOnSuccessfulBootstrap)
+        let retriedWhenReady = coordinator.scenePhaseDidChange(to: .active)
         #expect(!retriedWhenReady)
     }
 

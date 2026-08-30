@@ -264,14 +264,6 @@ struct WiredPartIOSApp: App {
         }
     }
 
-    static func retryBootstrapOnActiveSceneTransition(
-        phase: ScenePhase,
-        retryBootstrap: () -> Void
-    ) {
-        guard phase == .active else { return }
-        retryBootstrap()
-    }
-
     var body: some Scene {
         WindowGroup {
             Group {
@@ -385,9 +377,7 @@ struct WiredPartIOSApp: App {
             .preferredColorScheme(resolvedColorScheme)
             .tint(accentColor)
             .onChange(of: scenePhase) { _, phase in
-                Self.retryBootstrapOnActiveSceneTransition(phase: phase) {
-                    appCore.retryBootstrapAfterActiveSceneTransition()
-                }
+                appCore.handleScenePhaseChange(phase)
             }
         }
     }
