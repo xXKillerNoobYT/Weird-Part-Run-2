@@ -180,6 +180,71 @@ struct SyncCursorAdvanceTests {
         #expect(try db.writer.read { try String.fetchOne($0, sql: "SELECT name FROM part_styles WHERE id = 77") } == "Deferred child")
     }
 
+    @Test("journal replays a child before its later parent in durable source order")
+    func receiveJournalPreservesSourceOrderAcrossFixedPointReplay() throws {
+        let db = try freshDB()
+        let child = IncomingChange(
+            id: 51, deviceId: "peer", tableName: "part_styles", recordId: "88", operation: "INSERT",
+            recordData: #"{"id":"88","category_id":"701","name":"Source-ordered child"}"#,
+            timestamp: "2026-08-22T00:00:00Z"
+        )
+        let parent = IncomingChange(
+            id: 52, deviceId: "peer", tableName: "part_categories", recordId: "701", operation: "INSERT",
+            recordData: #"{"id":"701","name":"Source-ordered parent"}"#,
+            timestamp: "2026-08-22T00:00:01Z"
+        )
+
+        try SyncReceiveJournal.record(
+            db: db, sourcePeerId: "peer", changes: [child, parent], auditMetadata: "source_order_test"
+        )
+        let result = try SyncReceiveJournal.applyPending(db: db, localDeviceId: "receiver")
+
+        #expect(result.deferred == 1, "the child must be attempted before its later parent")
+        #expect(result.applied == 2)
+        let retries = try db.writer.read { dbConn in
+            try Int.fetchOne(
+                dbConn,
+                sql: "SELECT retry_count FROM _sync_receive_journal WHERE source_sequence = 51"
+            )
+        }
+        #expect(retries == 2, "child is deferred once, then applied only after the later parent")
+        #expect(try db.writer.read {
+            try String.fetchOne($0, sql: "SELECT state FROM _sync_receive_journal WHERE source_sequence = 51")
+        } == "applied")
+        #expect(try db.writer.read {
+            try String.fetchOne($0, sql: "SELECT name FROM part_styles WHERE id = 88")
+        } == "Source-ordered child")
+    }
+
+    @Test("journal retains an irreconcilable refusal as structured non-retrying audit evidence")
+    func receiveJournalRetainsIrreconcilableRefusal() throws {
+        let db = try freshDB()
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: "DROP TABLE business_profiles")
+        }
+        let refusal = IncomingChange(
+            id: 61, deviceId: "peer", tableName: "business_profiles", recordId: "1", operation: "INSERT",
+            recordData: #"{"id":1}"#,
+            timestamp: "2026-08-22T00:00:00Z"
+        )
+        try SyncReceiveJournal.record(db: db, sourcePeerId: "peer", changes: [refusal], auditMetadata: "refusal_test")
+
+        let first = try SyncReceiveJournal.applyPending(db: db, localDeviceId: "receiver")
+        let second = try SyncReceiveJournal.applyPending(db: db, localDeviceId: "receiver")
+        #expect(first.refused == 1)
+        #expect(second.refused == 0, "terminal refusals must not hot-loop")
+        let evidence = try db.writer.read { dbConn in
+            try Row.fetchOne(
+                dbConn,
+                sql: "SELECT state, disposition_reason, retry_count, audit_metadata FROM _sync_receive_journal WHERE source_sequence = 61"
+            )
+        }
+        #expect(evidence?["state"] as String? == "refused")
+        #expect(evidence?["disposition_reason"] as String? == "irreconcilable_apply_refusal")
+        #expect(evidence?["retry_count"] as Int? == 1)
+        #expect(evidence?["audit_metadata"] as String? == "refusal_test")
+    }
+
     @Test("syncWithPeer advances the LAN receive vector for a permanent refusal")
     func syncWithPeerAdvancesVectorClockAfterPermanentRefusal() async throws {
         let db = try freshDB()
@@ -239,6 +304,58 @@ struct SyncCursorAdvanceTests {
         #expect(result.success)
         #expect(result.pulled == 0)
         #expect(try ChangeTracker.getVectorClock(db: db, deviceId: "receiver")["remote"] == 41)
+        let journalState = try await db.writer.read { dbConn in
+            try String.fetchOne(
+                dbConn,
+                sql: "SELECT state FROM _sync_receive_journal WHERE source_peer_id = 'remote' AND source_sequence = 41"
+            )
+        }
+        #expect(journalState != nil, "the vector may advance only after a durable journal receipt")
+        #expect(journalState != "received", "receipt must reach an explicit apply disposition")
+    }
+
+    @Test("syncWithPeer does not advance a receive vector when durable receipt fails")
+    func syncWithPeerHoldsVectorWhenJournalReceiptFails() async throws {
+        let db = try freshDB()
+        let remoteDB = try freshDB()
+        let manager = PeerManager(db: db)
+        let remoteState = SyncServerState(
+            deviceId: "remote", deviceName: "Remote", companyId: "company", db: remoteDB
+        )
+        let remoteServer = LanSyncServer(state: remoteState)
+        let remotePort = try await remoteServer.start()
+        defer { Task { await remoteServer.stop() } }
+
+        try ChangeTracker.registerPeerDevice(
+            db: db, peerId: "remote", peerName: "Remote", platform: "test",
+            keyAgreementPublicKey: remoteState.kaPublicKeyB64
+        )
+        await remoteState.setOutbox([IncomingChange(
+            id: 71, deviceId: "remote", tableName: "part_categories", recordId: "701", operation: "INSERT",
+            recordData: #"{"id":"701","name":"Receipt must precede vector"}"#,
+            timestamp: "2026-08-22T00:00:00Z"
+        )])
+        try await manager.startPeerSync(
+            deviceId: "receiver", deviceName: "Receiver", companyId: "company", startMultipeer: false
+        )
+        defer { Task { await manager.stopPeerSync() } }
+        let receiverIdentity = try await manager.localSyncIdentity(deviceId: "receiver")
+        try await remoteState.registerAuthorizedPeer(
+            deviceId: "receiver", deviceName: "Receiver", platform: "test",
+            keyAgreementPublicKey: receiverIdentity.publicKeyB64
+        )
+        try await db.writer.write { dbConn in
+            try dbConn.execute(sql: "DROP TABLE _sync_receive_journal")
+        }
+
+        let result = await manager.syncWithPeer(DiscoveredPeer(
+            deviceId: "remote", deviceName: "Remote", companyId: "company",
+            host: "127.0.0.1", port: remotePort, transport: "lan"
+        ))
+
+        #expect(!result.success)
+        #expect(try ChangeTracker.getVectorClock(db: db, deviceId: "receiver")["remote"] == nil,
+                "an accepted transport row is unreachable if receipt fails before vector advance")
     }
 
     // MARK: - #1794: backlog is capped, count is not
