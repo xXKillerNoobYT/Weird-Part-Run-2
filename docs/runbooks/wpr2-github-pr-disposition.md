@@ -298,7 +298,7 @@ assertion is fail-fast: a missing, duplicated, or renamed anchor stops the
 validation immediately and cannot be masked by a later successful assertion.
 
 ```bash
-workflow=workflows/wpr2-github-pr-disposition.md
+workflow=docs/runbooks/wpr2-github-pr-disposition.md
 validate_closeout_anchors() {
   local candidate="$1" section anchor matches
   section=$(sed -n \
