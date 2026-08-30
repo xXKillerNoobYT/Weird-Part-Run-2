@@ -26,32 +26,25 @@ applied ack."*
 ## The landmine (why the naive fix is wrong)
 
 The naive fix — "advance only past rows that applied" — is **wrong** and would re-introduce
-the bug that got PR #1749 reverted. `MergeResult` (ConflictResolver.swift:56-109) documents
-that `keyCollisions`, `schemaDrops`, and `supersededMerges` are **deterministic, expected**
-non-applies. A `keyCollision` "is a deterministic function of (payload, local schema, local
-rows), so every retry re-derives it"; a `schemaDrop` "a retry can never fix … only a schema
-migration can." Holding the watermark for those re-sends the same rows **forever** and the
-peer never converges.
+ the bug that got PR #1749 reverted. `MergeResult` (ConflictResolver.swift:56-162) documents
+that `keyCollisions`, `schemaDrops`, and `supersededMerges` are deterministic non-applies.
+Re-delivering them cannot change their outcome and can pin the sender forever.
 
-Only `errors` (SQLITE_BUSY, disk full, transient DB faults) are retryable. Permanent
-FOREIGN KEY / TRIGGER / missing-table refusals are separately counted in
-`permanentRefusals`, alongside the existing deterministic counters. So the correct
-rule is: **advance unless `errors > 0`.** This is exactly what the existing atomic paths
-already do — `PeerManager.applyStagedSnapshot` (`guard result.errors == 0`, line 1602) and
-`applyIncomingChanges` (line 2896). The fix makes the LAN pull + inbox paths **match the
-convention the snapshot/BT paths already follow**, rather than inventing new semantics.
+A foreign-key failure is deliberately **not** in that terminal class: the sender may deliver a
+child before its parent, including in a later payload. The LAN receive paths therefore do not
+use `MergeResult.isSafeToAdvanceReceiveCursor` as an apply-ack decision. They durably record
+receipt first, then the journal marks FK rows `deferred` until a later parent makes a fixed-point
+replay succeed. Only `trigger`, missing-table, and schema-representation refusals become terminal
+`refused` audit records. Infrastructure failures remain `retry` rows. This retains every
+acknowledged row while ensuring an irreconcilable row cannot hot-loop or block its successors.
 
 ## Decision
 
 | # | Site | Change |
 |---|------|--------|
 | #1794 | `SyncEngine.runSync` success path | Replace `pendingCount: 0` with `getPendingChangeCount(db:)` (re-read after `markSynced`), matching every error path in the same function. |
-| #1793 | `PeerManager.syncViaHTTP` pull | Capture the `MergeResult`; report `pulled = mergeResult.applied`; advance the receive vector clock **only when `mergeResult.errors == 0`**. |
-| #1792 | `PeerManager.processInbox` | Capture the result; on a thrown error (nothing committed) **or** `result.errors > 0`, re-append the drained batch to the inbox so the next pass retries. Stop swallowing. |
-
-Re-queue safety: re-applying an already-applied row is LWW-idempotent; deterministic
-constraint outcomes are counted as `keyCollisions`/`schemaDrops` (never `errors`), so the
-re-queue converges rather than looping.
+| #1793 | `PeerManager.syncViaHTTP` pull | Persist all received rows in `SyncReceiveJournal` before advancing the receive vector. Then apply pending rows; `pulled` is confirmed applications, not transport row count. |
+| #1792 | `PeerManager.processInbox` | Persist legacy in-memory input in `SyncReceiveJournal` before applying. The in-memory drain is safe only after durable receipt; journal states retain deferred/retry/refused outcomes. |
 
 ## Durable ordered receive journal (PR #1807 repair)
 
@@ -78,15 +71,25 @@ an older deferred payload cannot overwrite or un-delete newer state.
 
 ## Verification signal
 
-On 2026-08-22, branch head `999dd1155815e869beb488c18cd7aff0c2cbcb42` rebased cleanly onto `main` at `a5b674a8edfe189cdd3faee9320122965b94b5c8` before the final expectation repair below.
+Current focused behavior evidence (2026-08-29, before the next commit):
 
-Focused behavior evidence:
-1. `swift test --filter SyncCursorAdvanceTests` passed **11 tests**. It invokes the real `PeerManager.processInbox()`, real LAN `syncWithPeer` → `syncViaHTTP`, and real `SyncEngine.runSync` call paths.
-2. A temporary revert mutation inverted both receive-cursor policy branches and restored `pendingCount: 0`; the same suite failed with five assertions: deterministic inbox clear/later-row flow, transient requeue, LAN vector advance, and remaining pending count. The mutations were restored before this update.
-3. Actual SQLite FOREIGN KEY, TRIGGER, and missing-table refusals are asserted as `permanentRefusals == 1` and `errors == 0`; the two pre-existing counter expectations that still asserted `errors == 1` were corrected in this repair.
-4. The focused natural-key and conflict-resolver suites report all **31** and **44** Swift Testing cases passed. Their `swift test --filter` command wrapper also prints a legacy XCTest "no matching test cases" warning, so the canonical current-head iPhone/iPad gate remains the final platform proof.
-
-The previous exact-head iPhone and iPad gate run on `999dd1155815e869beb488c18cd7aff0c2cbcb42` completed UI smokes (5/5 each) but failed unit regression only because those two stale `errors == 1` expectations were still present. Fresh iPhone+iPad runs on the post-repair SHA are required before the SecurityAgent → LocalFirstReviewer → GPTReviewer → ClaudeReviewer sequence may begin.
+1. `swift test --filter SyncCursorAdvanceTests` passed **17 tests**. It invokes the real
+   `PeerManager.processInbox()`, real LAN `syncWithPeer` → `syncViaHTTP`, and real
+   `SyncEngine.runSync` call paths. The two added production-path regressions deliver a
+   `part_styles` child before its `part_categories` parent and assert eventual child apply;
+   the LAN test also asserts vector receipt reaches sequence 82 only after durable journal write.
+2. A temporary mutation replaced the journal fixed-point condition
+   `while appliedThisPass > 0` with `while false`. The same suite failed **11 assertions**,
+   including the new `processInbox` child-before-parent test and the new `syncViaHTTP` LAN
+   child-before-parent test. The original condition was restored, then the 17-test suite passed.
+3. `swift test --filter ConflictResolverTests` passed **44 tests**; `swift test --filter
+   ConflictResolverNaturalKeyTests` passed **31 tests**. The SwiftPM wrapper also prints a
+   legacy XCTest "0 tests" line before Swift Testing; the `Test run with … passed` line is
+   the canonical result.
+4. `git diff --check` was clean before commit. The current branch still needs a post-commit
+   exact-head iPhone+iPad gate and a restarted SecurityAgent → LocalFirstReviewer →
+   GPTReviewer → ClaudeReviewer lane. Previous iPhone/iPad gates must not be treated as
+   evidence for the next head.
 
 Not verifiable headless: a real two-device LAN round-trip. Field confirmation on paired
 hardware remains a follow-up.
