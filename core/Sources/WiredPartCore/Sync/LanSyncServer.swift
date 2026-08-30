@@ -283,6 +283,14 @@ public actor SyncServerState {
         inbox = mutableInbox
     }
 
+    /// Durable receipt is the transport-acknowledgement boundary; application is
+    /// separately replayed by PeerManager in stable journal order.
+    public func recordReceivedChanges(_ changes: [IncomingChange], from peerId: String) throws {
+        guard !changes.isEmpty else { return }
+        guard let db else { throw SyncServerError.databaseUnavailable }
+        try SyncReceiveJournal.record(db: db, sourcePeerId: peerId, changes: changes, auditMetadata: "lan_push")
+    }
+
     public func drainInbox() -> [IncomingChange] {
         let drained = inbox
         inbox = []
@@ -973,8 +981,13 @@ public final class LanSyncServer: Sendable {
             return errorResponse
         }
 
-        // Accept changes into inbox
-        await state.appendToInbox(request.changes)
+        // A 200 is a receipt acknowledgement, so it is legal only after every
+        // accepted row is durable. Application/retry is intentionally separate.
+        do {
+            try await state.recordReceivedChanges(request.changes, from: senderDeviceId)
+        } catch {
+            return (503, Data(#"{"error":"receipt_journal_unavailable"}"#.utf8))
+        }
 
         let response = SyncPushResponse(
             accepted: request.changes.count,
@@ -1193,6 +1206,7 @@ public enum SyncServerError: Error {
     case invalidPairingCode
     case invalidPeerKey
     case serverNotRunning
+    case databaseUnavailable
 }
 
 // MARK: - Parsed HTTP Request

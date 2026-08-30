@@ -1022,29 +1022,14 @@ public actor PeerManager {
         let result = try JSONDecoder().decode(SyncPullResponse.self, from: plainPullData)
 
         if !result.changes.isEmpty {
-            let mergeResult = try ConflictResolver.resolveAndApplyChanges(
-                db: db,
-                changes: result.changes,
-                localDeviceId: deviceId
-            )
-            // Report the honest count, not "every row we received" (#1793).
-            pulled = mergeResult.applied
-
-            // Advance the receive vector clock only when it is safe to do so — i.e. no
-            // TRANSIENT failure. Deterministic non-applies (keyCollisions/schemaDrops/…)
-            // must not block the advance or the peer re-sends forever (#1749); only
-            // retryable `errors` hold the clock. See isSafeToAdvanceReceiveCursor (#1793).
-            if mergeResult.isSafeToAdvanceReceiveCursor {
-                let maxSeq = result.changes.compactMap { $0.id }.max() ?? 0
-                if maxSeq > 0 {
-                    try ChangeTracker.updateVectorClock(
-                        db: db,
-                        peerId: result.serverDeviceId,
-                        lastSequence: maxSeq,
-                        deviceId: deviceId
-                    )
-                }
+            // Receipt, not apply, is the vector-clock boundary. A child can now
+            // survive a later-batch parent without asking the peer to resend it.
+            try SyncReceiveJournal.record(db: db, sourcePeerId: result.serverDeviceId, changes: result.changes, auditMetadata: "lan_pull")
+            let maxSeq = result.changes.compactMap { $0.id }.max() ?? 0
+            if maxSeq > 0 {
+                try ChangeTracker.updateVectorClock(db: db, peerId: result.serverDeviceId, lastSequence: maxSeq, deviceId: deviceId)
             }
+            pulled = try SyncReceiveJournal.applyPending(db: db, localDeviceId: deviceId).applied
         }
 
         return (pushed, pulled)
@@ -1262,15 +1247,16 @@ public actor PeerManager {
     ) async {
         guard let sState = serverState else { return }
         let inbox = await sState.drainInbox()
-        guard !inbox.isEmpty else { return }
 
         do {
-            let result = try apply(inbox, sState.deviceId)
-            if !result.isSafeToAdvanceReceiveCursor {
-                await sState.appendToInbox(inbox)
+            // Legacy/test callers may still append in-memory rows. Convert those
+            // to durable receipts before applying the full ordered journal.
+            if !inbox.isEmpty {
+                try SyncReceiveJournal.record(db: db, sourcePeerId: "lan_inbox", changes: inbox, auditMetadata: "legacy_inbox")
             }
+            _ = try SyncReceiveJournal.applyPending(db: db, localDeviceId: sState.deviceId)
         } catch {
-            await sState.appendToInbox(inbox)
+            logger.error("[PeerManager] Receive journal application deferred: \(error.localizedDescription, privacy: .public)")
         }
     }
 

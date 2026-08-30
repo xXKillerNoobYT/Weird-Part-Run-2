@@ -170,6 +170,7 @@ extension AppDatabase {
         registerMigration126DeviceLogDiagnostics(&migrator)
         registerMigration127DeferredSupersessionEvidence(&migrator)
         registerMigration128NotebookBlockProvenance(&migrator)
+        registerMigration129SyncReceiveJournal(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6710,6 +6711,29 @@ private func registerMigration127DeferredSupersessionEvidence(_ migrator: inout 
         }
         try db.create(index: "idx_deferred_supersession_record", on: "_deferred_supersession_log", columns: ["table_name", "record_id", "created_at"])
         try db.create(index: "idx_deferred_supersession_conflict", on: "_deferred_supersession_log", columns: ["conflict_log_id"])
+    }
+}
+
+// MARK: - Migration 129: durable ordered receive journal (#1807)
+
+private func registerMigration129SyncReceiveJournal(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("129_sync_receive_journal") { db in
+        try db.create(table: "_sync_receive_journal") { t in
+            t.autoIncrementedPrimaryKey("id")
+            t.column("source_peer_id", .text).notNull()
+            t.column("source_sequence", .integer)
+            t.column("payload", .text).notNull()
+            t.column("state", .text).notNull().defaults(to: "received")
+            t.column("disposition_reason", .text)
+            t.column("retry_count", .integer).notNull().defaults(to: 0)
+            t.column("audit_metadata", .text).notNull()
+            t.column("last_attempt_at", .text)
+            t.column("applied_at", .text)
+            t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+            t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
+        }
+        try db.create(index: "idx_sync_receive_journal_pending", on: "_sync_receive_journal", columns: ["state", "id"])
+        try db.execute(sql: "CREATE UNIQUE INDEX idx_sync_receive_journal_source_sequence ON _sync_receive_journal(source_peer_id, source_sequence) WHERE source_sequence IS NOT NULL")
     }
 }
 
