@@ -116,18 +116,23 @@ final class BugReportComposerTests: XCTestCase {
     func testStartupErrorRedactsPathsCredentialsAndRowContentsFromOutboundReports() throws {
         let unsafeError = """
         GRDB.DatabaseError Code=19 at /Users/tester/Library/private.sqlite \
-        row={name: Alice, pin=1234, token=secret-value}
+        row={name: AliceError, pin=1234, token=SECRET-ABC123}
         """
-        let context = makeContext(currentModule: "Startup", launchError: unsafeError)
+        let context = makeContext(
+            currentModule: "Startup",
+            recentErrors: [.init(message: unsafeError)],
+            launchError: unsafeError
+        )
 
         let shareText = BugReportComposer.body(description: nil, context: context)
         XCTAssertTrue(shareText.contains("GRDB.DatabaseError"))
         XCTAssertTrue(shareText.contains("Code=19"))
         XCTAssertFalse(shareText.contains("/Users/tester"))
         XCTAssertFalse(shareText.contains("private.sqlite"))
-        XCTAssertFalse(shareText.contains("Alice"))
+        XCTAssertFalse(shareText.contains("AliceError"))
         XCTAssertFalse(shareText.contains("1234"))
-        XCTAssertFalse(shareText.contains("secret-value"))
+        XCTAssertFalse(shareText.contains("SECRET-ABC123"))
+        XCTAssertFalse(shareText.contains("### Recent errors"))
 
         let url = try XCTUnwrap(
             BugReportComposer.githubIssueURL(

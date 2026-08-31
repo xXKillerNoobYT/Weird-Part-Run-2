@@ -132,7 +132,12 @@ public enum BugReportComposer {
             lines.append(launchError)
         }
 
-        let errors = renderedErrors(context.recentErrors)
+        // Startup failures are also written to the app's recent-error log.
+        // Suppress that second channel so raw pre-database errors cannot bypass
+        // the allowlisted launch diagnostic above.
+        let errors = context.launchError == nil
+            ? renderedErrors(context.recentErrors)
+            : []
         if !errors.isEmpty {
             lines.append("")
             lines.append("### Recent errors")
@@ -191,16 +196,17 @@ public enum BugReportComposer {
         guard !trimmed.isEmpty else { return nil }
 
         var components = ["Startup failed"]
-        if let errorType = firstMatch(
-            in: trimmed,
-            pattern: #"\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*(?:Error|Failure)\b"#
-        ) {
+        let shareableErrorTypes = [
+            "WiredPartCore.CipherKeyError",
+            "GRDB.DatabaseError",
+        ]
+        for errorType in shareableErrorTypes where trimmed.contains(errorType) {
             components.append(errorType)
         }
 
         let stableCodes = matches(
             in: trimmed,
-            pattern: #"\b(?:OSStatus|Code)\s*(?:=|:)?\s*-?\d+\b|\b[A-Z]{2,}(?:-[A-Z0-9]+)+\b"#
+            pattern: #"\b(?:OSStatus|Code)\s*(?:=|:)?\s*-?\d+\b"#
         )
         for code in stableCodes.prefix(3) where !components.contains(code) {
             components.append(code)
@@ -210,10 +216,6 @@ public enum BugReportComposer {
             components.append("details redacted")
         }
         return components.joined(separator: " — ")
-    }
-
-    private static func firstMatch(in value: String, pattern: String) -> String? {
-        matches(in: value, pattern: pattern).first
     }
 
     private static func matches(in value: String, pattern: String) -> [String] {
