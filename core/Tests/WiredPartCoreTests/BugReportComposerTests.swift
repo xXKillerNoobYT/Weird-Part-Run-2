@@ -5,15 +5,19 @@ final class BugReportComposerTests: XCTestCase {
     private func makeContext(
         currentModule: String? = "Settings > About",
         recentErrors: [BugReportComposer.ErrorEntry] = [],
-        appBuild: String = "128"
+        appBuild: String = "128",
+        launchError: String? = nil,
+        isIOSAppOnMac: Bool = false
     ) -> BugReportComposer.Context {
         BugReportComposer.Context(
             deviceModel: "iPhone 15 Pro",
             systemVersion: "iOS 18.2",
+            isIOSAppOnMac: isIOSAppOnMac,
             appVersion: "1.4.0",
             appBuild: appBuild,
             coreVersion: "1.0.0",
             currentModule: currentModule,
+            launchError: launchError,
             recentErrors: recentErrors
         )
     }
@@ -61,7 +65,43 @@ final class BugReportComposerTests: XCTestCase {
         XCTAssertTrue(body.contains("- Core version: 1.0.0"))
         XCTAssertTrue(body.contains("- Device: iPhone 15 Pro"))
         XCTAssertTrue(body.contains("- OS: iOS 18.2"))
+        XCTAssertTrue(body.contains("- iOS app on Mac: No"))
         XCTAssertTrue(body.contains("- Page/module: Settings > About"))
+    }
+
+    func testStartupErrorAndEnvironmentReachShareTextAndGithubBodyWithoutDatabase() throws {
+        let exactError = "WiredPartCore.CipherKeyError 2: Keychain access failed for cipher salt (OSStatus -25308)"
+        let context = makeContext(
+            currentModule: "Startup",
+            launchError: exactError,
+            isIOSAppOnMac: true
+        )
+
+        // This is the exact text handed to the system share sheet. Context is
+        // constructed directly, so the diagnostic path has no database dependency.
+        let shareText = BugReportComposer.body(description: nil, context: context)
+        XCTAssertTrue(shareText.contains("### Startup error"))
+        XCTAssertTrue(shareText.contains(exactError))
+        XCTAssertTrue(shareText.contains("- Device: iPhone 15 Pro"))
+        XCTAssertTrue(shareText.contains("- OS: iOS 18.2"))
+        XCTAssertTrue(shareText.contains("- iOS app on Mac: Yes"))
+
+        let url = try XCTUnwrap(
+            BugReportComposer.githubIssueURL(
+                userTitle: nil,
+                description: nil,
+                context: context
+            )
+        )
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        let githubBody = try XCTUnwrap(
+            components.queryItems?.first { $0.name == "body" }?.value
+        )
+        XCTAssertEqual(githubBody, shareText)
+        XCTAssertTrue(githubBody.contains(exactError))
+        XCTAssertTrue(githubBody.contains("- Device: iPhone 15 Pro"))
+        XCTAssertTrue(githubBody.contains("- OS: iOS 18.2"))
+        XCTAssertTrue(githubBody.contains("- iOS app on Mac: Yes"))
     }
 
     func testBodyUsesPlaceholderWhenDescriptionBlank() {

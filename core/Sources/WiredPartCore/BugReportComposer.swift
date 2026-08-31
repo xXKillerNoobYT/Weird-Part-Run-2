@@ -29,6 +29,8 @@ public enum BugReportComposer {
         public let deviceModel: String
         /// OS name + version, e.g. "iOS 18.2".
         public let systemVersion: String
+        /// Whether this is an iPhone/iPad binary running on Apple silicon Mac.
+        public let isIOSAppOnMac: Bool
         /// Marketing app version, e.g. "1.4.0".
         public let appVersion: String
         /// App build number, e.g. "128". Empty when unavailable.
@@ -38,24 +40,32 @@ public enum BugReportComposer {
         /// The page/module the user was on, e.g. "Settings > About".
         /// `nil` when the current module could not be determined.
         public let currentModule: String?
+        /// The exact startup failure shown before the database opened.
+        /// Kept separate from `recentErrors` because the error log may be
+        /// unavailable when startup itself fails.
+        public let launchError: String?
         /// Recent user-facing errors, most-recent first. May be empty.
         public let recentErrors: [ErrorEntry]
 
         public init(
             deviceModel: String,
             systemVersion: String,
+            isIOSAppOnMac: Bool = false,
             appVersion: String,
             appBuild: String,
             coreVersion: String,
             currentModule: String?,
+            launchError: String? = nil,
             recentErrors: [ErrorEntry]
         ) {
             self.deviceModel = deviceModel
             self.systemVersion = systemVersion
+            self.isIOSAppOnMac = isIOSAppOnMac
             self.appVersion = appVersion
             self.appBuild = appBuild
             self.coreVersion = coreVersion
             self.currentModule = currentModule
+            self.launchError = launchError
             self.recentErrors = recentErrors
         }
     }
@@ -111,7 +121,15 @@ public enum BugReportComposer {
         lines.append("- Core version: \(context.coreVersion)")
         lines.append("- Device: \(context.deviceModel)")
         lines.append("- OS: \(context.systemVersion)")
+        lines.append("- iOS app on Mac: \(context.isIOSAppOnMac ? "Yes" : "No")")
         lines.append("- Page/module: \(normalizedModule(context.currentModule) ?? "Unknown")")
+
+        if let launchError = normalizedLaunchError(context.launchError) {
+            lines.append("")
+            lines.append("### Startup error")
+            lines.append("")
+            lines.append(launchError)
+        }
 
         let errors = renderedErrors(context.recentErrors)
         if !errors.isEmpty {
@@ -161,6 +179,12 @@ public enum BugReportComposer {
     /// Trims and normalizes a raw module string, returning `nil` when it is
     /// missing or blank so callers can present a stable "Unknown".
     static func normalizedModule(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    static func normalizedLaunchError(_ raw: String?) -> String? {
         guard let raw else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
