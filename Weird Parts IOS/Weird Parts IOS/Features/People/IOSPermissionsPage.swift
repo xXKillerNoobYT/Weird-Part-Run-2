@@ -8,6 +8,11 @@ import WiredPartCore
 struct IOSPermissionsPage: View {
     @EnvironmentObject private var appCore: AppCore
 
+    /// The hat that launched this editor, when the route originates from a
+    /// hat detail page. Top-level presenters leave this nil and use the first
+    /// available hat as their initial selection.
+    let initialHatId: Int64?
+
     @State private var hats: [PeopleService.HatListItem] = []
     @State private var isLoading = true
     @State private var loadError: String?
@@ -60,9 +65,16 @@ struct IOSPermissionsPage: View {
     ]
 
     struct PermissionGroup: Identifiable {
-        let id = UUID()
         let name: String
         let keys: [String]
+
+        /// Permission groups are static. A stable semantic identifier keeps
+        /// SwiftUI from rebuilding every section after each toggle change.
+        var id: String { name }
+    }
+
+    init(initialHatId: Int64? = nil) {
+        self.initialHatId = initialHatId
     }
 
     var body: some View {
@@ -112,8 +124,32 @@ struct IOSPermissionsPage: View {
             if legacyPinCount > 0 {
                 legacyPinBanner
             }
+            selectedHatHeader
             hatSelector
             permissionsList
+        }
+    }
+
+    @ViewBuilder
+    private var selectedHatHeader: some View {
+        if let selectedHat {
+            HStack(spacing: 8) {
+                Image(systemName: "lock.shield.fill")
+                    .foregroundStyle(.tint)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Editing permissions for")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(selectedHat.name)
+                        .font(.headline)
+                }
+                Spacer()
+            }
+            .padding(.horizontal)
+            .padding(.top, 12)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Editing permissions for \(selectedHat.name)")
         }
     }
 
@@ -143,35 +179,49 @@ struct IOSPermissionsPage: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(hats) { hat in
+                    let isSelected = selectedHat?.id == hat.id
                     Button {
                         selectHat(hat)
                     } label: {
                         Text(hat.name)
                             .font(.caption)
-                            .fontWeight(selectedHat?.id == hat.id ? .bold : .regular)
+                            .fontWeight(isSelected ? .bold : .regular)
+                            .foregroundStyle(isSelected ? Color.white : Color.primary)
                             .padding(.horizontal, 14)
-                            .padding(.vertical, 7)
+                            .frame(minHeight: 44)
                             .background(
-                                Capsule().fill(selectedHat?.id == hat.id ? Color.accentColor : Color.secondary.opacity(0.15))
+                                Capsule().fill(
+                                    isSelected
+                                        ? Color.accentColor
+                                        : DS.Background.card
+                                )
                             )
-                            .foregroundStyle(selectedHat?.id == hat.id ? .white : .primary)
+                            .overlay {
+                                if !isSelected {
+                                    Capsule().stroke(Color.secondary.opacity(0.35), lineWidth: 1)
+                                }
+                            }
                     }
                     .buttonStyle(.plain)
-                    .accessibilityAddTraits(selectedHat?.id == hat.id ? .isSelected : [])
+                    .accessibilityLabel("\(hat.name) hat")
+                    .accessibilityValue(isSelected ? "Selected" : "Not selected")
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
         }
+        .frame(height: 60)
+        .background(DS.Background.page)
     }
 
     private var permissionsList: some View {
         List {
-            if let hat = selectedHat {
+            if selectedHat != nil {
                 ForEach(allPermissions) { group in
                     Section(group.name) {
                         ForEach(group.keys, id: \.self) { key in
-                            permissionRow(key: key, hatId: hat.id)
+                            permissionRow(key: key)
                         }
                     }
                 }
@@ -185,7 +235,7 @@ struct IOSPermissionsPage: View {
         .listStyle(.insetGrouped)
     }
 
-    private func permissionRow(key: String, hatId: Int64) -> some View {
+    private func permissionRow(key: String) -> some View {
         let isEnabled = hatPermissions.contains(key)
         return Toggle(isOn: Binding(
             get: { isEnabled },
@@ -251,6 +301,23 @@ struct IOSPermissionsPage: View {
 
     // MARK: - Data Loading
 
+    /// Resolve the selection deterministically whenever hats are refreshed.
+    /// A live selection wins, then the route's requested hat, then the first
+    /// available hat for top-level entry points.
+    static func resolvedSelectionID(
+        hats: [PeopleService.HatListItem],
+        preferredHatID: Int64?,
+        currentHatID: Int64?
+    ) -> Int64? {
+        if let currentHatID, hats.contains(where: { $0.id == currentHatID }) {
+            return currentHatID
+        }
+        if let preferredHatID, hats.contains(where: { $0.id == preferredHatID }) {
+            return preferredHatID
+        }
+        return hats.first?.id
+    }
+
     private func loadData() {
         guard let service = appCore.peopleService else {
             isLoading = false
@@ -261,9 +328,17 @@ struct IOSPermissionsPage: View {
         loadError = nil
         do {
             hats = try service.listHats()
-            // Auto-select first hat
-            if selectedHat == nil, let first = hats.first {
-                selectHat(first)
+            let resolvedID = Self.resolvedSelectionID(
+                hats: hats,
+                preferredHatID: initialHatId,
+                currentHatID: selectedHat?.id
+            )
+            if let resolvedID,
+               let resolvedHat = hats.first(where: { $0.id == resolvedID }) {
+                selectHat(resolvedHat)
+            } else if resolvedID == nil {
+                selectedHat = nil
+                hatPermissions = []
             }
         } catch {
             loadError = userFriendlyError(error, context: "load permissions")

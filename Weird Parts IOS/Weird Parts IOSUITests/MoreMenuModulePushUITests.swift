@@ -85,6 +85,41 @@ final class MoreMenuModulePushUITests: XCTestCase {
         }
     }
 
+    /// Reproduces the TestFlight Hats & Roles complaint through the real UI.
+    /// The tapped hat must remain selected after the detail sheet pushes the
+    /// shared permissions editor; otherwise an administrator can unknowingly
+    /// change a different role.
+    func testHatDetailOpensPermissionsForTheTappedHat() throws {
+        openModuleFromMore(named: "People")
+
+        let hatsAndRoles = app.buttons["people-dashboard-hats-and-roles-link"]
+        XCTAssertTrue(
+            hatsAndRoles.waitForExistence(timeout: 20),
+            "People should expose the Hats & Roles workflow to the seeded admin."
+        )
+        hatsAndRoles.tap()
+
+        let apprentice = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "Apprentice,")
+        ).firstMatch
+        XCTAssertTrue(apprentice.waitForExistence(timeout: 20), "The seeded Apprentice hat should be listed.")
+        apprentice.tap()
+
+        let editPermissions = app.buttons["Edit Permissions"]
+        XCTAssertTrue(editPermissions.waitForExistence(timeout: 20), "Hat details should link to its permissions.")
+        editPermissions.tap()
+
+        XCTAssertTrue(
+            app.staticTexts["Editing permissions for Apprentice"].waitForExistence(timeout: 20),
+            "The permissions editor should identify the hat that launched it."
+        )
+        XCTAssertEqual(
+            app.buttons["Apprentice hat"].value as? String,
+            "Selected",
+            "The tapped hat must be selected in the permissions selector."
+        )
+    }
+
     // MARK: - Helpers
 
     /// Opens a module by the route the current layout actually offers.
