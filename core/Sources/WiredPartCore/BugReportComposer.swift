@@ -40,9 +40,10 @@ public enum BugReportComposer {
         /// The page/module the user was on, e.g. "Settings > About".
         /// `nil` when the current module could not be determined.
         public let currentModule: String?
-        /// The exact startup failure shown before the database opened.
-        /// Kept separate from `recentErrors` because the error log may be
-        /// unavailable when startup itself fails.
+        /// The startup failure shown before the database opened. Kept separate
+        /// from `recentErrors` because the error log may be unavailable when
+        /// startup itself fails. Outbound report bodies reduce this raw value
+        /// to a safe error type/code fingerprint before sharing it.
         public let launchError: String?
         /// Recent user-facing errors, most-recent first. May be empty.
         public let recentErrors: [ErrorEntry]
@@ -187,7 +188,43 @@ public enum BugReportComposer {
     static func normalizedLaunchError(_ raw: String?) -> String? {
         guard let raw else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+        guard !trimmed.isEmpty else { return nil }
+
+        var components = ["Startup failed"]
+        if let errorType = firstMatch(
+            in: trimmed,
+            pattern: #"\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*(?:Error|Failure)\b"#
+        ) {
+            components.append(errorType)
+        }
+
+        let stableCodes = matches(
+            in: trimmed,
+            pattern: #"\b(?:OSStatus|Code)\s*(?:=|:)?\s*-?\d+\b|\b[A-Z]{2,}(?:-[A-Z0-9]+)+\b"#
+        )
+        for code in stableCodes.prefix(3) where !components.contains(code) {
+            components.append(code)
+        }
+
+        if components.count == 1 {
+            components.append("details redacted")
+        }
+        return components.joined(separator: " — ")
+    }
+
+    private static func firstMatch(in value: String, pattern: String) -> String? {
+        matches(in: value, pattern: pattern).first
+    }
+
+    private static func matches(in value: String, pattern: String) -> [String] {
+        guard let expression = try? NSRegularExpression(pattern: pattern) else {
+            return []
+        }
+        let fullRange = NSRange(value.startIndex..<value.endIndex, in: value)
+        return expression.matches(in: value, range: fullRange).compactMap { match in
+            guard let range = Range(match.range, in: value) else { return nil }
+            return String(value[range])
+        }
     }
 
     private static func displayVersion(_ context: Context) -> String {

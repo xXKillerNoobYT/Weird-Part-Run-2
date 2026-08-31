@@ -81,7 +81,9 @@ final class BugReportComposerTests: XCTestCase {
         // constructed directly, so the diagnostic path has no database dependency.
         let shareText = BugReportComposer.body(description: nil, context: context)
         XCTAssertTrue(shareText.contains("### Startup error"))
-        XCTAssertTrue(shareText.contains(exactError))
+        XCTAssertTrue(shareText.contains("WiredPartCore.CipherKeyError"))
+        XCTAssertTrue(shareText.contains("OSStatus -25308"))
+        XCTAssertFalse(shareText.contains("Keychain access failed for cipher salt"))
         XCTAssertTrue(shareText.contains("- Device: iPhone 15 Pro"))
         XCTAssertTrue(shareText.contains("- OS: iOS 18.2"))
         XCTAssertTrue(shareText.contains("- iOS app on Mac: Yes"))
@@ -98,7 +100,9 @@ final class BugReportComposerTests: XCTestCase {
             components.queryItems?.first { $0.name == "body" }?.value
         )
         XCTAssertEqual(githubBody, shareText)
-        XCTAssertTrue(githubBody.contains(exactError))
+        XCTAssertTrue(githubBody.contains("WiredPartCore.CipherKeyError"))
+        XCTAssertTrue(githubBody.contains("OSStatus -25308"))
+        XCTAssertFalse(githubBody.contains("Keychain access failed for cipher salt"))
         XCTAssertTrue(githubBody.contains("- Device: iPhone 15 Pro"))
         XCTAssertTrue(githubBody.contains("- OS: iOS 18.2"))
         XCTAssertTrue(githubBody.contains("- iOS app on Mac: Yes"))
@@ -107,6 +111,49 @@ final class BugReportComposerTests: XCTestCase {
     func testBodyUsesPlaceholderWhenDescriptionBlank() {
         let body = BugReportComposer.body(description: "   ", context: makeContext())
         XCTAssertTrue(body.contains(BugReportComposer.descriptionPlaceholder))
+    }
+
+    func testStartupErrorRedactsPathsCredentialsAndRowContentsFromOutboundReports() throws {
+        let unsafeError = """
+        GRDB.DatabaseError Code=19 at /Users/tester/Library/private.sqlite \
+        row={name: Alice, pin=1234, token=secret-value}
+        """
+        let context = makeContext(currentModule: "Startup", launchError: unsafeError)
+
+        let shareText = BugReportComposer.body(description: nil, context: context)
+        XCTAssertTrue(shareText.contains("GRDB.DatabaseError"))
+        XCTAssertTrue(shareText.contains("Code=19"))
+        XCTAssertFalse(shareText.contains("/Users/tester"))
+        XCTAssertFalse(shareText.contains("private.sqlite"))
+        XCTAssertFalse(shareText.contains("Alice"))
+        XCTAssertFalse(shareText.contains("1234"))
+        XCTAssertFalse(shareText.contains("secret-value"))
+
+        let url = try XCTUnwrap(
+            BugReportComposer.githubIssueURL(
+                userTitle: nil,
+                description: nil,
+                context: context
+            )
+        )
+        let decodedBody = try XCTUnwrap(
+            URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first { $0.name == "body" }?.value
+        )
+        XCTAssertEqual(decodedBody, shareText)
+    }
+
+    func testUnknownStartupErrorUsesFixedRedactedFallback() {
+        let body = BugReportComposer.body(
+            description: nil,
+            context: makeContext(
+                currentModule: "Startup",
+                launchError: "database row contained private customer details"
+            )
+        )
+
+        XCTAssertTrue(body.contains("Startup failed — details redacted"))
+        XCTAssertFalse(body.contains("private customer details"))
     }
 
     func testBodyOmitsBuildWhenBuildBlank() {
