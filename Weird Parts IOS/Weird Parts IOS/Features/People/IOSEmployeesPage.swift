@@ -269,8 +269,10 @@ private struct AddEmployeeSheet: View {
 
     @State private var displayName = ""
     @State private var pin = ""
+    @State private var pinConfirmation = ""
     @State private var email = ""
     @State private var phone = ""
+    @State private var pinValidationMessage: String?
     @State private var errorMessage: String?
     @State private var isDirty = false
     @State private var showDiscardAlert = false
@@ -281,10 +283,31 @@ private struct AddEmployeeSheet: View {
                 Section("Required") {
                     TextField("Display Name", text: $displayName)
                         .textContentType(.name)
+                        .accessibilityIdentifier("add-employee-display-name-field")
                         .onChange(of: displayName) { _, _ in isDirty = true }
                     SecureField("PIN (min 4 digits)", text: $pin)
                         .keyboardType(.numberPad)
-                        .onChange(of: pin) { _, _ in isDirty = true }
+                        .textContentType(.newPassword)
+                        .accessibilityIdentifier("add-employee-pin-field")
+                        .onChange(of: pin) { _, _ in
+                            isDirty = true
+                            revalidatePINIfNeeded()
+                        }
+                    SecureField("Confirm PIN", text: $pinConfirmation)
+                        .keyboardType(.numberPad)
+                        .textContentType(.newPassword)
+                        .accessibilityIdentifier("add-employee-pin-confirmation-field")
+                        .onChange(of: pinConfirmation) { _, _ in
+                            isDirty = true
+                            revalidatePINIfNeeded()
+                        }
+                    if let pinValidationMessage {
+                        Text(pinValidationMessage)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .accessibilityLabel("PIN validation error: \(pinValidationMessage)")
+                            .accessibilityIdentifier("add-employee-pin-validation-error")
+                    }
                 }
                 Section("Optional") {
                     TextField("Email", text: $email)
@@ -320,7 +343,8 @@ private struct AddEmployeeSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || pin.count < 4)
+                        .disabled(displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .accessibilityIdentifier("add-employee-save-button")
                 }
             }
             .alert("Discard employee changes?", isPresented: $showDiscardAlert) {
@@ -343,14 +367,19 @@ private struct AddEmployeeSheet: View {
             errorMessage = "Name is required."
             return
         }
-        guard pin.count >= 4 else {
-            errorMessage = "PIN must be at least 4 digits."
+        if let validationMessage = PINConfirmationValidator.newPINError(
+            pin: pin,
+            confirmation: pinConfirmation
+        ) {
+            pinValidationMessage = validationMessage
             return
         }
+        pinValidationMessage = nil
+        let normalizedPIN = PINConfirmationValidator.normalize(pin)
         do {
             try authService.createUser(
                 displayName: trimmedName,
-                pin: pin,
+                pin: normalizedPIN,
                 email: email.isEmpty ? nil : email,
                 phone: phone.isEmpty ? nil : phone
             )
@@ -359,5 +388,13 @@ private struct AddEmployeeSheet: View {
         } catch {
             errorMessage = userFriendlyError(error, context: "save employee")
         }
+    }
+
+    private func revalidatePINIfNeeded() {
+        guard pinValidationMessage != nil else { return }
+        pinValidationMessage = PINConfirmationValidator.newPINError(
+            pin: pin,
+            confirmation: pinConfirmation
+        )
     }
 }
