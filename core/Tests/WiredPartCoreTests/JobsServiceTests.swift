@@ -841,16 +841,18 @@ struct JobsServiceTests {
             createdBy: env.adminUserId
         )
 
-        _ = try env.jobs.addJobNote(
+        let updateId = try env.jobs.addJobNote(
             jobId: jobId,
             title: "Field update",
             content: "Crew finished rough-in walkthrough.",
             createdBy: env.adminUserId
         )
+        #expect(updateId < 0)
 
         let notes = try env.jobs.listJobNotes(jobId: jobId)
         #expect(notes.count >= 2)
         #expect(notes.contains { $0.title == "Initial job note" && $0.content == "Initial field note" })
+        #expect(notes.allSatisfy { $0.id < 0 })
         let update = try #require(notes.first { $0.title == "Field update" })
         #expect(update.authorId == env.adminUserId)
         #expect(!update.authorName.isEmpty)
@@ -1483,6 +1485,7 @@ struct JobsServiceTests {
             laborEntryId: laborEntryId,
             dailyReport: "  Pulled feeder wire, finished panel labeling, and staged tomorrow's materials.  "
         ))
+        #expect(entryId < 0)
 
         let row = try env.db.writer.read { db in
             try Row.fetchOne(db, sql: """

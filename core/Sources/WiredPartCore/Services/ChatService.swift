@@ -1243,11 +1243,12 @@ public final class ChatService: Sendable {
             // Save as notebook entry
             let title = attachment.fileName ?? "Chat attachment"
             let content = attachment.filePath ?? attachment.referenceLabel ?? ""
+            let entryId = try NotebooksService.nextBlockID(in: dbConn)
             try dbConn.execute(sql: """
                 INSERT INTO notebook_entries
-                (section_id, entry_type, title, content, created_by, created_at)
-                VALUES (?, 'attachment', ?, ?, ?, datetime('now'))
-                """, arguments: [sectionId, title, content, userId])
+                (id, section_id, entry_type, title, content, created_by, created_at)
+                VALUES (?, ?, 'attachment', ?, ?, ?, datetime('now'))
+                """, arguments: [entryId, sectionId, title, content, userId])
         }
     }
 

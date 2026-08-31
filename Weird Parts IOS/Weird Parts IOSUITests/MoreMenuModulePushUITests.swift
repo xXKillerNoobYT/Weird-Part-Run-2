@@ -55,6 +55,73 @@ final class MoreMenuModulePushUITests: XCTestCase {
         )
     }
 
+    /// Exercises the user-visible half of offline block identity and ordering:
+    /// blocks created through the real sheets must render once, in the order the
+    /// user added them, after each save reloads the notebook hierarchy.
+    func testNotebookBlocksCreateAndRenderInOrder() throws {
+        let suffix = String(UUID().uuidString.prefix(8))
+        let notebookTitle = "UI Block Order \(suffix)"
+        let pageTitle = "Ordering Page \(suffix)"
+        let firstTitle = "First UI Block \(suffix)"
+        let secondTitle = "Second UI Block \(suffix)"
+
+        openModuleFromMore(named: "Notebooks")
+        XCTAssertTrue(app.navigationBars["Notebooks"].waitForExistence(timeout: 30))
+
+        let createNotebook = app.buttons["Create notebook"]
+        XCTAssertTrue(createNotebook.waitForExistence(timeout: 20))
+        createNotebook.tap()
+
+        let notebookTitleField = app.textFields["Notebook title"]
+        XCTAssertTrue(notebookTitleField.waitForExistence(timeout: 10))
+        notebookTitleField.tap()
+        notebookTitleField.typeText(notebookTitle)
+        app.buttons["Create"].tap()
+
+        let notebookRow = app.staticTexts[notebookTitle]
+        XCTAssertTrue(notebookRow.waitForExistence(timeout: 20))
+        notebookRow.tap()
+
+        let createPage = app.buttons["Create page"]
+        XCTAssertTrue(createPage.waitForExistence(timeout: 20))
+        createPage.tap()
+
+        let sectionNameField = app.textFields["Section name"]
+        XCTAssertTrue(sectionNameField.waitForExistence(timeout: 10))
+        sectionNameField.tap()
+        sectionNameField.typeText(pageTitle)
+        app.buttons["Save"].tap()
+
+        let pageRow = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", pageTitle)
+        ).firstMatch
+        XCTAssertTrue(pageRow.waitForExistence(timeout: 20))
+        pageRow.tap()
+
+        addTextBlock(titled: firstTitle)
+        addTextBlock(titled: secondTitle)
+
+        XCTAssertTrue(app.staticTexts[firstTitle].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.staticTexts[secondTitle].waitForExistence(timeout: 20))
+
+        // SwiftUI exports duplicate modern/legacy text nodes on this List in
+        // the iOS 26 simulator. Read the rendered cell sequence instead of
+        // asking XCUI to resolve either duplicated text node to one frame.
+        let renderedCells = app.collectionViews["notebookCompactSelectedPageSurface"]
+            .cells.allElementsBoundByIndex.map(\.label)
+        let firstIndex = renderedCells.firstIndex { $0.contains(firstTitle) }
+        let secondIndex = renderedCells.firstIndex { $0.contains(secondTitle) }
+        XCTAssertNotNil(firstIndex)
+        XCTAssertNotNil(secondIndex)
+        if let firstIndex, let secondIndex {
+            XCTAssertLessThan(
+                firstIndex,
+                secondIndex,
+                "New notebook blocks should render in their saved order."
+            )
+        }
+    }
+
     /// The same push for every overflow module, so a single unresolved id cannot
     /// hide behind the others. This is what splits "navigation is broken" from
     /// "one module is broken" without a human bisecting by hand.
@@ -119,5 +186,22 @@ final class MoreMenuModulePushUITests: XCTestCase {
         }
         XCTAssertTrue(row.waitForExistence(timeout: 10), "\(name) should be listed in More → Modules.")
         row.tap()
+    }
+
+    private func addTextBlock(titled title: String) {
+        let addBlock = app.buttons["Add Block"].firstMatch
+        XCTAssertTrue(addBlock.waitForExistence(timeout: 20))
+        addBlock.tap()
+
+        let titleField = app.textFields["Entry title"]
+        XCTAssertTrue(titleField.waitForExistence(timeout: 10))
+        titleField.tap()
+        titleField.typeText(title)
+        app.buttons["Add"].tap()
+
+        XCTAssertTrue(
+            app.staticTexts[title].waitForExistence(timeout: 20),
+            "A saved notebook block should render after the sheet dismisses."
+        )
     }
 }

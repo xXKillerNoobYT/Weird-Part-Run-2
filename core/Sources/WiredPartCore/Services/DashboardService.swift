@@ -1464,18 +1464,19 @@ public final class DashboardService: Sendable {
                 \(tomorrowNotes.isEmpty ? "None" : tomorrowNotes)
                 """
 
+            let entryId = try NotebooksService.nextBlockID(in: conn)
             try conn.execute(sql: """
                 INSERT INTO notebook_entries
-                (section_id, title, content, entry_type, created_by, sort_order, created_at, updated_at)
-                VALUES (?, ?, ?, 'daily-report', ?, 0, datetime('now'), datetime('now'))
-                """, arguments: [sectionId, "Report \(dateStr)", content, userId])
+                (id, section_id, title, content, entry_type, created_by, sort_order, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'daily-report', ?, 0, datetime('now'), datetime('now'))
+                """, arguments: [entryId, sectionId, "Report \(dateStr)", content, userId])
 
             // Update notebook timestamp
             try conn.execute(sql: """
                 UPDATE notebooks SET updated_at = datetime('now') WHERE id = ?
                 """, arguments: [nbId])
 
-            return conn.lastInsertedRowID
+            return entryId
         }
     }
 
@@ -1532,18 +1533,19 @@ public final class DashboardService: Sendable {
                 jobName = try String.fetchOne(conn, sql: "SELECT job_name FROM jobs WHERE id = ?", arguments: [jId]) ?? "General"
             }
 
+            let entryId = try NotebooksService.nextBlockID(in: conn)
             try conn.execute(sql: """
                 INSERT INTO notebook_entries
-                (section_id, title, content, entry_type, created_by, sort_order, created_at, updated_at)
-                VALUES (?, ?, ?, 'problem', ?, 0, datetime('now'), datetime('now'))
-                """, arguments: [sectionId, "Problem — \(jobName) — \(dateStr)", description, userId])
+                (id, section_id, title, content, entry_type, created_by, sort_order, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'problem', ?, 0, datetime('now'), datetime('now'))
+                """, arguments: [entryId, sectionId, "Problem — \(jobName) — \(dateStr)", description, userId])
 
             // Update notebook timestamp
             try conn.execute(sql: """
                 UPDATE notebooks SET updated_at = datetime('now') WHERE id = ?
                 """, arguments: [nbId])
 
-            return conn.lastInsertedRowID
+            return entryId
         }
     }
 

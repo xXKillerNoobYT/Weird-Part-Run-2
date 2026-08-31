@@ -460,7 +460,7 @@ struct DashboardServiceTests {
             issues: "Missing connectors",
             tomorrowNotes: "Need to order parts"
         )
-        #expect(reportId > 0)
+        #expect(reportId < 0)
     }
 
     @Test("Report problem")
@@ -472,7 +472,7 @@ struct DashboardServiceTests {
             jobId: jobId,
             description: "Water damage in ceiling"
         )
-        #expect(reportId > 0)
+        #expect(reportId < 0)
     }
 
     // MARK: - Attention & Schedule

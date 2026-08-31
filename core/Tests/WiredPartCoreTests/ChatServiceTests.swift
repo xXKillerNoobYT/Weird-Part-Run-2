@@ -745,7 +745,17 @@ struct ChatServiceTests {
             attachment: attachments[0],
             userId: env.adminUserId
         )
-        // If no error thrown, notebook entry was successfully created
+        let entryId = try env.db.writer.read { dbConn in
+            try Int64.fetchOne(dbConn, sql: """
+                SELECT ne.id
+                FROM notebook_entries ne
+                JOIN notebook_sections ns ON ns.id = ne.section_id
+                JOIN notebooks nb ON nb.id = ns.notebook_id
+                WHERE nb.job_id = ? AND ne.title = 'site.jpg'
+                """, arguments: [jobId])
+        }
+        #expect(entryId != nil)
+        #expect(entryId.map { $0 < 0 } == true)
     }
 
     @Test("autoSaveToJobNotebook is no-op for non-job channel")
