@@ -196,6 +196,13 @@ the disk and tripped the beta-gate preflight. Standing policy:
 - **hermes** (`~/.hermes/`): keep the newest backup and newest state-snapshot;
   prune older sets. `state.db` VACUUM requires a quiet window (agents stopped)
   and free space equal to the DB size.
-- **Gate preflight** is 30 GiB (`MINIMUM_FREE_GIB` in
-  `scripts/ci/run-ios-beta-gate.sh`); the gate also reclaims stale local
-  DerivedData (see the preflight-cleanup change from #1537/#1536-era work).
+- **Gate preflight** threshold comes from `MINIMUM_FREE_GIB`, which is read at
+  `scripts/ci/run-ios-beta-gate.sh:45` as `${MINIMUM_FREE_GIB:-30}`. The script's
+  own `30` default is **inert in CI**: `.github/workflows/ios-beta-gate.yml:35`
+  exports `MINIMUM_FREE_GIB: "60"`, so **60 GiB is the effective CI threshold**.
+  Read the workflow for the live value rather than trusting the script default.
+  The gate also reclaims stale local DerivedData before failing (see the
+  preflight-cleanup change from #1537/#1536-era work); that reclaim has been
+  measured freeing 8 GiB from a 52 GiB start. Cleanup helps only when stale
+  DerivedData exists; if free space remains below the workflow threshold after
+  cleanup, the gate is hard-blocked and disk-pressure remediation is required.
