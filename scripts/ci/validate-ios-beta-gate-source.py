@@ -35,6 +35,7 @@ required_runner_fragments = {
     "zero tests fail closed": "(( total > 0 )) || phase_failure=1",
     "disk cleanup deletes only stale DerivedData entries": '-mmin "+${derived_data_stale_minutes}"',
     "disk cleanup stays at the top level of the DerivedData cache": "-mindepth 1 -maxdepth 1",
+    "disk cleanup removes only shutdown run-owned simulators": 'grep -F "WPR2-CI-"',
     "disk budget still fails closed after cleanup": '(( available_kib >= required_kib )) || fail "runner has ${available_gib} GiB free; ${minimum_free_gib} GiB is required"',
     "skipped tests fail closed": "(( skipped == 0 )) || phase_failure=1",
     "CoreLocation recovery remains bounded": "simulator_boot_recovery_timeout_seconds",

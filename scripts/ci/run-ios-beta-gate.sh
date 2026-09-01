@@ -378,6 +378,16 @@ if (( available_kib < required_kib )); then
     | while read -r stale_clone; do
         xcrun simctl --set testing delete "$stale_clone" >/dev/null 2>&1 || true
       done
+  # Interrupted gate runs can also leave the run-owned simulator in the normal
+  # device set before the cleanup step sees metadata. Restrict this to shutdown
+  # WPR2-CI devices so a sibling runner's active simulator is never deleted.
+  xcrun simctl list devices 2>/dev/null \
+    | grep -F "WPR2-CI-" \
+    | grep "(Shutdown)" \
+    | grep -oE '\([A-F0-9-]{36}\)' | tr -d '()' \
+    | while read -r stale_device; do
+        xcrun simctl delete "$stale_device" >/dev/null 2>&1 || true
+      done
   if [[ -d "$derived_data_cache" ]]; then
     find "$derived_data_cache" -mindepth 1 -maxdepth 1 -mmin "+${derived_data_stale_minutes}" -print -exec rm -rf {} + \
       2>&1 | tee -a "$artifact_dir/gate.log" || true
