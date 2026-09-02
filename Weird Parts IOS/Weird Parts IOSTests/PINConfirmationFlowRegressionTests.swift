@@ -13,6 +13,12 @@ final class PINConfirmationFlowRegressionTests: XCTestCase {
         XCTAssertTrue(addEmployee.contains("PINConfirmationValidator.newPINError("))
         XCTAssertTrue(addEmployee.contains("confirmation: pinConfirmation"))
         XCTAssertTrue(addEmployee.contains("pin: normalizedPIN"))
+
+        let errorReset = try XCTUnwrap(addEmployee.range(of: "errorMessage = nil"))
+        let pinReset = try XCTUnwrap(addEmployee.range(of: "pinValidationMessage = nil"))
+        let authGuard = try XCTUnwrap(addEmployee.range(of: "guard let authService"))
+        XCTAssertLessThan(errorReset.lowerBound, authGuard.lowerBound)
+        XCTAssertLessThan(pinReset.lowerBound, authGuard.lowerBound)
     }
 
     func testAccountChangeUsesExistingAuthenticatedAppCorePath() throws {
@@ -25,6 +31,31 @@ final class PINConfirmationFlowRegressionTests: XCTestCase {
         XCTAssertTrue(source.contains("let result = await appCore.changePin("))
         XCTAssertTrue(source.contains("oldPin: PINConfirmationValidator.normalize(currentPIN)"))
         XCTAssertTrue(source.contains("newPin: PINConfirmationValidator.normalize(newPIN)"))
+
+        let submit = try TestSourceSlicer.braceBalancedBody(
+            after: "private func submitPINChange",
+            in: source
+        )
+        let validationReset = try XCTUnwrap(submit.range(of: "validationMessage = nil"))
+        let serviceReset = try XCTUnwrap(submit.range(of: "serviceMessage = nil"))
+        let successReset = try XCTUnwrap(submit.range(of: "successMessage = nil"))
+        let userGuard = try XCTUnwrap(submit.range(of: "guard let userId"))
+        XCTAssertLessThan(validationReset.lowerBound, userGuard.lowerBound)
+        XCTAssertLessThan(serviceReset.lowerBound, userGuard.lowerBound)
+        XCTAssertLessThan(successReset.lowerBound, userGuard.lowerBound)
+    }
+
+    func testPINPlanDescribesTheAllowedLengthAsARange() throws {
+        let testFileURL = URL(fileURLWithPath: "\(#filePath)")
+        let repositoryRoot = testFileURL
+            .deletingLastPathComponent() // Weird Parts IOSTests
+            .deletingLastPathComponent() // Weird Parts IOS
+            .deletingLastPathComponent() // repository root
+        let planURL = repositoryRoot.appendingPathComponent("docs/plans/people-pin-confirmation.md")
+        let plan = try String(contentsOf: planURL, encoding: .utf8)
+
+        XCTAssertTrue(plan.contains("It contains 4–8 digits."))
+        XCTAssertFalse(plan.contains("It contains exactly 4–8 digits."))
     }
 
     func testUserProfileRowOpensAccountWithoutMovingOtherSettings() throws {

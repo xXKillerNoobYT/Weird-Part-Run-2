@@ -36,7 +36,7 @@ or multi-admin policy.
 Both forms use one pure `PINConfirmationValidator`:
 
 1. A new PIN is required.
-2. It contains exactly 4–8 digits.
+2. It contains 4–8 digits.
 3. A confirmation is required.
 4. The confirmation exactly matches the new PIN.
 5. Self-service change additionally requires the current PIN.

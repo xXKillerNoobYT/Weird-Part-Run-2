@@ -358,6 +358,9 @@ private struct AddEmployeeSheet: View {
     }
 
     private func save() {
+        errorMessage = nil
+        pinValidationMessage = nil
+
         guard let authService = appCore.authService else {
             errorMessage = "Auth service unavailable"
             return
@@ -374,7 +377,6 @@ private struct AddEmployeeSheet: View {
             pinValidationMessage = validationMessage
             return
         }
-        pinValidationMessage = nil
         let normalizedPIN = PINConfirmationValidator.normalize(pin)
         do {
             try authService.createUser(

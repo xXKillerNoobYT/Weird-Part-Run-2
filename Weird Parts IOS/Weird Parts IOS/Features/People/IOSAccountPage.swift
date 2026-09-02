@@ -125,6 +125,10 @@ struct IOSAccountPage: View {
 
     @MainActor
     private func submitPINChange(userId: Int64?) async {
+        validationMessage = nil
+        serviceMessage = nil
+        successMessage = nil
+
         guard let userId else {
             serviceMessage = "No signed-in user is available."
             return
@@ -136,14 +140,9 @@ struct IOSAccountPage: View {
             confirmation: pinConfirmation
         ) {
             validationMessage = message
-            serviceMessage = nil
-            successMessage = nil
             return
         }
 
-        validationMessage = nil
-        serviceMessage = nil
-        successMessage = nil
         isSubmitting = true
 
         let result = await appCore.changePin(

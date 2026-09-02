@@ -554,10 +554,8 @@ public final class LanSyncServer: Sendable {
                     guard claimResume() else { return }
                     if let port = listener.port?.rawValue {
                         let assignedPort = port
-                        Task {
-                            await stateRef.setPort(assignedPort)
-                            continuation.resume(returning: assignedPort)
-                        }
+                        Task { await stateRef.setPort(assignedPort) }
+                        continuation.resume(returning: assignedPort)
                     } else {
                         continuation.resume(throwing: SyncServerError.failedToBind)
                     }

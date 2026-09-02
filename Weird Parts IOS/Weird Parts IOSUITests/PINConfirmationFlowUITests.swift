@@ -68,7 +68,7 @@ final class PINConfirmationFlowUITests: XCTestCase {
     func testAccountChangePINRejectsWrongCurrentPINInline() throws {
         openAccount()
         fillAccountPINForm(currentPIN: "9999", newPIN: "5678")
-        element("account-change-pin-button").tap()
+        tapAccountPINSubmit()
 
         let serviceError = element("account-pin-change-error")
         XCTAssertTrue(serviceError.waitForExistence(timeout: 10))
@@ -80,7 +80,7 @@ final class PINConfirmationFlowUITests: XCTestCase {
     func testAccountChangePINAcceptsCorrectCurrentPIN() throws {
         openAccount()
         fillAccountPINForm(currentPIN: "1234", newPIN: "5678")
-        element("account-change-pin-button").tap()
+        tapAccountPINSubmit()
 
         let success = element("account-pin-change-success")
         XCTAssertTrue(success.waitForExistence(timeout: 10))
@@ -140,6 +140,19 @@ final class PINConfirmationFlowUITests: XCTestCase {
         replacement.typeText(newPIN)
         confirmation.tap()
         confirmation.typeText(newPIN)
+    }
+
+    @MainActor
+    private func tapAccountPINSubmit() {
+        let submit = element("account-change-pin-button")
+        if !submit.exists || !submit.isHittable {
+            app.swipeUp()
+        }
+
+        let hittable = NSPredicate(format: "exists == true AND hittable == true")
+        let expectation = XCTNSPredicateExpectation(predicate: hittable, object: submit)
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 10), .completed)
+        submit.tap()
     }
 
     private func element(_ identifier: String) -> XCUIElement {
