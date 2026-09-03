@@ -304,16 +304,16 @@ struct IOSPermissionsPage: View {
     /// Resolve the selection deterministically whenever hats are refreshed.
     /// A live selection wins, then the route's requested hat, then the first
     /// available hat for top-level entry points.
-    static func resolvedSelectionID(
+    static func resolvedSelectionId(
         hats: [PeopleService.HatListItem],
-        preferredHatID: Int64?,
-        currentHatID: Int64?
+        preferredHatId: Int64?,
+        currentHatId: Int64?
     ) -> Int64? {
-        if let currentHatID, hats.contains(where: { $0.id == currentHatID }) {
-            return currentHatID
+        if let currentHatId, hats.contains(where: { $0.id == currentHatId }) {
+            return currentHatId
         }
-        if let preferredHatID, hats.contains(where: { $0.id == preferredHatID }) {
-            return preferredHatID
+        if let preferredHatId, hats.contains(where: { $0.id == preferredHatId }) {
+            return preferredHatId
         }
         return hats.first?.id
     }
@@ -328,15 +328,15 @@ struct IOSPermissionsPage: View {
         loadError = nil
         do {
             hats = try service.listHats()
-            let resolvedID = Self.resolvedSelectionID(
+            let resolvedId = Self.resolvedSelectionId(
                 hats: hats,
-                preferredHatID: initialHatId,
-                currentHatID: selectedHat?.id
+                preferredHatId: initialHatId,
+                currentHatId: selectedHat?.id
             )
-            if let resolvedID,
-               let resolvedHat = hats.first(where: { $0.id == resolvedID }) {
+            if let resolvedId,
+               let resolvedHat = hats.first(where: { $0.id == resolvedId }) {
                 selectHat(resolvedHat)
-            } else if resolvedID == nil {
+            } else if resolvedId == nil {
                 selectedHat = nil
                 hatPermissions = []
             }

@@ -113,8 +113,11 @@ final class MoreMenuModulePushUITests: XCTestCase {
             app.staticTexts["Editing permissions for Apprentice"].waitForExistence(timeout: 20),
             "The permissions editor should identify the hat that launched it."
         )
+        let apprenticeHat = app.buttons["Apprentice hat"]
+        XCTAssertTrue(apprenticeHat.waitForExistence(timeout: 20), "The Apprentice hat selector should be available.")
+        XCTAssertTrue(apprenticeHat.isSelected, "The tapped hat must expose the selected accessibility trait.")
         XCTAssertEqual(
-            app.buttons["Apprentice hat"].value as? String,
+            apprenticeHat.value as? String,
             "Selected",
             "The tapped hat must be selected in the permissions selector."
         )

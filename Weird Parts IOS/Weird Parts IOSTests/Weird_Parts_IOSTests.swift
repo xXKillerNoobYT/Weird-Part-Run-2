@@ -93,13 +93,13 @@ struct Weird_Parts_IOSTests {
             PeopleService.HatListItem(id: 2, name: "Apprentice", description: nil, userCount: 4),
         ]
 
-        let selectedID = IOSPermissionsPage.resolvedSelectionID(
+        let selectedId = IOSPermissionsPage.resolvedSelectionId(
             hats: hats,
-            preferredHatID: 2,
-            currentHatID: nil
+            preferredHatId: 2,
+            currentHatId: nil
         )
 
-        #expect(selectedID == 2)
+        #expect(selectedId == 2)
     }
 
     @MainActor @Test func permissionsEditorKeepsTheUsersSelectionAcrossRefresh() {
@@ -108,13 +108,13 @@ struct Weird_Parts_IOSTests {
             PeopleService.HatListItem(id: 2, name: "Apprentice", description: nil, userCount: 4),
         ]
 
-        let selectedID = IOSPermissionsPage.resolvedSelectionID(
+        let selectedId = IOSPermissionsPage.resolvedSelectionId(
             hats: hats,
-            preferredHatID: 1,
-            currentHatID: 2
+            preferredHatId: 1,
+            currentHatId: 2
         )
 
-        #expect(selectedID == 2)
+        #expect(selectedId == 2)
     }
 
     @MainActor @Test func permissionsEditorFallsBackWhenTheRequestedHatNoLongerExists() {
@@ -122,13 +122,13 @@ struct Weird_Parts_IOSTests {
             PeopleService.HatListItem(id: 1, name: "Admin", description: nil, userCount: 1),
         ]
 
-        let selectedID = IOSPermissionsPage.resolvedSelectionID(
+        let selectedId = IOSPermissionsPage.resolvedSelectionId(
             hats: hats,
-            preferredHatID: 99,
-            currentHatID: nil
+            preferredHatId: 99,
+            currentHatId: nil
         )
 
-        #expect(selectedID == 1)
+        #expect(selectedId == 1)
     }
 
 
