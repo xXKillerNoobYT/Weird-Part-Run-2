@@ -119,6 +119,21 @@ struct WiredPartIOSApp: App {
     private var shouldShowDevicePairingTransportErrorFixture: Bool { false }
     #endif
 
+    #if DEBUG && targetEnvironment(simulator)
+    /// Deterministic launch failure for UI coverage of the pre-database report
+    /// path. Requiring both flags prevents a stray argument from changing a
+    /// normal debug launch, and the compile guard excludes this from devices.
+    private var startupErrorUITestFixture: String? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains("-UITesting"),
+              arguments.contains("-UITestingStartupErrorReport")
+        else { return nil }
+        return "UITest startup failure: OSStatus -25308"
+    }
+    #else
+    private var startupErrorUITestFixture: String? { nil }
+    #endif
+
     private var shouldOpenWEI3144MaterialsFixture: Bool {
         ProcessInfo.processInfo.arguments.contains("-UITestingWEI3144JobMaterials")
     }
@@ -234,7 +249,10 @@ struct WiredPartIOSApp: App {
         }
         .sheet(isPresented: $showLaunchErrorReport) {
             NavigationStack {
-                ReportABugPage(originModule: "Unreadable encrypted database")
+                ReportABugPage(
+                    originModule: "Unreadable encrypted database",
+                    launchError: appCore.loadError
+                )
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
                             Button("Close") { showLaunchErrorReport = false }
@@ -274,6 +292,8 @@ struct WiredPartIOSApp: App {
                         DevicePairingView()
                             .environmentObject(appCore)
                     }
+                } else if let error = startupErrorUITestFixture {
+                    startupErrorView(error: error)
                 } else if appCore.isReady {
                     if shouldShowWEI936WelcomeFixture {
                         OnboardingWelcomeView()
@@ -348,44 +368,52 @@ struct WiredPartIOSApp: App {
                 } else if appCore.requiresUnreadableDatabaseRecovery {
                     unreadableDatabaseRecoveryView
                 } else if let error = appCore.loadError {
-                    VStack(spacing: 16) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.largeTitle)
-                            .foregroundStyle(.red)
-                        Text("Failed to load database")
-                            .font(.headline)
-                        Text(error)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal)
-                        Button("Retry") {
-                            appCore.retryBootstrap()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        Button("Report this startup problem") {
-                            showLaunchErrorReport = true
-                        }
-                        .buttonStyle(.bordered)
-                        .accessibilityHint("Opens the in-app bug report form with the startup error details.")
-                    }
-                    .sheet(isPresented: $showLaunchErrorReport) {
-                        NavigationStack {
-                            ReportABugPage(originModule: "Startup")
-                                .toolbar {
-                                    ToolbarItem(placement: .cancellationAction) {
-                                        Button("Close") { showLaunchErrorReport = false }
-                                    }
-                                }
-                        }
-                        .presentationDetents([.large])
-                    }
+                    startupErrorView(error: error)
                 } else {
                     LoadingView()
                 }
             }
             .preferredColorScheme(resolvedColorScheme)
             .tint(accentColor)
+        }
+    }
+
+    private func startupErrorView(error: String) -> some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.largeTitle)
+                .foregroundStyle(.red)
+            Text("Failed to load database")
+                .font(.headline)
+            Text(error)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+            Button("Retry") {
+                appCore.retryBootstrap()
+            }
+            .buttonStyle(.borderedProminent)
+            Button("Report this startup problem") {
+                showLaunchErrorReport = true
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("startup-report-problem-button")
+            .accessibilityHint("Opens the in-app bug report form with the startup error details.")
+        }
+        .sheet(isPresented: $showLaunchErrorReport) {
+            NavigationStack {
+                ReportABugPage(
+                    originModule: "Startup",
+                    launchError: error
+                )
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Close") { showLaunchErrorReport = false }
+                        }
+                    }
+            }
+            .presentationDetents([.large])
         }
     }
 }

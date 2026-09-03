@@ -29,6 +29,8 @@ public enum BugReportComposer {
         public let deviceModel: String
         /// OS name + version, e.g. "iOS 18.2".
         public let systemVersion: String
+        /// Whether this is an iPhone/iPad binary running on Apple silicon Mac.
+        public let isIOSAppOnMac: Bool
         /// Marketing app version, e.g. "1.4.0".
         public let appVersion: String
         /// App build number, e.g. "128". Empty when unavailable.
@@ -38,24 +40,33 @@ public enum BugReportComposer {
         /// The page/module the user was on, e.g. "Settings > About".
         /// `nil` when the current module could not be determined.
         public let currentModule: String?
+        /// The startup failure shown before the database opened. Kept separate
+        /// from `recentErrors` because the error log may be unavailable when
+        /// startup itself fails. Outbound report bodies reduce this raw value
+        /// to a safe error type/code fingerprint before sharing it.
+        public let launchError: String?
         /// Recent user-facing errors, most-recent first. May be empty.
         public let recentErrors: [ErrorEntry]
 
         public init(
             deviceModel: String,
             systemVersion: String,
+            isIOSAppOnMac: Bool = false,
             appVersion: String,
             appBuild: String,
             coreVersion: String,
             currentModule: String?,
+            launchError: String? = nil,
             recentErrors: [ErrorEntry]
         ) {
             self.deviceModel = deviceModel
             self.systemVersion = systemVersion
+            self.isIOSAppOnMac = isIOSAppOnMac
             self.appVersion = appVersion
             self.appBuild = appBuild
             self.coreVersion = coreVersion
             self.currentModule = currentModule
+            self.launchError = launchError
             self.recentErrors = recentErrors
         }
     }
@@ -111,9 +122,23 @@ public enum BugReportComposer {
         lines.append("- Core version: \(context.coreVersion)")
         lines.append("- Device: \(context.deviceModel)")
         lines.append("- OS: \(context.systemVersion)")
+        lines.append("- iOS app on Mac: \(context.isIOSAppOnMac ? "Yes" : "No")")
         lines.append("- Page/module: \(normalizedModule(context.currentModule) ?? "Unknown")")
 
-        let errors = renderedErrors(context.recentErrors)
+        let launchDiagnostic = normalizedLaunchError(context.launchError)
+        if let launchDiagnostic {
+            lines.append("")
+            lines.append("### Startup error")
+            lines.append("")
+            lines.append(launchDiagnostic)
+        }
+
+        // Startup failures are also written to the app's recent-error log.
+        // Suppress that second channel so raw pre-database errors cannot bypass
+        // the allowlisted launch diagnostic above.
+        let errors = launchDiagnostic == nil
+            ? renderedErrors(context.recentErrors)
+            : []
         if !errors.isEmpty {
             lines.append("")
             lines.append("### Recent errors")
@@ -164,6 +189,45 @@ public enum BugReportComposer {
         guard let raw else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    static func normalizedLaunchError(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        var components = ["Startup failed"]
+        let shareableErrorTypes = [
+            "WiredPartCore.CipherKeyError",
+            "GRDB.DatabaseError",
+        ]
+        for errorType in shareableErrorTypes where trimmed.contains(errorType) {
+            components.append(errorType)
+        }
+
+        let stableCodes = matches(
+            in: trimmed,
+            pattern: #"\b(?:OSStatus|Code)\s*(?:=|:)?\s*-?\d+\b"#
+        )
+        for code in stableCodes.prefix(3) where !components.contains(code) {
+            components.append(code)
+        }
+
+        if components.count == 1 {
+            components.append("details redacted")
+        }
+        return components.joined(separator: " — ")
+    }
+
+    private static func matches(in value: String, pattern: String) -> [String] {
+        guard let expression = try? NSRegularExpression(pattern: pattern) else {
+            return []
+        }
+        let fullRange = NSRange(value.startIndex..<value.endIndex, in: value)
+        return expression.matches(in: value, range: fullRange).compactMap { match in
+            guard let range = Range(match.range, in: value) else { return nil }
+            return String(value[range])
+        }
     }
 
     private static func displayVersion(_ context: Context) -> String {
