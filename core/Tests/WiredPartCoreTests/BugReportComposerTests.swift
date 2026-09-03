@@ -161,6 +161,34 @@ final class BugReportComposerTests: XCTestCase {
         XCTAssertFalse(body.contains("private customer details"))
     }
 
+    func testWhitespaceLaunchErrorDoesNotSuppressRecentErrors() throws {
+        for launchError in ["", " \t\n\r "] {
+            let context = makeContext(
+                currentModule: "Startup",
+                recentErrors: [.init(message: "Network timeout")],
+                launchError: launchError
+            )
+
+            let shareText = BugReportComposer.body(description: nil, context: context)
+            XCTAssertFalse(shareText.contains("### Startup error"))
+            XCTAssertTrue(shareText.contains("### Recent errors"))
+            XCTAssertTrue(shareText.contains("Network timeout"))
+
+            let url = try XCTUnwrap(
+                BugReportComposer.githubIssueURL(
+                    userTitle: nil,
+                    description: nil,
+                    context: context
+                )
+            )
+            let githubBody = try XCTUnwrap(
+                URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                    .queryItems?.first { $0.name == "body" }?.value
+            )
+            XCTAssertEqual(githubBody, shareText)
+        }
+    }
+
     func testBodyOmitsBuildWhenBuildBlank() {
         let body = BugReportComposer.body(
             description: "x",

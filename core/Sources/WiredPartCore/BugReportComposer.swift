@@ -125,17 +125,18 @@ public enum BugReportComposer {
         lines.append("- iOS app on Mac: \(context.isIOSAppOnMac ? "Yes" : "No")")
         lines.append("- Page/module: \(normalizedModule(context.currentModule) ?? "Unknown")")
 
-        if let launchError = normalizedLaunchError(context.launchError) {
+        let launchDiagnostic = normalizedLaunchError(context.launchError)
+        if let launchDiagnostic {
             lines.append("")
             lines.append("### Startup error")
             lines.append("")
-            lines.append(launchError)
+            lines.append(launchDiagnostic)
         }
 
         // Startup failures are also written to the app's recent-error log.
         // Suppress that second channel so raw pre-database errors cannot bypass
         // the allowlisted launch diagnostic above.
-        let errors = context.launchError == nil
+        let errors = launchDiagnostic == nil
             ? renderedErrors(context.recentErrors)
             : []
         if !errors.isEmpty {
