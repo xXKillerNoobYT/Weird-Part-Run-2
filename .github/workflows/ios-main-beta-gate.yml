@@ -1,0 +1,206 @@
+name: iOS Main Beta Gate
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: "Reachable origin/main commit SHA to revalidate"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-main-beta-gate-${{ github.event_name == 'push' && github.sha || inputs.commit_sha }}
+  cancel-in-progress: false
+
+jobs:
+  resolve-sha:
+    name: Resolve exact main SHA
+    runs-on: ubuntu-latest
+    outputs:
+      expected_sha: ${{ steps.resolve.outputs.expected_sha || steps.reachable.outputs.expected_sha }}
+    steps:
+      - name: Select immutable SHA for trigger mode
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_SHA: ${{ github.sha }}
+          INPUT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "push" ]; then
+            printf '%s\n' "$PUSH_SHA" | grep -Eq '^[0-9a-f]{40}$'
+            echo "expected_sha=$PUSH_SHA" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          printf '%s\n' "$INPUT_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          echo "candidate_sha=$INPUT_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout origin/main for recovery reachability validation
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate recovery SHA is reachable from origin/main
+        if: github.event_name == 'workflow_dispatch'
+        id: reachable
+        env:
+          CANDIDATE_SHA: ${{ steps.resolve.outputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          git cat-file -e "$CANDIDATE_SHA^{commit}"
+          git merge-base --is-ancestor "$CANDIDATE_SHA" origin/main
+          echo "expected_sha=$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
+
+  ios-main-beta-gate:
+    name: Main Beta Gate (${{ matrix.name }})
+    needs: resolve-sha
+    runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: iPhone
+            device_class: iphone
+          - name: iPad
+            device_class: ipad
+    env:
+      EXPECTED_SHA: ${{ needs.resolve-sha.outputs.expected_sha }}
+      IOS_RUNTIME_VERSION: "26.5"
+      MINIMUM_FREE_GIB: "60"
+      SIMULATOR_BOOT_COMMAND_TIMEOUT_SECONDS: "120"
+      SIMULATOR_BOOT_TIMEOUT_SECONDS: "600"
+      SIMULATOR_BOOT_RECOVERY_TIMEOUT_SECONDS: "600"
+      XCODE_PHASE_TIMEOUT_SECONDS: "2400"
+      UI_SMOKE_PHASE_TIMEOUT_SECONDS: "900"
+      JOB_TIMEOUT_SECONDS: "7200"
+      CLEANUP_UPLOAD_MARGIN_SECONDS: "1080"
+    steps:
+      - name: Checkout exact validated main SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-sha.outputs.expected_sha }}
+          fetch-depth: 1
+          clean: true
+          persist-credentials: false
+
+      - name: Assert checkout is the expected immutable SHA
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          [ "$actual_sha" = "$EXPECTED_SHA" ]
+
+      - name: Validate fail-closed beta-gate source policy
+        run: python3 scripts/ci/validate-ios-beta-gate-source.py
+
+      - name: Verify exact Xcode 26.3 toolchain before simulator work
+        env:
+          WPR2_TOOLCHAIN_METADATA_DIR: artifacts/ios-beta-gate-${{ matrix.device_class }}
+        run: bash scripts/ci/verify-wpr2-xcode-toolchain.sh
+
+      - name: Run exact-main Xcode build and tests
+        run: bash scripts/ci/run-ios-beta-gate.sh "${{ matrix.device_class }}"
+
+      - name: Write fail-closed lane eligibility metadata
+        if: always()
+        continue-on-error: true
+        run: |
+          python3 scripts/ci/write-main-beta-eligibility.py lane \
+            --descriptor .github/wpr2-main-build/toolchain.env \
+            --expected-sha "$EXPECTED_SHA" \
+            --metadata "artifacts/ios-beta-gate-${{ matrix.device_class }}/metadata.txt" \
+            --output "artifacts/ios-beta-gate-${{ matrix.device_class }}/main-beta-lane.json" \
+            --device-class "${{ matrix.device_class }}"
+
+      - name: Remove run-owned simulator after interruption
+        if: always()
+        shell: bash
+        run: |
+          metadata="artifacts/ios-beta-gate-${{ matrix.device_class }}/metadata.txt"
+          simulator_id=""
+          if [[ -f "$metadata" ]]; then
+            simulator_id="$(awk -F= '$1 == "simulator_id" {print $2}' "$metadata")"
+          fi
+          if [[ -n "$simulator_id" ]]; then
+            xcrun simctl shutdown "$simulator_id" >/dev/null 2>&1 || true
+            xcrun simctl delete "$simulator_id" >/dev/null 2>&1 || true
+          fi
+
+      - name: Upload sanitized main-gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-beta-gate-${{ matrix.device_class }}-${{ needs.resolve-sha.outputs.expected_sha }}
+          path: artifacts/ios-beta-gate-${{ matrix.device_class }}/
+          if-no-files-found: error
+          retention-days: 7
+
+  main-beta-eligibility:
+    name: Main Beta Eligibility Record
+    if: always()
+    needs: [resolve-sha, ios-main-beta-gate]
+    runs-on: ubuntu-latest
+    env:
+      EXPECTED_SHA: ${{ needs.resolve-sha.outputs.expected_sha }}
+    steps:
+      - name: Checkout exact evaluated SHA
+        if: env.EXPECTED_SHA != ''
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-sha.outputs.expected_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Download iPhone lane evidence when available
+        if: env.EXPECTED_SHA != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: main-beta-gate-iphone-${{ needs.resolve-sha.outputs.expected_sha }}
+          path: lane-artifacts/iphone
+
+      - name: Download iPad lane evidence when available
+        if: env.EXPECTED_SHA != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: main-beta-gate-ipad-${{ needs.resolve-sha.outputs.expected_sha }}
+          path: lane-artifacts/ipad
+
+      - name: Write SHA-stamped fail-closed eligibility record
+        id: record
+        run: |
+          set -euo pipefail
+          mkdir -p main-beta-eligibility
+          if [ -z "$EXPECTED_SHA" ]; then
+            printf '%s\n' '{"schemaVersion":1,"eligible":false,"reason":"exact SHA resolution failed"}' > main-beta-eligibility/main-beta-eligibility.json
+            exit 1
+          fi
+          python3 scripts/ci/write-main-beta-eligibility.py aggregate \
+            --descriptor .github/wpr2-main-build/toolchain.env \
+            --expected-sha "$EXPECTED_SHA" \
+            --iphone lane-artifacts/iphone/main-beta-lane.json \
+            --ipad lane-artifacts/ipad/main-beta-lane.json \
+            --output main-beta-eligibility/main-beta-eligibility.json \
+            --repository "$GITHUB_REPOSITORY" \
+            --ref "refs/heads/main" \
+            --workflow-run-id "$GITHUB_RUN_ID" \
+            --workflow-attempt "$GITHUB_RUN_ATTEMPT"
+
+      - name: Upload eligibility record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-beta-eligibility-${{ needs.resolve-sha.outputs.expected_sha || github.run_id }}
+          path: main-beta-eligibility/main-beta-eligibility.json
+          if-no-files-found: error
+          retention-days: 7

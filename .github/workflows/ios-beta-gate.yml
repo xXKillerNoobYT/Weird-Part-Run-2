@@ -63,6 +63,12 @@ jobs:
         if: github.event.pull_request.head.repo.full_name == github.repository
         run: python3 scripts/ci/validate-ios-beta-gate-source.py
 
+      - name: Verify exact Xcode 26.3 toolchain before simulator work
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          WPR2_TOOLCHAIN_METADATA_DIR: artifacts/ios-beta-gate-${{ matrix.device_class }}
+        run: bash scripts/ci/verify-wpr2-xcode-toolchain.sh
+
       - name: Run exact-head Xcode build and tests
         if: github.event.pull_request.head.repo.full_name == github.repository
         run: bash scripts/ci/run-ios-beta-gate.sh "${{ matrix.device_class }}"
