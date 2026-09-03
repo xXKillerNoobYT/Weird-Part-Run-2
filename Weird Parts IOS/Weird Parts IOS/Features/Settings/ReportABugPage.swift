@@ -13,6 +13,9 @@ struct ReportABugPage: View {
     /// Passed in by the entry point (e.g. the AI assistant) so testers do not
     /// have to describe where they were.
     var originModule: String?
+    /// Exact startup error passed by the failure screen. This stays optional so
+    /// ordinary in-app reports do not need startup state or database access.
+    var launchError: String? = nil
 
     @ObservedObject private var errorLog = BugReportErrorLog.shared
 
@@ -22,7 +25,10 @@ struct ReportABugPage: View {
     @State private var urlBuildError: String?
 
     private var context: BugReportComposer.Context {
-        BugReportContextBuilder.build(currentModule: originModule)
+        BugReportContextBuilder.build(
+            currentModule: originModule,
+            launchError: launchError
+        )
     }
 
     private var shareText: String {
@@ -37,25 +43,23 @@ struct ReportABugPage: View {
         )
     }
 
+    private var displayedLaunchError: String? {
+        guard let launchError = context.launchError else { return nil }
+        let trimmed = launchError.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     var body: some View {
         Form {
-            Section {
-                TextField("Title", text: $title, prompt: Text("Short summary"))
-                    .accessibilityLabel("Bug report title")
-                TextEditorWithPlaceholder(
-                    text: $descriptionText,
-                    placeholder: BugReportComposer.descriptionPlaceholder
-                )
-                .frame(minHeight: 120)
-                .accessibilityLabel("Bug description")
-                .accessibilityIdentifier("settings-bug-description-editor")
-            } header: {
-                Text("What happened")
-            } footer: {
-                Text("Describe the problem in your own words. Device and version details are attached automatically.")
+            if displayedLaunchError != nil {
+                attachedDetailsSection
             }
 
-            attachedDetailsSection
+            reportDescriptionSection
+
+            if displayedLaunchError == nil {
+                attachedDetailsSection
+            }
 
             if !errorLog.entries.isEmpty {
                 recentErrorsSection
@@ -81,13 +85,47 @@ struct ReportABugPage: View {
 
     // MARK: - Sections
 
+    private var reportDescriptionSection: some View {
+        Section {
+            TextField("Title", text: $title, prompt: Text("Short summary"))
+                .accessibilityLabel("Bug report title")
+            TextEditorWithPlaceholder(
+                text: $descriptionText,
+                placeholder: BugReportComposer.descriptionPlaceholder
+            )
+            .frame(minHeight: 120)
+            .accessibilityLabel("Bug description")
+            .accessibilityIdentifier("settings-bug-description-editor")
+        } header: {
+            Text("What happened")
+        } footer: {
+            Text("Describe the problem in your own words. Device and version details are attached automatically.")
+        }
+    }
+
     private var attachedDetailsSection: some View {
         Section("Attached details") {
+            if let launchError = displayedLaunchError {
+                LabeledContent("Startup error") {
+                    Text(launchError)
+                        .multilineTextAlignment(.trailing)
+                }
+                .accessibilityIdentifier("bug-report-startup-error-row")
+                LabeledContent("Page", value: context.currentModule ?? "Unknown")
+                    .accessibilityIdentifier("bug-report-page-row")
+            }
+            LabeledContent("Device", value: context.deviceModel)
+                .accessibilityIdentifier("bug-report-device-row")
+            LabeledContent("OS", value: context.systemVersion)
+                .accessibilityIdentifier("bug-report-os-row")
+            LabeledContent("iOS app on Mac", value: context.isIOSAppOnMac ? "Yes" : "No")
+                .accessibilityIdentifier("bug-report-ios-on-mac-row")
+            if displayedLaunchError == nil {
+                LabeledContent("Page", value: context.currentModule ?? "Unknown")
+                    .accessibilityIdentifier("bug-report-page-row")
+            }
             LabeledContent("App version", value: displayVersion)
             LabeledContent("Core version", value: context.coreVersion)
-            LabeledContent("Device", value: context.deviceModel)
-            LabeledContent("OS", value: context.systemVersion)
-            LabeledContent("Page", value: context.currentModule ?? "Unknown")
         }
     }
 

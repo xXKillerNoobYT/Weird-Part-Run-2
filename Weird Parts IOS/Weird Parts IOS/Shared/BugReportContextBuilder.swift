@@ -13,19 +13,23 @@ enum BugReportContextBuilder {
     ///
     /// - Parameters:
     ///   - currentModule: The page/module the user was on, if known.
+    ///   - launchError: Exact startup error captured before the database opened.
     ///   - errorLog: Source of recent user-facing errors.
     @MainActor
     static func build(
         currentModule: String?,
+        launchError: String? = nil,
         errorLog: BugReportErrorLog = .shared
     ) -> BugReportComposer.Context {
         BugReportComposer.Context(
             deviceModel: deviceModelName(),
             systemVersion: "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)",
+            isIOSAppOnMac: ProcessInfo.processInfo.isiOSAppOnMac,
             appVersion: appVersion(),
             appBuild: appBuild(),
             coreVersion: WiredPartCore.version,
             currentModule: currentModule,
+            launchError: launchError,
             recentErrors: errorLog.composerEntries()
         )
     }
