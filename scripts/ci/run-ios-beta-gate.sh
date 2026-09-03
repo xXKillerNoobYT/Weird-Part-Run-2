@@ -183,6 +183,18 @@ wait_for_xcode_destination() {
   return 1
 }
 
+# Pure listing filters shared with the self-test; these never call simctl.
+shutdown_simulator_udids() {
+  grep "(Shutdown)" \
+    | grep -oE '\([A-Fa-f0-9-]{36}\)' | tr -d '()'
+}
+
+shutdown_run_owned_simulator_udids() {
+  grep -F "WPR2-CI-" \
+    | grep "(Shutdown)" \
+    | grep -oE '\([A-Fa-f0-9-]{36}\)' | tr -d '()'
+}
+
 if [[ "${IOS_BETA_GATE_SELF_TEST:-}" == "1" ]]; then
   self_test_dir="$(mktemp -d)"
   trap 'rm -rf "$self_test_dir"' EXIT
@@ -292,6 +304,26 @@ if [[ "${IOS_BETA_GATE_SELF_TEST:-}" == "1" ]]; then
   result_bundle_is_corrupt "$healthy_dir" && exit 1
   result_bundle_is_corrupt "$self_test_dir/absent.xcresult" && exit 1
 
+  # Exercise the production filters with synthetic listings only. UUID spelling
+  # must not change selection; Booted devices must survive both cleanup paths,
+  # and the normal device set must additionally preserve non-WPR2 devices.
+  upper_udid="ABCDEF12-3456-7890-ABCD-EF1234567890"
+  lower_udid="abcdef12-3456-7890-abcd-ef1234567890"
+  mixed_udid="AbCdEf12-3456-7890-aBcD-Ef1234567890"
+  booted_udid="11111111-2222-3333-4444-555555555555"
+  unrelated_udid="66666666-7777-8888-9999-AAAAAAAAAAAA"
+  simulator_fixture="$(printf '%s\n' \
+    "WPR2-CI-iPhone-upper ($upper_udid) (Shutdown)" \
+    "WPR2-CI-iPad-lower ($lower_udid) (Shutdown)" \
+    "WPR2-CI-iPhone-mixed ($mixed_udid) (Shutdown)" \
+    "WPR2-CI-iPad-active ($booted_udid) (Booted)" \
+    "Personal iPhone ($unrelated_udid) (Shutdown)")"
+  expected_run_owned="$(printf '%s\n' "$upper_udid" "$lower_udid" "$mixed_udid")"
+  expected_testing="$(printf '%s\n' "$upper_udid" "$lower_udid" "$mixed_udid" "$unrelated_udid")"
+  [[ "$(printf '%s\n' "$simulator_fixture" | shutdown_run_owned_simulator_udids)" == "$expected_run_owned" ]] || exit 1
+  [[ "$(printf '%s\n' "$simulator_fixture" | shutdown_simulator_udids)" == "$expected_testing" ]] || exit 1
+  echo "iOS beta-gate simulator cleanup fixtures passed"
+
   echo "iOS beta-gate bounded recovery self-test passed"
   exit 0
 fi
@@ -373,8 +405,7 @@ if (( available_kib < required_kib )); then
   # deletes them — 270 clones drove the 2026-07-31 disk incident. Shutdown
   # clones only; a Booted clone belongs to the sibling runner's live gate.
   xcrun simctl --set testing list devices 2>/dev/null \
-    | grep "(Shutdown)" \
-    | grep -oE '\([A-F0-9-]{36}\)' | tr -d '()' \
+    | shutdown_simulator_udids \
     | while read -r stale_clone; do
         xcrun simctl --set testing delete "$stale_clone" >/dev/null 2>&1 || true
       done
@@ -382,9 +413,7 @@ if (( available_kib < required_kib )); then
   # device set before the cleanup step sees metadata. Restrict this to shutdown
   # WPR2-CI devices so a sibling runner's active simulator is never deleted.
   xcrun simctl list devices 2>/dev/null \
-    | grep -F "WPR2-CI-" \
-    | grep "(Shutdown)" \
-    | grep -oE '\([A-F0-9-]{36}\)' | tr -d '()' \
+    | shutdown_run_owned_simulator_udids \
     | while read -r stale_device; do
         xcrun simctl delete "$stale_device" >/dev/null 2>&1 || true
       done
