@@ -364,22 +364,29 @@ struct UserMenuSheet: View {
     private var userProfileSection: some View {
         if let user = appCore.currentUser {
             Section {
-                HStack(spacing: DS.Space.lg - 2) {
-                    DSAvatarView(name: user.displayName, size: .medium)
+                NavigationLink {
+                    IOSAccountPage()
+                } label: {
+                    HStack(spacing: DS.Space.lg - 2) {
+                        DSAvatarView(name: user.displayName, size: .medium)
 
-                    VStack(alignment: .leading, spacing: DS.Space.xxxs) {
-                        Text(user.displayName)
-                            .dsStyle(.sectionTitle)
-                        if let email = user.email, !email.isEmpty {
-                            Text(email)
-                                .dsStyle(.detail)
-                                .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: DS.Space.xxxs) {
+                            Text(user.displayName)
+                                .dsStyle(.sectionTitle)
+                            if let email = user.email, !email.isEmpty {
+                                Text(email)
+                                    .dsStyle(.detail)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
-                    }
 
-                    Spacer()
+                        Spacer()
+                    }
+                    .padding(.vertical, DS.Space.xxs)
                 }
-                .padding(.vertical, DS.Space.xxs)
+                .accessibilityLabel("Account for \(user.displayName)")
+                .accessibilityHint("Opens your account settings and Change PIN form.")
+                .accessibilityIdentifier("user-menu-account-link")
             }
         }
     }
