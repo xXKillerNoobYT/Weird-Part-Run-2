@@ -62,10 +62,115 @@ mergeStateStatus,reviewDecision,createdAt,updatedAt,statusCheckRollup,reviews,co
 gh api "repos/$repo/pulls/$PR" \
   --jq '{number,html_url,draft,head:{ref:.head.ref,sha:.head.sha},base:{ref:.base.ref,sha:.base.sha},mergeable,mergeable_state}'
 
-gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){
-  repository(owner:$owner,name:$repo){ pullRequest(number:$number){
-    reviewThreads(first:100){ nodes { isResolved isOutdated path comments(first:1){nodes{url}} } }
-  }}}' -f owner=xXKillerNoobYT -f repo=Weird-Part-Run-2 -F number="$PR"
+# Review threads are a connection. Fetch every page: a single page is not
+# admissible evidence for the all-thread merge predicate. Any transport, GraphQL,
+# envelope, or cursor failure is UNMEASURED/ERROR, never a zero-thread result.
+review_threads_dir="${PAPERCLIP_RUN_SCRATCH_DIR:?}/wpr2-pr-disposition/review-threads-$PR"
+mkdir -p "$review_threads_dir"
+review_threads_cursor=''
+review_threads_page=0
+unresolved_non_outdated_threads=0
+validate_review_threads_response() {
+  jq -e --argjson expected_pr "$PR" '
+    (if has("errors") then (.errors | type == "array" and length == 0) else true end)
+    and (.data | type == "object")
+    and (.data.repository | type == "object")
+    and (.data.repository.pullRequest | type == "object")
+    and (.data.repository.pullRequest.number | type == "number" and . == $expected_pr)
+    and (.data.repository.pullRequest.reviewThreads | type == "object")
+    and (.data.repository.pullRequest.reviewThreads.nodes | type == "array")
+    and (.data.repository.pullRequest.reviewThreads.pageInfo | type == "object")
+    and (.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage | type == "boolean")
+    and (.data.repository.pullRequest.reviewThreads.pageInfo.endCursor | . == null or type == "string")
+    and ((.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage | not)
+         or (.data.repository.pullRequest.reviewThreads.pageInfo.endCursor | type == "string" and length > 0))
+    and ([.data.repository.pullRequest.reviewThreads.nodes[]
+          | type == "object"
+            and (.isResolved | type == "boolean")
+            and (.isOutdated | type == "boolean")
+            and (.path | . == null or type == "string")
+            and (.comments | type == "object")
+            and (.comments.nodes | type == "array")]
+         | all)
+  ' "$1"
+}
+
+while :; do
+  review_threads_page=$((review_threads_page + 1))
+  review_threads_log="$review_threads_dir/page-$review_threads_page.json"
+  if [ -n "$review_threads_cursor" ]; then
+    review_threads_after=(-F after="$review_threads_cursor")
+  else
+    review_threads_after=(-F after=null)
+  fi
+  if ! gh api graphql \
+    -f query='query($owner:String!,$repo:String!,$number:Int!,$after:String){
+      repository(owner:$owner,name:$repo){ pullRequest(number:$number){
+        number
+        reviewThreads(first:100,after:$after){
+          nodes { isResolved isOutdated path comments(first:1){nodes{url}} }
+          pageInfo { hasNextPage endCursor }
+        }
+      }}
+    }' \
+    -f owner=xXKillerNoobYT -f repo=Weird-Part-Run-2 -F number="$PR" \
+    "${review_threads_after[@]}" >"$review_threads_log" 2>&1; then
+    printf 'UNMEASURED/ERROR: review-thread query failed at page %s for PR #%s; see %s.\n' \
+      "$review_threads_page" "$PR" "$review_threads_log" >&2
+    exit 1
+  fi
+  if ! validate_review_threads_response "$review_threads_log"; then
+    printf 'UNMEASURED/ERROR: review-thread query returned an incomplete or unexpected envelope at page %s for PR #%s; see %s.\n' \
+      "$review_threads_page" "$PR" "$review_threads_log" >&2
+    exit 1
+  fi
+
+  page_unresolved=$(jq '[.data.repository.pullRequest.reviewThreads.nodes[]
+    | select(.isResolved == false and .isOutdated == false)] | length' "$review_threads_log")
+  unresolved_non_outdated_threads=$((unresolved_non_outdated_threads + page_unresolved))
+  has_next_page=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage' "$review_threads_log")
+  if [ "$has_next_page" = false ]; then
+    break
+  fi
+  review_threads_cursor=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor' "$review_threads_log")
+done
+
+# Multi-page control: page one is clear, while a qualifying page-two thread must
+# block. This prevents a future edit from accepting only the initial 100 threads.
+review_threads_fixture_dir="${PAPERCLIP_RUN_SCRATCH_DIR:?}/wpr2-pr-disposition/review-thread-fixtures-$PR"
+mkdir -p "$review_threads_fixture_dir"
+jq -n --argjson pr "$PR" '{data:{repository:{pullRequest:{number:$pr,reviewThreads:{nodes:[{isResolved:true,isOutdated:false,path:null,comments:{nodes:[]}}],pageInfo:{hasNextPage:true,endCursor:"page-two"}}}}}}' \
+  >"$review_threads_fixture_dir/page-one.json"
+jq -n --argjson pr "$PR" '{data:{repository:{pullRequest:{number:$pr,reviewThreads:{nodes:[{isResolved:false,isOutdated:false,path:"docs/runbooks/wpr2-github-pr-disposition.md",comments:{nodes:[]}}],pageInfo:{hasNextPage:false,endCursor:null}}}}}}' \
+  >"$review_threads_fixture_dir/page-two-blocking.json"
+jq -n --argjson pr "$PR" '{data:{repository:{pullRequest:{number:$pr,reviewThreads:{nodes:[],pageInfo:{hasNextPage:true,endCursor:null}}}}}}' \
+  >"$review_threads_fixture_dir/page-one-missing-cursor.json"
+for fixture in "$review_threads_fixture_dir/page-one.json" "$review_threads_fixture_dir/page-two-blocking.json"; do
+  if ! validate_review_threads_response "$fixture"; then
+    printf 'FAIL: valid multi-page review-thread control was rejected: %s.\n' "$fixture" >&2
+    exit 1
+  fi
+done
+if validate_review_threads_response "$review_threads_fixture_dir/page-one-missing-cursor.json"; then
+  printf 'FAIL: incomplete review-thread pagination control was accepted.\n' >&2
+  exit 1
+fi
+fixture_blocking_threads=$(jq -s '[.[].data.repository.pullRequest.reviewThreads.nodes[]
+  | select(.isResolved == false and .isOutdated == false)] | length' \
+  "$review_threads_fixture_dir/page-one.json" "$review_threads_fixture_dir/page-two-blocking.json")
+if [ "$fixture_blocking_threads" -ne 1 ]; then
+  printf 'FAIL: page-two qualifying review-thread control was not classified as blocking.\n' >&2
+  exit 1
+fi
+printf 'PASS: page-two qualifying review-thread control blocks disposition.\n'
+
+if [ "$unresolved_non_outdated_threads" -ne 0 ]; then
+  printf 'REPAIR: found %s unresolved non-outdated review thread(s) across %s page(s) for PR #%s; disposition is blocked.\n' \
+    "$unresolved_non_outdated_threads" "$review_threads_page" "$PR" >&2
+  exit 1
+fi
+printf 'PASS: all %s review-thread page(s) were retrieved and contain no unresolved non-outdated threads.\n' \
+  "$review_threads_page"
 
 # GitHub has no supported `GET /repos/{owner}/{repo}/pulls/{pull_number}/issues`
 # endpoint. Query the PR's closing-linked issues through GraphQL instead. A query
