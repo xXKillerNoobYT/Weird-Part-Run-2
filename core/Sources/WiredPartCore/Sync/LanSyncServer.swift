@@ -297,6 +297,14 @@ public actor SyncServerState {
         return drained
     }
 
+    /// Restore a drain that failed before its rows became durable journal receipts.
+    /// Prepending preserves their original source order ahead of rows received while
+    /// receipt persistence was in progress.
+    public func restoreDrainedInbox(_ drained: [IncomingChange]) {
+        guard !drained.isEmpty else { return }
+        inbox = drained + inbox
+    }
+
     public func setOutbox(_ changes: [IncomingChange]) {
         outbox = changes
     }

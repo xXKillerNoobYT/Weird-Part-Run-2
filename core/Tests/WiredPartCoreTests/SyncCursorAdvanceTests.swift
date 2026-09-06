@@ -187,6 +187,28 @@ struct SyncCursorAdvanceTests {
         #expect(journalState == "applied")
     }
 
+    @Test("processInbox restores legacy rows when receipt persistence fails")
+    func processInboxRestoresLegacyRowsWhenReceiptWriteFails() async throws {
+        let db = try freshDB()
+        let manager = PeerManager(db: db)
+        let serverState = SyncServerState(deviceId: "receiver", deviceName: "Receiver", companyId: "company", db: db)
+        await manager.testInstallServerState(serverState)
+        let row = IncomingChange(
+            deviceId: "peer", tableName: "users", recordId: "101", operation: "INSERT",
+            recordData: #"{"id":101,"display_name":"retain me","pin_hash":"hash","is_active":1}"#,
+            timestamp: "2026-08-22T00:00:00Z"
+        )
+        await serverState.appendToInbox([row])
+        try await db.writer.write { dbConn in
+            try dbConn.execute(sql: "DROP TABLE _sync_receive_journal")
+        }
+
+        await manager.testProcessInbox()
+
+        #expect((await serverState.inbox).count == 1,
+                "a receipt-write failure must retain the legacy row for a later retry")
+    }
+
     @Test("journal retains child before a later parent then converges in source order")
     func receiveJournalDefersChildUntilLaterParent() throws {
         let db = try freshDB()

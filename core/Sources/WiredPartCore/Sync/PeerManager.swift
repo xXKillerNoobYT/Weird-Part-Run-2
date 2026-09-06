@@ -1043,8 +1043,16 @@ public actor PeerManager {
             if maxSeq > 0 {
                 try ChangeTracker.updateVectorClock(db: db, peerId: result.serverDeviceId, lastSequence: maxSeq, deviceId: deviceId)
             }
-            pulled = try SyncReceiveJournal.applyPending(db: db, localDeviceId: deviceId).applied
         }
+
+        // Replay is independent of delivery volume: an empty pull can be the
+        // first chance to apply a previously deferred receipt. Scope the count to
+        // this peer so unrelated inbox recovery is never reported as its pull.
+        pulled = try SyncReceiveJournal.applyPending(
+            db: db,
+            localDeviceId: deviceId,
+            sourcePeerId: result.serverDeviceId
+        ).applied
 
         return (pushed, pulled)
     }
@@ -1261,15 +1269,22 @@ public actor PeerManager {
     ) async {
         guard let sState = serverState else { return }
         let inbox = await sState.drainInbox()
+        var durableReceiptRecorded = inbox.isEmpty
 
         do {
             // Legacy/test callers may still append in-memory rows. Convert those
             // to durable receipts before applying the full ordered journal.
             if !inbox.isEmpty {
                 try SyncReceiveJournal.record(db: db, sourcePeerId: "lan_inbox", changes: inbox, auditMetadata: "legacy_inbox")
+                durableReceiptRecorded = true
             }
             _ = try SyncReceiveJournal.applyPending(db: db, localDeviceId: sState.deviceId)
         } catch {
+            // A failed receipt write must not erase the only legacy copy. Once the
+            // journal commit succeeds it becomes the recovery authority instead.
+            if !durableReceiptRecorded {
+                await sState.restoreDrainedInbox(inbox)
+            }
             logger.error("[PeerManager] Receive journal application deferred: \(error.localizedDescription, privacy: .public)")
         }
     }
