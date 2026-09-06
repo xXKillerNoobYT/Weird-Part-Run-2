@@ -73,7 +73,7 @@ public actor SyncEngine {
     // MARK: - State
 
     private let db: AppDatabase
-    private let shopChangeResolver: @Sendable (AppDatabase, [IncomingChange], String) throws -> MergeResult
+    private let shopChangeResolver: @Sendable (Database, IncomingChange, String) throws -> MergeResult
     private var state = SyncState()
     private var isSyncing = false
     private var periodicTask: Task<Void, Never>?
@@ -92,10 +92,10 @@ public actor SyncEngine {
     public init(db: AppDatabase) {
         self.init(
             db: db,
-            shopChangeResolver: { db, changes, localDeviceId in
-                try ConflictResolver.resolveAndApplyChanges(
-                    db: db,
-                    changes: changes,
+            shopChangeResolver: { connection, change, localDeviceId in
+                try ConflictResolver.resolveAndApplyChange(
+                    in: connection,
+                    change: change,
                     localDeviceId: localDeviceId
                 )
             }
@@ -107,7 +107,7 @@ public actor SyncEngine {
     /// transient database faults (for example SQLITE_BUSY or disk-full).
     init(
         db: AppDatabase,
-        shopChangeResolver: @escaping @Sendable (AppDatabase, [IncomingChange], String) throws -> MergeResult
+        shopChangeResolver: @escaping @Sendable (Database, IncomingChange, String) throws -> MergeResult
     ) {
         self.db = db
         self.shopChangeResolver = shopChangeResolver
@@ -268,7 +268,8 @@ public actor SyncEngine {
                     let replay = try SyncReceiveJournal.applyPending(
                         db: db,
                         localDeviceId: deviceId,
-                        sourcePeerId: receiptSource
+                        sourcePeerId: receiptSource,
+                        applyChange: shopChangeResolver
                     )
                     guard replay.retryable == 0 else {
                         let pendingCount = (try? ChangeTracker.getPendingChangeCount(db: db)) ?? pendingChanges.count

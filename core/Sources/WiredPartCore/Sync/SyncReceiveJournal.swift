@@ -97,7 +97,8 @@ enum SyncReceiveJournal {
     static func applyPending(
         db: AppDatabase,
         localDeviceId: String,
-        sourcePeerId: String? = nil
+        sourcePeerId: String? = nil,
+        applyChange: ((Database, IncomingChange, String) throws -> MergeResult)? = nil
     ) throws -> ApplyResult {
         // Applying pending work is the other deterministic lifecycle boundary.
         // This remains a single bounded cleanup query even when fixed-point replay
@@ -124,11 +125,16 @@ enum SyncReceiveJournal {
             for entry in entries {
                 let change = try JSONDecoder().decode(IncomingChange.self, from: Data(entry.payload.utf8))
                 let merge = try db.writer.write { connection in
-                    let merge = try ConflictResolver.resolveAndApplyChange(
-                        in: connection,
-                        change: change,
-                        localDeviceId: localDeviceId
-                    )
+                    let merge: MergeResult
+                    if let applyChange {
+                        merge = try applyChange(connection, change, localDeviceId)
+                    } else {
+                        merge = try ConflictResolver.resolveAndApplyChange(
+                            in: connection,
+                            change: change,
+                            localDeviceId: localDeviceId
+                        )
+                    }
                     let disposition = disposition(for: merge)
                     try update(
                         connection: connection,
