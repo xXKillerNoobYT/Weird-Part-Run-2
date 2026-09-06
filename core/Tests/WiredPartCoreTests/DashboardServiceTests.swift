@@ -460,7 +460,19 @@ struct DashboardServiceTests {
             issues: "Missing connectors",
             tomorrowNotes: "Need to order parts"
         )
-        #expect(reportId > 0)
+        #expect(reportId < 0)
+    }
+
+    @Test("Daily reports append in section-local sort order")
+    func testDailyReportsAppendInSectionLocalSortOrder() throws {
+        let (env, dash) = try freshEnv()
+        _ = try dash.submitDailyReport(userId: env.adminUserId, accomplishments: "First", issues: "", tomorrowNotes: "")
+        _ = try dash.submitDailyReport(userId: env.adminUserId, accomplishments: "Second", issues: "", tomorrowNotes: "")
+
+        let sortOrders: [Int] = try env.db.writer.read { db in
+            try Int.fetchAll(db, sql: "SELECT sort_order FROM notebook_entries WHERE entry_type = 'daily-report' ORDER BY sort_order")
+        }
+        #expect(sortOrders == [0, 1])
     }
 
     @Test("Report problem")
@@ -472,7 +484,19 @@ struct DashboardServiceTests {
             jobId: jobId,
             description: "Water damage in ceiling"
         )
-        #expect(reportId > 0)
+        #expect(reportId < 0)
+    }
+
+    @Test("Problem reports append in section-local sort order")
+    func testProblemReportsAppendInSectionLocalSortOrder() throws {
+        let (env, dash) = try freshEnv()
+        _ = try dash.reportProblem(userId: env.adminUserId, jobId: nil, description: "First")
+        _ = try dash.reportProblem(userId: env.adminUserId, jobId: nil, description: "Second")
+
+        let sortOrders: [Int] = try env.db.writer.read { db in
+            try Int.fetchAll(db, sql: "SELECT sort_order FROM notebook_entries WHERE entry_type = 'problem' ORDER BY sort_order")
+        }
+        #expect(sortOrders == [0, 1])
     }
 
     // MARK: - Attention & Schedule

@@ -8,6 +8,58 @@ import GRDB
 @Suite("NotebooksService Tests")
 struct NotebooksServiceTests {
 
+    private func incomingBlockChange(
+        from env: E2ETestHelpers.TestEnvironment,
+        entryId: Int64,
+        deviceId: String
+    ) throws -> IncomingChange {
+        let recordData = try env.db.writer.read { dbConn -> String in
+            guard let row = try Row.fetchOne(dbConn, sql: """
+                SELECT id, section_id, notebook_id, title, content, entry_type, block_type,
+                       field_required, is_deleted, is_completed, sort_order, created_by,
+                       created_at, updated_at
+                FROM notebook_entries
+                WHERE id = ?
+                """, arguments: [entryId]) else {
+                throw NotebooksService.NotebooksError.entryNotFound(entryId)
+            }
+
+            var object: [String: Any] = [
+                "id": row["id"] as Int64,
+                "section_id": row["section_id"] as Int64,
+                "notebook_id": row["notebook_id"] as Int64,
+                "title": row["title"] as String,
+                "entry_type": row["entry_type"] as String,
+                "block_type": row["block_type"] as String,
+                "field_required": row["field_required"] as Int,
+                "is_deleted": row["is_deleted"] as Int,
+                "is_completed": row["is_completed"] as Int,
+                "sort_order": row["sort_order"] as Int,
+                "created_by": row["created_by"] as Int64,
+                "created_at": row["created_at"] as String,
+                "updated_at": row["updated_at"] as String,
+            ]
+            if let content = row["content"] as String? {
+                object["content"] = content
+            }
+
+            let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+            guard let json = String(data: data, encoding: .utf8) else {
+                throw NotebooksService.NotebooksError.invalidData("Unable to encode notebook block test payload")
+            }
+            return json
+        }
+
+        return IncomingChange(
+            deviceId: deviceId,
+            tableName: "notebook_entries",
+            recordId: String(entryId),
+            operation: "INSERT",
+            recordData: recordData,
+            timestamp: "2026-08-31T12:00:00Z"
+        )
+    }
+
     // MARK: - 1. Create Notebook & List
 
     @Test("Create notebook and verify it appears in list")
@@ -79,8 +131,8 @@ struct NotebooksServiceTests {
             createdBy: env.adminUserId,
             sortOrder: 1
         )
-        #expect(e1 > 0)
-        #expect(e2 > 0)
+        #expect(e1 < 0)
+        #expect(e2 < 0)
         #expect(e1 != e2)
 
         // Verify entries appear in hierarchy
@@ -89,6 +141,119 @@ struct NotebooksServiceTests {
         #expect(entries.count == 2)
         #expect(entries.contains { $0.title == "First note" })
         #expect(entries.contains { $0.title == "Second note" })
+    }
+
+    @Test("Offline same-position block inserts survive reciprocal sync in identical order")
+    func testOfflineSamePositionBlocksConverge() throws {
+        let deviceA = try E2ETestHelpers.setUp(adminName: "Shared Admin")
+        let deviceB = try E2ETestHelpers.setUp(adminName: "Shared Admin")
+
+        let notebookA = try deviceA.notebooks.createNotebook(
+            title: "Shared Notebook", notebookType: "general", createdBy: deviceA.adminUserId
+        )
+        let notebookB = try deviceB.notebooks.createNotebook(
+            title: "Shared Notebook", notebookType: "general", createdBy: deviceB.adminUserId
+        )
+        let sectionA = try deviceA.notebooks.createSection(
+            notebookId: notebookA, groupId: nil, name: "Shared Section"
+        )
+        let sectionB = try deviceB.notebooks.createSection(
+            notebookId: notebookB, groupId: nil, name: "Shared Section"
+        )
+        #expect(notebookA == notebookB)
+        #expect(sectionA == sectionB)
+
+        let blockA = try deviceA.notebooks.createBlockEntry(
+            sectionId: sectionA, title: "Created offline on A", content: "A",
+            createdBy: deviceA.adminUserId, sortOrder: 4
+        )
+        let blockB = try deviceB.notebooks.createBlockEntry(
+            sectionId: sectionB, title: "Created offline on B", content: "B",
+            createdBy: deviceB.adminUserId, sortOrder: 4
+        )
+        #expect(blockA < 0)
+        #expect(blockB < 0)
+        #expect(blockA != blockB)
+
+        let changeFromA = try incomingBlockChange(from: deviceA, entryId: blockA, deviceId: "device-A")
+        let changeFromB = try incomingBlockChange(from: deviceB, entryId: blockB, deviceId: "device-B")
+
+        let appliedToA = try ConflictResolver.resolveAndApplyChanges(
+            db: deviceA.db, changes: [changeFromB], localDeviceId: "device-A"
+        )
+        let appliedToB = try ConflictResolver.resolveAndApplyChanges(
+            db: deviceB.db, changes: [changeFromA], localDeviceId: "device-B"
+        )
+        #expect(appliedToA.applied == 1)
+        #expect(appliedToB.applied == 1)
+        #expect(appliedToA.keyCollisions == 0)
+        #expect(appliedToB.keyCollisions == 0)
+
+        let entriesA = try deviceA.notebooks.getNotebookHierarchy(notebookId: notebookA)
+            .ungroupedSections.flatMap(\.entries)
+        let entriesB = try deviceB.notebooks.getNotebookHierarchy(notebookId: notebookB)
+            .ungroupedSections.flatMap(\.entries)
+        let expectedOrder = [blockA, blockB].sorted()
+        #expect(entriesA.map(\.id) == expectedOrder)
+        #expect(entriesB.map(\.id) == expectedOrder)
+        #expect(Set(entriesA.map(\.title)) == Set(["Created offline on A", "Created offline on B"]))
+        #expect(Set(entriesB.map(\.title)) == Set(["Created offline on A", "Created offline on B"]))
+    }
+
+    @Test("New negative block IDs preserve positive legacy rows and break position ties by ID")
+    func testNegativeBlockIdentityPreservesLegacyPositiveRows() throws {
+        let env = try E2ETestHelpers.setUp()
+        let notebookId = try env.notebooks.createNotebook(
+            title: "Legacy Notebook", notebookType: "general", createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: notebookId, groupId: nil, name: "Main"
+        )
+        let legacyId: Int64 = 4_242
+        try env.db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO notebook_entries
+                (id, section_id, notebook_id, title, content, entry_type, block_type,
+                 sort_order, created_by, created_at, updated_at)
+                VALUES (?, ?, ?, 'Legacy positive block', 'legacy', 'note', 'text',
+                        2, ?, datetime('now'), datetime('now'))
+                """, arguments: [legacyId, sectionId, notebookId, env.adminUserId])
+        }
+
+        let newId = try env.notebooks.addNotebookEntry(
+            notebookId: notebookId, title: "New negative block", createdBy: env.adminUserId
+        )
+        try env.db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE notebook_entries SET sort_order = 2 WHERE id = ?",
+                arguments: [newId]
+            )
+        }
+
+        let rows = try env.notebooks.getNotebookHierarchy(notebookId: notebookId)
+            .ungroupedSections.flatMap(\.entries)
+        #expect(newId < 0)
+        #expect(rows.map(\.id) == [newId, legacyId])
+        #expect(rows.last?.title == "Legacy positive block")
+    }
+
+    @Test("addNotebookEntry appends in section-local sort order")
+    func testAddNotebookEntryAppendsInSectionLocalSortOrder() throws {
+        let env = try E2ETestHelpers.setUp()
+        let notebookId = try env.notebooks.createNotebook(
+            title: "Ordered Notes", notebookType: "general", createdBy: env.adminUserId
+        )
+        _ = try env.notebooks.addNotebookEntry(notebookId: notebookId, title: "First", createdBy: env.adminUserId)
+        _ = try env.notebooks.addNotebookEntry(notebookId: notebookId, title: "Second", createdBy: env.adminUserId)
+
+        let sortOrders: [Int] = try env.db.writer.read { db in
+            try Int.fetchAll(
+                db,
+                sql: "SELECT sort_order FROM notebook_entries WHERE notebook_id = ? ORDER BY sort_order",
+                arguments: [notebookId]
+            )
+        }
+        #expect(sortOrders == [0, 1])
     }
 
     // MARK: - 4. Update Entry Content (Block Entry)
@@ -866,6 +1031,7 @@ struct NotebooksServiceTests {
         #expect(hierarchy.groups.count == 5)
         #expect(hierarchy.groups.contains { $0.name == "Safety & Compliance" })
         #expect(hierarchy.groups.contains { $0.name == "Daily Log" })
+        #expect(hierarchy.groups.flatMap(\.sections).flatMap(\.entries).allSatisfy { $0.id < 0 })
     }
 
     // MARK: - 10. Notebooks Stats
@@ -1874,6 +2040,7 @@ struct NotebooksServiceTests {
         #expect(section.entries.count == 2)
         #expect(section.entries.contains { $0.title == "Step 1" })
         #expect(section.entries.contains { $0.title == "Step 2" })
+        #expect(section.entries.allSatisfy { $0.id < 0 })
     }
 
     @Test("applyPageTemplate is no-op for non-existent template")

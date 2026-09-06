@@ -1243,11 +1243,17 @@ public final class ChatService: Sendable {
             // Save as notebook entry
             let title = attachment.fileName ?? "Chat attachment"
             let content = attachment.filePath ?? attachment.referenceLabel ?? ""
+            let entryId = try NotebooksService.nextBlockID(in: dbConn)
+            let nextSortOrder = try Int.fetchOne(
+                dbConn,
+                sql: "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM notebook_entries WHERE section_id = ? AND deleted_at IS NULL",
+                arguments: [sectionId]
+            ) ?? 0
             try dbConn.execute(sql: """
                 INSERT INTO notebook_entries
-                (section_id, entry_type, title, content, created_by, created_at)
-                VALUES (?, 'attachment', ?, ?, ?, datetime('now'))
-                """, arguments: [sectionId, title, content, userId])
+                (id, section_id, entry_type, title, content, created_by, sort_order, created_at)
+                VALUES (?, ?, 'attachment', ?, ?, ?, ?, datetime('now'))
+                """, arguments: [entryId, sectionId, title, content, userId, nextSortOrder])
         }
     }
 

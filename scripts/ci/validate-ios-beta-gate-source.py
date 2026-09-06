@@ -35,6 +35,8 @@ required_runner_fragments = {
     "zero tests fail closed": "(( total > 0 )) || phase_failure=1",
     "disk cleanup deletes only stale DerivedData entries": '-mmin "+${derived_data_stale_minutes}"',
     "disk cleanup stays at the top level of the DerivedData cache": "-mindepth 1 -maxdepth 1",
+    "disk cleanup removes only shutdown run-owned simulators": 'shutdown_run_owned_simulator_udids() {\n  grep -F "WPR2-CI-" \\\n    | grep "(Shutdown)"',
+    "normal-device cleanup consumes the restricted simulator IDs": 'xcrun simctl list devices 2>/dev/null \\\n    | shutdown_run_owned_simulator_udids \\\n    | while read -r stale_device; do',
     "disk budget still fails closed after cleanup": '(( available_kib >= required_kib )) || fail "runner has ${available_gib} GiB free; ${minimum_free_gib} GiB is required"',
     "skipped tests fail closed": "(( skipped == 0 )) || phase_failure=1",
     "CoreLocation recovery remains bounded": "simulator_boot_recovery_timeout_seconds",
@@ -57,22 +59,44 @@ required_runner_fragments = {
     "corrupt-bundle retry remains one bounded pass per phase": "corrupt_bundle_retry=1",
 }
 
-errors: list[str] = []
-for description, fragment in required_workflow_fragments.items():
-    if fragment not in workflow:
-        errors.append(f"workflow invariant missing: {description} ({fragment!r})")
-for description, fragment in required_runner_fragments.items():
-    if fragment not in runner:
-        errors.append(f"runner invariant missing: {description} ({fragment!r})")
 
-legacy_skip_guard = r"(?m)^ {4}if:\s*github\.event\.pull_request\.head\.repo\.full_name == github\.repository\s*$"
-if re.search(legacy_skip_guard, workflow):
-    errors.append("workflow still has the job-level fork skip guard that can report a successful required context")
+def validation_errors(workflow_source: str, runner_source: str) -> list[str]:
+    errors: list[str] = []
+    for description, fragment in required_workflow_fragments.items():
+        if fragment not in workflow_source:
+            errors.append(f"workflow invariant missing: {description} ({fragment!r})")
+    for description, fragment in required_runner_fragments.items():
+        if fragment not in runner_source:
+            errors.append(f"runner invariant missing: {description} ({fragment!r})")
 
+    legacy_skip_guard = r"(?m)^ {4}if:\s*github\.event\.pull_request\.head\.repo\.full_name == github\.repository\s*$"
+    if re.search(legacy_skip_guard, workflow_source):
+        errors.append("workflow still has the job-level fork skip guard that can report a successful required context")
+    return errors
+
+
+errors = validation_errors(workflow, runner)
 if errors:
     print("iOS beta-gate source validation failed:", file=sys.stderr)
     for error in errors:
         print(f"- {error}", file=sys.stderr)
     raise SystemExit(1)
+
+if sys.argv[1:] == ["--self-test"]:
+    # Mutate source in memory only. The clone cleanup's separate Shutdown
+    # filter must not hide removal of either normal-device selection guard.
+    selection = required_runner_fragments["disk cleanup removes only shutdown run-owned simulators"]
+    cleanup = required_runner_fragments["normal-device cleanup consumes the restricted simulator IDs"]
+    mutations = {
+        "run-owned name guard removed": runner.replace(selection, selection.replace('grep -F "WPR2-CI-" \\\n    | ', ""), 1),
+        "shutdown guard removed": runner.replace(selection, selection.replace(' \\\n    | grep "(Shutdown)"', ""), 1),
+        "restricted filter bypassed": runner.replace(cleanup, cleanup.replace("| shutdown_run_owned_simulator_udids", "| cat"), 1),
+    }
+    for description, mutated_runner in mutations.items():
+        if mutated_runner == runner or not validation_errors(workflow, mutated_runner):
+            raise SystemExit(f"iOS beta-gate source self-test failed: {description}")
+    print("iOS beta-gate source adversarial self-test passed (3 cases)")
+elif sys.argv[1:]:
+    raise SystemExit("usage: validate-ios-beta-gate-source.py [--self-test]")
 
 print("iOS beta-gate source validation passed")

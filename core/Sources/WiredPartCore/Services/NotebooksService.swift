@@ -18,6 +18,29 @@ public final class NotebooksService: Sendable {
         self.auth = auth ?? AuthService(db: db)
     }
 
+    /// Allocates an explicit ID for a user-created notebook block.
+    ///
+    /// Existing installations use SQLite-generated positive IDs. New blocks use
+    /// the negative half of Int64 so independently-created offline rows do not
+    /// overwrite one another when their databases synchronize. The local lookup
+    /// is a final guard against the already-remote possibility of a random clash.
+    static func nextBlockID(in dbConn: Database) throws -> Int64 {
+        var generator = SystemRandomNumberGenerator()
+        for _ in 0..<16 {
+            let magnitude = UInt64.random(in: 1...UInt64(Int64.max), using: &generator)
+            let candidate = -Int64(magnitude)
+            let exists = try Bool.fetchOne(
+                dbConn,
+                sql: "SELECT EXISTS(SELECT 1 FROM notebook_entries WHERE id = ?)",
+                arguments: [candidate]
+            ) ?? false
+            if !exists {
+                return candidate
+            }
+        }
+        throw NotebooksError.invalidData("Unable to allocate a unique notebook block ID")
+    }
+
     // =========================================================================
     // MARK: - Error Types
     // =========================================================================
@@ -310,7 +333,7 @@ public final class NotebooksService: Sendable {
                 FROM notebook_entries ne
                 LEFT JOIN users u ON u.id = ne.created_by AND u.deleted_at IS NULL
                 WHERE ne.notebook_id = ? AND ne.deleted_at IS NULL
-                ORDER BY ne.sort_order ASC, ne.created_at ASC
+                ORDER BY ne.sort_order ASC, ne.id ASC
                 """
             let entryRows = try Row.fetchAll(dbConn, sql: entriesSQL, arguments: [id])
 
@@ -465,15 +488,21 @@ public final class NotebooksService: Sendable {
             // Insert the entry
             // Fix #180: include notebook_id so direct lookups and badge-count queries work.
             // Previously, notebook_id was NULL — entries were only reachable via section_id JOIN.
+            let entryId = try Self.nextBlockID(in: dbConn)
+            let nextSortOrder = try Int.fetchOne(
+                dbConn,
+                sql: "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM notebook_entries WHERE section_id = ? AND deleted_at IS NULL",
+                arguments: [sectionId]
+            ) ?? 0
             try dbConn.execute(
                 sql: """
                     INSERT INTO notebook_entries
-                    (notebook_id, section_id, title, content, entry_type, created_by, sort_order, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, 0, datetime('now'), datetime('now'))
+                    (id, notebook_id, section_id, title, content, entry_type, created_by, sort_order, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
                     """,
-                arguments: [notebookId, sectionId, title, content, entryType, createdBy]
+                arguments: [entryId, notebookId, sectionId, title, content, entryType, createdBy, nextSortOrder]
             )
-            return dbConn.lastInsertedRowID
+            return entryId
         }
     }
 
@@ -1000,23 +1029,24 @@ public final class NotebooksService: Sendable {
             let storedChecklistItems = checklistItems ?? (blockType == "checklist" ? blockData : nil)
             let persistedTaskStatus = taskStatus ?? (blockType == "todo" ? "open" : nil)
 
+            let entryId = try Self.nextBlockID(in: dbConn)
             try dbConn.execute(sql: """
                 INSERT INTO notebook_entries
-                (section_id, notebook_id, title, content, entry_type, block_type, block_data,
+                (id, section_id, notebook_id, title, content, entry_type, block_type, block_data,
                  heading_level, checklist_items, photo_path, reference_type, reference_id,
                  task_status, task_due_date, task_assigned_to, task_parts_note,
                  work_classification, warranty_timer_end, is_question,
                  field_required, is_deleted, is_completed, sort_order, created_by, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 'note', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                VALUES (?, ?, ?, ?, ?, 'note', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                         0, 0, 0, ?, ?, datetime('now'), datetime('now'))
                 """, arguments: [
-                    sectionId, notebookId, title ?? "", content, blockType, storedBlockData,
+                    entryId, sectionId, notebookId, title ?? "", content, blockType, storedBlockData,
                     headingLevel, storedChecklistItems, photoPath, referenceType, referenceId,
                     persistedTaskStatus, taskDueDate, taskAssignedTo, taskPartsNote,
                     workClassification, warrantyTimerEnd, isQuestion ? 1 : 0,
                     order, createdBy
                 ])
-            return dbConn.lastInsertedRowID
+            return entryId
         }
     }
 
@@ -1472,7 +1502,7 @@ public final class NotebooksService: Sendable {
                     LEFT JOIN users u ON u.id = ne.created_by AND u.deleted_at IS NULL
                     WHERE ne.section_id IN (SELECT id FROM notebook_sections WHERE notebook_id = ? AND deleted_at IS NULL)
                       AND ne.deleted_at IS NULL AND ne.is_deleted = 0
-                    ORDER BY ne.sort_order ASC, ne.created_at ASC
+                    ORDER BY ne.sort_order ASC, ne.id ASC
                     """, arguments: [notebookId])
 
                 // Map entries by section ID
@@ -1815,12 +1845,13 @@ public final class NotebooksService: Sendable {
                     if let items = entry.checklistItems, let data = try? JSONSerialization.data(withJSONObject: items) {
                         checklistJson = String(data: data, encoding: .utf8)
                     }
+                    let entryId = try Self.nextBlockID(in: dbConn)
                     try dbConn.execute(sql: """
-                        INSERT INTO notebook_entries (notebook_id, section_id, entry_type, block_type, title, content,
+                        INSERT INTO notebook_entries (id, notebook_id, section_id, entry_type, block_type, title, content,
                             heading_level, checklist_items, sort_order, created_by, created_at)
-                        VALUES (?, ?, 'note', ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                        VALUES (?, ?, ?, 'note', ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                         """, arguments: [
-                            notebookId, sectionId, entry.blockType,
+                            entryId, notebookId, sectionId, entry.blockType,
                             entry.title, entry.content,
                             entry.headingLevel, checklistJson,
                             entryIndex, createdBy
@@ -1857,12 +1888,13 @@ public final class NotebooksService: Sendable {
                 let checklistJson: String? = entry.checklistItems.flatMap { items in
                     (try? JSONSerialization.data(withJSONObject: items)).flatMap { String(data: $0, encoding: .utf8) }
                 }
+                let entryId = try Self.nextBlockID(in: dbConn)
                 try dbConn.execute(sql: """
                     INSERT INTO notebook_entries
-                    (section_id, notebook_id, title, content, entry_type, block_type, checklist_items,
+                    (id, section_id, notebook_id, title, content, entry_type, block_type, checklist_items,
                      field_required, is_deleted, is_completed, sort_order, created_by, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, 'note', ?, ?, 0, 0, 0, ?, ?, datetime('now'), datetime('now'))
-                    """, arguments: [sectionId, notebookId, entry.title ?? "", entry.content, entry.blockType, checklistJson, idx, createdBy])
+                    VALUES (?, ?, ?, ?, ?, 'note', ?, ?, 0, 0, 0, ?, ?, datetime('now'), datetime('now'))
+                    """, arguments: [entryId, sectionId, notebookId, entry.title ?? "", entry.content, entry.blockType, checklistJson, idx, createdBy])
             }
         }
     }

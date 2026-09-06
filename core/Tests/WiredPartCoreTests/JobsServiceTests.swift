@@ -841,20 +841,35 @@ struct JobsServiceTests {
             createdBy: env.adminUserId
         )
 
-        _ = try env.jobs.addJobNote(
+        let updateId = try env.jobs.addJobNote(
             jobId: jobId,
             title: "Field update",
             content: "Crew finished rough-in walkthrough.",
             createdBy: env.adminUserId
         )
+        #expect(updateId < 0)
 
         let notes = try env.jobs.listJobNotes(jobId: jobId)
         #expect(notes.count >= 2)
         #expect(notes.contains { $0.title == "Initial job note" && $0.content == "Initial field note" })
+        #expect(notes.allSatisfy { $0.id < 0 })
         let update = try #require(notes.first { $0.title == "Field update" })
         #expect(update.authorId == env.adminUserId)
         #expect(!update.authorName.isEmpty)
         #expect(update.createdAt != nil)
+    }
+
+    @Test("job notebook notes append in section-local sort order")
+    func testJobNotebookNotesAppendInSectionLocalSortOrder() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        _ = try env.jobs.addJobNote(jobId: jobId, title: "First ordered note", content: nil, createdBy: env.adminUserId)
+        _ = try env.jobs.addJobNote(jobId: jobId, title: "Second ordered note", content: nil, createdBy: env.adminUserId)
+
+        let sortOrders: [Int] = try env.db.writer.read { db in
+            try Int.fetchAll(db, sql: "SELECT sort_order FROM notebook_entries WHERE title IN ('First ordered note', 'Second ordered note') ORDER BY sort_order")
+        }
+        #expect(sortOrders == [0, 1])
     }
 
     // MARK: - Job Stages
@@ -1483,6 +1498,7 @@ struct JobsServiceTests {
             laborEntryId: laborEntryId,
             dailyReport: "  Pulled feeder wire, finished panel labeling, and staged tomorrow's materials.  "
         ))
+        #expect(entryId < 0)
 
         let row = try env.db.writer.read { db in
             try Row.fetchOne(db, sql: """

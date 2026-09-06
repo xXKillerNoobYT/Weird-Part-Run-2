@@ -1798,7 +1798,7 @@ public final class JobsService: Sendable {
                       AND ne.is_deleted = 0
                       AND ns.deleted_at IS NULL
                       AND n.deleted_at IS NULL
-                    ORDER BY ne.sort_order ASC
+                    ORDER BY ne.sort_order ASC, ne.id ASC
                     """, arguments: [jobId])
                 return rows.map { row in
                     ClockTodoItem(
@@ -2370,15 +2370,15 @@ public final class JobsService: Sendable {
                 _Captured at clock-out from labor entry #\(laborEntryId)._
                 """
 
+            let entryId = try NotebooksService.nextBlockID(in: dbConn)
             try dbConn.execute(
                 sql: """
                     INSERT INTO notebook_entries
-                        (section_id, title, content, entry_type, created_by, updated_by, sort_order, created_at, updated_at)
-                    VALUES (?, ?, ?, 'daily-report', ?, ?, 0, datetime('now'), datetime('now'))
+                        (id, section_id, title, content, entry_type, created_by, updated_by, sort_order, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, 'daily-report', ?, ?, 0, datetime('now'), datetime('now'))
                     """,
-                arguments: [secId, "Daily Report — \(reportDate)", content, userId, userId]
+                arguments: [entryId, secId, "Daily Report — \(reportDate)", content, userId, userId]
             )
-            let entryId = dbConn.lastInsertedRowID
 
             try dbConn.execute(
                 sql: "UPDATE notebooks SET updated_at = datetime('now') WHERE id = ?",
@@ -4537,12 +4537,17 @@ public final class JobsService: Sendable {
             sectionId = dbConn.lastInsertedRowID
         }
 
+        let entryId = try NotebooksService.nextBlockID(in: dbConn)
+        let nextSortOrder = try Int.fetchOne(
+            dbConn,
+            sql: "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM notebook_entries WHERE section_id = ? AND deleted_at IS NULL",
+            arguments: [sectionId]
+        ) ?? 0
         try dbConn.execute(sql: """
             INSERT INTO notebook_entries
-                (section_id, title, content, entry_type, created_by, updated_by, sort_order, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, 0, datetime('now'), datetime('now'))
-            """, arguments: [sectionId, title, content, entryType, createdBy, createdBy])
-        let entryId = dbConn.lastInsertedRowID
+                (id, section_id, title, content, entry_type, created_by, updated_by, sort_order, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            """, arguments: [entryId, sectionId, title, content, entryType, createdBy, createdBy, nextSortOrder])
         try dbConn.execute(sql: "UPDATE notebooks SET updated_at = datetime('now') WHERE id = ?", arguments: [notebookId])
         return entryId
     }
