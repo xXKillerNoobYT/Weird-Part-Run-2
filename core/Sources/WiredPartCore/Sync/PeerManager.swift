@@ -388,15 +388,17 @@ public actor PeerManager {
         onStateChanged = callback
     }
 
-    /// The app always uses the durable Keychain-backed store. XCTest processes
-    /// receive an in-memory store because iOS test bundles do not carry the app
-    /// Keychain entitlement; keeping that decision here prevents a test-only
-    /// environment workaround from ever reaching pairing or encryption logic.
+    /// The app always uses the durable Keychain-backed store. XCTest and Swift
+    /// Testing hosts receive an in-memory store because test bundles do not carry
+    /// the app Keychain entitlement; keeping that decision here prevents a
+    /// test-only environment workaround from ever reaching pairing or encryption
+    /// logic.
     public init(db: AppDatabase) {
         self.init(
             db: db,
             identityStore: Self.identityStoreForRuntime(
-                isRunningUnitTests: ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+                environment: ProcessInfo.processInfo.environment,
+                executablePath: Bundle.main.executablePath
             )
         )
     }
@@ -409,8 +411,20 @@ public actor PeerManager {
         self.identityStore = identityStore
     }
 
-    /// Internal so the test bundle can prove its identity storage is isolated
-    /// without changing the production Keychain failure contract.
+    /// Internal so tests can prove identity storage is isolated without changing
+    /// the production Keychain failure contract. SwiftPM's Swift Testing host is
+    /// an `.xctest` executable but does not set XCTestConfigurationFilePath.
+    static func identityStoreForRuntime(
+        environment: [String: String],
+        executablePath: String?
+    ) -> any SyncDeviceIdentityStoring {
+        let isRunningUnitTests = executablePath?.contains(".xctest") == true ||
+            executablePath?.hasSuffix("/swiftpm-testing-helper") == true ||
+            environment["XCTestConfigurationFilePath"] != nil
+        return identityStoreForRuntime(isRunningUnitTests: isRunningUnitTests)
+    }
+
+    /// Internal seam for explicit unit-test and production-store assertions.
     static func identityStoreForRuntime(
         isRunningUnitTests: Bool
     ) -> any SyncDeviceIdentityStoring {
