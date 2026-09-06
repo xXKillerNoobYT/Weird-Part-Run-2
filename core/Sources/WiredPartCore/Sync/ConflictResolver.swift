@@ -490,6 +490,57 @@ public enum ConflictResolver {
         return result
     }
 
+    /// Apply one receive-journal row inside a transaction owned by the caller.
+    ///
+    /// The receive journal must persist the business mutation and its durable
+    /// disposition together: if either write fails, neither may commit. This
+    /// deliberately keeps the existing LAN per-row behavior (including the
+    /// classification of FK deferrals and terminal refusals) without opening a
+    /// nested writer transaction between the two persistence boundaries.
+    static func resolveAndApplyChange(
+        in dbConn: Database,
+        change: IncomingChange,
+        localDeviceId: String
+    ) throws -> MergeResult {
+        var result = MergeResult()
+        let context = ApplyContext(disposition: .perRow)
+        context.noteChangeArriving()
+
+        guard isAllowedTable(change.tableName) else {
+            result.skipped = 1
+            return result
+        }
+
+        try dbConn.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
+        defer { try? dbConn.execute(sql: "DELETE FROM _sync_apply_guard") }
+
+        do {
+            let outcome = try applyOneAtomically(
+                dbConn,
+                change,
+                localDeviceId,
+                context,
+                noteArrival: false
+            )
+            result.add(ApplyOutcome(
+                applied: outcome.applied,
+                conflicts: outcome.conflicts,
+                skipped: outcome.skipped
+            ))
+        } catch {
+            if isForeignKeyRefusal(error) {
+                result.foreignKeyDeferrals = 1
+            } else if isPermanentApplyRefusal(error) {
+                result.permanentRefusals = 1
+            } else {
+                result.errors = 1
+            }
+        }
+
+        result.add(context.residue())
+        return result
+    }
+
     /// Apply a batch in one database transaction or roll the entire batch back.
     ///
     /// This is the **ongoing multipeer delta** door (#1684), not the snapshot door.

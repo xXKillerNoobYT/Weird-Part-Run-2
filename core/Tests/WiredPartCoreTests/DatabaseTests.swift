@@ -519,4 +519,41 @@ struct DatabaseTests {
         #expect(columns.contains("budget_alert_percent"))
     }
 
+    @Test("Migration 132 schedules legacy deferred receive-journal receipts for replay")
+    func testMigration132SchedulesLegacyReceiveJournalRetries() throws {
+        var config = Configuration()
+        config.foreignKeysEnabled = true
+        let queue = try DatabaseQueue(configuration: config)
+        var migrator = DatabaseMigrator()
+        AppDatabase.registerMigrations(&migrator)
+        try migrator.migrate(queue, upTo: "131_sync_receive_journal_replay_safety")
+
+        try queue.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO _sync_receive_journal
+                    (source_peer_id, source_sequence, payload, state, audit_metadata)
+                VALUES ('legacy-peer', 1, '{"id":1}', 'deferred', 'test'),
+                       ('legacy-peer', 2, '{"id":2}', 'retry', 'test')
+                """
+            )
+        }
+
+        try migrator.migrate(queue)
+
+        let pendingRows = try queue.read { db in
+            try Row.fetchAll(
+                db,
+                sql: """
+                SELECT state, next_attempt_at <= datetime('now') AS is_due
+                FROM _sync_receive_journal
+                WHERE source_peer_id = 'legacy-peer'
+                ORDER BY source_sequence
+                """
+            )
+        }
+        #expect(pendingRows.count == 2)
+        #expect(pendingRows.allSatisfy { ($0["is_due"] as Int?) == 1 })
+    }
+
 }
