@@ -73,6 +73,7 @@ public actor SyncEngine {
     // MARK: - State
 
     private let db: AppDatabase
+    private let shopChangeResolver: @Sendable (AppDatabase, [IncomingChange], String) throws -> MergeResult
     private var state = SyncState()
     private var isSyncing = false
     private var periodicTask: Task<Void, Never>?
@@ -89,7 +90,27 @@ public actor SyncEngine {
     }
 
     public init(db: AppDatabase) {
+        self.init(
+            db: db,
+            shopChangeResolver: { db, changes, localDeviceId in
+                try ConflictResolver.resolveAndApplyChanges(
+                    db: db,
+                    changes: changes,
+                    localDeviceId: localDeviceId
+                )
+            }
+        )
+    }
+
+    /// Injectable only within the module so regression tests can exercise
+    /// retry/ack control flow for an apply result that is otherwise produced by
+    /// transient database faults (for example SQLITE_BUSY or disk-full).
+    init(
+        db: AppDatabase,
+        shopChangeResolver: @escaping @Sendable (AppDatabase, [IncomingChange], String) throws -> MergeResult
+    ) {
         self.db = db
+        self.shopChangeResolver = shopChangeResolver
     }
 
     /// Get the current sync state.
@@ -208,11 +229,25 @@ public actor SyncEngine {
             if let shopChangesRaw = resultData["shop_changes"] as? [[String: Any]] {
                 let incomingChanges = shopChangesRaw.compactMap { parseIncomingChange($0) }
                 if !incomingChanges.isEmpty {
-                    _ = try ConflictResolver.resolveAndApplyChanges(
-                        db: db,
-                        changes: incomingChanges,
-                        localDeviceId: deviceId
+                    let mergeResult = try shopChangeResolver(
+                        db,
+                        incomingChanges,
+                        deviceId
                     )
+                    // `errors` represent transient apply failures. Deterministic
+                    // refusals remain outside this gate so they are acknowledged
+                    // rather than retried forever.
+                    guard mergeResult.isSafeToAdvanceReceiveCursor else {
+                        let pendingCount = (try? ChangeTracker.getPendingChangeCount(db: db)) ?? pendingChanges.count
+                        updateState(
+                            status: .error,
+                            pendingCount: pendingCount,
+                            error: "Shop changes failed to apply: \(mergeResult.errors) transient error(s)",
+                            consecutiveFailures: state.consecutiveFailures + 1
+                        )
+                        scheduleRetry(deviceId: deviceId, shopUrl: shopUrl, authToken: authToken)
+                        return false
+                    }
                 }
             }
 
