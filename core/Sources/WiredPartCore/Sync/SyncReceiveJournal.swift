@@ -78,7 +78,11 @@ enum SyncReceiveJournal {
         }
     }
 
-    static func applyPending(db: AppDatabase, localDeviceId: String) throws -> ApplyResult {
+    static func applyPending(
+        db: AppDatabase,
+        localDeviceId: String,
+        sourcePeerId: String? = nil
+    ) throws -> ApplyResult {
         // Applying pending work is the other deterministic lifecycle boundary.
         // This remains a single bounded cleanup query even when fixed-point replay
         // takes multiple passes.
@@ -92,7 +96,7 @@ enum SyncReceiveJournal {
         // nor a hot loop for a missing parent / transient failure.
         repeat {
             appliedThisPass = 0
-            let entries = try pendingEntries(db: db)
+            let entries = try pendingEntries(db: db, sourcePeerId: sourcePeerId)
             for entry in entries {
                 let change = try JSONDecoder().decode(IncomingChange.self, from: Data(entry.payload.utf8))
                 let merge = try ConflictResolver.resolveAndApplyChanges(
@@ -125,7 +129,7 @@ enum SyncReceiveJournal {
         return result
     }
 
-    private static func pendingEntries(db: AppDatabase) throws -> [Entry] {
+    private static func pendingEntries(db: AppDatabase, sourcePeerId: String?) throws -> [Entry] {
         try db.writer.read { connection in
             try Entry.fetchAll(
                 connection,
@@ -133,8 +137,10 @@ enum SyncReceiveJournal {
                 SELECT id, source_peer_id, source_sequence, payload, state
                 FROM _sync_receive_journal
                 WHERE state IN ('received', 'deferred', 'retry')
+                  AND (? IS NULL OR source_peer_id = ?)
                 ORDER BY id ASC
-                """
+                """,
+                arguments: [sourcePeerId, sourcePeerId]
             )
         }
     }

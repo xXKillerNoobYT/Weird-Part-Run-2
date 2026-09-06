@@ -256,20 +256,26 @@ public actor SyncEngine {
 
                 let incomingChanges = parsedIncomingChanges.compactMap { $0 }
                 if !incomingChanges.isEmpty {
-                    let mergeResult = try shopChangeResolver(
-                        db,
-                        incomingChanges,
-                        deviceId
+                    // A shop ACK irrevocably closes this delivery. Persist each row
+                    // before attempting it so an FK child remains replayable after ACK.
+                    let receiptSource = "shop:\(baseURL.absoluteString)"
+                    try SyncReceiveJournal.record(
+                        db: db,
+                        sourcePeerId: receiptSource,
+                        changes: incomingChanges,
+                        auditMetadata: "shop_pull"
                     )
-                    // `errors` represent transient apply failures. Deterministic
-                    // refusals remain outside this gate so they are acknowledged
-                    // rather than retried forever.
-                    guard mergeResult.isSafeToAdvanceReceiveCursor else {
+                    let replay = try SyncReceiveJournal.applyPending(
+                        db: db,
+                        localDeviceId: deviceId,
+                        sourcePeerId: receiptSource
+                    )
+                    guard replay.retryable == 0 else {
                         let pendingCount = (try? ChangeTracker.getPendingChangeCount(db: db)) ?? pendingChanges.count
                         updateState(
                             status: .error,
                             pendingCount: pendingCount,
-                            error: "Shop changes failed to apply: \(mergeResult.errors) transient error(s)",
+                            error: "Shop changes failed to apply: \(replay.retryable) transient error(s)",
                             consecutiveFailures: state.consecutiveFailures + 1
                         )
                         scheduleRetry(deviceId: deviceId, shopUrl: shopUrl, authToken: authToken)

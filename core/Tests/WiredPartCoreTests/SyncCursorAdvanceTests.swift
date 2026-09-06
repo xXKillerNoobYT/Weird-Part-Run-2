@@ -622,6 +622,36 @@ struct SyncCursorAdvanceTests {
         }
     }
 
+    @Test("shop ACK retains a foreign-key deferral in the durable receive journal")
+    func shopForeignKeyDeferralIsJournaledBeforeAcknowledgement() async throws {
+        let db = try freshDB()
+        let server = try HTTPStubServer { request in
+            switch request.path {
+            case "/api/sync/push":
+                return HTTPStubResponse(
+                    statusCode: 200,
+                    body: #"{"data":{"sync_batch_id":"shop-batch","shop_changes":[{"id":901,"device_id":"shop","table_name":"job_stages","record_id":"1","operation":"UPDATE","changed_fields":"{\"template_id\":\"999999\"}","timestamp":"2026-08-22T00:00:00Z"}]}}"#
+                )
+            case "/api/sync/ack":
+                return HTTPStubResponse(statusCode: 200, body: #"{"ok":true}"#)
+            default:
+                return HTTPStubResponse(statusCode: 404, body: #"{"error":"not found"}"#)
+            }
+        }
+        let port = try await server.start()
+        defer { server.stop() }
+
+        let engine = SyncEngine(db: db)
+        #expect(await engine.runSync(deviceId: "receiver", shopUrl: "http://127.0.0.1:\(port)"))
+        let disposition = try await db.writer.read { dbConn in
+            try String.fetchOne(
+                dbConn,
+                sql: "SELECT state FROM _sync_receive_journal WHERE source_peer_id LIKE 'shop:%' AND source_sequence = 901"
+            )
+        }
+        #expect(disposition == "deferred", "ACK may only follow a durable replayable receipt")
+    }
+
     @Test("nonterminal journal payload remains replayable before terminal disposition")
     func receiveJournalKeepsNonterminalPayloadReplayable() throws {
         let db = try freshDB()
