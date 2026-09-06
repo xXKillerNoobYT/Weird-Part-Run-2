@@ -172,6 +172,11 @@ extension AppDatabase {
         registerMigration128NotebookBlockProvenance(&migrator)
         registerMigration129SyncReceiveJournal(&migrator)
         registerMigration130SyncReceiveJournalPayloadRedaction(&migrator)
+        // These historical migrations must remain registered forever: installed
+        // databases record their identifiers in grdb_migrations, and omitting one
+        // makes GRDB abort before any receive-journal repair can run.
+        registerMigration131SyncReceiveJournalReplaySafety(&migrator)
+        registerMigration132SyncReceiveJournalRetryBackfill(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6753,6 +6758,22 @@ private func registerMigration130SyncReceiveJournalPayloadRedaction(_ migrator: 
     }
 }
 
+// MARK: - Migration 131: restore-safe receipts and bounded journal replay (#1807)
+
+private func registerMigration131SyncReceiveJournalReplaySafety(_ migrator: inout DatabaseMigrator) {
+    // The current journal atomically persists its disposition and no longer reads
+    // this former due-time/index layout. Keep its identifier as a no-op so stores
+    // that applied it before the atomic rewrite still open successfully.
+    migrator.registerMigration("131_sync_receive_journal_replay_safety") { _ in }
+}
+
+// MARK: - Migration 132: replay legacy deferred receive-journal receipts (#1807)
+
+private func registerMigration132SyncReceiveJournalRetryBackfill(_ migrator: inout DatabaseMigrator) {
+    // See migration 131: this historical identifier is part of the durable GRDB
+    // migration contract even though fixed-point replay replaced due-time polling.
+    migrator.registerMigration("132_sync_receive_journal_retry_backfill") { _ in }
+}
 
 /// #1817 (#Isaac-14) — per-block provenance and a bounded per-user edit history.
 ///
