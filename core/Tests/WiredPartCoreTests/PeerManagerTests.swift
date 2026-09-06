@@ -277,6 +277,15 @@ struct PeerManagerTests {
         #expect(snapshot.lastTransportError == message)
     }
 
+    @Test("SwiftPM Swift Testing host selects injected identity storage")
+    func testSwiftPMTestingHostUsesInjectedIdentityStore() {
+        let store = PeerManager.identityStoreForRuntime(
+            environment: ProcessInfo.processInfo.environment,
+            executablePath: Bundle.main.executablePath
+        )
+        #expect(store is InMemorySyncDeviceIdentityStore)
+    }
+
     @Test("iOS unit-test runtime selects injected identity storage")
     func testUnitTestRuntimeUsesInjectedIdentityStore() async throws {
         let store = PeerManager.identityStoreForRuntime(isRunningUnitTests: true)
