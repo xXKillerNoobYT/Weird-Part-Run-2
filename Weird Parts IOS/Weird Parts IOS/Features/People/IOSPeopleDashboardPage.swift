@@ -93,6 +93,7 @@ struct IOSPeopleDashboardPage: View {
                         }
                     }
                     .frame(minHeight: 44)
+                    .accessibilityIdentifier("people-dashboard-hats-and-roles-link")
                     NavigationLink(destination: IOSPermissionsPage().environmentObject(appCore)) {
                         Label {
                             VStack(alignment: .leading, spacing: 2) {

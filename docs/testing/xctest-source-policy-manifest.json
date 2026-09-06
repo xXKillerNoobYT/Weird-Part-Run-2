@@ -823,7 +823,9 @@
       "rule": {
         "contains": [
           "Report this startup problem",
-          "ReportABugPage(originModule: \"Startup\")"
+          "ReportABugPage(",
+          "originModule: \"Startup\"",
+          "launchError: error"
         ]
       }
     },

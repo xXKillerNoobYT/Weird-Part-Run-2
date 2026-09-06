@@ -87,6 +87,50 @@ private enum ManualBackupLedgerReloadTestError: Error {
 }
 
 struct Weird_Parts_IOSTests {
+    @MainActor @Test func permissionsEditorHonorsTheHatThatLaunchedIt() {
+        let hats = [
+            PeopleService.HatListItem(id: 1, name: "Admin", description: nil, userCount: 1),
+            PeopleService.HatListItem(id: 2, name: "Apprentice", description: nil, userCount: 4),
+        ]
+
+        let selectedId = IOSPermissionsPage.resolvedSelectionId(
+            hats: hats,
+            preferredHatId: 2,
+            currentHatId: nil
+        )
+
+        #expect(selectedId == 2)
+    }
+
+    @MainActor @Test func permissionsEditorKeepsTheUsersSelectionAcrossRefresh() {
+        let hats = [
+            PeopleService.HatListItem(id: 1, name: "Admin", description: nil, userCount: 1),
+            PeopleService.HatListItem(id: 2, name: "Apprentice", description: nil, userCount: 4),
+        ]
+
+        let selectedId = IOSPermissionsPage.resolvedSelectionId(
+            hats: hats,
+            preferredHatId: 1,
+            currentHatId: 2
+        )
+
+        #expect(selectedId == 2)
+    }
+
+    @MainActor @Test func permissionsEditorFallsBackWhenTheRequestedHatNoLongerExists() {
+        let hats = [
+            PeopleService.HatListItem(id: 1, name: "Admin", description: nil, userCount: 1),
+        ]
+
+        let selectedId = IOSPermissionsPage.resolvedSelectionId(
+            hats: hats,
+            preferredHatId: 99,
+            currentHatId: nil
+        )
+
+        #expect(selectedId == 1)
+    }
+
 
     private func makeJobListItem(id: Int64, name: String, status: String) -> JobsService.JobListItem {
         JobsService.JobListItem(

@@ -461,7 +461,7 @@ private struct HatDetailSheet: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            NavigationLink(destination: IOSPermissionsPage().environmentObject(appCore)) {
+            NavigationLink(destination: IOSPermissionsPage(initialHatId: hat.id).environmentObject(appCore)) {
                 Label("Edit Permissions", systemImage: "lock.shield")
             }
             .frame(minHeight: 44)
@@ -611,4 +611,3 @@ private struct AddEmployeeToHatSheet: View {
         }
     }
 }
-

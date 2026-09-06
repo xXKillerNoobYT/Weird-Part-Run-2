@@ -49,4 +49,48 @@ final class Weird_Parts_IOSUITestsLaunchTests: XCTestCase {
         attachment.lifetime = .keepAlways
         add(attachment)
     }
+
+    func testStartupFailureReportShowsExactDiagnostics() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-UITesting", "-UITestingStartupErrorReport"]
+        app.launch()
+
+        let reportButton = app.buttons["startup-report-problem-button"]
+        XCTAssertTrue(reportButton.waitForExistence(timeout: 20))
+        reportButton.tap()
+
+        XCTAssertTrue(app.navigationBars["Report a Bug"].waitForExistence(timeout: 20))
+
+        let startupError = materializedElement("bug-report-startup-error-row", in: app)
+        XCTAssertTrue(startupError.label.contains("Startup error"))
+        XCTAssertTrue(
+            startupError.label.contains("UITest startup failure: OSStatus -25308")
+                || (startupError.value as? String)?.contains("UITest startup failure: OSStatus -25308") == true
+        )
+
+        let page = materializedElement("bug-report-page-row", in: app)
+        XCTAssertTrue(page.label.contains("Page"))
+        XCTAssertTrue(page.label.contains("Startup") || (page.value as? String)?.contains("Startup") == true)
+
+        let device = materializedElement("bug-report-device-row", in: app)
+        XCTAssertTrue(device.label.contains("Device"))
+
+        let os = materializedElement("bug-report-os-row", in: app)
+        XCTAssertTrue(os.label.contains("OS"))
+
+        let mac = materializedElement("bug-report-ios-on-mac-row", in: app)
+        XCTAssertTrue(mac.label.contains("iOS app on Mac"))
+    }
+
+    private func materializedElement(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
+        let element = app.descendants(matching: .any)[identifier].firstMatch
+        let form = app.collectionViews.firstMatch.exists
+            ? app.collectionViews.firstMatch
+            : app.scrollViews.firstMatch
+        for _ in 0..<6 where !element.exists {
+            form.swipeUp()
+        }
+        XCTAssertTrue(element.waitForExistence(timeout: 5), "Expected diagnostic row \(identifier).")
+        return element
+    }
 }
