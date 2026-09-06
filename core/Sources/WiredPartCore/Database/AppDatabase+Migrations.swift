@@ -173,6 +173,7 @@ extension AppDatabase {
         registerMigration129SyncReceiveJournal(&migrator)
         registerMigration130SyncReceiveJournalPayloadRedaction(&migrator)
         registerMigration131SyncReceiveJournalReplaySafety(&migrator)
+        registerMigration132SyncReceiveJournalRetryBackfill(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6776,6 +6777,23 @@ private func registerMigration131SyncReceiveJournalReplaySafety(_ migrator: inou
             on: "_sync_receive_journal",
             columns: ["state", "next_attempt_at", "id"]
         )
+    }
+}
+
+// MARK: - Migration 132: replay legacy deferred receive-journal receipts (#1807)
+
+private func registerMigration132SyncReceiveJournalRetryBackfill(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("132_sync_receive_journal_retry_backfill") { db in
+        // Migration 131 introduced the due-time gate after journal rows could already
+        // be deferred or retryable. NULL is never <= datetime('now'), so make those
+        // durable legacy receipts eligible for the next replay instead of stranding
+        // them until a new receipt happens to satisfy the dependency.
+        try db.execute(sql: """
+            UPDATE _sync_receive_journal
+            SET next_attempt_at = datetime('now')
+            WHERE state IN ('deferred', 'retry')
+              AND next_attempt_at IS NULL
+            """)
     }
 }
 
