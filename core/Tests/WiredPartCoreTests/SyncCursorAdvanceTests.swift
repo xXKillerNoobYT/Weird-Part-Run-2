@@ -249,6 +249,32 @@ struct SyncCursorAdvanceTests {
         } == "Source-ordered child")
     }
 
+    @Test("journal retains a deterministic zero-apply as a terminal refusal")
+    func receiveJournalDoesNotReportDeterministicNonApplyAsApplied() throws {
+        let db = try freshDB()
+        let ignored = IncomingChange(
+            id: 60, deviceId: "peer", tableName: "not_a_synced_table", recordId: "1", operation: "INSERT",
+            recordData: #"{"id":1}"#,
+            timestamp: "2026-08-22T00:00:00Z"
+        )
+        try SyncReceiveJournal.record(db: db, sourcePeerId: "peer", changes: [ignored], auditMetadata: "test")
+
+        let first = try SyncReceiveJournal.applyPending(db: db, localDeviceId: "receiver")
+        let second = try SyncReceiveJournal.applyPending(db: db, localDeviceId: "receiver")
+        #expect(first.applied == 0)
+        #expect(first.refused == 1)
+        #expect(second.refused == 0, "terminal non-applies must not replay")
+        let evidence = try db.writer.read { dbConn in
+            try Row.fetchOne(
+                dbConn,
+                sql: "SELECT state, disposition_reason, retry_count FROM _sync_receive_journal WHERE source_sequence = 60"
+            )
+        }
+        #expect(evidence?["state"] as String? == "refused")
+        #expect(evidence?["disposition_reason"] as String? == "deterministic_non_apply")
+        #expect(evidence?["retry_count"] as Int? == 1)
+    }
+
     @Test("journal retains an irreconcilable refusal as structured non-retrying audit evidence")
     func receiveJournalRetainsIrreconcilableRefusal() throws {
         let db = try freshDB()

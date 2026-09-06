@@ -109,6 +109,12 @@ enum SyncReceiveJournal {
                 } else if merge.permanentRefusals > 0 || merge.schemaDrops > 0 {
                     try update(db: db, id: entry.id, state: "refused", reason: "irreconcilable_apply_refusal", attempted: true)
                     result.refused += 1
+                } else if merge.applied == 0 {
+                    // A deterministic dispatch/no-op (for example a disallowed
+                    // table) has not applied. Keep it as terminal evidence instead
+                    // of falsely reporting it as an applied receipt.
+                    try update(db: db, id: entry.id, state: "refused", reason: "deterministic_non_apply", attempted: true)
+                    result.refused += 1
                 } else {
                     try update(db: db, id: entry.id, state: "applied", reason: nil, attempted: true)
                     result.applied += 1
