@@ -1060,27 +1060,11 @@ final class AppCore: ObservableObject {
             if addStatus == errSecSuccess {
                 return fallbackKeyData.map { String(format: "%02x", $0) }.joined()
             }
-            // Deliberately NOT guarded against `errSecDuplicateItem` the way the
-            // mint path below is, even though the three lines look identical.
-            //
-            // Reaching here means a local fallback file EXISTS, so
-            // `localFallbackBootstrapKeyHex` returns that file's key rather than
-            // minting a new one — and per #1663 the file is the authoritative
-            // store when the two disagree. Falling back here therefore yields the
-            // key the database is actually encrypted with. Adding the guard would
-            // turn a divergent re-read into a thrown error and stop the app from
-            // starting at all, which is the more expensive direction to be wrong
-            // in. On the mint path below no file exists, so the same call invents
-            // a key instead of recovering one — hence the guard is correct there
-            // and wrong here.
-            if shouldUseLocalBootstrapKeyFallback(for: addStatus) {
-                return try localFallbackBootstrapKeyHex(in: fallbackDirectory)
-            }
-            if addStatus == errSecDuplicateItem {
-                let rereadResult = keychain.read()
-                if rereadResult.status == errSecSuccess, rereadResult.data == fallbackKeyData {
-                    return fallbackKeyData.map { String(format: "%02x", $0) }.joined()
-                }
+            // The fallback already exists and is authoritative for this database.
+            // A duplicate only proves that another actor populated the Keychain;
+            // do not let a divergent re-read replace the established database key.
+            if addStatus == errSecDuplicateItem || shouldUseLocalBootstrapKeyFallback(for: addStatus) {
+                return fallbackKeyData.map { String(format: "%02x", $0) }.joined()
             }
             throw CipherKeyError.keychainAccessFailed(item: "device bootstrap key", status: addStatus)
         }

@@ -869,6 +869,48 @@ struct Weird_Parts_IOSTests {
         #expect(try fallbackURL.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
     }
 
+    @Test func bootstrapFallbackRemainsAuthoritativeWhenPromotionSeesDuplicate() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BootstrapFallback-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let unavailableKeychain = AppCore.BootstrapKeychainAccess(
+            read: { (errSecNotAvailable, nil) },
+            add: { _ in
+                Issue.record("unavailable Keychain must use the local fallback before a write")
+                return errSecParam
+            }
+        )
+        let probe = OperationProbe()
+        let racingKeychain = AppCore.BootstrapKeychainAccess(
+            read: {
+                if probe.ran {
+                    Issue.record("an established fallback must not be replaced after a duplicate")
+                }
+                probe.ran = true
+                return (errSecItemNotFound, nil)
+            },
+            add: { _ in
+                probe.addCallCount += 1
+                return errSecDuplicateItem
+            }
+        )
+
+        let fallbackKey = try AppCore.deviceBootstrapKeyHex(
+            processArguments: [],
+            keychain: unavailableKeychain,
+            fallbackDirectory: directory
+        )
+        let recoveredKey = try AppCore.deviceBootstrapKeyHex(
+            processArguments: [],
+            keychain: racingKeychain,
+            fallbackDirectory: directory
+        )
+
+        #expect(recoveredKey == fallbackKey)
+        #expect(probe.addCallCount == 1)
+    }
+
     /// The Mac won-t-start bug (#1663), reduced to its mechanism.
     ///
     /// Two independent key stores exist — the Keychain and a container-local
