@@ -228,6 +228,7 @@ public actor SyncEngine {
             // 3. Apply shop changes to local DB. `compactMap` would silently drop a
             // malformed item and then incorrectly advance the shop batch, so every
             // advertised item must parse before the acknowledgement path can start.
+            let shopJournalPeerId = "shop:\(baseURL.absoluteString)"
             if let rawShopChanges = resultData["shop_changes"] {
                 guard let shopChangesRaw = rawShopChanges as? [[String: Any]] else {
                     let pendingCount = (try? ChangeTracker.getPendingChangeCount(db: db)) ?? pendingChanges.count
@@ -256,26 +257,37 @@ public actor SyncEngine {
 
                 let incomingChanges = parsedIncomingChanges.compactMap { $0 }
                 if !incomingChanges.isEmpty {
-                    let mergeResult = try shopChangeResolver(
-                        db,
-                        incomingChanges,
-                        deviceId
+                    // Acknowledgement is legal only after receipt is durable. This
+                    // gives foreign-key deferrals a restart-safe replay path rather
+                    // than advancing the shop batch past an unapplied child row.
+                    try SyncReceiveJournal.record(
+                        db: db,
+                        sourcePeerId: shopJournalPeerId,
+                        changes: incomingChanges,
+                        auditMetadata: "shop_pull"
                     )
-                    // `errors` represent transient apply failures. Deterministic
-                    // refusals remain outside this gate so they are acknowledged
-                    // rather than retried forever.
-                    guard mergeResult.isSafeToAdvanceReceiveCursor else {
-                        let pendingCount = (try? ChangeTracker.getPendingChangeCount(db: db)) ?? pendingChanges.count
-                        updateState(
-                            status: .error,
-                            pendingCount: pendingCount,
-                            error: "Shop changes failed to apply: \(mergeResult.errors) transient error(s)",
-                            consecutiveFailures: state.consecutiveFailures + 1
-                        )
-                        scheduleRetry(deviceId: deviceId, shopUrl: shopUrl, authToken: authToken)
-                        return false
-                    }
                 }
+            }
+
+            let receiveResult = try SyncReceiveJournal.applyPending(
+                db: db,
+                localDeviceId: deviceId,
+                sourcePeerId: shopJournalPeerId,
+                resolving: shopChangeResolver
+            )
+            guard receiveResult.retryable == 0, receiveResult.deferred == 0 else {
+                let pendingCount = (try? ChangeTracker.getPendingChangeCount(db: db)) ?? pendingChanges.count
+                let reason = receiveResult.retryable > 0
+                    ? "\(receiveResult.retryable) transient error(s)"
+                    : "\(receiveResult.deferred) foreign-key deferral(s)"
+                updateState(
+                    status: .error,
+                    pendingCount: pendingCount,
+                    error: "Shop changes failed to apply: \(reason)",
+                    consecutiveFailures: state.consecutiveFailures + 1
+                )
+                scheduleRetry(deviceId: deviceId, shopUrl: shopUrl, authToken: authToken)
+                return false
             }
 
             // 4. Acknowledge the batch before declaring local rows fully synced.

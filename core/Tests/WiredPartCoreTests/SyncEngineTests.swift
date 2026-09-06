@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import GRDB
 @testable import WiredPartCore
 
 @Suite("SyncEngine Tests")
@@ -382,9 +383,53 @@ struct SyncEngineTests {
         let secondResult = await engine.runSync(deviceId: "dev-001", shopUrl: shopUrl, authToken: nil)
         #expect(secondResult == true)
         #expect(pushCallCount.withLock { $0 } == 2)
-        #expect(resolverCallCount.withLock { $0 } == 2)
+        #expect(resolverCallCount.withLock { $0 } >= 2)
         #expect(ackCallCount.withLock { $0 } == 1)
+        let journalCount = try await db.writer.read { dbConn in
+            try Int.fetchOne(
+                dbConn,
+                sql: "SELECT COUNT(*) FROM _sync_receive_journal WHERE source_peer_id = ?",
+                arguments: ["shop:\(shopUrl)"]
+            )
+        }
+        #expect(journalCount == 1, "a retry must replay the durable receipt rather than creating another copy")
         #expect(try ChangeTracker.getPendingChangeCount(db: db) == 0)
+    }
+
+    @Test("Shop foreign-key deferral remains journaled and unacknowledged")
+    func testShopForeignKeyDeferralDoesNotAck() async throws {
+        let db = try freshDB()
+        let engine = SyncEngine(db: db) { _, _, _ in
+            MergeResult(foreignKeyDeferrals: 1)
+        }
+        let ackCallCount = Mutex(0)
+        let server = try HTTPStubServer { request in
+            switch request.path {
+            case "/api/sync/push":
+                return HTTPStubResponse(
+                    statusCode: 200,
+                    body: #"{"data":{"sync_batch_id":"batch-fk-deferred","shop_changes":[{"id":95,"device_id":"shop","table_name":"part_styles","record_id":"95","operation":"INSERT","record_data":{"id":"95","category_id":"995","name":"Deferred"},"timestamp":"2026-09-06T00:00:00Z"}]}}"#
+                )
+            case "/api/sync/ack":
+                ackCallCount.withLock { $0 += 1 }
+                return HTTPStubResponse(statusCode: 200, body: #"{"ok":true}"#)
+            default:
+                return HTTPStubResponse(statusCode: 404, body: #"{"error":"not found"}"#)
+            }
+        }
+        let port = try await server.start()
+        defer { server.stop() }
+
+        #expect(await engine.runSync(deviceId: "dev-001", shopUrl: "http://127.0.0.1:\(port)") == false)
+        #expect(ackCallCount.withLock { $0 } == 0)
+        let receipt = try await db.writer.read { dbConn in
+            try Row.fetchOne(
+                dbConn,
+                sql: "SELECT state, audit_metadata FROM _sync_receive_journal WHERE source_sequence = 95"
+            )
+        }
+        #expect(receipt?["state"] as String? == "deferred")
+        #expect(receipt?["audit_metadata"] as String? == "shop_pull")
     }
 
     @Test("Sync rejects push responses without a batch ID before acking")

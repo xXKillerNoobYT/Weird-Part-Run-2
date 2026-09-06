@@ -632,4 +632,80 @@ struct SyncCursorAdvanceTests {
             try String.fetchOne($0, sql: "SELECT name FROM part_categories WHERE id = 701")
         } == "Retention replay")
     }
+
+    @Test("journal refuses a reused peer sequence carrying different payload")
+    func receiveJournalRejectsSequencePayloadMismatch() throws {
+        let db = try freshDB()
+        let original = IncomingChange(
+            id: 91, deviceId: "peer", tableName: "part_categories", recordId: "901", operation: "INSERT",
+            recordData: #"{"id":"901","name":"Original"}"#, timestamp: "2026-09-06T00:00:00Z"
+        )
+        let restoredPayload = IncomingChange(
+            id: 91, deviceId: "peer", tableName: "part_categories", recordId: "901", operation: "INSERT",
+            recordData: #"{"id":"901","name":"Restored incarnation"}"#, timestamp: "2026-09-06T00:01:00Z"
+        )
+        try SyncReceiveJournal.record(db: db, sourcePeerId: "peer", changes: [original], auditMetadata: "test")
+        #expect(throws: SyncReceiveJournalError.sequencePayloadMismatch) {
+            try SyncReceiveJournal.record(db: db, sourcePeerId: "peer", changes: [restoredPayload], auditMetadata: "test")
+        }
+    }
+
+    @Test("journal records deterministic non-applies as refused rather than applied")
+    func receiveJournalDoesNotOvercountDeterministicNonApply() throws {
+        let db = try freshDB()
+        let change = IncomingChange(
+            id: 92, deviceId: "peer", tableName: "users", recordId: "92", operation: "PURGE",
+            timestamp: "2026-09-06T00:00:00Z"
+        )
+        try SyncReceiveJournal.record(db: db, sourcePeerId: "peer", changes: [change], auditMetadata: "test")
+        let result = try SyncReceiveJournal.applyPending(
+            db: db,
+            localDeviceId: "receiver",
+            resolving: { _, _, _ in MergeResult(skipped: 1) }
+        )
+        #expect(result.applied == 0)
+        #expect(result.refused == 1)
+        #expect(try db.writer.read {
+            try String.fetchOne($0, sql: "SELECT state FROM _sync_receive_journal WHERE source_sequence = 92")
+        } == "refused")
+    }
+
+    @Test("peer-scoped replay excludes unrelated journal receipts")
+    func receiveJournalScopesReplayAccountingToPeer() throws {
+        let db = try freshDB()
+        let change = IncomingChange(
+            id: 93, deviceId: "source", tableName: "part_categories", recordId: "903", operation: "INSERT",
+            recordData: #"{"id":"903","name":"Scoped"}"#, timestamp: "2026-09-06T00:00:00Z"
+        )
+        try SyncReceiveJournal.record(db: db, sourcePeerId: "peer-a", changes: [change], auditMetadata: "test")
+        try SyncReceiveJournal.record(db: db, sourcePeerId: "peer-b", changes: [change], auditMetadata: "test")
+        let result = try SyncReceiveJournal.applyPending(
+            db: db,
+            localDeviceId: "receiver",
+            sourcePeerId: "peer-b",
+            resolving: { _, _, _ in MergeResult(applied: 1) }
+        )
+        #expect(result.applied == 1)
+        #expect(try db.writer.read {
+            try String.fetchOne($0, sql: "SELECT state FROM _sync_receive_journal WHERE source_peer_id = 'peer-a'")
+        } == "received")
+    }
+
+    @Test("legacy inbox remains available when receipt persistence fails")
+    func processInboxRetainsLegacyRowsWhenJournalWriteFails() async throws {
+        let db = try freshDB()
+        let manager = PeerManager(db: db)
+        let serverState = SyncServerState(deviceId: "receiver", deviceName: "Receiver", companyId: "company", db: db)
+        await manager.testInstallServerState(serverState)
+        await serverState.appendToInbox([IncomingChange(
+            deviceId: "peer", tableName: "users", recordId: "94", operation: "INSERT",
+            recordData: #"{"id":94,"display_name":"retain","pin_hash":"hash","is_active":1}"#,
+            timestamp: "2026-09-06T00:00:00Z"
+        )])
+        try await db.writer.write { dbConn in
+            try dbConn.execute(sql: "DROP TABLE _sync_receive_journal")
+        }
+        await manager.testProcessInbox()
+        #expect((await serverState.inbox).count == 1)
+    }
 }

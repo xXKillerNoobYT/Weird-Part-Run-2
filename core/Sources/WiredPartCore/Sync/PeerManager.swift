@@ -1043,8 +1043,16 @@ public actor PeerManager {
             if maxSeq > 0 {
                 try ChangeTracker.updateVectorClock(db: db, peerId: result.serverDeviceId, lastSequence: maxSeq, deviceId: deviceId)
             }
-            pulled = try SyncReceiveJournal.applyPending(db: db, localDeviceId: deviceId).applied
         }
+
+        // Retry/deferred journal entries must replay even when this pull is
+        // empty; onboarding joiners do not run a local server-inbox loop. Scope
+        // accounting to this peer so another peer's receipt cannot inflate it.
+        pulled = try SyncReceiveJournal.applyPending(
+            db: db,
+            localDeviceId: deviceId,
+            sourcePeerId: result.serverDeviceId
+        ).applied
 
         return (pushed, pulled)
     }
@@ -1260,13 +1268,14 @@ public actor PeerManager {
         applying apply: ([IncomingChange], String) throws -> MergeResult
     ) async {
         guard let sState = serverState else { return }
-        let inbox = await sState.drainInbox()
+        let inbox = await sState.inboxSnapshot()
 
         do {
             // Legacy/test callers may still append in-memory rows. Convert those
             // to durable receipts before applying the full ordered journal.
             if !inbox.isEmpty {
                 try SyncReceiveJournal.record(db: db, sourcePeerId: "lan_inbox", changes: inbox, auditMetadata: "legacy_inbox")
+                await sState.removeInboxPrefix(count: inbox.count)
             }
             _ = try SyncReceiveJournal.applyPending(db: db, localDeviceId: sState.deviceId)
         } catch {

@@ -283,6 +283,18 @@ public actor SyncServerState {
         inbox = mutableInbox
     }
 
+    /// Returns the current legacy inbox without consuming it. Callers persist
+    /// this snapshot before removing its prefix so a failed receipt write cannot
+    /// destroy the sole in-memory copy.
+    public func inboxSnapshot() -> [IncomingChange] {
+        inbox
+    }
+
+    public func removeInboxPrefix(count: Int) {
+        guard count > 0 else { return }
+        inbox.removeFirst(min(count, inbox.count))
+    }
+
     /// Durable receipt is the transport-acknowledgement boundary; application is
     /// separately replayed by PeerManager in stable journal order.
     public func recordReceivedChanges(_ changes: [IncomingChange], from peerId: String) throws {

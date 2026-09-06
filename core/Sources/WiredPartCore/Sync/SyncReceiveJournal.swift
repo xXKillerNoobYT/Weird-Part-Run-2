@@ -39,12 +39,14 @@ enum SyncReceiveJournal {
     ) throws {
         guard !changes.isEmpty else { return }
         let normalizedAuditMetadata = normalizedAuditLabel(auditMetadata)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
         try db.writer.write { connection in
             // Receipt is a lifecycle boundary, so it also performs bounded cleanup.
             // It is one idempotent UPDATE, not a timer or a replay loop.
             _ = try redactExpiredTerminalPayloads(connection: connection, now: nil)
             for change in changes {
-                let payload = try String(decoding: JSONEncoder().encode(change), as: UTF8.self)
+                let payload = try String(decoding: encoder.encode(change), as: UTF8.self)
                 if let sequence = change.id {
                     try connection.execute(
                         sql: """
@@ -54,15 +56,45 @@ enum SyncReceiveJournal {
                         """,
                         arguments: [sourcePeerId, sequence, payload, normalizedAuditMetadata]
                     )
+                    // A sender restored from backup can reuse its sequence numbers.
+                    // The old unique key must remain idempotent for an identical
+                    // delivery, but it must never silently discard different data.
+                    if connection.changesCount == 0 {
+                        let existingPayload = try String.fetchOne(
+                            connection,
+                            sql: """
+                            SELECT payload FROM _sync_receive_journal
+                            WHERE source_peer_id = ? AND source_sequence = ?
+                            """,
+                            arguments: [sourcePeerId, sequence]
+                        )
+                        guard existingPayload == payload else {
+                            throw SyncReceiveJournalError.sequencePayloadMismatch
+                        }
+                    }
                 } else {
-                    try connection.execute(
+                    // Legacy/shop payloads can omit a source sequence. Their exact
+                    // encoded payload is the available delivery identity: suppress a
+                    // resend, but retain independently encoded changes as new rows.
+                    let existingID = try Int64.fetchOne(
+                        connection,
                         sql: """
-                        INSERT INTO _sync_receive_journal
-                            (source_peer_id, payload, state, audit_metadata)
-                        VALUES (?, ?, 'received', ?)
+                        SELECT id FROM _sync_receive_journal
+                        WHERE source_peer_id = ? AND payload = ?
+                        LIMIT 1
                         """,
-                        arguments: [sourcePeerId, payload, normalizedAuditMetadata]
+                        arguments: [sourcePeerId, payload]
                     )
+                    if existingID == nil {
+                        try connection.execute(
+                            sql: """
+                            INSERT INTO _sync_receive_journal
+                                (source_peer_id, payload, state, audit_metadata)
+                            VALUES (?, ?, 'received', ?)
+                            """,
+                            arguments: [sourcePeerId, payload, normalizedAuditMetadata]
+                        )
+                    }
                 }
             }
         }
@@ -78,7 +110,14 @@ enum SyncReceiveJournal {
         }
     }
 
-    static func applyPending(db: AppDatabase, localDeviceId: String) throws -> ApplyResult {
+    static func applyPending(
+        db: AppDatabase,
+        localDeviceId: String,
+        sourcePeerId: String? = nil,
+        resolving resolver: @escaping (AppDatabase, [IncomingChange], String) throws -> MergeResult = { db, changes, deviceId in
+            try ConflictResolver.resolveAndApplyChanges(db: db, changes: changes, localDeviceId: deviceId)
+        }
+    ) throws -> ApplyResult {
         // Applying pending work is the other deterministic lifecycle boundary.
         // This remains a single bounded cleanup query even when fixed-point replay
         // takes multiple passes.
@@ -92,21 +131,20 @@ enum SyncReceiveJournal {
         // nor a hot loop for a missing parent / transient failure.
         repeat {
             appliedThisPass = 0
-            let entries = try pendingEntries(db: db)
+            let entries = try pendingEntries(db: db, sourcePeerId: sourcePeerId)
             for entry in entries {
                 let change = try JSONDecoder().decode(IncomingChange.self, from: Data(entry.payload.utf8))
-                let merge = try ConflictResolver.resolveAndApplyChanges(
-                    db: db,
-                    changes: [change],
-                    localDeviceId: localDeviceId
-                )
+                let merge = try resolver(db, [change], localDeviceId)
                 if merge.errors > 0 {
                     try update(db: db, id: entry.id, state: "retry", reason: "transient_apply_failure", attempted: true)
                     result.retryable += 1
                 } else if merge.foreignKeyDeferrals > 0 {
                     try update(db: db, id: entry.id, state: "deferred", reason: "foreign_key_parent_unavailable", attempted: true)
                     result.deferred += 1
-                } else if merge.permanentRefusals > 0 || merge.schemaDrops > 0 {
+                } else if merge.permanentRefusals > 0 || merge.schemaDrops > 0 || merge.applied == 0 {
+                    // A clean resolver invocation is not proof that this entry
+                    // applied. Keep deterministic skips/collisions/supersessions
+                    // terminal and auditable without misreporting them as applies.
                     try update(db: db, id: entry.id, state: "refused", reason: "irreconcilable_apply_refusal", attempted: true)
                     result.refused += 1
                 } else {
@@ -119,7 +157,7 @@ enum SyncReceiveJournal {
         return result
     }
 
-    private static func pendingEntries(db: AppDatabase) throws -> [Entry] {
+    private static func pendingEntries(db: AppDatabase, sourcePeerId: String?) throws -> [Entry] {
         try db.writer.read { connection in
             try Entry.fetchAll(
                 connection,
@@ -127,8 +165,10 @@ enum SyncReceiveJournal {
                 SELECT id, source_peer_id, source_sequence, payload, state
                 FROM _sync_receive_journal
                 WHERE state IN ('received', 'deferred', 'retry')
+                  AND (? IS NULL OR source_peer_id = ?)
                 ORDER BY id ASC
                 """
+                , arguments: [sourcePeerId, sourcePeerId]
             )
         }
     }
@@ -171,10 +211,14 @@ enum SyncReceiveJournal {
     /// Unknown values collapse to a stable test/audit label rather than being stored.
     private static func normalizedAuditLabel(_ value: String) -> String {
         switch value {
-        case "lan_push", "lan_pull", "legacy_inbox", "test":
+        case "lan_push", "lan_pull", "shop_pull", "legacy_inbox", "test":
             return value
         default:
             return "test"
         }
     }
+}
+
+enum SyncReceiveJournalError: Error, Equatable {
+    case sequencePayloadMismatch
 }
