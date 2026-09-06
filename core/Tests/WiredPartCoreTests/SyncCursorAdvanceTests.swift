@@ -447,6 +447,51 @@ struct SyncCursorAdvanceTests {
         #expect(lanChildName == "LAN child")
     }
 
+    @Test("syncWithPeer replays a journal receipt after an empty pull without a local server")
+    func syncWithPeerReplaysJournalAfterEmptyPullWithoutServerState() async throws {
+        let db = try freshDB()
+        let remoteDB = try freshDB()
+        let manager = PeerManager(db: db)
+        let remoteState = SyncServerState(
+            deviceId: "remote", deviceName: "Remote", companyId: "company", db: remoteDB
+        )
+        let remoteServer = LanSyncServer(state: remoteState)
+        let remotePort = try await remoteServer.start()
+        defer { Task { await remoteServer.stop() } }
+
+        let deferredReceipt = IncomingChange(
+            id: 83, deviceId: "remote", tableName: "part_categories", recordId: "983", operation: "INSERT",
+            recordData: #"{"id":"983","name":"Replay after empty pull"}"#,
+            timestamp: "2026-08-22T00:00:02Z"
+        )
+        try SyncReceiveJournal.record(db: db, sourcePeerId: "remote", changes: [deferredReceipt], auditMetadata: "test")
+        try ChangeTracker.registerPeerDevice(
+            db: db, peerId: "remote", peerName: "Remote", platform: "test",
+            keyAgreementPublicKey: remoteState.kaPublicKeyB64
+        )
+        try await manager.startPeerSync(
+            deviceId: "receiver", deviceName: "Receiver", companyId: "company",
+            startMultipeer: false, startSyncServer: false
+        )
+        defer { Task { await manager.stopPeerSync() } }
+        let receiverIdentity = try await manager.localSyncIdentity(deviceId: "receiver")
+        try await remoteState.registerAuthorizedPeer(
+            deviceId: "receiver", deviceName: "Receiver", platform: "test",
+            keyAgreementPublicKey: receiverIdentity.publicKeyB64
+        )
+
+        let result = await manager.syncWithPeer(DiscoveredPeer(
+            deviceId: "remote", deviceName: "Remote", companyId: "company",
+            host: "127.0.0.1", port: remotePort, transport: "lan"
+        ))
+
+        #expect(result.success)
+        #expect(result.pulled == 1, "an empty response must still replay this peer's receipt")
+        #expect(try await db.writer.read {
+            try String.fetchOne($0, sql: "SELECT name FROM part_categories WHERE id = 983")
+        } == "Replay after empty pull")
+    }
+
     @Test("syncWithPeer does not advance a receive vector when durable receipt fails")
     func syncWithPeerHoldsVectorWhenJournalReceiptFails() async throws {
         let db = try freshDB()
@@ -709,5 +754,90 @@ struct SyncCursorAdvanceTests {
         #expect(try db.writer.read {
             try String.fetchOne($0, sql: "SELECT name FROM part_categories WHERE id = 701")
         } == "Retention replay")
+    }
+
+    @Test("journal apply and disposition roll back together when disposition persistence fails")
+    func receiveJournalApplyAndDispositionAreAtomic() throws {
+        let db = try freshDB()
+        let change = IncomingChange(
+            id: 72, deviceId: "peer", tableName: "part_categories", recordId: "702", operation: "INSERT",
+            recordData: #"{"id":"702","name":"Must not survive failed disposition"}"#,
+            timestamp: "2026-08-22T00:00:00Z"
+        )
+        try SyncReceiveJournal.record(db: db, sourcePeerId: "peer", changes: [change], auditMetadata: "test")
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                CREATE TRIGGER fail_receive_journal_disposition
+                BEFORE UPDATE OF state ON _sync_receive_journal
+                BEGIN SELECT RAISE(FAIL, 'injected disposition failure'); END
+                """)
+        }
+
+        #expect(throws: (any Error).self) {
+            _ = try SyncReceiveJournal.applyPending(db: db, localDeviceId: "receiver")
+        }
+        #expect(try db.writer.read {
+            try String.fetchOne($0, sql: "SELECT name FROM part_categories WHERE id = 702")
+        } == nil, "a journal disposition failure must roll back the business apply")
+        #expect(try db.writer.read {
+            try String.fetchOne($0, sql: "SELECT state FROM _sync_receive_journal WHERE source_sequence = 72")
+        } == "received", "the uncommitted row remains safely replayable after interruption")
+    }
+
+    @Test("same source sequence with a changed restored payload creates a distinct receipt")
+    func receiveJournalDoesNotDiscardRestoredSequenceReuse() throws {
+        let db = try freshDB()
+        let original = IncomingChange(
+            id: 73, deviceId: "peer", tableName: "part_categories", recordId: "703", operation: "INSERT",
+            recordData: #"{"id":"703","name":"Before restore"}"#,
+            timestamp: "2026-08-22T00:00:00Z"
+        )
+        let restored = IncomingChange(
+            id: 73, deviceId: "peer", tableName: "part_categories", recordId: "704", operation: "INSERT",
+            recordData: #"{"id":"704","name":"After restore"}"#,
+            timestamp: "2026-08-22T00:00:01Z"
+        )
+        try SyncReceiveJournal.record(db: db, sourcePeerId: "peer", changes: [original], auditMetadata: "test")
+        try SyncReceiveJournal.record(db: db, sourcePeerId: "peer", changes: [restored], auditMetadata: "test")
+        try SyncReceiveJournal.record(db: db, sourcePeerId: "peer", changes: [restored], auditMetadata: "test")
+
+        let receipts = try db.writer.read { dbConn in
+            try Int.fetchOne(
+                dbConn,
+                sql: "SELECT COUNT(*) FROM _sync_receive_journal WHERE source_peer_id = 'peer' AND source_sequence = 73"
+            )
+        }
+        #expect(receipts == 2, "identical redelivery deduplicates, but restore sequence reuse remains replayable")
+        #expect(try SyncReceiveJournal.applyPending(db: db, localDeviceId: "receiver").applied == 2)
+        #expect(try db.writer.read {
+            try String.fetchOne($0, sql: "SELECT name FROM part_categories WHERE id = 704")
+        } == "After restore")
+    }
+
+    @Test("unresolved journal entries wait for their bounded retry time")
+    func receiveJournalBoundsDeferredRetryWrites() throws {
+        let db = try freshDB()
+        let orphan = IncomingChange(
+            id: 74, deviceId: "peer", tableName: "part_styles", recordId: "704", operation: "INSERT",
+            recordData: #"{"id":"704","category_id":"999999","name":"Orphan"}"#,
+            timestamp: "2026-08-22T00:00:00Z"
+        )
+        try SyncReceiveJournal.record(db: db, sourcePeerId: "peer", changes: [orphan], auditMetadata: "test")
+        #expect(try SyncReceiveJournal.applyPending(db: db, localDeviceId: "receiver").deferred == 1)
+        let first = try db.writer.read { dbConn in
+            try Row.fetchOne(
+                dbConn,
+                sql: "SELECT retry_count, next_attempt_at FROM _sync_receive_journal WHERE source_sequence = 74"
+            )
+        }
+        #expect(first?["retry_count"] as Int? == 1)
+        #expect(first?["next_attempt_at"] as String? != nil)
+
+        let immediateReplay = try SyncReceiveJournal.applyPending(db: db, localDeviceId: "receiver")
+        #expect(immediateReplay.deferred == 0, "timer calls before next_attempt_at must not retry the orphan")
+        let second = try db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: "SELECT retry_count FROM _sync_receive_journal WHERE source_sequence = 74")
+        }
+        #expect(second == 1, "a skipped timer pass must not churn the durable receipt")
     }
 }

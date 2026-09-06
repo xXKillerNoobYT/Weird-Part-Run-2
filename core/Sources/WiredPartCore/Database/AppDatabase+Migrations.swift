@@ -172,6 +172,7 @@ extension AppDatabase {
         registerMigration128NotebookBlockProvenance(&migrator)
         registerMigration129SyncReceiveJournal(&migrator)
         registerMigration130SyncReceiveJournalPayloadRedaction(&migrator)
+        registerMigration131SyncReceiveJournalReplaySafety(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6753,6 +6754,30 @@ private func registerMigration130SyncReceiveJournalPayloadRedaction(_ migrator: 
     }
 }
 
+// MARK: - Migration 131: restore-safe receipts and bounded journal replay (#1807)
+
+private func registerMigration131SyncReceiveJournalReplaySafety(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("131_sync_receive_journal_replay_safety") { db in
+        // `_change_log` sequences rewind after a device restores an older database.
+        // A same-sequence receipt is a duplicate only when its encoded payload is
+        // identical; retain both otherwise so the restored sender cannot lose a
+        // new mutation behind a pre-restore receipt.
+        try db.execute(sql: "DROP INDEX IF EXISTS idx_sync_receive_journal_source_sequence")
+        try db.execute(sql: """
+            CREATE UNIQUE INDEX idx_sync_receive_journal_source_sequence_payload
+            ON _sync_receive_journal(source_peer_id, source_sequence, payload)
+            WHERE source_sequence IS NOT NULL
+            """)
+        try db.alter(table: "_sync_receive_journal") { t in
+            t.add(column: "next_attempt_at", .text)
+        }
+        try db.create(
+            index: "idx_sync_receive_journal_retry_due",
+            on: "_sync_receive_journal",
+            columns: ["state", "next_attempt_at", "id"]
+        )
+    }
+}
 
 /// #1817 (#Isaac-14) — per-block provenance and a bounded per-user edit history.
 ///

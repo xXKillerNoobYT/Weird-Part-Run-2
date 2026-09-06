@@ -376,6 +376,7 @@ public actor PeerManager {
 
     /// Company ID for this sync session. Sent as X-Company-ID on key-exchange requests (#191).
     private var companyId: String = ""
+    private var localDeviceId: String = ""
 
     /// Cached X25519 public keys from peers, keyed by peer device ID.
     private var peerKAPublicKeys: [String: String] = [:]
@@ -461,6 +462,7 @@ public actor PeerManager {
         kaPrivateKeyB64 = identity.privateKeyB64
         kaPublicKeyB64 = identity.publicKeyB64
         self.companyId = companyId          // Fix #191: stored for key-exchange requests
+        self.localDeviceId = deviceId
         peerKAPublicKeys.removeAll()
 
         #if canImport(MultipeerConnectivity)
@@ -723,7 +725,12 @@ public actor PeerManager {
             notifyStateChanged()
         }
 
-        guard let sState = serverState else {
+        // Discovery-only onboarding intentionally has no local HTTP server. It
+        // may make an outbound LAN pull only when it has durable receive work to
+        // recover; ordinary manual sync retains the established server-not-running
+        // failure instead of creating a surprising discovery-only transport path.
+        let hasPendingReceiveJournal = (try? SyncReceiveJournal.hasPendingEntries(db: db)) ?? false
+        if serverState == nil && !hasPendingReceiveJournal {
             let result = PeerSyncResult(
                 peerDeviceId: peer.deviceId,
                 peerName: peer.deviceName,
@@ -733,9 +740,18 @@ public actor PeerManager {
             state.lastPeerSyncs[peer.deviceId] = result
             return result
         }
-
-        let deviceId = sState.deviceId
-        let companyId = sState.companyId
+        guard !localDeviceId.isEmpty, !companyId.isEmpty else {
+            let result = PeerSyncResult(
+                peerDeviceId: peer.deviceId,
+                peerName: peer.deviceName,
+                success: false,
+                error: "Sync identity not initialized"
+            )
+            state.lastPeerSyncs[peer.deviceId] = result
+            return result
+        }
+        let deviceId = serverState?.deviceId ?? localDeviceId
+        let syncCompanyId = serverState?.companyId ?? companyId
         var executedTransport: PeerSyncTransport?
 
         do {
@@ -795,7 +811,7 @@ public actor PeerManager {
                 (pushed, pulled) = try await syncViaHTTP(
                     peer: peer,
                     deviceId: deviceId,
-                    companyId: companyId,
+                    companyId: syncCompanyId,
                     pendingChanges: pendingChanges,
                     enrichedChanges: enrichedChanges
                 )
@@ -1267,8 +1283,16 @@ public actor PeerManager {
     private func processInbox(
         applying apply: ([IncomingChange], String) throws -> MergeResult
     ) async {
-        guard let sState = serverState else { return }
-        let inbox = await sState.drainInbox()
+        // A discovery-only joiner has no local HTTP server, but it can still
+        // hold acknowledged journal receipts from an earlier pull. Replay them
+        // on this background cadence using the identity retained at startup.
+        let deviceId = serverState?.deviceId ?? localDeviceId
+        guard !deviceId.isEmpty else { return }
+        let inbox: [IncomingChange] = if let sState = serverState {
+            await sState.drainInbox()
+        } else {
+            []
+        }
         var durableReceiptRecorded = inbox.isEmpty
 
         do {
@@ -1278,11 +1302,11 @@ public actor PeerManager {
                 try SyncReceiveJournal.record(db: db, sourcePeerId: "lan_inbox", changes: inbox, auditMetadata: "legacy_inbox")
                 durableReceiptRecorded = true
             }
-            _ = try SyncReceiveJournal.applyPending(db: db, localDeviceId: sState.deviceId)
+            _ = try SyncReceiveJournal.applyPending(db: db, localDeviceId: deviceId)
         } catch {
             // A failed receipt write must not erase the only legacy copy. Once the
             // journal commit succeeds it becomes the recovery authority instead.
-            if !durableReceiptRecorded {
+            if !durableReceiptRecorded, let sState = serverState {
                 await sState.restoreDrainedInbox(inbox)
             }
             logger.error("[PeerManager] Receive journal application deferred: \(error.localizedDescription, privacy: .public)")

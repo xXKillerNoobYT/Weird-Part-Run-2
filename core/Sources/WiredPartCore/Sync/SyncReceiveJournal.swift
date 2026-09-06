@@ -14,6 +14,7 @@ enum SyncReceiveJournal {
         let sourceSequence: Int64?
         let payload: String
         let state: String
+        let nextAttemptAt: String?
 
         enum CodingKeys: String, CodingKey {
             case id
@@ -21,6 +22,7 @@ enum SyncReceiveJournal {
             case sourceSequence = "source_sequence"
             case payload
             case state
+            case nextAttemptAt = "next_attempt_at"
         }
     }
 
@@ -44,8 +46,13 @@ enum SyncReceiveJournal {
             // It is one idempotent UPDATE, not a timer or a replay loop.
             _ = try redactExpiredTerminalPayloads(connection: connection, now: nil)
             for change in changes {
-                let payload = try String(decoding: JSONEncoder().encode(change), as: UTF8.self)
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.sortedKeys]
+                let payload = try String(decoding: encoder.encode(change), as: UTF8.self)
                 if let sequence = change.id {
+                    // Migration 131 makes payload identity part of the receipt key.
+                    // A restored sender may reuse a sequence, but only an identical
+                    // encoded change is a duplicate that may be ignored.
                     try connection.execute(
                         sql: """
                         INSERT OR IGNORE INTO _sync_receive_journal
@@ -78,6 +85,15 @@ enum SyncReceiveJournal {
         }
     }
 
+    static func hasPendingEntries(db: AppDatabase) throws -> Bool {
+        try db.writer.read { connection in
+            try Bool.fetchOne(
+                connection,
+                sql: "SELECT EXISTS(SELECT 1 FROM _sync_receive_journal WHERE state IN ('received', 'deferred', 'retry'))"
+            ) ?? false
+        }
+    }
+
     static func applyPending(
         db: AppDatabase,
         localDeviceId: String,
@@ -89,54 +105,80 @@ enum SyncReceiveJournal {
         _ = try redactExpiredTerminalPayloads(db: db)
         var result = ApplyResult()
         var appliedThisPass: Int
+        var retryDeferredAfterApply = false
 
         // A child can precede its parent in durable source order. Run bounded
         // fixed-point passes: every pass preserves that order, and only a newly
-        // applied row permits another pass. This is neither head-only requeueing
-        // nor a hot loop for a missing parent / transient failure.
+        // applied row permits another pass. A deferred row may be retried in that
+        // next pass only because the new apply could have supplied its parent.
+        // Calls with no new receipt respect next_attempt_at, preventing hot writes
+        // for an orphaned parent or a persistent transient failure.
         repeat {
             appliedThisPass = 0
-            let entries = try pendingEntries(db: db, sourcePeerId: sourcePeerId)
+            let entries = try pendingEntries(
+                db: db,
+                sourcePeerId: sourcePeerId,
+                includingDeferredImmediately: retryDeferredAfterApply
+            )
+            retryDeferredAfterApply = false
             for entry in entries {
                 let change = try JSONDecoder().decode(IncomingChange.self, from: Data(entry.payload.utf8))
-                let merge = try ConflictResolver.resolveAndApplyChanges(
-                    db: db,
-                    changes: [change],
-                    localDeviceId: localDeviceId
-                )
+                let merge = try db.writer.write { connection in
+                    let merge = try ConflictResolver.resolveAndApplyChange(
+                        in: connection,
+                        change: change,
+                        localDeviceId: localDeviceId
+                    )
+                    let disposition = disposition(for: merge)
+                    try update(
+                        connection: connection,
+                        id: entry.id,
+                        state: disposition.state,
+                        reason: disposition.reason,
+                        attempted: true
+                    )
+                    return merge
+                }
                 if merge.errors > 0 {
-                    try update(db: db, id: entry.id, state: "retry", reason: "transient_apply_failure", attempted: true)
                     result.retryable += 1
                 } else if merge.foreignKeyDeferrals > 0 {
-                    try update(db: db, id: entry.id, state: "deferred", reason: "foreign_key_parent_unavailable", attempted: true)
                     result.deferred += 1
                 } else if merge.permanentRefusals > 0 || merge.schemaDrops > 0 {
-                    try update(db: db, id: entry.id, state: "refused", reason: "irreconcilable_apply_refusal", attempted: true)
                     result.refused += 1
                 } else if merge.applied == 0 {
                     // A deterministic dispatch/no-op (for example a disallowed
                     // table) has not applied. Keep it as terminal evidence instead
                     // of falsely reporting it as an applied receipt.
-                    try update(db: db, id: entry.id, state: "refused", reason: "deterministic_non_apply", attempted: true)
                     result.refused += 1
                 } else {
-                    try update(db: db, id: entry.id, state: "applied", reason: nil, attempted: true)
                     result.applied += 1
                     appliedThisPass += 1
                 }
             }
+            retryDeferredAfterApply = appliedThisPass > 0
         } while appliedThisPass > 0
         return result
     }
 
-    private static func pendingEntries(db: AppDatabase, sourcePeerId: String?) throws -> [Entry] {
-        try db.writer.read { connection in
+    private static func pendingEntries(
+        db: AppDatabase,
+        sourcePeerId: String?,
+        includingDeferredImmediately: Bool
+    ) throws -> [Entry] {
+        let deferredPredicate = includingDeferredImmediately
+            ? "state IN ('deferred', 'retry')"
+            : "0"
+        return try db.writer.read { connection in
             try Entry.fetchAll(
                 connection,
                 sql: """
-                SELECT id, source_peer_id, source_sequence, payload, state
+                SELECT id, source_peer_id, source_sequence, payload, state, next_attempt_at
                 FROM _sync_receive_journal
-                WHERE state IN ('received', 'deferred', 'retry')
+                WHERE (
+                    state = 'received'
+                    OR (state IN ('deferred', 'retry') AND next_attempt_at <= datetime('now'))
+                    OR \(deferredPredicate)
+                )
                   AND (? IS NULL OR source_peer_id = ?)
                 ORDER BY id ASC
                 """,
@@ -145,19 +187,45 @@ enum SyncReceiveJournal {
         }
     }
 
-    private static func update(db: AppDatabase, id: Int64, state: String, reason: String?, attempted: Bool) throws {
-        try db.writer.write { connection in
-            try connection.execute(
-                sql: """
-                UPDATE _sync_receive_journal
-                SET state = ?, disposition_reason = ?, retry_count = retry_count + ?,
-                    last_attempt_at = datetime('now'), applied_at = CASE WHEN ? = 'applied' THEN datetime('now') ELSE applied_at END,
-                    updated_at = datetime('now')
-                WHERE id = ?
-                """,
-                arguments: [state, reason, attempted ? 1 : 0, state, id]
-            )
+    private static func disposition(for merge: MergeResult) -> (state: String, reason: String?) {
+        if merge.errors > 0 { return ("retry", "transient_apply_failure") }
+        if merge.foreignKeyDeferrals > 0 { return ("deferred", "foreign_key_parent_unavailable") }
+        if merge.permanentRefusals > 0 || merge.schemaDrops > 0 {
+            return ("refused", "irreconcilable_apply_refusal")
         }
+        if merge.applied == 0 { return ("refused", "deterministic_non_apply") }
+        return ("applied", nil)
+    }
+
+    /// Caller owns the receive-journal transaction. The next retry is bounded so
+    /// an unresolved dependency is not decoded, applied, and written every inbox
+    /// timer tick. Entries newly deferred in a pass are explicitly replayed only
+    /// when another row applied and could have satisfied that dependency.
+    private static func update(
+        connection: Database,
+        id: Int64,
+        state: String,
+        reason: String?,
+        attempted: Bool
+    ) throws {
+        try connection.execute(
+            sql: """
+            UPDATE _sync_receive_journal
+            SET state = ?, disposition_reason = ?, retry_count = retry_count + ?,
+                last_attempt_at = datetime('now'),
+                next_attempt_at = CASE
+                    WHEN ? IN ('deferred', 'retry') THEN datetime(
+                        'now',
+                        '+' || MIN(300, 5 * (1 << MIN(retry_count, 6))) || ' seconds'
+                    )
+                    ELSE NULL
+                END,
+                applied_at = CASE WHEN ? = 'applied' THEN datetime('now') ELSE applied_at END,
+                updated_at = datetime('now')
+            WHERE id = ?
+            """,
+            arguments: [state, reason, attempted ? 1 : 0, state, state, id]
+        )
     }
 
     private static func redactExpiredTerminalPayloads(connection: Database, now: String?) throws -> Int {
