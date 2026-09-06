@@ -8,6 +8,7 @@
 import Foundation
 import GRDB
 import Security
+import SwiftUI
 import Testing
 import WiredPartCore
 import XCTest
@@ -678,6 +679,105 @@ struct Weird_Parts_IOSTests {
         }
     }
 
+    @Test func bootstrapAccessibilityDecisionUsesSharedRuntimeMacPredicate() {
+        for (isCatalyst, isIOSAppOnMac) in [(true, false), (false, true), (false, false)] {
+            let isRunningOnMac = RuntimeMacEnvironment.isRunningOnMac(
+                isCatalyst: isCatalyst,
+                isIOSAppOnMac: isIOSAppOnMac
+            )
+            #expect(
+                AppCore.shouldApplyBootstrapKeychainAccessibility(isRunningOnMac: isRunningOnMac) == !isRunningOnMac
+            )
+        }
+    }
+
+    @MainActor
+    @Test func activeSceneTransitionRetriesOnlyOneEligibleTransientBootstrap() {
+        var coordinator = AppCore.BootstrapRetryCoordinator()
+        let lockedKeychainError = CipherKeyError.keychainAccessFailed(
+            item: "device bootstrap key",
+            status: errSecInteractionNotAllowed
+        )
+        let started = coordinator.beginBootstrap()
+        #expect(started)
+        coordinator.finishBootstrap(success: false, error: lockedKeychainError)
+
+        var retryCount = 0
+        for phase in [ScenePhase.inactive, .active, .background, .active] {
+            if coordinator.scenePhaseDidChange(to: phase) {
+                retryCount += 1
+            }
+        }
+
+        #expect(retryCount == 1)
+    }
+
+    @MainActor
+    @Test func initialActiveSceneObservationRetriesOnceWithoutLooping() {
+        var coordinator = AppCore.BootstrapRetryCoordinator()
+        let lockedKeychainError = CipherKeyError.keychainAccessFailed(
+            item: "device bootstrap key",
+            status: errSecInteractionNotAllowed
+        )
+
+        let beganInitialBootstrap = coordinator.beginBootstrap()
+        #expect(beganInitialBootstrap)
+
+        // This is the `onChange(initial: true)` delivery that occurs when the
+        // observer attaches while the launch scene is already active.
+        let retryDuringInitialObservation = coordinator.scenePhaseDidChange(to: .active)
+        #expect(!retryDuringInitialObservation)
+
+        let immediateRetryRequested = coordinator.finishBootstrap(success: false, error: lockedKeychainError)
+        #expect(immediateRetryRequested)
+
+        // The scheduled retry is the only automatic retry in this active
+        // generation. A second locked failure must not recursively retry.
+        let beganImmediateRetry = coordinator.beginBootstrap()
+        #expect(beganImmediateRetry)
+        let retryLoopAttempt = coordinator.finishBootstrap(success: false, error: lockedKeychainError)
+        #expect(!retryLoopAttempt)
+
+        let automaticRetryCount = (immediateRetryRequested ? 1 : 0) + (retryLoopAttempt ? 1 : 0)
+        #expect(automaticRetryCount == 1)
+
+        // A later foreground transition remains the bounded recovery path after
+        // the non-looping retry has failed.
+        let retriedInBackground = coordinator.scenePhaseDidChange(to: .background)
+        let retriedOnNextForeground = coordinator.scenePhaseDidChange(to: .active)
+        #expect(!retriedInBackground)
+        #expect(retriedOnNextForeground)
+    }
+
+    @MainActor
+    @Test func activeSceneTransitionCannotRebootstrapReadyOrInFlightApp() {
+        var coordinator = AppCore.BootstrapRetryCoordinator()
+
+        let started = coordinator.beginBootstrap()
+        let retriedWhileInFlight = coordinator.scenePhaseDidChange(to: .active)
+        #expect(started)
+        #expect(!retriedWhileInFlight)
+        let didRetryOnSuccessfulBootstrap = coordinator.finishBootstrap(success: true)
+        #expect(!didRetryOnSuccessfulBootstrap)
+        let retriedWhenReady = coordinator.scenePhaseDidChange(to: .active)
+        #expect(!retriedWhenReady)
+    }
+
+    @Test func keychainFailuresNameTheirActualKeychainItem() {
+        let bootstrapError = CipherKeyError.keychainAccessFailed(
+            item: "device bootstrap key",
+            status: errSecInteractionNotAllowed
+        )
+        let saltError = CipherKeyError.keychainAccessFailed(
+            item: "cipher salt",
+            status: errSecInteractionNotAllowed
+        )
+
+        #expect(bootstrapError.localizedDescription.contains("device bootstrap key"))
+        #expect(!bootstrapError.localizedDescription.contains("cipher salt"))
+        #expect(saltError.localizedDescription.contains("cipher salt"))
+    }
+
     @Test func bootstrapFallbackPersistsForApprovedReadFailureAndCleansUp() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("BootstrapFallback-\(UUID().uuidString)", isDirectory: true)
@@ -687,8 +787,7 @@ struct Weird_Parts_IOSTests {
             add: { _ in
                 Issue.record("fallback must be used before a Keychain write")
                 return errSecParam
-            },
-            delete: { errSecSuccess }
+            }
         )
 
         let first = try AppCore.deviceBootstrapKeyHex(
@@ -742,8 +841,7 @@ struct Weird_Parts_IOSTests {
             add: { _ in
                 Issue.record("unavailable Keychain must use the local fallback before a write")
                 return errSecParam
-            },
-            delete: { errSecSuccess }
+            }
         )
         let promotionProbe = OperationProbe()
         let recoveredKeychain = AppCore.BootstrapKeychainAccess(
@@ -751,8 +849,7 @@ struct Weird_Parts_IOSTests {
             add: { keyData in
                 promotionProbe.storedKey = keyData
                 return errSecSuccess
-            },
-            delete: { errSecSuccess }
+            }
         )
 
         let fallbackKey = try AppCore.deviceBootstrapKeyHex(
@@ -770,6 +867,48 @@ struct Weird_Parts_IOSTests {
         #expect(recoveredKey == fallbackKey)
         #expect(promotionProbe.storedKey?.map { String(format: "%02x", $0) }.joined() == fallbackKey)
         #expect(try fallbackURL.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
+    }
+
+    @Test func bootstrapFallbackRemainsAuthoritativeWhenPromotionSeesDuplicate() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BootstrapFallback-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let unavailableKeychain = AppCore.BootstrapKeychainAccess(
+            read: { (errSecNotAvailable, nil) },
+            add: { _ in
+                Issue.record("unavailable Keychain must use the local fallback before a write")
+                return errSecParam
+            }
+        )
+        let probe = OperationProbe()
+        let racingKeychain = AppCore.BootstrapKeychainAccess(
+            read: {
+                if probe.ran {
+                    Issue.record("an established fallback must not be replaced after a duplicate")
+                }
+                probe.ran = true
+                return (errSecItemNotFound, nil)
+            },
+            add: { _ in
+                probe.addCallCount += 1
+                return errSecDuplicateItem
+            }
+        )
+
+        let fallbackKey = try AppCore.deviceBootstrapKeyHex(
+            processArguments: [],
+            keychain: unavailableKeychain,
+            fallbackDirectory: directory
+        )
+        let recoveredKey = try AppCore.deviceBootstrapKeyHex(
+            processArguments: [],
+            keychain: racingKeychain,
+            fallbackDirectory: directory
+        )
+
+        #expect(recoveredKey == fallbackKey)
+        #expect(probe.addCallCount == 1)
     }
 
     /// The Mac won-t-start bug (#1663), reduced to its mechanism.
@@ -798,8 +937,7 @@ struct Weird_Parts_IOSTests {
         // database would be encrypted with THIS key.
         let unavailableKeychain = AppCore.BootstrapKeychainAccess(
             read: { (errSecMissingEntitlement, nil) },
-            add: { _ in errSecParam },
-            delete: { errSecSuccess }
+            add: { _ in errSecParam }
         )
         let keyThatEncryptedTheDatabase = try AppCore.deviceBootstrapKeyHex(
             processArguments: [],
@@ -813,8 +951,7 @@ struct Weird_Parts_IOSTests {
         #expect(divergentKeychainKey.map { String(format: "%02x", $0) }.joined() != keyThatEncryptedTheDatabase)
         let divergedKeychain = AppCore.BootstrapKeychainAccess(
             read: { (errSecSuccess, divergentKeychainKey) },
-            add: { _ in errSecSuccess },
-            delete: { errSecSuccess }
+            add: { _ in errSecSuccess }
         )
         let keyUsedOnNextLaunch = try AppCore.deviceBootstrapKeyHex(
             processArguments: [],
@@ -862,16 +999,14 @@ struct Weird_Parts_IOSTests {
             add: { _ in
                 Issue.record("fallback must be used before a Keychain write")
                 return errSecParam
-            },
-            delete: { errSecSuccess }
+            }
         )
         let lockedKeychain = AppCore.BootstrapKeychainAccess(
             read: { (errSecInteractionNotAllowed, nil) },
             add: { _ in
                 Issue.record("locked keychain must not attempt a write")
                 return errSecParam
-            },
-            delete: { errSecSuccess }
+            }
         )
 
         _ = try AppCore.deviceBootstrapKeyHex(
@@ -886,7 +1021,8 @@ struct Weird_Parts_IOSTests {
                 fallbackDirectory: directory
             )
             Issue.record("locked keychain unexpectedly used fallback")
-        } catch let CipherKeyError.keychainAccessFailed(status) {
+        } catch let CipherKeyError.keychainAccessFailed(item: item, status: status) {
+            #expect(item == "device bootstrap key")
             #expect(status == errSecInteractionNotAllowed)
         }
         let fallbackURL = try AppCore.localFallbackBootstrapKeyURL(in: directory)
@@ -912,10 +1048,6 @@ struct Weird_Parts_IOSTests {
                     Issue.record("unexpected retry add after locked reread")
                 }
                 return errSecDuplicateItem
-            },
-            delete: {
-                Issue.record("locked duplicate reread must not delete the Keychain key")
-                return errSecSuccess
             }
         )
 
@@ -926,12 +1058,73 @@ struct Weird_Parts_IOSTests {
                 fallbackDirectory: directory
             )
             Issue.record("locked duplicate reread unexpectedly recovered")
-        } catch let CipherKeyError.keychainAccessFailed(status) {
+        } catch let CipherKeyError.keychainAccessFailed(item: item, status: status) {
+            #expect(item == "device bootstrap key")
             #expect(status == errSecInteractionNotAllowed)
         }
 
         let fallbackURL = try AppCore.localFallbackBootstrapKeyURL(in: directory)
         #expect(!FileManager.default.fileExists(atPath: fallbackURL.path))
+    }
+
+    @Test func malformedBootstrapKeyReadFailsWithoutReplacement() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BootstrapFallback-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let probe = OperationProbe()
+        let malformedKeychain = AppCore.BootstrapKeychainAccess(
+            read: { (errSecSuccess, Data(repeating: 0xA5, count: 31)) },
+            add: { _ in
+                probe.addCallCount += 1
+                return errSecSuccess
+            }
+        )
+
+        do {
+            _ = try AppCore.deviceBootstrapKeyHex(
+                processArguments: [],
+                keychain: malformedKeychain,
+                fallbackDirectory: directory
+            )
+            Issue.record("malformed successful read unexpectedly minted a replacement key")
+        } catch let CipherKeyError.keychainAccessFailed(item: item, status: status) {
+            #expect(item == "device bootstrap key")
+            #expect(status == errSecDecode)
+        }
+        #expect(probe.addCallCount == 0, "A malformed bootstrap entry must not be replaced.")
+    }
+
+    @Test func malformedDuplicateBootstrapKeyReadFailsWithoutRetryAdd() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BootstrapFallback-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let probe = OperationProbe()
+        let malformedDuplicateKeychain = AppCore.BootstrapKeychainAccess(
+            read: {
+                if probe.ran {
+                    return (errSecSuccess, Data(repeating: 0x5A, count: 31))
+                }
+                probe.ran = true
+                return (errSecItemNotFound, nil)
+            },
+            add: { _ in
+                probe.addCallCount += 1
+                return errSecDuplicateItem
+            }
+        )
+
+        do {
+            _ = try AppCore.deviceBootstrapKeyHex(
+                processArguments: [],
+                keychain: malformedDuplicateKeychain,
+                fallbackDirectory: directory
+            )
+            Issue.record("malformed duplicate reread unexpectedly retried with a replacement key")
+        } catch let CipherKeyError.keychainAccessFailed(item: item, status: status) {
+            #expect(item == "device bootstrap key")
+            #expect(status == errSecDecode)
+        }
+        #expect(probe.addCallCount == 1, "A duplicate reread must not be followed by a replacement add.")
     }
 
     @Test func bootstrapFallbackUsesApprovedStatusAfterDuplicateItemReread() throws {
@@ -947,11 +1140,7 @@ struct Weird_Parts_IOSTests {
                 probe.ran = true
                 return (errSecItemNotFound, nil)
             },
-            add: { _ in errSecDuplicateItem },
-            delete: {
-                Issue.record("approved reread failure must use fallback before deleting")
-                return errSecSuccess
-            }
+            add: { _ in errSecDuplicateItem }
         )
 
         let keyHex = try AppCore.deviceBootstrapKeyHex(
@@ -1002,10 +1191,6 @@ struct Weird_Parts_IOSTests {
             add: { _ in
                 probe.addCallCount += 1
                 return errSecDuplicateItem
-            },
-            delete: {
-                Issue.record("a recoverable duplicate must not delete the established Keychain key")
-                return errSecSuccess
             }
         )
 

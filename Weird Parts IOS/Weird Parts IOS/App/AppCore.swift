@@ -23,6 +23,72 @@ final class AppCore: ObservableObject {
     nonisolated private static let uiTestingPreserveDatabaseFlag = "-UITestingPreserveDatabase"
     nonisolated private static let localFallbackBootstrapKeyLock = NSRecursiveLock()
 
+    /// Serializes startup and records whether foregrounding can safely retry a
+    /// locked Keychain failure. Normal foregrounding must never reopen a ready
+    /// database or race the launch bootstrap.
+    struct BootstrapRetryCoordinator {
+        private(set) var isBootstrapInFlight = false
+        private(set) var isReady = false
+        private var retryAfterActiveTransition = false
+        private var isSceneActive = false
+        private var activeTransitionGeneration = 0
+        private var immediateRetryGeneration: Int?
+
+        mutating func beginBootstrap() -> Bool {
+            guard !isBootstrapInFlight else { return false }
+            isBootstrapInFlight = true
+            retryAfterActiveTransition = false
+            return true
+        }
+
+        /// Returns true only for the first eligible transient failure observed
+        /// while the current active-scene generation is still active. A retry
+        /// that also fails must wait for a later foreground transition instead
+        /// of recursively retrying while the Keychain remains locked.
+        @discardableResult
+        mutating func finishBootstrap(success: Bool, error: Error? = nil) -> Bool {
+            isBootstrapInFlight = false
+            isReady = success
+            guard !success,
+                  error.map(AppCore.isTransientKeychainInteractionNotAllowed) == true else {
+                retryAfterActiveTransition = false
+                return false
+            }
+
+            retryAfterActiveTransition = true
+            guard isSceneActive,
+                  immediateRetryGeneration != activeTransitionGeneration else {
+                return false
+            }
+
+            immediateRetryGeneration = activeTransitionGeneration
+            retryAfterActiveTransition = false
+            return true
+        }
+
+        /// Records every scene phase so a failure completing after an earlier
+        /// `.active` event can retry once immediately rather than waiting for an
+        /// unrelated second foreground cycle.
+        mutating func scenePhaseDidChange(to phase: ScenePhase) -> Bool {
+            guard phase == .active else {
+                isSceneActive = false
+                return false
+            }
+
+            isSceneActive = true
+            activeTransitionGeneration += 1
+            return consumeRetryAfterActiveTransition()
+        }
+
+        private mutating func consumeRetryAfterActiveTransition() -> Bool {
+            guard !isBootstrapInFlight, !isReady, retryAfterActiveTransition else {
+                return false
+            }
+            retryAfterActiveTransition = false
+            return true
+        }
+    }
+
     #if DEBUG && targetEnvironment(simulator)
     nonisolated private static let wei5134AIReadFailureFlag = "-UITestingWEI5134AIReadFailure"
     nonisolated private static let wei5159AIPrerequisiteRecoveryFlag = "-UITestingWEI5159AIPrerequisiteRecovery"
@@ -200,6 +266,7 @@ final class AppCore: ObservableObject {
     @Published public var onboardAIRuntimeBootstrap: OnboardAIRuntimeBootstrapResult?
 
     nonisolated let logger = Logger(subsystem: "com.wiredpart.ios", category: "AppCore")
+    private var bootstrapRetryCoordinator = BootstrapRetryCoordinator()
 
     // MARK: - Lifecycle
 
@@ -254,6 +321,7 @@ final class AppCore: ObservableObject {
     }
 
     private func bootstrap() async {
+        guard bootstrapRetryCoordinator.beginBootstrap() else { return }
         do {
             let uiTestingMode = isUITestingMode
             // Resolve the database path on the main actor (it accesses FileManager),
@@ -436,6 +504,7 @@ final class AppCore: ObservableObject {
                 badgeCountManager.setUserId(userId)
             }
             isReady = true
+            bootstrapRetryCoordinator.finishBootstrap(success: true)
             await evaluateOnboardAIRuntimeIfEnabled()
 
             // Configure badge count manager
@@ -554,6 +623,7 @@ final class AppCore: ObservableObject {
                 }
             }
         } catch {
+            let retryWhileStillActive = bootstrapRetryCoordinator.finishBootstrap(success: false, error: error)
             let nsError = error as NSError
             logger.error(
                 "[AppCore] bootstrap failed domain=\(nsError.domain, privacy: .public) code=\(nsError.code, privacy: .public) description=\(error.localizedDescription, privacy: .public)"
@@ -572,6 +642,9 @@ final class AppCore: ObservableObject {
                 loadError = "\(friendly)\n\n\(technical)"
             }
             BugReportErrorLog.shared.record(loadError ?? error.localizedDescription, context: "App startup")
+            if retryWhileStillActive {
+                retryBootstrap()
+            }
         }
     }
 
@@ -600,10 +673,30 @@ final class AppCore: ObservableObject {
 
     /// Retry bootstrap after a failure.
     func retryBootstrap() {
+        guard !bootstrapRetryCoordinator.isReady,
+              !bootstrapRetryCoordinator.isBootstrapInFlight else {
+            return
+        }
         loadError = nil
         Task { @MainActor in
             await bootstrap()
         }
+    }
+
+    /// Records a scene transition and retries only when the coordinator has an
+    /// eligible transient-failure token for that foreground generation.
+    func handleScenePhaseChange(_ phase: ScenePhase) {
+        guard bootstrapRetryCoordinator.scenePhaseDidChange(to: phase) else {
+            return
+        }
+        retryBootstrap()
+    }
+
+    nonisolated static func isTransientKeychainInteractionNotAllowed(_ error: Error) -> Bool {
+        guard case let .keychainAccessFailed(item: _, status: status) = error as? CipherKeyError else {
+            return false
+        }
+        return status == errSecInteractionNotAllowed
     }
 
     nonisolated static func isRecoverableDebugCipherOpenFailure(_ error: Error) -> Bool {
@@ -875,7 +968,6 @@ final class AppCore: ObservableObject {
     nonisolated struct BootstrapKeychainAccess: Sendable {
         let read: @Sendable () -> (status: OSStatus, data: Data?)
         let add: @Sendable (Data) -> OSStatus
-        let delete: @Sendable () -> OSStatus
 
         static let live = BootstrapKeychainAccess(
             read: {
@@ -897,20 +989,18 @@ final class AppCore: ObservableObject {
                     kSecAttrAccount: "device-bootstrap-key",
                     kSecValueData: keyData
                 ]
-                #if !targetEnvironment(macCatalyst)
-                query[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-                #endif
+                if AppCore.shouldApplyBootstrapKeychainAccessibility(
+                    isRunningOnMac: RuntimeMacEnvironment.isRunningOnMac
+                ) {
+                    query[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+                }
                 return SecItemAdd(query as CFDictionary, nil)
-            },
-            delete: {
-                let query: [CFString: Any] = [
-                    kSecClass: kSecClassGenericPassword,
-                    kSecAttrService: "com.wiredpart.dbcipher.bootstrap-key",
-                    kSecAttrAccount: "device-bootstrap-key"
-                ]
-                return SecItemDelete(query as CFDictionary)
             }
         )
+    }
+
+    nonisolated static func shouldApplyBootstrapKeychainAccessibility(isRunningOnMac: Bool) -> Bool {
+        !isRunningOnMac
     }
 
     nonisolated static func deviceBootstrapKeyHex(
@@ -930,26 +1020,36 @@ final class AppCore: ObservableObject {
         defer { localFallbackBootstrapKeyLock.unlock() }
 
         let readResult = keychain.read()
-        if readResult.status == errSecSuccess, let data = readResult.data, data.count == 32 {
-            // #1663 — when BOTH stores hold a key and they disagree, the file wins.
-            //
-            // A container-local fallback is only ever written when the Keychain was
-            // unusable, so its presence is evidence the database may be encrypted
-            // with IT rather than with whatever the Keychain returns today. On the
-            // iPad-on-Mac binary the Keychain answers inconsistently across launches,
-            // so preferring it here wrote the database under one key and opened it
-            // under another — SQLCipher then reports the page header as garbage:
-            // "SQLite error 26: file is not a database", which is what the tester saw
-            // on build 55.
-            //
-            // The empty-Keychain path below already promotes the file, so treating it
-            // as authoritative here is consistent rather than new. A healthy iPhone
-            // never creates one, so this cannot change behaviour there.
-            if let fallbackKeyData = try existingLocalFallbackBootstrapKeyData(in: fallbackDirectory),
-               fallbackKeyData != data {
+        if readResult.status == errSecSuccess {
+            if let data = readResult.data, data.count == 32 {
+                // #1663 — when BOTH stores hold a key and they disagree, the file wins.
+                //
+                // A container-local fallback is only ever written when the Keychain was
+                // unusable, so its presence is evidence the database may be encrypted
+                // with IT rather than with whatever the Keychain returns today. On the
+                // iPad-on-Mac binary the Keychain answers inconsistently across launches,
+                // so preferring it here wrote the database under one key and opened it
+                // under another — SQLCipher then reports the page header as garbage:
+                // "SQLite error 26: file is not a database", which is what the tester saw
+                // on build 55.
+                //
+                // The empty-Keychain path below already promotes the file, so treating it
+                // as authoritative here is consistent rather than new. A healthy iPhone
+                // never creates one, so this cannot change behaviour there.
+                if let fallbackKeyData = try existingLocalFallbackBootstrapKeyData(in: fallbackDirectory),
+                   fallbackKeyData != data {
+                    return fallbackKeyData.map { String(format: "%02x", $0) }.joined()
+                }
+                return data.map { String(format: "%02x", $0) }.joined()
+            }
+
+            // A malformed successful read is not permission to replace the key.
+            // Reuse an established fallback if available; otherwise fail closed so
+            // the original database key cannot be destroyed by a delete/re-add race.
+            if let fallbackKeyData = try existingLocalFallbackBootstrapKeyData(in: fallbackDirectory) {
                 return fallbackKeyData.map { String(format: "%02x", $0) }.joined()
             }
-            return data.map { String(format: "%02x", $0) }.joined()
+            throw CipherKeyError.keychainAccessFailed(item: "device bootstrap key", status: errSecDecode)
         }
         if shouldUseLocalBootstrapKeyFallback(for: readResult.status) {
             return try localFallbackBootstrapKeyHex(in: fallbackDirectory)
@@ -960,35 +1060,16 @@ final class AppCore: ObservableObject {
             if addStatus == errSecSuccess {
                 return fallbackKeyData.map { String(format: "%02x", $0) }.joined()
             }
-            // Deliberately NOT guarded against `errSecDuplicateItem` the way the
-            // mint path below is, even though the three lines look identical.
-            //
-            // Reaching here means a local fallback file EXISTS, so
-            // `localFallbackBootstrapKeyHex` returns that file's key rather than
-            // minting a new one — and per #1663 the file is the authoritative
-            // store when the two disagree. Falling back here therefore yields the
-            // key the database is actually encrypted with. Adding the guard would
-            // turn a divergent re-read into a thrown error and stop the app from
-            // starting at all, which is the more expensive direction to be wrong
-            // in. On the mint path below no file exists, so the same call invents
-            // a key instead of recovering one — hence the guard is correct there
-            // and wrong here.
-            if shouldUseLocalBootstrapKeyFallback(for: addStatus) {
-                return try localFallbackBootstrapKeyHex(in: fallbackDirectory)
+            // The fallback already exists and is authoritative for this database.
+            // A duplicate only proves that another actor populated the Keychain;
+            // do not let a divergent re-read replace the established database key.
+            if addStatus == errSecDuplicateItem || shouldUseLocalBootstrapKeyFallback(for: addStatus) {
+                return fallbackKeyData.map { String(format: "%02x", $0) }.joined()
             }
-            if addStatus == errSecDuplicateItem {
-                let rereadResult = keychain.read()
-                if rereadResult.status == errSecSuccess, rereadResult.data == fallbackKeyData {
-                    return fallbackKeyData.map { String(format: "%02x", $0) }.joined()
-                }
-            }
-            throw CipherKeyError.keychainAccessFailed(addStatus)
+            throw CipherKeyError.keychainAccessFailed(item: "device bootstrap key", status: addStatus)
         }
-        if readResult.status == errSecSuccess {
-            // Self-heal legacy/corrupt entries before minting a replacement key.
-            _ = keychain.delete()
-        } else if readResult.status != errSecItemNotFound {
-            throw CipherKeyError.keychainAccessFailed(readResult.status)
+        guard readResult.status == errSecItemNotFound else {
+            throw CipherKeyError.keychainAccessFailed(item: "device bootstrap key", status: readResult.status)
         }
 
         var keyBytes = [UInt8](repeating: 0, count: 32)
@@ -1045,23 +1126,17 @@ final class AppCore: ObservableObject {
             if shouldUseLocalBootstrapKeyFallback(for: rereadResult.status) {
                 return try localFallbackBootstrapKeyHex(in: fallbackDirectory)
             }
-            // Only a missing or corrupt duplicate can be replaced. Locked and
-            // unapproved Keychain states must fail before mutating the key.
-            guard rereadResult.status == errSecSuccess || rereadResult.status == errSecItemNotFound else {
-                throw CipherKeyError.keychainAccessFailed(rereadResult.status)
+            // A duplicate proves another value exists. If re-reading cannot
+            // recover a valid key, do not replace it: fail closed and preserve the
+            // existing database key for the next successful Keychain read.
+            if rereadResult.status == errSecSuccess,
+               let fallbackKeyData = try existingLocalFallbackBootstrapKeyData(in: fallbackDirectory) {
+                return fallbackKeyData.map { String(format: "%02x", $0) }.joined()
             }
-            // Preserve the existing recovery path for a stale duplicate entry.
-            _ = keychain.delete()
-            let retryAddStatus = keychain.add(keyData)
-            if retryAddStatus == errSecSuccess {
-                return keyData.map { String(format: "%02x", $0) }.joined()
-            }
-            if shouldUseLocalBootstrapKeyFallback(for: retryAddStatus) {
-                return try localFallbackBootstrapKeyHex(in: fallbackDirectory)
-            }
-            throw CipherKeyError.keychainAccessFailed(retryAddStatus)
+            let failureStatus = rereadResult.status == errSecSuccess ? errSecDecode : rereadResult.status
+            throw CipherKeyError.keychainAccessFailed(item: "device bootstrap key", status: failureStatus)
         }
-        throw CipherKeyError.keychainAccessFailed(addStatus)
+        throw CipherKeyError.keychainAccessFailed(item: "device bootstrap key", status: addStatus)
     }
 
     nonisolated static func shouldUseLocalBootstrapKeyFallback(for status: OSStatus) -> Bool {
