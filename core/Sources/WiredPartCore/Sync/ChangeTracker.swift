@@ -426,6 +426,7 @@ public enum ChangeTracker {
         keyAgreementPublicKey: String?
     ) throws {
         let encodedKey = keyAgreementPublicKey.map { "x25519:\($0)" }
+        let replicatedKey = try DeviceRegistryCertificateCodec.production.store(encodedKey)
         try dbConnection.execute(
             sql: """
                 INSERT INTO _device_registry (device_id, device_name, platform, certificate, last_seen_at, is_trusted)
@@ -439,8 +440,8 @@ public enum ChangeTracker {
                               last_seen_at = datetime('now')
                 """,
             arguments: [
-                peerId, peerName, platform, encodedKey,
-                encodedKey, peerName, platform, encodedKey, encodedKey, encodedKey,
+                peerId, peerName, platform, replicatedKey,
+                replicatedKey, peerName, platform, replicatedKey, replicatedKey, replicatedKey,
             ]
         )
         // Give the peer a delivery cursor in the same transaction that registers
@@ -465,11 +466,16 @@ public enum ChangeTracker {
                     """,
                 arguments: [peerId]
             ) else { return nil }
+            let certificate: String? = row["certificate"]
+            try DeviceRegistryCertificateCodec.production.validateStored(certificate)
             return PeerDeviceTrustSnapshot(
                 deviceName: row["device_name"],
                 platform: row["platform"],
                 role: row["role"],
-                certificate: row["certificate"],
+                // Preserve the durable representation exactly. A rollback must not
+                // turn a valid legacy record into a new envelope, and must never
+                // launder invalid ciphertext into a plaintext-looking value.
+                certificate: certificate,
                 lastSeenAt: row["last_seen_at"],
                 lastSyncAt: row["last_sync_at"],
                 isTrusted: row["is_trusted"],
@@ -484,6 +490,9 @@ public enum ChangeTracker {
         peerId: String,
         snapshot: PeerDeviceTrustSnapshot?
     ) throws {
+        if let snapshot {
+            try DeviceRegistryCertificateCodec.production.validateStored(snapshot.certificate)
+        }
         try db.writer.write { dbConnection in
             guard let snapshot else {
                 try dbConnection.execute(
