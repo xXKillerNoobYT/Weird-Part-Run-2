@@ -9,6 +9,10 @@ import GRDB
 @Suite("Sync receive-cursor advance (#1792 / #1793 / #1794)")
 struct SyncCursorAdvanceTests {
 
+    private enum JournalInterruption: Error {
+        case afterBusinessMutation
+    }
+
     private func freshDB() throws -> AppDatabase {
         try AppDatabase.openInMemoryDatabase()
     }
@@ -247,6 +251,35 @@ struct SyncCursorAdvanceTests {
         #expect(try db.writer.read {
             try String.fetchOne($0, sql: "SELECT name FROM part_styles WHERE id = 88")
         } == "Source-ordered child")
+    }
+
+    @Test("journal rolls back a business mutation when interruption precedes disposition persistence")
+    func receiveJournalRollsBackInterruptedBusinessMutation() throws {
+        let db = try freshDB()
+        let change = IncomingChange(
+            id: 60, deviceId: "peer", tableName: "part_categories", recordId: "760", operation: "INSERT",
+            recordData: #"{"id":"760","name":"must roll back"}"#,
+            timestamp: "2026-09-06T00:00:00Z"
+        )
+        try SyncReceiveJournal.record(db: db, sourcePeerId: "peer", changes: [change], auditMetadata: "test")
+
+        #expect(throws: JournalInterruption.self) {
+            try SyncReceiveJournal.applyPending(
+                db: db,
+                localDeviceId: "receiver",
+                resolving: { connection, _, _ in
+                    try connection.execute(sql: "INSERT INTO part_categories (id, name) VALUES (760, 'must roll back')")
+                    throw JournalInterruption.afterBusinessMutation
+                }
+            )
+        }
+
+        #expect(try db.writer.read {
+            try String.fetchOne($0, sql: "SELECT name FROM part_categories WHERE id = 760")
+        } == nil)
+        #expect(try db.writer.read {
+            try String.fetchOne($0, sql: "SELECT state FROM _sync_receive_journal WHERE source_sequence = 60")
+        } == "received")
     }
 
     @Test("journal retains an irreconcilable refusal as structured non-retrying audit evidence")

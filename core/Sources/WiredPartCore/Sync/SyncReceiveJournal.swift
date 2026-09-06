@@ -114,9 +114,7 @@ enum SyncReceiveJournal {
         db: AppDatabase,
         localDeviceId: String,
         sourcePeerId: String? = nil,
-        resolving resolver: @escaping (AppDatabase, [IncomingChange], String) throws -> MergeResult = { db, changes, deviceId in
-            try ConflictResolver.resolveAndApplyChanges(db: db, changes: changes, localDeviceId: deviceId)
-        }
+        resolving resolver: ((Database, IncomingChange, String) throws -> MergeResult)? = nil
     ) throws -> ApplyResult {
         // Applying pending work is the other deterministic lifecycle boundary.
         // This remains a single bounded cleanup query even when fixed-point replay
@@ -133,25 +131,41 @@ enum SyncReceiveJournal {
             appliedThisPass = 0
             let entries = try pendingEntries(db: db, sourcePeerId: sourcePeerId)
             for entry in entries {
-                let change = try JSONDecoder().decode(IncomingChange.self, from: Data(entry.payload.utf8))
-                let merge = try resolver(db, [change], localDeviceId)
-                if merge.errors > 0 {
-                    try update(db: db, id: entry.id, state: "retry", reason: "transient_apply_failure", attempted: true)
-                    result.retryable += 1
-                } else if merge.foreignKeyDeferrals > 0 {
-                    try update(db: db, id: entry.id, state: "deferred", reason: "foreign_key_parent_unavailable", attempted: true)
-                    result.deferred += 1
-                } else if merge.permanentRefusals > 0 || merge.schemaDrops > 0 || merge.applied == 0 {
-                    // A clean resolver invocation is not proof that this entry
-                    // applied. Keep deterministic skips/collisions/supersessions
-                    // terminal and auditable without misreporting them as applies.
-                    try update(db: db, id: entry.id, state: "refused", reason: "irreconcilable_apply_refusal", attempted: true)
-                    result.refused += 1
-                } else {
-                    try update(db: db, id: entry.id, state: "applied", reason: nil, attempted: true)
-                    result.applied += 1
-                    appliedThisPass += 1
+                let disposition = try db.writer.write { connection -> (applied: Int, deferred: Int, refused: Int, retryable: Int) in
+                    let change = try JSONDecoder().decode(IncomingChange.self, from: Data(entry.payload.utf8))
+                    // Production uses the connection-owned resolver so the business
+                    // mutation and the durable journal disposition commit or roll back
+                    // together. Test injection shares that connection, avoiding a
+                    // nested GRDB writer while retaining deterministic classifications.
+                    let merge = try resolver?(connection, change, localDeviceId)
+                        ?? ConflictResolver.resolveAndApplyChange(
+                            in: connection,
+                            change: change,
+                            localDeviceId: localDeviceId
+                        )
+                    if merge.errors > 0 {
+                        try update(connection: connection, id: entry.id, state: "retry", reason: "transient_apply_failure", attempted: true)
+                        return (0, 0, 0, 1)
+                    }
+                    if merge.foreignKeyDeferrals > 0 {
+                        try update(connection: connection, id: entry.id, state: "deferred", reason: "foreign_key_parent_unavailable", attempted: true)
+                        return (0, 1, 0, 0)
+                    }
+                    if merge.permanentRefusals > 0 || merge.schemaDrops > 0 || merge.applied == 0 {
+                        // A clean resolver invocation is not proof that this entry
+                        // applied. Keep deterministic skips/collisions/supersessions
+                        // terminal and auditable without misreporting them as applies.
+                        try update(connection: connection, id: entry.id, state: "refused", reason: "irreconcilable_apply_refusal", attempted: true)
+                        return (0, 0, 1, 0)
+                    }
+                    try update(connection: connection, id: entry.id, state: "applied", reason: nil, attempted: true)
+                    return (1, 0, 0, 0)
                 }
+                result.applied += disposition.applied
+                result.deferred += disposition.deferred
+                result.refused += disposition.refused
+                result.retryable += disposition.retryable
+                appliedThisPass += disposition.applied
             }
         } while appliedThisPass > 0
         return result
@@ -173,19 +187,17 @@ enum SyncReceiveJournal {
         }
     }
 
-    private static func update(db: AppDatabase, id: Int64, state: String, reason: String?, attempted: Bool) throws {
-        try db.writer.write { connection in
-            try connection.execute(
-                sql: """
-                UPDATE _sync_receive_journal
-                SET state = ?, disposition_reason = ?, retry_count = retry_count + ?,
-                    last_attempt_at = datetime('now'), applied_at = CASE WHEN ? = 'applied' THEN datetime('now') ELSE applied_at END,
-                    updated_at = datetime('now')
-                WHERE id = ?
-                """,
-                arguments: [state, reason, attempted ? 1 : 0, state, id]
-            )
-        }
+    private static func update(connection: Database, id: Int64, state: String, reason: String?, attempted: Bool) throws {
+        try connection.execute(
+            sql: """
+            UPDATE _sync_receive_journal
+            SET state = ?, disposition_reason = ?, retry_count = retry_count + ?,
+                last_attempt_at = datetime('now'), applied_at = CASE WHEN ? = 'applied' THEN datetime('now') ELSE applied_at END,
+                updated_at = datetime('now')
+            WHERE id = ?
+            """,
+            arguments: [state, reason, attempted ? 1 : 0, state, id]
+        )
     }
 
     private static func redactExpiredTerminalPayloads(connection: Database, now: String?) throws -> Int {

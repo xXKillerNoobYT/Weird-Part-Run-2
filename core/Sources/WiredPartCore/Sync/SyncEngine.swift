@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import GRDB
 
 // MARK: - Sync State
 
@@ -73,7 +74,7 @@ public actor SyncEngine {
     // MARK: - State
 
     private let db: AppDatabase
-    private let shopChangeResolver: @Sendable (AppDatabase, [IncomingChange], String) throws -> MergeResult
+    private let shopChangeResolver: @Sendable (Database, IncomingChange, String) throws -> MergeResult
     private var state = SyncState()
     private var isSyncing = false
     private var periodicTask: Task<Void, Never>?
@@ -92,10 +93,10 @@ public actor SyncEngine {
     public init(db: AppDatabase) {
         self.init(
             db: db,
-            shopChangeResolver: { db, changes, localDeviceId in
-                try ConflictResolver.resolveAndApplyChanges(
-                    db: db,
-                    changes: changes,
+            shopChangeResolver: { connection, change, localDeviceId in
+                try ConflictResolver.resolveAndApplyChange(
+                    in: connection,
+                    change: change,
                     localDeviceId: localDeviceId
                 )
             }
@@ -107,7 +108,7 @@ public actor SyncEngine {
     /// transient database faults (for example SQLITE_BUSY or disk-full).
     init(
         db: AppDatabase,
-        shopChangeResolver: @escaping @Sendable (AppDatabase, [IncomingChange], String) throws -> MergeResult
+        shopChangeResolver: @escaping @Sendable (Database, IncomingChange, String) throws -> MergeResult
     ) {
         self.db = db
         self.shopChangeResolver = shopChangeResolver
@@ -658,7 +659,12 @@ public actor SyncEngine {
             changedFields: dict["changed_fields"] as? String,
             oldValues: dict["old_values"] as? String,
             recordData: (dict["record_data"] as? [String: Any]).flatMap {
-                String(data: (try? JSONSerialization.data(withJSONObject: $0)) ?? Data(), encoding: .utf8)
+                // Legacy shop changes may not carry a source sequence, so their
+                // canonical payload is their receipt identity. Stabilize nested JSON
+                // key order before journal encoding; otherwise the same retried
+                // dictionary can produce a distinct record-data string and bypass
+                // receipt deduplication.
+                String(data: (try? JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys])) ?? Data(), encoding: .utf8)
             },
             timestamp: dict["timestamp"] as? String ?? ""
         )
