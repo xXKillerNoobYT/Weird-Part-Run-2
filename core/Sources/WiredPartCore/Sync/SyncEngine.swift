@@ -225,9 +225,36 @@ public actor SyncEngine {
                 return false
             }
 
-            // 3. Apply shop changes to local DB
-            if let shopChangesRaw = resultData["shop_changes"] as? [[String: Any]] {
-                let incomingChanges = shopChangesRaw.compactMap { parseIncomingChange($0) }
+            // 3. Apply shop changes to local DB. `compactMap` would silently drop a
+            // malformed item and then incorrectly advance the shop batch, so every
+            // advertised item must parse before the acknowledgement path can start.
+            if let rawShopChanges = resultData["shop_changes"] {
+                guard let shopChangesRaw = rawShopChanges as? [[String: Any]] else {
+                    let pendingCount = (try? ChangeTracker.getPendingChangeCount(db: db)) ?? pendingChanges.count
+                    updateState(
+                        status: .error,
+                        pendingCount: pendingCount,
+                        error: "Invalid push response: malformed shop_changes",
+                        consecutiveFailures: state.consecutiveFailures + 1
+                    )
+                    scheduleRetry(deviceId: deviceId, shopUrl: shopUrl, authToken: authToken)
+                    return false
+                }
+
+                let parsedIncomingChanges = shopChangesRaw.map(parseIncomingChange)
+                guard parsedIncomingChanges.allSatisfy({ $0 != nil }) else {
+                    let pendingCount = (try? ChangeTracker.getPendingChangeCount(db: db)) ?? pendingChanges.count
+                    updateState(
+                        status: .error,
+                        pendingCount: pendingCount,
+                        error: "Invalid push response: malformed shop_changes",
+                        consecutiveFailures: state.consecutiveFailures + 1
+                    )
+                    scheduleRetry(deviceId: deviceId, shopUrl: shopUrl, authToken: authToken)
+                    return false
+                }
+
+                let incomingChanges = parsedIncomingChanges.compactMap { $0 }
                 if !incomingChanges.isEmpty {
                     let mergeResult = try shopChangeResolver(
                         db,

@@ -285,6 +285,108 @@ struct SyncEngineTests {
         #expect(state.consecutiveFailures == 0)
     }
 
+    @Test("Malformed shop changes are retryable and do not acknowledge or mark local rows synced")
+    func testMalformedShopChangeDoesNotAckOrMarkSynced() async throws {
+        let db = try freshDB()
+        let engine = SyncEngine(db: db)
+        let ackCallCount = Mutex(0)
+
+        try ChangeTracker.trackChange(
+            db: db,
+            tableName: "users",
+            recordId: 1,
+            operation: .insert,
+            deviceId: "dev-001"
+        )
+
+        let server = try HTTPStubServer { request in
+            switch request.path {
+            case "/api/sync/push":
+                // The second entry is not structurally parseable because it has no table name.
+                return HTTPStubResponse(
+                    statusCode: 200,
+                    body: #"{"data":{"sync_batch_id":"batch-malformed-change","shop_changes":[{"device_id":"shop","table_name":"users","record_id":"42","operation":"INSERT","record_data":{"id":"42","display_name":"Remote","pin_hash":"hash","is_active":"1"},"timestamp":"2026-09-06T18:00:00Z"},{"device_id":"shop","record_id":"43","operation":"INSERT","timestamp":"2026-09-06T18:00:00Z"}]}}"#
+                )
+            case "/api/sync/ack":
+                ackCallCount.withLock { $0 += 1 }
+                return HTTPStubResponse(statusCode: 200, body: #"{"ok":true}"#)
+            default:
+                return HTTPStubResponse(statusCode: 404, body: #"{"error":"not found"}"#)
+            }
+        }
+        let port = try await server.start()
+        defer { server.stop() }
+
+        let result = await engine.runSync(
+            deviceId: "dev-001",
+            shopUrl: "http://127.0.0.1:\(port)",
+            authToken: nil
+        )
+
+        #expect(result == false)
+        #expect(ackCallCount.withLock { $0 } == 0)
+        #expect(try ChangeTracker.getPendingChangeCount(db: db) == 1)
+
+        let state = await engine.getState()
+        #expect(state.status == .error)
+        #expect(state.pendingCount == 1)
+        #expect(state.error == "Invalid push response: malformed shop_changes")
+        #expect(state.consecutiveFailures == 1)
+    }
+
+    @Test("Transient shop apply failure retries the original batch and acknowledges once after success")
+    func testTransientApplyFailureRetriesOriginalBatch() async throws {
+        let db = try freshDB()
+        let resolverCallCount = Mutex(0)
+        let engine = SyncEngine(db: db) { _, _, _ in
+            resolverCallCount.withLock { count in
+                count += 1
+                return MergeResult(errors: count == 1 ? 1 : 0)
+            }
+        }
+        let pushCallCount = Mutex(0)
+        let ackCallCount = Mutex(0)
+
+        try ChangeTracker.trackChange(
+            db: db,
+            tableName: "users",
+            recordId: 1,
+            operation: .insert,
+            deviceId: "dev-001"
+        )
+
+        let server = try HTTPStubServer { request in
+            switch request.path {
+            case "/api/sync/push":
+                pushCallCount.withLock { $0 += 1 }
+                return HTTPStubResponse(
+                    statusCode: 200,
+                    body: #"{"data":{"sync_batch_id":"batch-retry","shop_changes":[{"device_id":"shop","table_name":"users","record_id":"42","operation":"INSERT","record_data":{"id":"42","display_name":"Remote","pin_hash":"hash","is_active":"1"},"timestamp":"2026-09-06T18:00:00Z"}]}}"#
+                )
+            case "/api/sync/ack":
+                ackCallCount.withLock { $0 += 1 }
+                return HTTPStubResponse(statusCode: 200, body: #"{"ok":true}"#)
+            default:
+                return HTTPStubResponse(statusCode: 404, body: #"{"error":"not found"}"#)
+            }
+        }
+        let port = try await server.start()
+        defer { server.stop() }
+        let shopUrl = "http://127.0.0.1:\(port)"
+
+        let firstResult = await engine.runSync(deviceId: "dev-001", shopUrl: shopUrl, authToken: nil)
+        #expect(firstResult == false)
+        #expect(ackCallCount.withLock { $0 } == 0)
+        #expect(try ChangeTracker.getPendingChangeCount(db: db) == 1)
+
+        let secondResult = await engine.runSync(deviceId: "dev-001", shopUrl: shopUrl, authToken: nil)
+        #expect(secondResult == true)
+        #expect(pushCallCount.withLock { $0 } == 2)
+        #expect(resolverCallCount.withLock { $0 } == 2)
+        #expect(ackCallCount.withLock { $0 } == 1)
+        #expect(try ChangeTracker.getPendingChangeCount(db: db) == 0)
+    }
+
     @Test("Sync rejects push responses without a batch ID before acking")
     func testMissingBatchIdDoesNotAckOrReportSynced() async throws {
         let db = try freshDB()
