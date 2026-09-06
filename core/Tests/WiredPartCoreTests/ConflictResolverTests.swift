@@ -409,8 +409,9 @@ struct ConflictResolverTests {
     /// database or a trigger abort — so a transient failure on a table that DOES
     /// soft-delete was answered by permanently destroying the row.
     ///
-    /// Here the table plainly has `deleted_at` and the UPDATE fails for an unrelated
-    /// reason. The record must survive and the failure must be reported.
+    /// Here the table plainly has `deleted_at` and the UPDATE is deterministically
+    /// rejected by a trigger. The record must survive and the refusal must be
+    /// classified without falling through to a hard delete.
     @Test("a failing soft-delete UPDATE must not fall through to a hard delete")
     func testSoftDeleteFailureDoesNotHardDelete() throws {
         let db = try freshDB()
@@ -422,7 +423,7 @@ struct ConflictResolverTests {
                 CREATE TRIGGER users_block_soft_delete
                 BEFORE UPDATE OF deleted_at ON users
                 BEGIN
-                    SELECT RAISE(ABORT, 'simulated transient failure');
+                    SELECT RAISE(ABORT, 'simulated deterministic refusal');
                 END
                 """)
         }
@@ -439,7 +440,8 @@ struct ConflictResolverTests {
         let result = try ConflictResolver.resolveAndApplyChanges(db: db, changes: changes)
 
         #expect(result.applied == 0, "a delete that could not be applied must not count as applied")
-        #expect(result.errors == 1, "the failure must be reported, not swallowed")
+        #expect(result.permanentRefusals == 1, "a trigger refusal is deterministic")
+        #expect(result.errors == 0, "a deterministic trigger refusal must not retry")
 
         let user = try db.writer.read { dbConn in try User.fetchOne(dbConn, key: userId) }
         #expect(user != nil, "the row must NOT have been hard-deleted by the fallback")

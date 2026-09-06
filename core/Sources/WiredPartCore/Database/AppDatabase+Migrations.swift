@@ -170,6 +170,13 @@ extension AppDatabase {
         registerMigration126DeviceLogDiagnostics(&migrator)
         registerMigration127DeferredSupersessionEvidence(&migrator)
         registerMigration128NotebookBlockProvenance(&migrator)
+        registerMigration129SyncReceiveJournal(&migrator)
+        registerMigration130SyncReceiveJournalPayloadRedaction(&migrator)
+        // These historical migrations must remain registered forever: installed
+        // databases record their identifiers in grdb_migrations, and omitting one
+        // makes GRDB abort before any receive-journal repair can run.
+        registerMigration131SyncReceiveJournalReplaySafety(&migrator)
+        registerMigration132SyncReceiveJournalRetryBackfill(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6713,6 +6720,60 @@ private func registerMigration127DeferredSupersessionEvidence(_ migrator: inout 
     }
 }
 
+// MARK: - Migration 129: durable ordered receive journal (#1807)
+
+private func registerMigration129SyncReceiveJournal(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("129_sync_receive_journal") { db in
+        try db.create(table: "_sync_receive_journal") { t in
+            t.autoIncrementedPrimaryKey("id")
+            t.column("source_peer_id", .text).notNull()
+            t.column("source_sequence", .integer)
+            t.column("payload", .text).notNull()
+            t.column("state", .text).notNull().defaults(to: "received")
+            t.column("disposition_reason", .text)
+            t.column("retry_count", .integer).notNull().defaults(to: 0)
+            t.column("audit_metadata", .text).notNull()
+            t.column("last_attempt_at", .text)
+            t.column("applied_at", .text)
+            t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+            t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
+        }
+        try db.create(index: "idx_sync_receive_journal_pending", on: "_sync_receive_journal", columns: ["state", "id"])
+        try db.execute(sql: "CREATE UNIQUE INDEX idx_sync_receive_journal_source_sequence ON _sync_receive_journal(source_peer_id, source_sequence) WHERE source_sequence IS NOT NULL")
+    }
+}
+
+// MARK: - Migration 130: bounded terminal receive-journal payload retention (#1880)
+
+private func registerMigration130SyncReceiveJournalPayloadRedaction(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("130_sync_receive_journal_payload_redaction") { db in
+        try db.alter(table: "_sync_receive_journal") { t in
+            t.add(column: "redacted_at", .text)
+        }
+        try db.create(
+            index: "idx_sync_receive_journal_terminal_retention",
+            on: "_sync_receive_journal",
+            columns: ["state", "redacted_at", "applied_at", "updated_at"]
+        )
+    }
+}
+
+// MARK: - Migration 131: restore-safe receipts and bounded journal replay (#1807)
+
+private func registerMigration131SyncReceiveJournalReplaySafety(_ migrator: inout DatabaseMigrator) {
+    // The current journal atomically persists its disposition and no longer reads
+    // this former due-time/index layout. Keep its identifier as a no-op so stores
+    // that applied it before the atomic rewrite still open successfully.
+    migrator.registerMigration("131_sync_receive_journal_replay_safety") { _ in }
+}
+
+// MARK: - Migration 132: replay legacy deferred receive-journal receipts (#1807)
+
+private func registerMigration132SyncReceiveJournalRetryBackfill(_ migrator: inout DatabaseMigrator) {
+    // See migration 131: this historical identifier is part of the durable GRDB
+    // migration contract even though fixed-point replay replaced due-time polling.
+    migrator.registerMigration("132_sync_receive_journal_retry_backfill") { _ in }
+}
 
 /// #1817 (#Isaac-14) — per-block provenance and a bounded per-user edit history.
 ///

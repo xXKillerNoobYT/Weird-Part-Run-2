@@ -519,4 +519,32 @@ struct DatabaseTests {
         #expect(columns.contains("budget_alert_percent"))
     }
 
+    @Test("Receive-journal migration identifiers remain registered for installed stores")
+    func testReceiveJournalMigrationIdentifiersRemainRegistered() throws {
+        var config = Configuration()
+        config.foreignKeysEnabled = true
+        let queue = try DatabaseQueue(configuration: config)
+        var migrator = DatabaseMigrator()
+        AppDatabase.registerMigrations(&migrator)
+
+        // Opening a device that recorded these historical identifiers must not hit
+        // GRDB's fatal "undefined migration" guard after the journal rewrite.
+        try migrator.migrate(queue, upTo: "131_sync_receive_journal_replay_safety")
+        try migrator.migrate(queue, upTo: "132_sync_receive_journal_retry_backfill")
+
+        let recorded = try queue.read { db in
+            try Set(String.fetchAll(db, sql: """
+                SELECT identifier FROM grdb_migrations
+                WHERE identifier IN (
+                    '131_sync_receive_journal_replay_safety',
+                    '132_sync_receive_journal_retry_backfill'
+                )
+                """))
+        }
+        #expect(recorded == [
+            "131_sync_receive_journal_replay_safety",
+            "132_sync_receive_journal_retry_backfill",
+        ])
+    }
+
 }

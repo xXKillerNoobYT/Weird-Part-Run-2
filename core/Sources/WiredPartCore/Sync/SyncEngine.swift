@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import GRDB
 
 // MARK: - Sync State
 
@@ -73,6 +74,7 @@ public actor SyncEngine {
     // MARK: - State
 
     private let db: AppDatabase
+    private let shopChangeResolver: @Sendable (Database, IncomingChange, String) throws -> MergeResult
     private var state = SyncState()
     private var isSyncing = false
     private var periodicTask: Task<Void, Never>?
@@ -89,7 +91,27 @@ public actor SyncEngine {
     }
 
     public init(db: AppDatabase) {
+        self.init(
+            db: db,
+            shopChangeResolver: { connection, change, localDeviceId in
+                try ConflictResolver.resolveAndApplyChange(
+                    in: connection,
+                    change: change,
+                    localDeviceId: localDeviceId
+                )
+            }
+        )
+    }
+
+    /// Injectable only within the module so regression tests can exercise
+    /// retry/ack control flow for an apply result that is otherwise produced by
+    /// transient database faults (for example SQLITE_BUSY or disk-full).
+    init(
+        db: AppDatabase,
+        shopChangeResolver: @escaping @Sendable (Database, IncomingChange, String) throws -> MergeResult
+    ) {
         self.db = db
+        self.shopChangeResolver = shopChangeResolver
     }
 
     /// Get the current sync state.
@@ -204,16 +226,69 @@ public actor SyncEngine {
                 return false
             }
 
-            // 3. Apply shop changes to local DB
-            if let shopChangesRaw = resultData["shop_changes"] as? [[String: Any]] {
-                let incomingChanges = shopChangesRaw.compactMap { parseIncomingChange($0) }
+            // 3. Apply shop changes to local DB. `compactMap` would silently drop a
+            // malformed item and then incorrectly advance the shop batch, so every
+            // advertised item must parse before the acknowledgement path can start.
+            let shopJournalPeerId = "shop:\(baseURL.absoluteString)"
+            if let rawShopChanges = resultData["shop_changes"] {
+                guard let shopChangesRaw = rawShopChanges as? [[String: Any]] else {
+                    let pendingCount = (try? ChangeTracker.getPendingChangeCount(db: db)) ?? pendingChanges.count
+                    updateState(
+                        status: .error,
+                        pendingCount: pendingCount,
+                        error: "Invalid push response: malformed shop_changes",
+                        consecutiveFailures: state.consecutiveFailures + 1
+                    )
+                    scheduleRetry(deviceId: deviceId, shopUrl: shopUrl, authToken: authToken)
+                    return false
+                }
+
+                let parsedIncomingChanges = shopChangesRaw.map(parseIncomingChange)
+                guard parsedIncomingChanges.allSatisfy({ $0 != nil }) else {
+                    let pendingCount = (try? ChangeTracker.getPendingChangeCount(db: db)) ?? pendingChanges.count
+                    updateState(
+                        status: .error,
+                        pendingCount: pendingCount,
+                        error: "Invalid push response: malformed shop_changes",
+                        consecutiveFailures: state.consecutiveFailures + 1
+                    )
+                    scheduleRetry(deviceId: deviceId, shopUrl: shopUrl, authToken: authToken)
+                    return false
+                }
+
+                let incomingChanges = parsedIncomingChanges.compactMap { $0 }
                 if !incomingChanges.isEmpty {
-                    _ = try ConflictResolver.resolveAndApplyChanges(
+                    // Acknowledgement is legal only after receipt is durable. This
+                    // gives foreign-key deferrals a restart-safe replay path rather
+                    // than advancing the shop batch past an unapplied child row.
+                    try SyncReceiveJournal.record(
                         db: db,
+                        sourcePeerId: shopJournalPeerId,
                         changes: incomingChanges,
-                        localDeviceId: deviceId
+                        auditMetadata: "shop_pull"
                     )
                 }
+            }
+
+            let receiveResult = try SyncReceiveJournal.applyPending(
+                db: db,
+                localDeviceId: deviceId,
+                sourcePeerId: shopJournalPeerId,
+                resolving: shopChangeResolver
+            )
+            guard receiveResult.retryable == 0, receiveResult.deferred == 0 else {
+                let pendingCount = (try? ChangeTracker.getPendingChangeCount(db: db)) ?? pendingChanges.count
+                let reason = receiveResult.retryable > 0
+                    ? "\(receiveResult.retryable) transient error(s)"
+                    : "\(receiveResult.deferred) foreign-key deferral(s)"
+                updateState(
+                    status: .error,
+                    pendingCount: pendingCount,
+                    error: "Shop changes failed to apply: \(reason)",
+                    consecutiveFailures: state.consecutiveFailures + 1
+                )
+                scheduleRetry(deviceId: deviceId, shopUrl: shopUrl, authToken: authToken)
+                return false
             }
 
             // 4. Acknowledge the batch before declaring local rows fully synced.
@@ -271,10 +346,15 @@ public actor SyncEngine {
 
             // Success
             let now = currentTimestamp()
+            // Re-read the real backlog instead of hardcoding 0: getPendingChanges is
+            // capped at LIMIT 500, so a push of >500 rows leaves a non-empty backlog
+            // that a hardcoded 0 would hide (#1794). Matches every error path above,
+            // which already reports getPendingChangeCount rather than an assumed count.
+            let remainingPending = (try? ChangeTracker.getPendingChangeCount(db: db)) ?? 0
             updateState(
                 status: .synced,
                 lastSyncAt: now,
-                pendingCount: 0,
+                pendingCount: remainingPending,
                 error: nil,
                 consecutiveFailures: 0
             )
@@ -579,7 +659,12 @@ public actor SyncEngine {
             changedFields: dict["changed_fields"] as? String,
             oldValues: dict["old_values"] as? String,
             recordData: (dict["record_data"] as? [String: Any]).flatMap {
-                String(data: (try? JSONSerialization.data(withJSONObject: $0)) ?? Data(), encoding: .utf8)
+                // Legacy shop changes may not carry a source sequence, so their
+                // canonical payload is their receipt identity. Stabilize nested JSON
+                // key order before journal encoding; otherwise the same retried
+                // dictionary can produce a distinct record-data string and bypass
+                // receipt deduplication.
+                String(data: (try? JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys])) ?? Data(), encoding: .utf8)
             },
             timestamp: dict["timestamp"] as? String ?? ""
         )
