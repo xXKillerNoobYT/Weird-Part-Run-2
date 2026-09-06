@@ -859,6 +859,19 @@ struct JobsServiceTests {
         #expect(update.createdAt != nil)
     }
 
+    @Test("job notebook notes append in section-local sort order")
+    func testJobNotebookNotesAppendInSectionLocalSortOrder() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        _ = try env.jobs.addJobNote(jobId: jobId, title: "First ordered note", content: nil, createdBy: env.adminUserId)
+        _ = try env.jobs.addJobNote(jobId: jobId, title: "Second ordered note", content: nil, createdBy: env.adminUserId)
+
+        let sortOrders: [Int] = try env.db.writer.read { db in
+            try Int.fetchAll(db, sql: "SELECT sort_order FROM notebook_entries WHERE title IN ('First ordered note', 'Second ordered note') ORDER BY sort_order")
+        }
+        #expect(sortOrders == [0, 1])
+    }
+
     // MARK: - Job Stages
 
     @Test("List job stages")

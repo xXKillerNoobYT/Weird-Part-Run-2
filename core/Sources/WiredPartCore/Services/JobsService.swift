@@ -4538,11 +4538,16 @@ public final class JobsService: Sendable {
         }
 
         let entryId = try NotebooksService.nextBlockID(in: dbConn)
+        let nextSortOrder = try Int.fetchOne(
+            dbConn,
+            sql: "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM notebook_entries WHERE section_id = ? AND deleted_at IS NULL",
+            arguments: [sectionId]
+        ) ?? 0
         try dbConn.execute(sql: """
             INSERT INTO notebook_entries
                 (id, section_id, title, content, entry_type, created_by, updated_by, sort_order, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0, datetime('now'), datetime('now'))
-            """, arguments: [entryId, sectionId, title, content, entryType, createdBy, createdBy])
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            """, arguments: [entryId, sectionId, title, content, entryType, createdBy, createdBy, nextSortOrder])
         try dbConn.execute(sql: "UPDATE notebooks SET updated_at = datetime('now') WHERE id = ?", arguments: [notebookId])
         return entryId
     }

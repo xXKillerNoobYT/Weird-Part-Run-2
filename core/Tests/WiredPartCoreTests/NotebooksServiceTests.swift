@@ -237,6 +237,25 @@ struct NotebooksServiceTests {
         #expect(rows.last?.title == "Legacy positive block")
     }
 
+    @Test("addNotebookEntry appends in section-local sort order")
+    func testAddNotebookEntryAppendsInSectionLocalSortOrder() throws {
+        let env = try E2ETestHelpers.setUp()
+        let notebookId = try env.notebooks.createNotebook(
+            title: "Ordered Notes", notebookType: "general", createdBy: env.adminUserId
+        )
+        _ = try env.notebooks.addNotebookEntry(notebookId: notebookId, title: "First", createdBy: env.adminUserId)
+        _ = try env.notebooks.addNotebookEntry(notebookId: notebookId, title: "Second", createdBy: env.adminUserId)
+
+        let sortOrders: [Int] = try env.db.writer.read { db in
+            try Int.fetchAll(
+                db,
+                sql: "SELECT sort_order FROM notebook_entries WHERE notebook_id = ? ORDER BY sort_order",
+                arguments: [notebookId]
+            )
+        }
+        #expect(sortOrders == [0, 1])
+    }
+
     // MARK: - 4. Update Entry Content (Block Entry)
 
     @Test("Update a block entry's content")

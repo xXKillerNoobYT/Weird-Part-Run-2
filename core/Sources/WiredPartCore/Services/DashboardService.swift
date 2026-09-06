@@ -1465,11 +1465,16 @@ public final class DashboardService: Sendable {
                 """
 
             let entryId = try NotebooksService.nextBlockID(in: conn)
+            let nextSortOrder = try Int.fetchOne(
+                conn,
+                sql: "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM notebook_entries WHERE section_id = ? AND deleted_at IS NULL",
+                arguments: [sectionId]
+            ) ?? 0
             try conn.execute(sql: """
                 INSERT INTO notebook_entries
                 (id, section_id, title, content, entry_type, created_by, sort_order, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 'daily-report', ?, 0, datetime('now'), datetime('now'))
-                """, arguments: [entryId, sectionId, "Report \(dateStr)", content, userId])
+                VALUES (?, ?, ?, ?, 'daily-report', ?, ?, datetime('now'), datetime('now'))
+                """, arguments: [entryId, sectionId, "Report \(dateStr)", content, userId, nextSortOrder])
 
             // Update notebook timestamp
             try conn.execute(sql: """
@@ -1534,11 +1539,16 @@ public final class DashboardService: Sendable {
             }
 
             let entryId = try NotebooksService.nextBlockID(in: conn)
+            let nextSortOrder = try Int.fetchOne(
+                conn,
+                sql: "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM notebook_entries WHERE section_id = ? AND deleted_at IS NULL",
+                arguments: [sectionId]
+            ) ?? 0
             try conn.execute(sql: """
                 INSERT INTO notebook_entries
                 (id, section_id, title, content, entry_type, created_by, sort_order, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 'problem', ?, 0, datetime('now'), datetime('now'))
-                """, arguments: [entryId, sectionId, "Problem — \(jobName) — \(dateStr)", description, userId])
+                VALUES (?, ?, ?, ?, 'problem', ?, ?, datetime('now'), datetime('now'))
+                """, arguments: [entryId, sectionId, "Problem — \(jobName) — \(dateStr)", description, userId, nextSortOrder])
 
             // Update notebook timestamp
             try conn.execute(sql: """

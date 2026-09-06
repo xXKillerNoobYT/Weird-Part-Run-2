@@ -756,6 +756,17 @@ struct ChatServiceTests {
         }
         #expect(entryId != nil)
         #expect(entryId.map { $0 < 0 } == true)
+
+        try env.chat.autoSaveToJobNotebook(
+            channelId: channelId,
+            attachment: attachments[0],
+            userId: env.adminUserId
+        )
+        let sortOrders: [Int] = try env.db.writer.read { db in
+            try Int.fetchAll(db, sql: "SELECT sort_order FROM notebook_entries WHERE entry_type = 'attachment' ORDER BY sort_order")
+        }
+        #expect(sortOrders.count == 2)
+        #expect(sortOrders[1] == sortOrders[0] + 1)
     }
 
     @Test("autoSaveToJobNotebook is no-op for non-job channel")

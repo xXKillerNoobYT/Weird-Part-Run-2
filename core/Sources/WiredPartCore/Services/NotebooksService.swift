@@ -489,13 +489,18 @@ public final class NotebooksService: Sendable {
             // Fix #180: include notebook_id so direct lookups and badge-count queries work.
             // Previously, notebook_id was NULL — entries were only reachable via section_id JOIN.
             let entryId = try Self.nextBlockID(in: dbConn)
+            let nextSortOrder = try Int.fetchOne(
+                dbConn,
+                sql: "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM notebook_entries WHERE section_id = ? AND deleted_at IS NULL",
+                arguments: [sectionId]
+            ) ?? 0
             try dbConn.execute(
                 sql: """
                     INSERT INTO notebook_entries
                     (id, notebook_id, section_id, title, content, entry_type, created_by, sort_order, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 0, datetime('now'), datetime('now'))
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
                     """,
-                arguments: [entryId, notebookId, sectionId, title, content, entryType, createdBy]
+                arguments: [entryId, notebookId, sectionId, title, content, entryType, createdBy, nextSortOrder]
             )
             return entryId
         }
