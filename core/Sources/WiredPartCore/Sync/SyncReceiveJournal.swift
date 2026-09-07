@@ -14,6 +14,7 @@ enum SyncReceiveJournal {
         let sourceSequence: Int64?
         let payload: String
         let state: String
+        let dispositionReason: String?
 
         enum CodingKeys: String, CodingKey {
             case id
@@ -21,6 +22,7 @@ enum SyncReceiveJournal {
             case sourceSequence = "source_sequence"
             case payload
             case state
+            case dispositionReason = "disposition_reason"
         }
     }
 
@@ -132,7 +134,9 @@ enum SyncReceiveJournal {
         // context across those transactions so a row that temporarily wants a
         // natural key can replay after a later receipt vacates it.
         let collisionContext = ConflictResolver.ApplyContext(disposition: .perRowDeferred)
-        var parkedEntryIDs: [Int64] = []
+        // Natural-key replays leave the original journal receipt parked until the
+        // replay transaction commits its individual terminal disposition.
+        var parkedReceiptIDByPayload: [String: Int64] = [:]
 
         // A child can precede its parent in durable source order. Run bounded
         // fixed-point passes: every pass preserves that order, and only a newly
@@ -158,6 +162,11 @@ enum SyncReceiveJournal {
                         return (0, 0, 0, 0)
                     }
                     let change = try JSONDecoder().decode(IncomingChange.self, from: Data(entry.payload.utf8))
+                    if entry.dispositionReason == "foreign_key_parent_unavailable",
+                       collisionContext.isDeferredForeignKeySuperseded(change) {
+                        try update(connection: connection, id: entry.id, state: "refused", reason: "superseded_by_later_write", attempted: true)
+                        return (0, 0, 1, 0)
+                    }
                     // Production uses the connection-owned resolver so the business
                     // mutation and the durable journal disposition commit or roll back
                     // together. Test injection shares that connection, avoiding a
@@ -175,12 +184,13 @@ enum SyncReceiveJournal {
                         return (0, 0, 0, 1)
                     }
                     if merge.foreignKeyDeferrals > 0 {
+                        collisionContext.noteForeignKeyDeferred(change)
                         try update(connection: connection, id: entry.id, state: "deferred", reason: "foreign_key_parent_unavailable", attempted: true)
                         return (0, 1, 0, 0)
                     }
                     if collisionContext.deferredCount > deferredBefore {
+                        parkedReceiptIDByPayload[entry.payload] = entry.id
                         try update(connection: connection, id: entry.id, state: "deferred", reason: "natural_key_ordering_pending", attempted: true)
-                        parkedEntryIDs.append(entry.id)
                         return (0, 1, 0, 0)
                     }
                     if merge.permanentRefusals > 0 || merge.schemaDrops > 0 || merge.applied == 0 {
@@ -203,24 +213,45 @@ enum SyncReceiveJournal {
             // parked. Drain it before deciding whether another source-order pass
             // is useful; otherwise the first receipt was terminally refused even
             // though the original delivery was replayable as a batch.
-            let replayErrors = try ConflictResolver.drainDeferredMergesPerRow(db, collisionContext)
-            if replayErrors > 0 {
-                result.retryable += replayErrors
-            } else if !parkedEntryIDs.isEmpty {
-                let terminalState = collisionContext.keyCollisions > 0 ? "refused" : "applied"
-                let terminalReason = terminalState == "refused" ? "irreconcilable_apply_refusal" : nil
-                try db.writer.write { connection in
-                    for id in parkedEntryIDs {
-                        try update(connection: connection, id: id, state: terminalState, reason: terminalReason, attempted: false)
+            let replayOutcomes = try ConflictResolver.drainDeferredMergesPerRow(
+                db,
+                collisionContext,
+                onTerminal: { connection, replayedChange, terminalDisposition in
+                    let encoder = JSONEncoder()
+                    encoder.outputFormatting = [.sortedKeys]
+                    let payload = try String(decoding: encoder.encode(replayedChange), as: UTF8.self)
+                    guard let receiptID = parkedReceiptIDByPayload[payload] else {
+                        throw SyncReceiveJournalError.missingParkedReceipt
+                    }
+                    switch terminalDisposition {
+                    case .applied:
+                        try update(connection: connection, id: receiptID, state: "applied", reason: nil, attempted: false)
+                    case .refused:
+                        try update(connection: connection, id: receiptID, state: "refused", reason: "irreconcilable_apply_refusal", attempted: false)
+                    case .retry:
+                        // Retries are handled after this replay transaction rolls back.
+                        break
                     }
                 }
-                if terminalState == "applied" {
-                    result.applied += parkedEntryIDs.count
-                    appliedThisPass += parkedEntryIDs.count
-                } else {
-                    result.refused += parkedEntryIDs.count
+            )
+            for outcome in replayOutcomes {
+                switch outcome.disposition {
+                case .applied:
+                    result.applied += 1
+                    appliedThisPass += 1
+                case .refused:
+                    result.refused += 1
+                case .retry:
+                    let encoder = JSONEncoder()
+                    encoder.outputFormatting = [.sortedKeys]
+                    let payload = try String(decoding: encoder.encode(outcome.change), as: UTF8.self)
+                    if let receiptID = parkedReceiptIDByPayload[payload] {
+                        try db.writer.write { connection in
+                            try update(connection: connection, id: receiptID, state: "retry", reason: "transient_apply_failure", attempted: true)
+                        }
+                    }
+                    result.retryable += 1
                 }
-                parkedEntryIDs.removeAll()
             }
         } while appliedThisPass > 0
         result.hasUnresolvedEntries = try hasUnresolvedEntries(db: db, sourcePeerId: sourcePeerId)
@@ -248,7 +279,7 @@ enum SyncReceiveJournal {
             try Entry.fetchAll(
                 connection,
                 sql: """
-                SELECT id, source_peer_id, source_sequence, payload, state
+                SELECT id, source_peer_id, source_sequence, payload, state, disposition_reason
                 FROM _sync_receive_journal
                 WHERE (
                     state = 'received'
@@ -321,4 +352,5 @@ enum SyncReceiveJournal {
 
 enum SyncReceiveJournalError: Error, Equatable {
     case sequencePayloadMismatch
+    case missingParkedReceipt
 }

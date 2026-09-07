@@ -253,6 +253,22 @@ struct SyncCursorAdvanceTests {
         } == "Source-ordered child")
     }
 
+    @Test("foreign-key deferral cannot replay over a later same-record write")
+    func foreignKeyDeferralTracksLaterSameRecordWrite() {
+        let context = ConflictResolver.ApplyContext(disposition: .perRowDeferred)
+        let deferred = IncomingChange(
+            id: 55, deviceId: "peer", tableName: "job_stages", recordId: "42", operation: "UPDATE",
+            changedFields: #"{"template_id":"999999","name":"old"}"#, timestamp: "2026-09-07T00:00:00Z"
+        )
+        context.noteChangeArriving()
+        context.noteForeignKeyDeferred(deferred)
+        context.noteChangeArriving()
+        context.noteRecordMutated(table: "JOB_STAGES", recordId: "42")
+
+        #expect(context.isDeferredForeignKeySuperseded(deferred),
+                "a later write to the same row must fence an older deferred receipt")
+    }
+
     @Test("journal replays a natural-key swap across its durable source batch")
     func receiveJournalReplaysOrderingCollisionAcrossRows() throws {
         let db = try freshDB()
