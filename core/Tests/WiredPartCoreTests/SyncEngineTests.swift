@@ -256,11 +256,11 @@ struct SyncEngineTests {
         let server = try HTTPStubServer { request in
             switch request.path {
             case "/api/sync/push":
-                // An unknown operation is a deterministic refusal (`skipped`),
-                // not a retryable apply error.
+                // A structurally valid table from a newer shop version reaches
+                // the terminal journal-refusal path rather than pinning ACKs.
                 return HTTPStubResponse(
                     statusCode: 200,
-                    body: #"{"data":{"sync_batch_id":"batch-deterministic-refusal","shop_changes":[{"device_id":"shop","table_name":"users","record_id":"42","operation":"PURGE","timestamp":"2026-09-06T18:00:00Z"}]}}"#
+                    body: #"{"data":{"sync_batch_id":"batch-deterministic-refusal","shop_changes":[{"device_id":"shop","table_name":"future_shop_table","record_id":"42","operation":"INSERT","timestamp":"2026-09-06T18:00:00Z"}]}}"#
                 )
             case "/api/sync/ack":
                 ackCallCount.withLock { $0 += 1 }

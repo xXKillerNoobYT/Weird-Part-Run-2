@@ -276,7 +276,7 @@ public actor SyncEngine {
                 sourcePeerId: shopJournalPeerId,
                 resolving: shopChangeResolver
             )
-            guard receiveResult.retryable == 0, receiveResult.deferred == 0 else {
+            guard !receiveResult.hasUnresolvedEntries else {
                 let pendingCount = (try? ChangeTracker.getPendingChangeCount(db: db)) ?? pendingChanges.count
                 let reason = receiveResult.retryable > 0
                     ? "\(receiveResult.retryable) transient error(s)"
@@ -637,10 +637,6 @@ public actor SyncEngine {
             return nil
         }
 
-        // Reject changes with invalid table names
-        guard ConflictResolver.isAllowedTable(tableName) else {
-            return nil
-        }
         let recordId: String
         if let rid = dict["record_id"] as? String {
             recordId = rid

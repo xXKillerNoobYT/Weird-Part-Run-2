@@ -557,8 +557,8 @@ struct SyncCursorAdvanceTests {
         #expect(remaining > 0)
     }
 
-    @Test("receive journal redacts only expired terminal payloads while retaining audit evidence")
-    func receiveJournalRedactsExpiredTerminalPayloads() throws {
+    @Test("receive journal retains sequenced terminal payloads for duplicate verification")
+    func receiveJournalRetainsSequencedTerminalPayloads() throws {
         let db = try freshDB()
         try db.writer.write { dbConn in
             try dbConn.execute(
@@ -586,10 +586,10 @@ struct SyncCursorAdvanceTests {
         let firstRedaction = try SyncReceiveJournal.redactExpiredTerminalPayloads(
             db: db, now: "2026-04-30 12:00:00"
         )
-        #expect(firstRedaction == 2)
+        #expect(firstRedaction == 0)
         #expect(try SyncReceiveJournal.redactExpiredTerminalPayloads(
             db: db, now: "2026-04-30 12:00:00"
-        ) == 0, "redaction is idempotent after payload removal")
+        ) == 0, "the sequenced receipt identity is retained idempotently")
 
         let rows = try db.writer.read { dbConn in
             try Row.fetchAll(
@@ -604,7 +604,7 @@ struct SyncCursorAdvanceTests {
             )
         }
         let applied = rows[0]
-        #expect(applied["payload"] as String? == "")
+        #expect(applied["payload"] as String? == "applied-business-payload")
         #expect(applied["state"] as String? == "applied")
         #expect(applied["source_peer_id"] as String? == "peer-applied")
         #expect(applied["source_sequence"] as Int64? == 1)
@@ -614,14 +614,14 @@ struct SyncCursorAdvanceTests {
         #expect(applied["applied_at"] as String? == "2026-03-31 12:00:00")
         #expect(applied["created_at"] as String? == "2026-03-01 12:00:00")
         #expect(applied["updated_at"] as String? == "2026-03-31 12:00:00")
-        #expect(applied["redacted_at"] as String? == "2026-04-30 12:00:00")
+        #expect(applied["redacted_at"] as String? == nil)
 
         let refused = rows[1]
-        #expect(refused["payload"] as String? == "")
+        #expect(refused["payload"] as String? == "refused-business-payload")
         #expect(refused["state"] as String? == "refused")
         #expect(refused["disposition_reason"] as String? == "irreconcilable_apply_refusal")
         #expect(refused["audit_metadata"] as String? == "lan_push")
-        #expect(refused["redacted_at"] as String? == "2026-04-30 12:00:00")
+        #expect(refused["redacted_at"] as String? == nil)
 
         for index in 2...5 {
             #expect(rows[index]["payload"] as String? != "")

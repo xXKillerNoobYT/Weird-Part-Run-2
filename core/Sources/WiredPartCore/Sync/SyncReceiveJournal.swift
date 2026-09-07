@@ -29,6 +29,11 @@ enum SyncReceiveJournal {
         var deferred = 0
         var refused = 0
         var retryable = 0
+
+        /// Attempt counters include earlier fixed-point passes. ACK decisions need
+        /// the final durable state instead: a child deferred on pass one may have
+        /// applied after its parent in a later pass.
+        var hasUnresolvedEntries = false
     }
 
     static func record(
@@ -168,7 +173,24 @@ enum SyncReceiveJournal {
                 appliedThisPass += disposition.applied
             }
         } while appliedThisPass > 0
+        result.hasUnresolvedEntries = try hasUnresolvedEntries(db: db, sourcePeerId: sourcePeerId)
         return result
+    }
+
+    static func hasUnresolvedEntries(db: AppDatabase, sourcePeerId: String?) throws -> Bool {
+        try db.writer.read { connection in
+            try Bool.fetchOne(
+                connection,
+                sql: """
+                SELECT EXISTS(
+                    SELECT 1 FROM _sync_receive_journal
+                    WHERE state IN ('received', 'deferred', 'retry')
+                      AND (? IS NULL OR source_peer_id = ?)
+                )
+                """,
+                arguments: [sourcePeerId, sourcePeerId]
+            ) ?? false
+        }
     }
 
     private static func pendingEntries(db: AppDatabase, sourcePeerId: String?) throws -> [Entry] {
@@ -213,6 +235,11 @@ enum SyncReceiveJournal {
                   (state = 'refused'
                    AND datetime(updated_at, '+30 days') <= datetime(COALESCE(?, 'now')))
               )
+              -- Sequenced LAN receipts use their payload for duplicate and restore
+              -- verification. Retain it until a payload digest is introduced;
+              -- erasing it would turn a retransmit after response loss into a
+              -- permanent sequence mismatch.
+              AND source_sequence IS NULL
             """,
             arguments: [now, now, now]
         )
