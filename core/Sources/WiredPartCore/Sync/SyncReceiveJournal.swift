@@ -236,7 +236,18 @@ enum SyncReceiveJournal {
                 sql: """
                 SELECT id, source_peer_id, source_sequence, payload, state
                 FROM _sync_receive_journal
-                WHERE state IN ('received', 'deferred', 'retry')
+                WHERE (
+                    state = 'received'
+                    -- The first three attempts preserve a child-before-parent
+                    -- fixed-point replay in one delivery. Thereafter, an
+                    -- unresolved row is retried at most once per minute rather
+                    -- than being rewritten by every five-second inbox sweep.
+                    OR (state IN ('deferred', 'retry') AND (
+                        retry_count < 3
+                        OR last_attempt_at IS NULL
+                        OR last_attempt_at <= datetime('now', '-60 seconds')
+                    ))
+                )
                   AND (? IS NULL OR source_peer_id = ?)
                 ORDER BY id ASC
                 """

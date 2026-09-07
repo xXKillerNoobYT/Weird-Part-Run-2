@@ -177,6 +177,7 @@ extension AppDatabase {
         // makes GRDB abort before any receive-journal repair can run.
         registerMigration131SyncReceiveJournalReplaySafety(&migrator)
         registerMigration132SyncReceiveJournalRetryBackfill(&migrator)
+        registerMigration133SyncReceiveJournalRetryScheduleIndex(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6773,6 +6774,18 @@ private func registerMigration132SyncReceiveJournalRetryBackfill(_ migrator: ino
     // See migration 131: this historical identifier is part of the durable GRDB
     // migration contract even though fixed-point replay replaced due-time polling.
     migrator.registerMigration("132_sync_receive_journal_retry_backfill") { _ in }
+}
+
+// MARK: - Migration 133: index bounded receive-journal retry scans (#1807)
+
+private func registerMigration133SyncReceiveJournalRetryScheduleIndex(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("133_sync_receive_journal_retry_schedule_index") { db in
+        try db.create(
+            index: "idx_sync_receive_journal_retry_schedule",
+            on: "_sync_receive_journal",
+            columns: ["state", "retry_count", "last_attempt_at", "id"]
+        )
+    }
 }
 
 /// #1817 (#Isaac-14) — per-block provenance and a bounded per-user edit history.

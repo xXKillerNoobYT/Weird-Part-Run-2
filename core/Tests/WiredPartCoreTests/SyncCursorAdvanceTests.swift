@@ -756,6 +756,31 @@ struct SyncCursorAdvanceTests {
         } == "received")
     }
 
+    @Test("unresolved journal rows back off after their fixed-point attempts")
+    func receiveJournalBacksOffUnresolvedEntries() throws {
+        let db = try freshDB()
+        let change = IncomingChange(
+            id: 94, deviceId: "peer", tableName: "part_styles", recordId: "94", operation: "INSERT",
+            recordData: #"{"id":"94","category_id":"994","name":"Orphan"}"#,
+            timestamp: "2026-09-07T00:00:00Z"
+        )
+        try SyncReceiveJournal.record(db: db, sourcePeerId: "peer", changes: [change], auditMetadata: "test")
+        let deferResolver: (Database, IncomingChange, String) throws -> MergeResult = { _, _, _ in
+            MergeResult(foreignKeyDeferrals: 1)
+        }
+
+        #expect(try SyncReceiveJournal.applyPending(db: db, localDeviceId: "receiver", resolving: deferResolver).deferred == 1)
+        #expect(try SyncReceiveJournal.applyPending(db: db, localDeviceId: "receiver", resolving: deferResolver).deferred == 1)
+        #expect(try SyncReceiveJournal.applyPending(db: db, localDeviceId: "receiver", resolving: deferResolver).deferred == 1)
+        let backedOff = try SyncReceiveJournal.applyPending(db: db, localDeviceId: "receiver", resolving: deferResolver)
+
+        #expect(backedOff.deferred == 0, "the five-second inbox sweep must not rewrite an unresolved row")
+        let retryCount = try db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: "SELECT retry_count FROM _sync_receive_journal WHERE source_sequence = 94")
+        }
+        #expect(retryCount == 3)
+    }
+
     @Test("legacy inbox remains available when receipt persistence fails")
     func processInboxRetainsLegacyRowsWhenJournalWriteFails() async throws {
         let db = try freshDB()
