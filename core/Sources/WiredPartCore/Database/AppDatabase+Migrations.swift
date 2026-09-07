@@ -178,6 +178,7 @@ extension AppDatabase {
         registerMigration131SyncReceiveJournalReplaySafety(&migrator)
         registerMigration132SyncReceiveJournalRetryBackfill(&migrator)
         registerMigration133SyncReceiveJournalRetryScheduleIndex(&migrator)
+        registerMigration134SyncReceiveJournalReceiptLookupIndex(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6784,6 +6785,21 @@ private func registerMigration133SyncReceiveJournalRetryScheduleIndex(_ migrator
             index: "idx_sync_receive_journal_retry_schedule",
             on: "_sync_receive_journal",
             columns: ["state", "retry_count", "last_attempt_at", "id"]
+        )
+    }
+}
+
+// MARK: - Migration 134: indexed unsequenced receive receipt lookup (#1807)
+
+private func registerMigration134SyncReceiveJournalReceiptLookupIndex(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("134_sync_receive_journal_receipt_lookup_index") { db in
+        // Legacy/shop receipts have no source sequence. `record` deduplicates
+        // them by this exact predicate, including terminal rows retained for
+        // audit; without this composite index every receive is a history scan.
+        try db.create(
+            index: "idx_sync_receive_journal_unsequenced_receipt",
+            on: "_sync_receive_journal",
+            columns: ["source_peer_id", "payload"]
         )
     }
 }

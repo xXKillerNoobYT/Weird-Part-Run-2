@@ -143,6 +143,20 @@ enum SyncReceiveJournal {
             let entries = try pendingEntries(db: db, sourcePeerId: sourcePeerId)
             for entry in entries {
                 let disposition = try db.writer.write { connection -> (applied: Int, deferred: Int, refused: Int, retryable: Int) in
+                    // `entries` was read outside this writer transaction so two
+                    // independently scheduled replayers can both hold this value.
+                    // Re-check the durable state *inside* the transaction before
+                    // applying any business mutation. The first replayer commits a
+                    // terminal state alongside its mutation; a later stale reader
+                    // becomes a no-op instead of applying it twice.
+                    let currentState = try String.fetchOne(
+                        connection,
+                        sql: "SELECT state FROM _sync_receive_journal WHERE id = ?",
+                        arguments: [entry.id]
+                    )
+                    guard currentState == entry.state else {
+                        return (0, 0, 0, 0)
+                    }
                     let change = try JSONDecoder().decode(IncomingChange.self, from: Data(entry.payload.utf8))
                     // Production uses the connection-owned resolver so the business
                     // mutation and the durable journal disposition commit or roll back

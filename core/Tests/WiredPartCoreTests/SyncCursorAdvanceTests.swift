@@ -781,6 +781,15 @@ struct SyncCursorAdvanceTests {
         #expect(retryCount == 3)
     }
 
+    @Test("receive-journal receipt lookup indexes unsequenced peer payloads")
+    func receiveJournalIndexesUnsequencedReceiptLookup() throws {
+        let db = try freshDB()
+        let indexes = try db.writer.read { dbConn in
+            try Row.fetchAll(dbConn, sql: "PRAGMA index_list('_sync_receive_journal')")
+        }
+        #expect(indexes.contains { ($0["name"] as String?) == "idx_sync_receive_journal_unsequenced_receipt" })
+    }
+
     @Test("legacy inbox remains available when receipt persistence fails")
     func processInboxRetainsLegacyRowsWhenJournalWriteFails() async throws {
         let db = try freshDB()
