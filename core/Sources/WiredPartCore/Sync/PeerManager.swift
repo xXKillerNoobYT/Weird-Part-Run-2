@@ -3406,6 +3406,10 @@ public actor PeerManager {
     /// can INSERT OR REPLACE them.
     internal func enrichChangesWithData(_ entries: [ChangeLogEntry]) throws -> [IncomingChange] {
         try entries.map { entry in
+            if let syncPayload = entry.syncPayload,
+               let cached = try? JSONDecoder().decode(IncomingChange.self, from: Data(syncPayload.utf8)) {
+                return cached
+            }
             var recordData: String? = nil
 
             if entry.operation != "DELETE" {
@@ -3435,7 +3439,7 @@ public actor PeerManager {
                 }
             }
 
-            return IncomingChange(
+            let enriched = IncomingChange(
                 id: entry.sequence.map { Int64($0) },
                 deviceId: entry.deviceId,
                 tableName: entry.tableName,
@@ -3446,6 +3450,28 @@ public actor PeerManager {
                 recordData: recordData,
                 timestamp: entry.timestamp
             )
+            guard let changeLogID = entry.id else { return enriched }
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            let serialized = try String(decoding: encoder.encode(enriched), as: UTF8.self)
+            return try db.writer.write { dbConn in
+                // First-send wins. A retransmit must not re-read the mutable
+                // business row after an ambiguous response loss.
+                try dbConn.execute(
+                    sql: "UPDATE _change_log SET sync_payload = ? WHERE id = ? AND sync_payload IS NULL",
+                    arguments: [serialized, changeLogID]
+                )
+                let persisted = try String.fetchOne(
+                    dbConn,
+                    sql: "SELECT sync_payload FROM _change_log WHERE id = ?",
+                    arguments: [changeLogID]
+                )
+                guard let persisted,
+                      let stable = try? JSONDecoder().decode(IncomingChange.self, from: Data(persisted.utf8)) else {
+                    return enriched
+                }
+                return stable
+            }
         }
     }
 

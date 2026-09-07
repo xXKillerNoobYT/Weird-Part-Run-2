@@ -179,6 +179,7 @@ extension AppDatabase {
         registerMigration132SyncReceiveJournalRetryBackfill(&migrator)
         registerMigration133SyncReceiveJournalRetryScheduleIndex(&migrator)
         registerMigration134SyncReceiveJournalReceiptLookupIndex(&migrator)
+        registerMigration135StableOutboundSyncPayload(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -6801,6 +6802,19 @@ private func registerMigration134SyncReceiveJournalReceiptLookupIndex(_ migrator
             on: "_sync_receive_journal",
             columns: ["source_peer_id", "payload"]
         )
+    }
+}
+
+// MARK: - Migration 135: immutable outbound retry payloads (#1807)
+
+private func registerMigration135StableOutboundSyncPayload(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("135_stable_outbound_sync_payload") { db in
+        // A change-log row may survive an ambiguous response while its live row
+        // changes again. Cache its first wire encoding so retrying its sequence
+        // never turns into accidental sequence reuse with a different payload.
+        try db.alter(table: "_change_log") { t in
+            t.add(column: "sync_payload", .text)
+        }
     }
 }
 

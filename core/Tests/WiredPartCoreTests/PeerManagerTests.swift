@@ -707,6 +707,29 @@ struct PeerManagerTests {
         #expect(enriched[0].operation == "INSERT")
     }
 
+    @Test("enrichChangesWithData retains a first-send payload across a later row edit")
+    func testEnrichRetainsStableRetryPayload() async throws {
+        let db = try freshDB()
+        try await clearChangeLog(db)
+        try await db.writer.write { dbConn in
+            try dbConn.execute(sql: "INSERT INTO users (display_name, pin_hash, is_active) VALUES ('First', 'hash', 1)")
+        }
+        let pm = PeerManager(db: db)
+        let pending = try ChangeTracker.getPendingChanges(db: db)
+        let first = try await pm.testEnrichChanges(pending)
+        try await db.writer.write { dbConn in
+            try dbConn.execute(sql: "UPDATE users SET display_name = 'Later' WHERE id = 1")
+        }
+        let retry = try await pm.testEnrichChanges(pending)
+
+        #expect(first[0].recordData == retry[0].recordData)
+        #expect(first[0].id == retry[0].id)
+        #expect(retry[0].recordData?.contains("First") == true)
+        #expect(try await db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: "SELECT sync_payload FROM _change_log WHERE id = ?", arguments: [pending[0].id])
+        } != nil)
+    }
+
     @Test("enrichChangesWithData skips record_data for DELETE")
     func testEnrichDelete() async throws {
         let db = try freshDB()
