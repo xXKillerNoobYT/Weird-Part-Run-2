@@ -17,6 +17,10 @@ public struct ChangeLogEntry: Codable, FetchableRecord, MutablePersistableRecord
     public var synced: Int
     public var syncBatchId: String?
     public var sequence: Int?
+    /// Immutable wire representation captured on first delivery attempt. Keeping it
+    /// with the source change makes response-loss retries byte-stable even when the
+    /// business row has since been edited again.
+    public var syncPayload: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -29,6 +33,7 @@ public struct ChangeLogEntry: Codable, FetchableRecord, MutablePersistableRecord
         case timestamp, synced
         case syncBatchId = "sync_batch_id"
         case sequence
+        case syncPayload = "sync_payload"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) {

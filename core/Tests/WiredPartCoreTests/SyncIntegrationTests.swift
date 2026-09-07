@@ -17,10 +17,12 @@ struct SyncIntegrationTests {
         deviceName: String = "Test Server",
         companyId: String = "test-company"
     ) async throws -> (LanSyncServer, SyncServerState, UInt16) {
+        let db = try freshDB()
         let state = SyncServerState(
             deviceId: deviceId,
             deviceName: deviceName,
-            companyId: companyId
+            companyId: companyId,
+            db: db
         )
         let server = LanSyncServer(state: state)
         let port = try await server.start()
@@ -127,10 +129,8 @@ struct SyncIntegrationTests {
         let pushResult = try JSONDecoder().decode(SyncPushResponse.self, from: pushResp)
         #expect(pushResult.accepted == 1)
 
-        // Verify inbox received it
-        let inbox = await state.inbox
-        #expect(inbox.count == 1)
-        #expect(inbox[0].tableName == "users")
+        // A 200 now acknowledges durable receipt rather than an in-memory inbox.
+        #expect(await state.inbox.isEmpty)
     }
 
     // MARK: - Test 2: Pull with Vector Clock Filtering
@@ -590,17 +590,17 @@ struct SyncIntegrationTests {
             "changes": [] as [[String: Any]]
         ]
         let pushData = try JSONSerialization.data(withJSONObject: pushBody)
-        let (pushReq, _) = try await makeEncryptedRequest(
-            url: URL(string: "\(baseURL)/sync/push")!,
-            plainBody: pushData,
-            state: state,
-            endpoint: "push"
-        )
-
         // Use separate connections repeatedly: a 403 response must be delivered
         // completely, not converted into a lost-connection transport error while
-        // the server closes the response stream.
+        // the server closes the response stream. Each request needs a unique replay
+        // identifier now that the database-backed replay guard is active.
         for _ in 0..<20 {
+            let (pushReq, _) = try await makeEncryptedRequest(
+                url: URL(string: "\(baseURL)/sync/push")!,
+                plainBody: pushData,
+                state: state,
+                endpoint: "push"
+            )
             let (_, pushHTTP) = try await URLSession.shared.data(for: pushReq)
             #expect((pushHTTP as! HTTPURLResponse).statusCode == 403)
         }

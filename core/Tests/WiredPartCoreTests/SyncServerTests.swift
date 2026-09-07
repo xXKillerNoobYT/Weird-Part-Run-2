@@ -1,6 +1,7 @@
 import Testing
 import Foundation
 import os
+import GRDB
 @testable import WiredPartCore
 
 // .serialized (#1583): three distinct intermittents in one day — an
@@ -550,7 +551,10 @@ struct SyncServerTests {
 
         #expect(firstStatus == 200)
         #expect(secondStatus == 409)
-        #expect(await state.inbox.count == 1)
+        #expect(await state.inbox.isEmpty)
+        #expect(try await db.writer.read {
+            try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM _sync_receive_journal")
+        } == 1)
     }
 
     @Test("POST /sync/push rejects exact replay after the former retention horizon")
@@ -702,7 +706,8 @@ struct SyncServerTests {
 
     @Test("POST /sync/push accepts changes")
     func testPushAcceptsChanges() async throws {
-        let state = makeState(companyId: "co-1")
+        let db = try AppDatabase.openInMemoryDatabase()
+        let state = makeState(companyId: "co-1", db: db)
         let server = LanSyncServer(state: state)
         let port = try await server.start()
 
@@ -807,7 +812,8 @@ struct SyncServerTests {
 
     @Test("POST /sync/push adds to inbox")
     func testPushAddsToInbox() async throws {
-        let state = makeState(companyId: "co-1")
+        let db = try AppDatabase.openInMemoryDatabase()
+        let state = makeState(companyId: "co-1", db: db)
         let server = LanSyncServer(state: state)
         let port = try await server.start()
 
@@ -843,9 +849,15 @@ struct SyncServerTests {
 
         let (_, _) = try await URLSession.shared.data(for: request)
 
-        // Verify inbox
-        let inbox = await state.drainInbox()
-        #expect(inbox.map(\.recordId) == ["1", "2"])
+        // Verify durable receipt rather than the legacy in-memory inbox.
+        #expect(await state.inbox.isEmpty)
+        let receipts = try await db.writer.read { dbConn in
+            try Int.fetchOne(
+                dbConn,
+                sql: "SELECT COUNT(*) FROM _sync_receive_journal WHERE source_peer_id = 'remote-dev'"
+            )
+        }
+        #expect(receipts == 2)
 
         await server.stop()
     }

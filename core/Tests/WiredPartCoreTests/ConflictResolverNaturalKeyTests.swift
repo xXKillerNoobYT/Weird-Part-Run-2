@@ -1567,7 +1567,9 @@ struct ConflictResolverNaturalKeyTests {
 
         let result = try ConflictResolver.resolveAndApplyChanges(db: db, changes: changes)
 
-        #expect(result.errors == 1)
+        #expect(result.foreignKeyDeferrals == 1)
+        #expect(result.permanentRefusals == 0)
+        #expect(result.errors == 0)
         #expect(try categoryName(db, 51) == "Before broken")
         #expect(try categoryName(db, 52) == "After broken")
     }

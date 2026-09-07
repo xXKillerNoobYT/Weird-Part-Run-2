@@ -80,6 +80,17 @@ public struct MergeResult: Sendable {
     /// because a retry can never fix it — only a schema migration can.
     public var schemaDrops: Int = 0
 
+    /// A FOREIGN KEY / TRIGGER / missing-table refusal that is deterministic for
+    /// this receiver. These rows cannot be retried into success without a schema
+    /// or data repair, so receive cursors must advance past them rather than
+    /// pinning an inbox or vector clock forever.
+    public var permanentRefusals: Int = 0
+
+    /// A foreign-key refusal is not terminal until the receive journal proves
+    /// its parent cannot arrive. The per-row LAN path must retain it because
+    /// parent and child can arrive in separate deliveries.
+    public var foreignKeyDeferrals: Int = 0
+
     /// A merge that was PARKED for the fixed-point replay was then DISCARDED
     /// unapplied, because the batch moved past it: a LATER change in the same
     /// batch WROTE the same `(table, record_id)`, or the record it was going
@@ -115,6 +126,8 @@ public struct MergeResult: Sendable {
         errors: Int = 0,
         keyCollisions: Int = 0,
         schemaDrops: Int = 0,
+        permanentRefusals: Int = 0,
+        foreignKeyDeferrals: Int = 0,
         supersededMerges: Int = 0
     ) {
         self.applied = applied
@@ -123,8 +136,30 @@ public struct MergeResult: Sendable {
         self.errors = errors
         self.keyCollisions = keyCollisions
         self.schemaDrops = schemaDrops
+        self.permanentRefusals = permanentRefusals
+        self.foreignKeyDeferrals = foreignKeyDeferrals
         self.supersededMerges = supersededMerges
     }
+
+    /// Whether a receive-side sync cursor (a pull vector clock, or a drained
+    /// server inbox) may be advanced/cleared past this batch.
+    ///
+    /// The rule is `errors == 0`, and the distinction is load-bearing:
+    ///
+    /// - `errors` are TRANSIENT (SQLITE_BUSY, disk full, a DB-level fault). They
+    ///   are retryable, so the cursor must NOT advance — the peer re-sends them
+    ///   next time and they apply.
+    /// - `keyCollisions`, `schemaDrops`, `supersededMerges` are DETERMINISTIC
+    ///   non-applies (see this type's field docs). They will never apply, so
+    ///   holding the cursor for them re-sends the same rows forever and the peer
+    ///   never converges — the failure that got PR #1749 reverted. They must NOT
+    ///   block the advance.
+    ///
+    /// The atomic snapshot / Bluetooth-delta paths encode the same rule as
+    /// `guard result.errors == 0` (PeerManager.applyStagedSnapshot,
+    /// applyIncomingChanges). This predicate names it once so the LAN pull path
+    /// (#1793) and the inbox drain path (#1792) cannot drift from it.
+    public var isSafeToAdvanceReceiveCursor: Bool { errors == 0 }
 
     /// Accumulate one change's outcome. Keeps the batched and streamed atomic
     /// apply paths tallying identically instead of by copy-paste.
@@ -437,12 +472,73 @@ public enum ConflictResolver {
                 }
                 result.add(outcome)
             } catch {
-                result.errors += 1
-                logger.error("Failed to apply incoming change: \(error.localizedDescription, privacy: .public)")
+                if isForeignKeyRefusal(error) {
+                    result.foreignKeyDeferrals += 1
+                    logger.notice("Deferred incoming change until its foreign-key parent is received: \(error.localizedDescription, privacy: .public)")
+                } else if isPermanentApplyRefusal(error) {
+                    result.permanentRefusals += 1
+                    logger.warning("Permanently refused incoming change: \(error.localizedDescription, privacy: .public)")
+                } else {
+                    result.errors += 1
+                    logger.error("Failed to apply incoming change: \(error.localizedDescription, privacy: .public)")
+                }
             }
         }
 
-        result.errors += try drainDeferredMergesPerRow(db, context)
+        let replayOutcomes = try drainDeferredMergesPerRow(db, context, onTerminal: { _, _, _ in })
+        result.errors += replayOutcomes.filter { $0.disposition == .retry }.count
+        result.add(context.residue())
+        return result
+    }
+
+    /// Apply one receive-journal row inside a transaction owned by the caller.
+    ///
+    /// The receive journal must persist the business mutation and its durable
+    /// disposition together: if either write fails, neither may commit. This
+    /// deliberately keeps the existing LAN per-row behavior (including the
+    /// classification of FK deferrals and terminal refusals) without opening a
+    /// nested writer transaction between the two persistence boundaries.
+    static func resolveAndApplyChange(
+        in dbConn: Database,
+        change: IncomingChange,
+        localDeviceId: String,
+        context suppliedContext: ApplyContext? = nil
+    ) throws -> MergeResult {
+        var result = MergeResult()
+        let context = suppliedContext ?? ApplyContext(disposition: .perRow)
+        context.noteChangeArriving()
+
+        guard isAllowedTable(change.tableName) else {
+            result.skipped = 1
+            return result
+        }
+
+        try dbConn.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
+        defer { try? dbConn.execute(sql: "DELETE FROM _sync_apply_guard") }
+
+        do {
+            let outcome = try applyOneAtomically(
+                dbConn,
+                change,
+                localDeviceId,
+                context,
+                noteArrival: false
+            )
+            result.add(ApplyOutcome(
+                applied: outcome.applied,
+                conflicts: outcome.conflicts,
+                skipped: outcome.skipped
+            ))
+        } catch {
+            if isForeignKeyRefusal(error) {
+                result.foreignKeyDeferrals = 1
+            } else if isPermanentApplyRefusal(error) {
+                result.permanentRefusals = 1
+            } else {
+                result.errors = 1
+            }
+        }
+
         result.add(context.residue())
         return result
     }
@@ -892,6 +988,24 @@ public enum ConflictResolver {
         }
     }
 
+    private static func isForeignKeyRefusal(_ error: Error) -> Bool {
+        (error as? DatabaseError)?.extendedResultCode == .SQLITE_CONSTRAINT_FOREIGNKEY
+    }
+
+    /// Rows rejected because a trigger rejects the write or this receiver lacks
+    /// the target table cannot succeed on retry.
+    /// Keep those distinct from infrastructure faults so a receive cursor is
+    /// retained only for failures whose retry can make progress.
+    private static func isPermanentApplyRefusal(_ error: Error) -> Bool {
+        guard let databaseError = error as? DatabaseError else { return false }
+        switch databaseError.extendedResultCode {
+        case .SQLITE_CONSTRAINT_TRIGGER:
+            return true
+        default:
+            return databaseError.message?.lowercased().contains("no such table") == true
+        }
+    }
+
     /// Columns of `table` that participate in ANY unique index, read from the
     /// LIVE database rather than from migration source.
     ///
@@ -974,6 +1088,19 @@ public enum ConflictResolver {
         let approximateBytes: Int
     }
 
+    /// Terminal disposition produced by one natural-key deferred replay. This is
+    /// per incoming receipt: a journal cannot infer it from a batch aggregate.
+    enum DeferredReplayDisposition: Equatable {
+        case applied
+        case refused
+        case retry
+    }
+
+    struct DeferredReplayOutcome {
+        let change: IncomingChange
+        let disposition: DeferredReplayDisposition
+    }
+
     /// State that lives exactly as long as ONE apply, and no longer.
     ///
     /// `resolveAndApplyChanges` shares this context across its otherwise
@@ -1039,6 +1166,10 @@ public enum ConflictResolver {
         /// `maxDeferredEntries`, and a record that never parked can never have a
         /// parked entry to supersede.
         private var latestArrivalOrdinal: [String: Int] = [:]
+        /// Original ordinal for foreign-key receipts that have been durably
+        /// deferred. Unlike natural-key entries, they do not carry a
+        /// `DeferredMerge`, so their original position must be retained here.
+        private var foreignKeyDeferredOrdinal: [String: Int] = [:]
 
         /// Residue that never reaches `skipped` or `errors`.
         var keyCollisions = 0
@@ -1069,6 +1200,7 @@ public enum ConflictResolver {
             let deferred: [DeferredMerge]
             let deferredBytes: Int
             let latestArrivalOrdinal: [String: Int]
+            let foreignKeyDeferredOrdinal: [String: Int]
             let replayingArrivalOrdinal: Int?
             let keyCollisions: Int
             let schemaDrops: Int
@@ -1082,6 +1214,7 @@ public enum ConflictResolver {
                 deferred: deferred,
                 deferredBytes: deferredBytes,
                 latestArrivalOrdinal: latestArrivalOrdinal,
+                foreignKeyDeferredOrdinal: foreignKeyDeferredOrdinal,
                 replayingArrivalOrdinal: replayingArrivalOrdinal,
                 keyCollisions: keyCollisions,
                 schemaDrops: schemaDrops,
@@ -1095,6 +1228,7 @@ public enum ConflictResolver {
             deferred = checkpoint.deferred
             deferredBytes = checkpoint.deferredBytes
             latestArrivalOrdinal = checkpoint.latestArrivalOrdinal
+            foreignKeyDeferredOrdinal = checkpoint.foreignKeyDeferredOrdinal
             replayingArrivalOrdinal = checkpoint.replayingArrivalOrdinal
             keyCollisions = checkpoint.keyCollisions
             schemaDrops = checkpoint.schemaDrops
@@ -1228,6 +1362,26 @@ public enum ConflictResolver {
         /// replaying it repairs the ordering instead of rewriting history.
         func isSuperseded(_ entry: DeferredMerge) -> Bool {
             supersedingWriteOrdinal(entry) != nil
+        }
+
+        /// Foreign-key deferrals move a receipt to a later fixed-point pass just
+        /// like a natural-key park. Track its original ordinal so a later real
+        /// write to the same row prevents the older payload from replaying over it.
+        func noteForeignKeyDeferred(_ change: IncomingChange) {
+            let key = Self.recordKey(change.tableName, change.recordId)
+            if latestArrivalOrdinal[key] == nil {
+                latestArrivalOrdinal[key] = ordinalForParking
+            }
+            if foreignKeyDeferredOrdinal[key] == nil {
+                foreignKeyDeferredOrdinal[key] = ordinalForParking
+            }
+        }
+
+        func isDeferredForeignKeySuperseded(_ change: IncomingChange) -> Bool {
+            let key = Self.recordKey(change.tableName, change.recordId)
+            guard let deferredOrdinal = foreignKeyDeferredOrdinal[key],
+                  let latest = latestArrivalOrdinal[key] else { return false }
+            return latest > deferredOrdinal
         }
 
         /// The batch position of the later write that superseded `entry`, for
@@ -1380,7 +1534,7 @@ public enum ConflictResolver {
     /// One replay pass over the deferral buffer.
     private static func replayDeferredMerges(_ db: Database, _ context: ApplyContext) throws {
         for entry in context.takeDeferred() {
-            try replayDeferredMerge(db, context, entry)
+            _ = try replayDeferredMerge(db, context, entry)
         }
     }
 
@@ -1389,7 +1543,7 @@ public enum ConflictResolver {
         _ db: Database,
         _ context: ApplyContext,
         _ entry: DeferredMerge
-    ) throws {
+    ) throws -> DeferredReplayDisposition {
         if context.isSuperseded(entry) {
             // A later write makes replaying the contested key unsafe, but must not
             // erase otherwise-landable non-key fields. Resolve this entry through
@@ -1409,7 +1563,7 @@ public enum ConflictResolver {
                     keyDisposition: "discarded_record_missing",
                     nonKeyDisposition: "discarded_record_missing"
                 )
-                return
+                return .refused
             }
 
             if let deletedAt: String = localRow["deleted_at"], !deletedAt.isEmpty {
@@ -1421,7 +1575,7 @@ public enum ConflictResolver {
                     keyDisposition: "discarded_record_missing",
                     nonKeyDisposition: "discarded_record_missing"
                 )
-                return
+                return .refused
             }
             var safeFields: [String: String?] = [:]
             for (field, value) in entry.incomingFields {
@@ -1451,7 +1605,7 @@ public enum ConflictResolver {
                 keyDisposition: "withheld_by_in_place_ladder",
                 nonKeyDisposition: hasPreservedNonKey ? "preserved_when_unchanged_since_park" : "discarded_newer_field_write"
             )
-            return
+            return .refused
         }
 
         guard let localRow = try getLocalRecord(
@@ -1460,7 +1614,7 @@ public enum ConflictResolver {
             recordId: entry.recordId
         ) else {
             context.supersededMerges += 1
-            return
+            return .refused
         }
 
         let conflicts = try context.replaying(entry) {
@@ -1476,54 +1630,60 @@ public enum ConflictResolver {
             )
         }
         context.replayConflicts += conflicts
+        return .applied
     }
 
     /// LAN/HTTP replay counterpart to `drainDeferredMerges`. The buffer is
     /// shared, but every attempt gets its own transaction and echo guard, so a
     /// malformed replay cannot undo or suppress a previously committed sibling.
-    private static func drainDeferredMergesPerRow(
+    static func drainDeferredMergesPerRow(
         _ db: AppDatabase,
-        _ context: ApplyContext
-    ) throws -> Int {
-        var errors = 0
+        _ context: ApplyContext,
+        onTerminal: (Database, IncomingChange, DeferredReplayDisposition) throws -> Void
+    ) throws -> [DeferredReplayOutcome] {
+        var outcomes: [DeferredReplayOutcome] = []
         var passes = 0
         while context.hasDeferredWork, passes < ApplyContext.maxReplayPasses {
             passes += 1
             let before = context.deferredCount
-            errors += try replayDeferredMergesPerRow(db, context)
+            outcomes += try replayDeferredMergesPerRow(db, context, onTerminal: onTerminal)
             if context.deferredCount >= before { break }
         }
 
         context.isDraining = true
-        errors += try replayDeferredMergesPerRow(db, context)
+        outcomes += try replayDeferredMergesPerRow(db, context, onTerminal: onTerminal)
         context.isDraining = false
-        return errors
+        return outcomes
     }
 
     private static func replayDeferredMergesPerRow(
         _ db: AppDatabase,
-        _ context: ApplyContext
-    ) throws -> Int {
-        var errors = 0
+        _ context: ApplyContext,
+        onTerminal: (Database, IncomingChange, DeferredReplayDisposition) throws -> Void
+    ) throws -> [DeferredReplayOutcome] {
+        var outcomes: [DeferredReplayOutcome] = []
         for entry in context.takeDeferred() {
             do {
-                try db.writer.write { dbConn in
+                let disposition = try db.writer.write { dbConn -> DeferredReplayDisposition in
                     let checkpoint = context.checkpoint()
                     do {
                         try dbConn.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
-                        try replayDeferredMerge(dbConn, context, entry)
+                        let disposition = try replayDeferredMerge(dbConn, context, entry)
+                        try onTerminal(dbConn, entry.change, disposition)
                         try dbConn.execute(sql: "DELETE FROM _sync_apply_guard")
+                        return disposition
                     } catch {
                         context.restore(checkpoint)
                         throw error
                     }
                 }
+                outcomes.append(DeferredReplayOutcome(change: entry.change, disposition: disposition))
             } catch {
-                errors += 1
+                outcomes.append(DeferredReplayOutcome(change: entry.change, disposition: .retry))
                 logger.error("Failed to replay deferred incoming change: \(error.localizedDescription, privacy: .public)")
             }
         }
-        return errors
+        return outcomes
     }
 
     /// Get unreviewed conflicts for admin review.
