@@ -500,10 +500,11 @@ public enum ConflictResolver {
     static func resolveAndApplyChange(
         in dbConn: Database,
         change: IncomingChange,
-        localDeviceId: String
+        localDeviceId: String,
+        context suppliedContext: ApplyContext? = nil
     ) throws -> MergeResult {
         var result = MergeResult()
-        let context = ApplyContext(disposition: .perRow)
+        let context = suppliedContext ?? ApplyContext(disposition: .perRow)
         context.noteChangeArriving()
 
         guard isAllowedTable(change.tableName) else {
@@ -1593,7 +1594,7 @@ public enum ConflictResolver {
     /// LAN/HTTP replay counterpart to `drainDeferredMerges`. The buffer is
     /// shared, but every attempt gets its own transaction and echo guard, so a
     /// malformed replay cannot undo or suppress a previously committed sibling.
-    private static func drainDeferredMergesPerRow(
+    static func drainDeferredMergesPerRow(
         _ db: AppDatabase,
         _ context: ApplyContext
     ) throws -> Int {

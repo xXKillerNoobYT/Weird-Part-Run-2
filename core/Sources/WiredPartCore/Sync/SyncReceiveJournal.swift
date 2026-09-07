@@ -127,6 +127,12 @@ enum SyncReceiveJournal {
         _ = try redactExpiredTerminalPayloads(db: db)
         var result = ApplyResult()
         var appliedThisPass: Int
+        // A journal replay is a source-ordered batch even though each receipt's
+        // mutation/disposition retains its own transaction. Share the collision
+        // context across those transactions so a row that temporarily wants a
+        // natural key can replay after a later receipt vacates it.
+        let collisionContext = ConflictResolver.ApplyContext(disposition: .perRowDeferred)
+        var parkedEntryIDs: [Int64] = []
 
         // A child can precede its parent in durable source order. Run bounded
         // fixed-point passes: every pass preserves that order, and only a newly
@@ -142,11 +148,13 @@ enum SyncReceiveJournal {
                     // mutation and the durable journal disposition commit or roll back
                     // together. Test injection shares that connection, avoiding a
                     // nested GRDB writer while retaining deterministic classifications.
+                    let deferredBefore = collisionContext.deferredCount
                     let merge = try resolver?(connection, change, localDeviceId)
                         ?? ConflictResolver.resolveAndApplyChange(
                             in: connection,
                             change: change,
-                            localDeviceId: localDeviceId
+                            localDeviceId: localDeviceId,
+                            context: collisionContext
                         )
                     if merge.errors > 0 {
                         try update(connection: connection, id: entry.id, state: "retry", reason: "transient_apply_failure", attempted: true)
@@ -154,6 +162,11 @@ enum SyncReceiveJournal {
                     }
                     if merge.foreignKeyDeferrals > 0 {
                         try update(connection: connection, id: entry.id, state: "deferred", reason: "foreign_key_parent_unavailable", attempted: true)
+                        return (0, 1, 0, 0)
+                    }
+                    if collisionContext.deferredCount > deferredBefore {
+                        try update(connection: connection, id: entry.id, state: "deferred", reason: "natural_key_ordering_pending", attempted: true)
+                        parkedEntryIDs.append(entry.id)
                         return (0, 1, 0, 0)
                     }
                     if merge.permanentRefusals > 0 || merge.schemaDrops > 0 || merge.applied == 0 {
@@ -171,6 +184,29 @@ enum SyncReceiveJournal {
                 result.refused += disposition.refused
                 result.retryable += disposition.retryable
                 appliedThisPass += disposition.applied
+            }
+            // A later receipt may have vacated a key that an earlier receipt
+            // parked. Drain it before deciding whether another source-order pass
+            // is useful; otherwise the first receipt was terminally refused even
+            // though the original delivery was replayable as a batch.
+            let replayErrors = try ConflictResolver.drainDeferredMergesPerRow(db, collisionContext)
+            if replayErrors > 0 {
+                result.retryable += replayErrors
+            } else if !parkedEntryIDs.isEmpty {
+                let terminalState = collisionContext.keyCollisions > 0 ? "refused" : "applied"
+                let terminalReason = terminalState == "refused" ? "irreconcilable_apply_refusal" : nil
+                try db.writer.write { connection in
+                    for id in parkedEntryIDs {
+                        try update(connection: connection, id: id, state: terminalState, reason: terminalReason, attempted: false)
+                    }
+                }
+                if terminalState == "applied" {
+                    result.applied += parkedEntryIDs.count
+                    appliedThisPass += parkedEntryIDs.count
+                } else {
+                    result.refused += parkedEntryIDs.count
+                }
+                parkedEntryIDs.removeAll()
             }
         } while appliedThisPass > 0
         result.hasUnresolvedEntries = try hasUnresolvedEntries(db: db, sourcePeerId: sourcePeerId)

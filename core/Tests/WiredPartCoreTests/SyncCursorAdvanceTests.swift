@@ -253,6 +253,38 @@ struct SyncCursorAdvanceTests {
         } == "Source-ordered child")
     }
 
+    @Test("journal replays a natural-key swap across its durable source batch")
+    func receiveJournalReplaysOrderingCollisionAcrossRows() throws {
+        let db = try freshDB()
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: "INSERT OR IGNORE INTO _sync_apply_guard (id) VALUES (1)")
+            try dbConn.execute(sql: """
+                INSERT INTO job_stage_templates (id, name, is_default, archived_at, updated_at)
+                VALUES (2, 'Old', 1, '2026-01-01T00:00:00Z', '2020-01-01T00:00:00Z')
+                """)
+            try dbConn.execute(sql: "DELETE FROM _sync_apply_guard")
+        }
+        let unarchive = IncomingChange(
+            id: 58, deviceId: "peer", tableName: "job_stage_templates", recordId: "2", operation: "UPDATE",
+            changedFields: #"{"archived_at":null}"#, timestamp: "2026-09-07T00:00:00Z"
+        )
+        let vacate = IncomingChange(
+            id: 59, deviceId: "peer", tableName: "job_stage_templates", recordId: "1", operation: "UPDATE",
+            changedFields: #"{"is_default":"0"}"#, timestamp: "2026-09-07T00:00:01Z"
+        )
+        try SyncReceiveJournal.record(db: db, sourcePeerId: "peer", changes: [unarchive, vacate], auditMetadata: "test")
+
+        let result = try SyncReceiveJournal.applyPending(db: db, localDeviceId: "receiver")
+
+        #expect(result.applied == 2)
+        #expect(try db.writer.read {
+            try String.fetchOne($0, sql: "SELECT archived_at FROM job_stage_templates WHERE id = 2")
+        } == nil)
+        #expect(try db.writer.read {
+            try String.fetchOne($0, sql: "SELECT state FROM _sync_receive_journal WHERE source_sequence = 58")
+        } == "applied")
+    }
+
     @Test("journal rolls back a business mutation when interruption precedes disposition persistence")
     func receiveJournalRollsBackInterruptedBusinessMutation() throws {
         let db = try freshDB()
