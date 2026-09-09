@@ -456,6 +456,32 @@ public enum ChangeTracker {
         db: AppDatabase,
         peerId: String
     ) throws -> PeerDeviceTrustSnapshot? {
+        try capturePeerDeviceTrust(
+            db: db,
+            peerId: peerId,
+            validateCertificate: true
+        )
+    }
+
+    /// Captures the exact durable row before a re-pair commits. The snapshot is
+    /// rollback-only: it must retain a corrupted legacy certificate verbatim so a
+    /// failed delivery can restore the prior state without granting it trust.
+    static func capturePeerDeviceTrustForPairingRollback(
+        db: AppDatabase,
+        peerId: String
+    ) throws -> PeerDeviceTrustSnapshot? {
+        try capturePeerDeviceTrust(
+            db: db,
+            peerId: peerId,
+            validateCertificate: false
+        )
+    }
+
+    private static func capturePeerDeviceTrust(
+        db: AppDatabase,
+        peerId: String,
+        validateCertificate: Bool
+    ) throws -> PeerDeviceTrustSnapshot? {
         try db.writer.read { dbConnection in
             guard let row = try Row.fetchOne(
                 dbConnection,
@@ -467,7 +493,9 @@ public enum ChangeTracker {
                 arguments: [peerId]
             ) else { return nil }
             let certificate: String? = row["certificate"]
-            try DeviceRegistryCertificateCodec.production.validateStored(certificate)
+            if validateCertificate {
+                try DeviceRegistryCertificateCodec.production.validateStored(certificate)
+            }
             return PeerDeviceTrustSnapshot(
                 deviceName: row["device_name"],
                 platform: row["platform"],
@@ -490,7 +518,36 @@ public enum ChangeTracker {
         peerId: String,
         snapshot: PeerDeviceTrustSnapshot?
     ) throws {
-        if let snapshot {
+        try restorePeerDeviceTrust(
+            db: db,
+            peerId: peerId,
+            snapshot: snapshot,
+            validateCertificate: true
+        )
+    }
+
+    /// Restores a rollback-only pairing snapshot. This path never authorizes the
+    /// stored certificate; normal trust reads still validate it fail-closed.
+    static func restorePeerDeviceTrustAfterPairingRollback(
+        db: AppDatabase,
+        peerId: String,
+        snapshot: PeerDeviceTrustSnapshot?
+    ) throws {
+        try restorePeerDeviceTrust(
+            db: db,
+            peerId: peerId,
+            snapshot: snapshot,
+            validateCertificate: false
+        )
+    }
+
+    private static func restorePeerDeviceTrust(
+        db: AppDatabase,
+        peerId: String,
+        snapshot: PeerDeviceTrustSnapshot?,
+        validateCertificate: Bool
+    ) throws {
+        if validateCertificate, let snapshot {
             try DeviceRegistryCertificateCodec.production.validateStored(snapshot.certificate)
         }
         try db.writer.write { dbConnection in

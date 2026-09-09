@@ -3052,7 +3052,10 @@ public actor PeerManager {
         // this transaction could create an irreversible split-brain pairing.
         let priorTrust: PeerDeviceTrustSnapshot?
         do {
-            priorTrust = try ChangeTracker.capturePeerDeviceTrust(db: db, peerId: request.deviceId)
+            priorTrust = try ChangeTracker.capturePeerDeviceTrustForPairingRollback(
+                db: db,
+                peerId: request.deviceId
+            )
         } catch {
             try? await sState.setActivePairingCode(pairingCode)
             _ = deliverResponse(rejectionResponse())
@@ -3065,7 +3068,7 @@ public actor PeerManager {
 
         func restoreHostStateAfterUndeliveredAcceptance() {
             do {
-                try ChangeTracker.restorePeerDeviceTrust(
+                try ChangeTracker.restorePeerDeviceTrustAfterPairingRollback(
                     db: db,
                     peerId: request.deviceId,
                     snapshot: priorTrust

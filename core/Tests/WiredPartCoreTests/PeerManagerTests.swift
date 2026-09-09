@@ -1992,6 +1992,52 @@ struct PeerManagerTests {
         await pm.stopPeerSync()
     }
 
+    @Test("Authenticated re-pair replaces a malformed certificate record")
+    func testBluetoothRePairReplacesMalformedCertificate() async throws {
+        let db = try freshDB()
+        let hostKeys = SyncCrypto.generateKeyAgreementPair()
+        let hostIdentity = SyncDeviceIdentity(
+            privateKeyB64: hostKeys.privateKey,
+            publicKeyB64: hostKeys.publicKey
+        )
+        let pm = PeerManager(
+            db: db,
+            identityStore: InMemorySyncDeviceIdentityStore(identity: hostIdentity)
+        )
+        try await db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO _device_registry (
+                        device_id, device_name, platform, certificate, is_trusted
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                arguments: ["joiner", "Stale Joiner", "ios", "wpdr-cert:v1:truncated", 1]
+            )
+        }
+        try await pm.startPeerSync(deviceId: "host", deviceName: "Host", companyId: "company")
+        let attempt = try bluetoothPairingAttemptPayload(
+            pairingCode: try await pm.issuePairingCode()
+        )
+        let responses = PairResponseCollector()
+
+        await pm.processBluetoothPairRequest(from: "joiner", payload: attempt.payload) { response in
+            responses.append(response)
+            return true
+        }
+
+        #expect(responses.values.last?.accepted == true)
+        #expect(try await pm.isTrustedBluetoothPeer("joiner") == true)
+        let certificate = try await db.writer.read { dbConn in
+            try String.fetchOne(
+                dbConn,
+                sql: "SELECT certificate FROM _device_registry WHERE device_id = ?",
+                arguments: ["joiner"]
+            )
+        }
+        #expect(certificate == "x25519:\(attempt.context.clientPublicKeyB64)")
+        await pm.stopPeerSync()
+    }
+
     @Test("Undelivered Bluetooth pairing restores prior trust, token, and pairing code")
     func testUndeliveredBluetoothPairingRollsBack() async throws {
         let db = try freshDB()
