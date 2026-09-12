@@ -213,6 +213,21 @@ class AIHelpContextCoverageTests(unittest.TestCase):
         self.assertEqual(set(), set(required) - inventory_ids)
         self.assertEqual(set(), set(required.values()) - canonical_destinations)
 
+    def test_checked_in_inventory_passes_primary_verifier(self):
+        environment = os.environ.copy()
+        environment.pop("AI_CONTEXT_INVENTORY_PATH", None)
+        result = subprocess.run(
+            [sys.executable, "scripts/verify-ai-help-context-coverage.py"],
+            cwd=REPO_ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("AI help/context coverage check passed", result.stdout)
+
     def test_verifier_rejects_omitted_non_router_detail_inventory_row(self):
         inventory = dict(self.inventory)
         inventory["screens"] = [
