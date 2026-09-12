@@ -1906,9 +1906,9 @@
         "destination": "ReportABugPage",
         "presentation": "sheet",
         "source": "Weird Parts IOS/Weird Parts IOS/App/WiredPartIOSApp.swift",
-        "expectedOccurrences": 1,
+        "expectedOccurrences": 2,
         "screenId": null,
-        "rationale": "Startup error reporting is an unauthenticated recovery workflow, not an AI page-context destination."
+        "rationale": "The two source-backed unauthenticated recovery presentations report either a startup load error or an unreadable encrypted database; neither is an AI page-context destination."
       },
       {
         "destination": "ReportABugPage",

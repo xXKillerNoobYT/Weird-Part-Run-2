@@ -261,6 +261,18 @@ class AIHelpContextCoverageTests(unittest.TestCase):
         self.assertIn("deep/alias registry page IDs missing from inventory", result.stderr)
         self.assertIn("settings-about", result.stderr)
 
+    def test_checked_in_inventory_passes_primary_verifier(self):
+        result = subprocess.run(
+            [sys.executable, "scripts/verify-ai-help-context-coverage.py"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("AI help/context coverage check passed", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
